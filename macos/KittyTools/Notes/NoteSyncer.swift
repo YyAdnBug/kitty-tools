@@ -26,7 +26,13 @@
 //   （epoch，只增不减）：便签文件、墓碑文件要动的那一轮先在库里 +1、device.json 最后写——自己子文件夹里记的比库里的大，
 //   就是库退回去了（写到一半停了、换过文件夹、文件夹被恢复成旧的，都是文件夹里的小，不会认错）。
 // - **状态**（设置页的状态行）：关着 / 正在同步 / 好了（上次同步的时刻）/ 停了（为什么：文件夹不在、不是那个文件夹、
-//   更新版本写的、哪台的东西读不出来、读写出错）/ 等你确认（刹车）。别的电脑：名字和最后一次看到它的文件变的时刻。
+//   更新版本写的、哪台的东西读不出来、读写出错、服务器不认密码）/ 等你确认（刹车）。别的电脑：名字和最后一次看到它的文件
+//   变的时刻。
+// - **停了要让人知道**（第五轮体检 U1）：要你去处理的（不是那个文件夹、更新版本写的、服务器不认密码 / 不让读写）马上在
+//   刘海岛说一次，带「打开同步设置」（钥匙串里没有密码也算）；别的（文件夹不在、还没下载完、连不上……多半自己会好）一直停着
+//   满 quietSpan（30 分钟）才说（睡着的那段不算：按 uptime 计时，睡眠时它不走）；一段停着里同一种只说一次（别的那几种
+//   合起来算一种），说过的同时主界面底栏「设置」挂一个小橙点（needsAttention）。好好走完一轮、停在等确认、关掉同步，这一段
+//   就算完了（点收掉，下回再停从头算）。刹车照旧自己上岛（wait）。
 // - **跳过**（第三轮体检第 6 批）：一部分上一轮整轮走完、什么都没落也没写，这一轮的输入又一模一样——读到的文件属性
 //   （NoteSyncDisk.Snapshot.stamps：路径、文件号、改动时间、大小，同读缓存认「没变」的那几样）、本机那份（便签：库的代数、
 //   电脑编号、库里记的第几轮、两边的图片文件名；一类：交出来的值、账本）——就不合也不写这一部分（合出来的会和上一轮一样）。
@@ -44,8 +50,15 @@
 // flush 之后先 pull（NoteSyncServer：服务器上变了的拿进镜像），照常读镜像、合、写镜像，最后 push（本机写进镜像的送上去，
 // 写镜像出了错也照送：写成了的那几个先送上去）；pull 有没拿下来的（超了每轮的请求数），这一轮整个当成没读清楚（不跳过、
 // 不清共用图片）。一分钟一轮（serverInterval：按次数限流的服务器，空闲一轮也要列 3 + 2 × 电脑数次目录）。服务器说请求
-// 太多就退避（5、10、20、30 分钟，服务器说了等多久至少等它说的），这期间的一轮直接停在「请求太多」；连不上、密码不对
-// 照常停在那一轮、下一轮再试。刹车、不是那个文件夹这些停在合之前的，这一轮也不 push（上一轮没送完的等下一轮）。
+// 太多就退避（5、10、20、30 分钟，服务器说了等多久至少等它说的），这期间的一轮直接停在「请求太多」；连不上照常停在那一轮、
+// 下一轮再试。**服务器不认密码（401）、不让读写（403）就不再自动重试**（第五轮体检 E1：每一轮都是一两次登录失败，NAS 数够了
+// 会封这台电脑的 IP、连同一个出口的别的设备一起拦）：定时、醒来这些自动的轮停在「密码不对」不发请求，设置里「立即同步」
+// （用户主动的一次）照发；「更新密码…」只换钥匙串里的密码，镜像和它的账留着，换完接着同步。ponytail: 拒过的记号只在内存里
+// （rejected），每次重新打开 App 会再试一次（Basic 的服务器上是一次失败的登录）——要更省就把它存进偏好、换密码时清。
+// 钥匙串里没有密码（noPassword）同样停下来等「更新密码…」。刹车、不是那个文件夹这些停在合之前的，这一轮也不 push（上一轮
+// 没送完的等下一轮）。镜像不用了（停止同步、换服务器）在主线程外删：停止同步时先取消正在跑的那一轮（它只在网络请求上停得
+// 下来，停下来之后看到文件夹换了就收手，不落东西、不上岛），等它走完、**到那时**再看留哪个（这期间可能已经连上了新服务器，
+// 新镜像不能删）；上次没删完就退了的，启动时删（removeStaleMirrors，E14）。
 
 import AppKit
 import Observation
@@ -62,7 +75,7 @@ import Observation
   }
 
   /// 为什么停了
-  enum Problem: Equatable {
+  enum Problem: Hashable {
     /// 文件夹不在（没登录 iCloud、移动硬盘没插、被删了）
     case missingFolder
     /// 不是那个文件夹（标记没了 / 换了）
@@ -77,11 +90,27 @@ import Observation
     case failed(String)
     /// 服务器说请求太多：这个时刻之前不合（连服务器时）
     case busy(Date)
+    /// 服务器不认这组用户名密码（401）：自动的轮不再去试（E1）
+    case unauthorized
+    /// 服务器不让读写这个文件夹（403）：同上
+    case forbidden
+    /// 钥匙串里没有服务器的密码：等「更新密码…」
+    case noPassword
+
+    /// 自己好不了、要你去处理的：马上在刘海岛说（U1）；别的停够 quietSpan 再说
+    var needsYou: Bool {
+      switch self {
+      case .notTheFolder, .newerFormat, .unauthorized, .forbidden, .noPassword: true
+      case .missingFolder, .unreadable, .downloading, .failed, .busy: false
+      }
+    }
   }
 
   /// 一轮隔多久：同步文件夹 20 秒，连服务器 60 秒（文件头）
   static let interval: TimeInterval = 20
   static let serverInterval: TimeInterval = 60
+  /// 多半自己会好的那几种停了多久才在刘海岛说（U1）
+  static let quietSpan: TimeInterval = 30 * 60
   /// 服务器的密码在钥匙串里的名字
   static let passwordKey = "sync-server-password"
   /// 库里记「写出去的是第几轮」的那一项（note_meta）
@@ -96,6 +125,8 @@ import Observation
   var downloading = 0
   /// 连服务器时还没传上去的文件有几个
   var uploading = 0
+  /// 停了、该让人知道了（U1：要你处理的，或者停了满 quietSpan）：主界面底栏「设置」挂小橙点，好了自己收
+  private(set) var needsAttention = false
   /// 同步的文件夹、它的库编号（没开 = nil）：偏好里那两项的样子（设置页要跟着变，放在这里）
   private(set) var folder: URL?
   private(set) var library: String?
@@ -106,9 +137,14 @@ import Observation
   @ObservationIgnored let store: NoteStore
   @ObservationIgnored private let defaults: UserDefaults
   @ObservationIgnored var island: Island?
+  /// 刘海岛「打开同步设置」：设置 › 通用，落到同步那一节（AppDelegate 给）
+  @ObservationIgnored var openSettings: () -> Void = {}
   /// 正在编辑的便签（这一轮先不换它们）；单测换成自己给的
   @ObservationIgnored var editing: () -> Set<String> = { NoteSyncer.editingNotes() }
   @ObservationIgnored var clock: () -> Date = { .now }
+  /// 停了多久用它算（U1）：开机后醒着的秒数，睡眠时不走——合盖的那段不算「一直停着」，也不会因为常合盖永远攒不够；单测换成
+  /// 自己给的
+  @ObservationIgnored var uptime: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
   /// 便签之外接进同步的几类（AppDelegate 给：剪贴板、翻译历史……）
   @ObservationIgnored var sources: [SyncSource] = []
   /// 一部分（"notes" / 类别名）的功能开着没有（AppDelegate 给；单测里都开着）
@@ -136,9 +172,17 @@ import Observation
   /// 服务器说请求太多：这个时刻之前不合；连着第几回了（退避加倍）
   @ObservationIgnored private var pausedUntil: Date?
   @ObservationIgnored private var backoffs = 0
+  /// 服务器拒了这组用户名密码（401 / 403，E1）：自动的轮不再发请求，等「立即同步」「更新密码…」；连上了、换了服务器清掉
+  @ObservationIgnored private var rejected = false
+  /// 这一段停着是什么时候开始的（uptime；U1，好好走完一轮清掉）
+  @ObservationIgnored private var stoppedSince: TimeInterval?
+  /// 这一段停着里在刘海岛说过的：要你处理的按种类记，别的几种合起来记成 nil（单测看）
+  @ObservationIgnored private(set) var told: Set<Problem?> = []
   @ObservationIgnored private var timer: Timer?
   @ObservationIgnored private var task: Task<Void, Never>?
   @ObservationIgnored private var again = false
+  /// 排在后面的那一轮里有用户主动要的（E1：拒过密码之后只有它发请求）
+  @ObservationIgnored private var againManual = false
   /// 用户在刹车那里点了继续：当时每一部分各是几条（每部分只用自己的额度，不超过它的放行一次）
   @ObservationIgnored private var confirmed: [String: Int] = [:]
   /// 正在等确认的那一轮，每一部分要删几条（点「继续」时记成 confirmed）
@@ -269,12 +313,18 @@ import Observation
   }
 
   /// 连这个服务器上的文件夹同步（同 enable(folder:)：没有这个文件夹的建好、没有标记的写一个；有别的电脑在用由调用方先问，
-  /// NoteSyncServer.inspect）。镜像是新的一个子文件夹，旧的在主线程外删掉；密码进钥匙串。返回没开成的原因
-  func enable(server account: WebDAV.Account) async -> String? {
+  /// NoteSyncServer.inspect）。seen：调用方刚看过的那一眼（表单「连接」先看过了，不再列一遍：U2）。镜像是新的一个子文件夹，
+  /// 旧的在主线程外删掉；密码进钥匙串。返回没开成的原因
+  func enable(server account: WebDAV.Account, seen: NoteSyncDisk.Inspection? = nil) async -> String?
+  {
     var inspection: NoteSyncDisk.Inspection
-    switch await NoteSyncServer.inspect(account, session: session, device: store.deviceID) {
-    case .failure(let failure): return failure.message
-    case .success(let seen): inspection = seen
+    if let seen {
+      inspection = seen
+    } else {
+      switch await NoteSyncServer.inspect(account, session: session, device: store.deviceID) {
+      case .failure(let failure): return failure.message
+      case .success(let fresh): inspection = fresh
+      }
     }
     if !inspection.exists {
       if let failure = await NoteSyncServer.makeFolder(account, session: session) {
@@ -292,6 +342,8 @@ import Observation
       case let failure?: return failure.message
       }
     }
+    // 表单收起了（「取消」、Esc）：什么都不记（这之后没有 await，过了这里就是开成了）
+    if Task.isCancelled { return String(localized: "已取消") }
     let mirror = mirrors.appending(path: UUID().uuidString, directoryHint: .isDirectory)
     do {
       try FileManager.default.createDirectory(at: mirror, withIntermediateDirectories: true)
@@ -306,9 +358,9 @@ import Observation
     serverUser = account.user
     pausedUntil = nil
     backoffs = 0
+    rejected = false
     use(folder: mirror, library: library)
-    let mirrors = self.mirrors
-    Task { await NoteSyncServer.removeMirrors(in: mirrors, keeping: mirror) }
+    removeStaleMirrors()
     return nil
   }
 
@@ -352,15 +404,53 @@ import Observation
     password = nil
     pausedUntil = nil
     backoffs = 0
+    rejected = false
     uploading = 0
     guard wasServer else { return }
     savePassword(nil)
-    let mirrors = self.mirrors
-    Task { await NoteSyncServer.removeMirrors(in: mirrors, keeping: nil) }
+    removeStaleMirrors()
   }
 
-  /// 不同步了：文件夹里的东西留着，本机的便签不动；为同步留着的几份缓存放掉
+  /// sync-server/ 下不是当前镜像的删掉（主线程外；E14）：停止同步、换了服务器、启动时（上次没删完就退了，AppDelegate 调）。
+  /// 在跑的那一轮可能正往旧镜像里写（拿下来的文件、写出去的便签），等它走完再删——不然删和写交错，一份各台的明文留在数据
+  /// 目录里。留哪个**等完了再看**：这期间可能又连上了新服务器（停止同步紧接着连接），按调用时的样子会把新镜像删掉，下一轮
+  /// push 还会把账上有、镜像里没了的当成本机删了去服务器上删。没连服务器时全删
+  func removeStaleMirrors() {
+    let running = task
+    Task { [weak self] in
+      await running?.value
+      guard let self else { return }
+      let current = folder.flatMap { folder in
+        server != nil
+          && folder.deletingLastPathComponent().standardizedFileURL.path
+            == mirrors.standardizedFileURL.path
+          ? folder : nil
+      }
+      await NoteSyncServer.removeMirrors(in: mirrors, keeping: current)
+    }
+  }
+
+  /// 「更新密码…」（E1）：只换钥匙串里的密码，镜像和它的账都留着（不用整份重新下载）；换完马上接着同步（用户主动的一轮）
+  func updatePassword(_ new: String) {
+    guard server != nil else { return }
+    savePassword(new)
+    password = new
+    rejected = false
+    syncNow(manual: true)
+  }
+
+  /// 服务器拒了这组用户名密码（401 / 403）、钥匙串里没有密码：设置页那一行给「更新密码…」
+  var needsPassword: Bool {
+    switch status {
+    case .stopped(.unauthorized), .stopped(.forbidden), .stopped(.noPassword): true
+    default: false
+    }
+  }
+
+  /// 不同步了：文件夹里的东西留着，本机的便签不动；为同步留着的几份缓存放掉。在跑的那一轮取消掉（网络请求停下来，
+  /// 它看到文件夹换了就收手：文件头），镜像等它走完再删
   func disable() {
+    task?.cancel()
     stop()
     SyncLedger.forget()
     for source in sources { source.syncStopped() }
@@ -396,21 +486,25 @@ import Observation
     timer?.invalidate()
     timer = nil
     again = false
+    againManual = false
     confirmed = [:]
     pending = [:]
     braked = nil
     status = .off
+    recovered()
   }
 
-  /// 马上合一轮（设置里「立即同步」、醒来时、刹车的「继续」）；一轮没完就排在它后面。停着（stop 之后）不起
-  func syncNow() {
+  /// 马上合一轮（醒来时、刹车的「继续」、打开全部便签窗口……）；一轮没完就排在它后面。停着（stop 之后）不起。
+  /// manual：用户主动要的（设置里「立即同步」、更新了密码）——服务器拒过这组密码之后（E1）只有这种还发请求
+  func syncNow(manual: Bool = false) {
     guard isEnabled, timer != nil else { return }
     guard task == nil else {
       again = true
+      againManual = againManual || manual
       return
     }
     task = Task { [weak self] in
-      await self?.round()
+      await self?.round(manual: manual)
       guard let self else { return }
       task = nil
       // 走这一轮时被停了：状态回到关着
@@ -419,8 +513,10 @@ import Observation
         return
       }
       if again {
+        let manual = againManual
         again = false
-        syncNow()
+        againManual = false
+        syncNow(manual: manual)
       }
     }
   }
@@ -438,9 +534,11 @@ import Observation
 
   // MARK: 一轮
 
-  /// 合一轮、写出去（单测直接 await 它）
-  func round() async {
+  /// 合一轮、写出去（单测直接 await 它）。manual 同 syncNow
+  func round(manual: Bool = false) async {
     guard let folder, let library else { return }
+    // 服务器拒过这组用户名密码（E1）：自动的轮不再带着它去试（每一次都是一次登录失败），停在原来的「密码不对」
+    if rejected, !manual { return }
     status = .syncing
     // 刹车的「继续」：每部分只用自己的额度，走到刹车那一步（这一轮定了停不停）才用掉
     let allowance = confirmed
@@ -459,7 +557,7 @@ import Observation
     var pulled: NoteSyncServer.Pulled?
     if server != nil {
       guard let current = self.account() else {
-        return halt(.failed(String(localized: "钥匙串里没有服务器的密码，停止同步后重新连接")))
+        return halt(.noPassword)
       }
       if let pausedUntil, clock() < pausedUntil { return halt(.busy(pausedUntil)) }
       let result = await NoteSyncServer.pull(
@@ -470,6 +568,7 @@ import Observation
       if result.missing { return halt(.missingFolder) }
       pausedUntil = nil
       backoffs = 0
+      rejected = false
       account = current
       pulled = result
     }
@@ -651,6 +750,7 @@ import Observation
     braked = nil
     if let trouble { return halt(trouble) }
     status = .idle
+    recovered()
   }
 
   /// 共用的 images/ 这一轮删哪几张（E16，规则在 NoteSyncFolder.imagePurge）：引用 = 本机的便签（含最近删除里的）+ 文件夹里
@@ -775,6 +875,7 @@ import Observation
     confirmed = [:]
     let count = parts.values.reduce(0, +)
     status = .waiting(trashing: count)
+    recovered()
     if braked != count {
       island?.show(
         title, detail: detail, tone: .warning,
@@ -783,9 +884,43 @@ import Observation
     braked = count
   }
 
-  /// 停在这一轮（下一轮照常来，问题没了就好了）
+  /// 停在这一轮（下一轮照常来，问题没了就好了）。U1：要你处理的马上在刘海岛说，别的这一段停满 quietSpan 再说（文件头）
   private func halt(_ problem: Problem) {
     status = .stopped(problem)
+    // 停止同步之后才停下来的那一轮（走到一半被关了）不说
+    guard isEnabled else { return }
+    let now = uptime()
+    let since = stoppedSince ?? now
+    stoppedSince = since
+    let urgent = problem.needsYou
+    guard urgent || now - since >= Self.quietSpan else { return }
+    needsAttention = true
+    guard told.insert(urgent ? problem : nil).inserted else { return }
+    island?.show(
+      "同步停了", detail: Self.notice(problem), tone: .warning,
+      actions: [.init("打开同步设置", opens: true) { [weak self] in self?.openSettings() }])
+  }
+
+  /// 这一段停着结束了（好好走完一轮、停在等确认、关掉了同步）：小橙点收掉，下回再停从头算
+  private func recovered() {
+    stoppedSince = nil
+    told = []
+    needsAttention = false
+  }
+
+  /// 刘海岛上那一句（短；为什么、怎么办设置页那一行写全了）
+  private static func notice(_ problem: Problem) -> LocalizedStringResource {
+    switch problem {
+    case .missingFolder: "找不到同步的那个文件夹"
+    case .notTheFolder: "同步文件夹里的同步记录被换掉或删了"
+    case .newerFormat: "有更新版本的 Kitty Tools 写的东西，先更新这台 Mac 上的"
+    case .unauthorized: "服务器不认这个密码，先不再自动重试"
+    case .noPassword: "钥匙串里没有服务器的密码"
+    case .forbidden: "服务器不让读写这个文件夹，先不再自动重试"
+    case .unreadable, .downloading: "有同步记录还读不出来，多半是还没下载完"
+    case .failed(let reason): "\(reason)"
+    case .busy: "服务器说请求太多"
+    }
   }
 
   /// 连服务器的账号（密码第一次用时从钥匙串取）：取不到密码是 nil
@@ -796,14 +931,22 @@ import Observation
     return WebDAV.Account(folder: server, user: serverUser, password: password)
   }
 
-  /// 连服务器这一轮没成：请求太多就退避（5、10、20、30 分钟；服务器说了等多久，至少等它说的），别的停在这一轮、下一轮再试
+  /// 连服务器这一轮没成：请求太多就退避（5、10、20、30 分钟；服务器说了等多久，至少等它说的）；不认密码、不让读写就不再
+  /// 自动重试（E1）；别的停在这一轮、下一轮再试
   private func fail(_ failure: WebDAV.Failure) {
-    guard case .busy(let retryAfter) = failure else { return halt(.failed(failure.message)) }
-    let wait = max(retryAfter ?? 0, min(300 * Double(1 << min(backoffs, 3)), 1800))
-    backoffs += 1
-    let until = clock().addingTimeInterval(wait)
-    pausedUntil = until
-    halt(.busy(until))
+    switch failure {
+    case .busy(let retryAfter):
+      let wait = max(retryAfter ?? 0, min(300 * Double(1 << min(backoffs, 3)), 1800))
+      backoffs += 1
+      let until = clock().addingTimeInterval(wait)
+      pausedUntil = until
+      halt(.busy(until))
+    case .unauthorized, .forbidden:
+      rejected = true
+      halt(failure == .unauthorized ? .unauthorized : .forbidden)
+    default:
+      halt(.failed(failure.message))
+    }
   }
 
   private func problem(for stop: NoteSyncFolder.Stop, in snapshot: NoteSyncDisk.Snapshot)

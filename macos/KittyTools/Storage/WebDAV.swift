@@ -2,7 +2,12 @@
 // 只做同步要的几样：PROPFIND 列一层（Depth 1：有的服务只认 1）、GET、PUT（可选「已经有了就不写」）、DELETE、MKCOL、
 // MOVE（不覆盖）。怎么用在 NoteSyncServer。
 // - 认证：每个请求先带上 Basic（等 401 再补的话，按次数限流的服务器上请求数翻一倍）；服务器要 Digest 时 URLSession 的
-//   认证回调补同一组用户名密码，错了不重试。密码只在内存里（存在钥匙串，NoteSyncer 取），不进日志。
+//   认证回调补同一组用户名密码，错了不重试。**认证回调不递第二次同一组**（第五轮体检 E1：每一次都是一次登录失败，NAS 数够了
+//   会封 IP）：请求头里带过 Basic 的 401 直接拒（cancel），被拒过的 Digest 也拒；拒的那一下记在 Challenge 上，send 认成
+//   「用户名或密码不对」（不凭「已取消」认：表单的「取消」也是它）。macOS 27 回环服务器实测（只回 401）：密码不对时一个请求
+//   在服务器上是 Basic 1 次；只认 Digest、两种都声明的是 Basic 1 次 + Digest 1 次。不答（performDefaultHandling）的话系统会
+//   带着原来的 Authorization 头把同一个请求再发一遍（Basic 2 次、Digest 3 次），所以不用它。密码只在内存里（存在钥匙串，
+//   NoteSyncer 取），不进日志。
 // - 不缓存、Cookie 不落盘（ephemeral）；单个请求 30 秒超时；一次一个请求（调用方串着发）。
 // - 出错分几种（Failure）：连不上、用户名密码不对、没权限、不在、已经有了（412）、请求太多（429 / 503，带 Retry-After 的
 //   按它）、空间满了、别的 HTTP 状态、回的东西解不出来。界面上的话在 Failure.message。
@@ -11,6 +16,7 @@
 // 全是 nonisolated：跑在调用方（NoteSyncServer 的 @concurrent）那里，不碰主线程（mac-native §3）。
 
 import Foundation
+import Synchronization
 
 nonisolated struct WebDAV: Sendable {
   /// 服务器上用来同步的那个文件夹（网址以 / 结尾）和登录的账号
@@ -30,7 +36,7 @@ nonisolated struct WebDAV: Sendable {
   }
 
   enum Failure: Error, Equatable, Sendable {
-    /// 连不上（没联网、找不到服务器、超时、证书不受信任）：系统给的原因
+    /// 连不上（没联网、中途断了、找不到服务器、超时、证书不受信任）：系统给的原因
     case offline(String)
     case unauthorized
     case forbidden
@@ -209,6 +215,8 @@ nonisolated struct WebDAV: Sendable {
         result = try await session.data(for: request, delegate: delegate)
       }
     } catch {
+      // 认证回调拒了（服务器不认这组用户名密码）：系统给的是「已取消」，这里认成密码不对
+      if delegate.refused.withLock({ $0 }) { throw .unauthorized }
       throw Self.failure(error)
     }
     guard let response = result.1 as? HTTPURLResponse else { throw .invalid }
@@ -236,15 +244,16 @@ nonisolated struct WebDAV: Sendable {
     if let failure = error as? Failure { return failure }
     if let error = error as? URLError {
       switch error.code {
-      case .notConnectedToInternet, .networkConnectionLost:
-        return .offline(String(localized: "没联网"))
+      case .notConnectedToInternet: return .offline(String(localized: "没联网"))
+      case .networkConnectionLost: return .offline(String(localized: "连接中途断了"))
       case .cannotFindHost, .dnsLookupFailed: return .offline(String(localized: "找不到这个服务器"))
       case .cannotConnectToHost: return .offline(String(localized: "服务器没开或者端口不对"))
       case .timedOut: return .offline(String(localized: "服务器很久没回应"))
-      case .serverCertificateUntrusted, .serverCertificateHasBadDate,
-        .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot,
-        .secureConnectionFailed:
-        return .offline(String(localized: "服务器的证书不受信任（不支持自签的证书）"))
+      case .serverCertificateUntrusted, .serverCertificateHasUnknownRoot:
+        return .offline(String(localized: "服务器的证书不受信任（自己签的证书要先在「钥匙串访问」里设成始终信任）"))
+      case .serverCertificateHasBadDate, .serverCertificateNotYetValid:
+        return .offline(String(localized: "服务器的证书过期了或者还没生效（也可能是这台 Mac 的时间不对）"))
+      case .secureConnectionFailed: return .offline(String(localized: "加密连接没建成"))
       case .userCancelledAuthentication, .userAuthenticationRequired: return .unauthorized
       default: break
       }
@@ -314,10 +323,14 @@ nonisolated struct WebDAV: Sendable {
 }
 
 /// 服务器要先问再答的认证（Digest；Basic 已经先带上了）时补上用户名密码，答错了不再试（→ 用户名或密码不对）。
-/// 证书这类别的认证照系统的来
+/// Basic 的问：请求头里已经带过这一组了就拒，再递一次就是第二次登录失败（E1）；请求头被拿掉了的（跳转到别的源时系统会
+/// 拿掉 Authorization）照旧补一次。拒用 cancel、记在 refused 上（文件头：不答的话系统会带着原来的头再发一遍）。证书这类
+/// 别的认证照系统的来
 private nonisolated final class Challenge: NSObject, URLSessionTaskDelegate, Sendable {
   let user: String
   let password: String
+  /// 拒过这一次的认证（= 服务器不认这组用户名密码）
+  let refused = Mutex(false)
 
   init(user: String, password: String) {
     self.user = user
@@ -331,7 +344,13 @@ private nonisolated final class Challenge: NSObject, URLSessionTaskDelegate, Sen
     guard
       method == NSURLAuthenticationMethodHTTPBasic || method == NSURLAuthenticationMethodHTTPDigest
     else { return (.performDefaultHandling, nil) }
-    guard challenge.previousFailureCount == 0 else { return (.cancelAuthenticationChallenge, nil) }
+    let sent = task.currentRequest?.value(forHTTPHeaderField: "Authorization") != nil
+    guard challenge.previousFailureCount == 0,
+      method == NSURLAuthenticationMethodHTTPDigest || !sent
+    else {
+      refused.withLock { $0 = true }
+      return (.cancelAuthenticationChallenge, nil)
+    }
     return (.useCredential, URLCredential(user: user, password: password, persistence: .none))
   }
 }

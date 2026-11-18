@@ -7891,6 +7891,16 @@
         }
       }
     },
+    "会删掉钥匙串里存的密码和这台 Mac 上那份服务器文件的副本，再连接要重新填写、重新下载；服务器上的文件留着，这台 Mac 上的便签和别的数据也不动。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This deletes the password saved in the keychain and this Mac’s copy of the server’s files, so connecting again means filling everything in and downloading again. The files on the server stay, and the notes and other data on this Mac aren’t changed."
+          }
+        }
+      }
+    },
     "会同时删除它保存在钥匙串里的密钥" : {
       "localizations" : {
         "en" : {
@@ -8737,6 +8747,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stop Syncing"
+          }
+        }
+      }
+    },
+    "停止同步…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop Syncing…"
+          }
+        }
+      }
+    },
+    "停止和服务器同步？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop Syncing with the Server?"
           }
         }
       }
@@ -11333,6 +11363,16 @@
         }
       }
     },
+    "加密连接没建成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the secure connection couldn’t be established"
+          }
+        }
+      }
+    },
     "动效" : {
       "localizations" : {
         "en" : {
@@ -12783,6 +12823,16 @@
         }
       }
     },
+    "只换这台 Mac 钥匙串里存的密码；同步的数据都留着，换好马上接着同步。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only the password saved in this Mac’s keychain changes. Synced data stays, and syncing resumes right away."
+          }
+        }
+      }
+    },
     "只接音量 +、音量 −、静音、亮度 +、亮度 − 这五个键，要「辅助功能」授权。锁屏时、接着调不了音量的输出设备或者外接显示器时，照旧是系统自己的提示。" : {
       "localizations" : {
         "en" : {
@@ -13335,6 +13385,26 @@
         }
       }
     },
+    "同步停了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync stopped"
+          }
+        }
+      }
+    },
+    "同步停了：到 设置 › 通用「同步」里看为什么" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync stopped: see why in Settings › General › Sync"
+          }
+        }
+      }
+    },
     "同步先停下了" : {
       "localizations" : {
         "en" : {
@@ -13381,6 +13451,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Some files in the sync folder haven’t downloaded to this Mac yet. Syncing resumes once they have"
+          }
+        }
+      }
+    },
+    "同步文件夹里的同步记录被换掉或删了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The sync records in the sync folder were replaced or deleted"
           }
         }
       }
@@ -21236,6 +21316,16 @@
         }
       }
     },
+    "恢复提醒（暂停到%@）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resume Reminders (Paused Until %@)"
+          }
+        }
+      }
+    },
     "恢复示例提醒" : {
       "localizations" : {
         "en" : {
@@ -22192,6 +22282,16 @@
         }
       }
     },
+    "打开同步设置" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Sync Settings"
+          }
+        }
+      }
+    },
     "打开后 ↩ 粘贴纯文本，⌥↩ 保留格式；文字的格式总是记下来" : {
       "localizations" : {
         "en" : {
@@ -22528,6 +22628,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Can’t find the sync folder: it’s disconnected, moved, or deleted. Syncing resumes once it’s found"
+          }
+        }
+      }
+    },
+    "找不到同步的那个文件夹" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t find the sync folder"
           }
         }
       }
@@ -24210,6 +24320,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reminders paused until %@"
+          }
+        }
+      }
+    },
+    "提醒暂停到%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reminders paused until %@"
+          }
+        }
+      }
+    },
+    "提醒暂停到明天 %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reminders paused until tomorrow at %@"
           }
         }
       }
@@ -26940,12 +27070,22 @@
         }
       }
     },
-    "暂停到明天" : {
+    "暂停到 %@" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pause Until Tomorrow"
+            "value" : "Pause Until %@"
+          }
+        }
+      }
+    },
+    "暂停到%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pause Until %@"
           }
         }
       }
@@ -27146,6 +27286,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Update failed"
+          }
+        }
+      }
+    },
+    "更新密码" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update Password"
+          }
+        }
+      }
+    },
+    "更新密码…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update Password…"
           }
         }
       }
@@ -27630,6 +27790,16 @@
         }
       }
     },
+    "有同步记录还读不出来，多半是还没下载完" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some sync records can’t be read yet, probably because they haven’t finished downloading"
+          }
+        }
+      }
+    },
     "有哪些提醒、各自的时间和方式；两台都开着时两台都响" : {
       "localizations" : {
         "en" : {
@@ -27696,6 +27866,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Update available: download and install %@, then relaunch automatically"
+          }
+        }
+      }
+    },
+    "有更新版本的 Kitty Tools 写的东西，先更新这台 Mac 上的" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Something was written by a newer version of Kitty Tools. Update Kitty Tools on this Mac first"
           }
         }
       }
@@ -27820,6 +28000,16 @@
         }
       }
     },
+    "服务器" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server"
+          }
+        }
+      }
+    },
     "服务器上已经有同名的了" : {
       "localizations" : {
         "en" : {
@@ -27860,6 +28050,16 @@
         }
       }
     },
+    "服务器上的东西留着，这台 Mac 上的数据也不动；钥匙串里的密码和这台 Mac 上的副本会删掉" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The files on the server stay, and the data on this Mac isn’t changed; the password in the keychain and this Mac’s copy are deleted"
+          }
+        }
+      }
+    },
     "服务器上的空间满了" : {
       "localizations" : {
         "en" : {
@@ -27880,12 +28080,52 @@
         }
       }
     },
+    "服务器不认这个密码，先不再自动重试" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server rejected the password. Automatic retries are paused"
+          }
+        }
+      }
+    },
+    "服务器不认这个用户名或密码，先不自动重试了（免得被当成在试密码）：点「更新密码…」填新的（有的服务要用网页上另外生成的应用密码）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server rejected the username or password. Automatic retries are paused so it isn’t mistaken for password guessing. Click “Update Password…” to enter the new one (some services require a separate app password generated on their website)"
+          }
+        }
+      }
+    },
     "服务器不让读写这个文件夹" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "The server doesn’t allow reading or writing this folder"
+          }
+        }
+      }
+    },
+    "服务器不让读写这个文件夹，先不再自动重试" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server doesn’t allow reading or writing this folder. Automatic retries are paused"
+          }
+        }
+      }
+    },
+    "服务器不让这个账号读写同步的那个文件夹，先不自动重试了：在服务器上给了权限再点「立即同步」，或者「更新密码…」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server doesn’t let this account read or write the sync folder, so automatic retries are paused. Grant access on the server, then click “Sync Now”, or use “Update Password…”"
           }
         }
       }
@@ -27940,12 +28180,32 @@
         }
       }
     },
-    "服务器的证书不受信任（不支持自签的证书）" : {
+    "服务器的证书不受信任（自己签的证书要先在「钥匙串访问」里设成始终信任）" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "the server’s certificate isn’t trusted (self-signed certificates aren’t supported)"
+            "value" : "the server’s certificate isn’t trusted (for a self-signed certificate, set it to Always Trust in Keychain Access first)"
+          }
+        }
+      }
+    },
+    "服务器的证书过期了或者还没生效（也可能是这台 Mac 的时间不对）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the server’s certificate has expired or isn’t valid yet (or this Mac’s clock is wrong)"
+          }
+        }
+      }
+    },
+    "服务器说请求太多" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server reported too many requests"
           }
         }
       }
@@ -28086,6 +28346,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Speaking rate"
+          }
+        }
+      }
+    },
+    "未加密" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not encrypted"
           }
         }
       }
@@ -33729,12 +33999,12 @@
         }
       }
     },
-    "盖住所有屏幕，键盘鼠标照常能用" : {
+    "盖住所有屏幕，点不到后面的窗口、也打不了字；点按钮或按 ↩ / Esc 收起" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Covers all screens, keyboard and mouse still work"
+            "value" : "Covers all screens. You can’t click or type in the windows behind it; click a button or press ↩ or Esc to close."
           }
         }
       }
@@ -34706,6 +34976,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "First language"
+          }
+        }
+      }
+    },
+    "第二天" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next day"
           }
         }
       }
@@ -40483,6 +40763,16 @@
         }
       }
     },
+    "连接中途断了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the connection dropped partway through"
+          }
+        }
+      }
+    },
     "连接服务器…" : {
       "localizations" : {
         "en" : {
@@ -41575,12 +41865,22 @@
         }
       }
     },
-    "钥匙串里没有服务器的密码，停止同步后重新连接" : {
+    "钥匙串里没有服务器的密码" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The server password isn’t in the keychain. Stop syncing and connect again"
+            "value" : "The server password isn’t in the keychain"
+          }
+        }
+      }
+    },
+    "钥匙串里没有服务器的密码：点「更新密码…」重新填" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server password isn’t in the keychain. Click “Update Password…” to enter it again"
           }
         }
       }

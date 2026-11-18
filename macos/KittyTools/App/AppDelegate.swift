@@ -1466,6 +1466,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if let noteStore {
       let syncer = NoteSyncer(store: noteStore)
       syncer.island = island
+      syncer.openSettings = { [unowned self] in showSyncSettings() }
+      // 上次停止同步、换服务器时没删完就退了的镜像（第五轮体检 E14）
+      syncer.removeStaleMirrors()
       // 从只同步便签的版本升上来：新加的几类先没勾（NoteSyncer.isUpgrade），说一声去哪里勾。「已更新到」那座岛已经并进去
       // 说了的不再说；岛上正挂着警告（快捷键没注册上）时也不弹——同一座岛原地换内容，警告不能被盖掉，只靠设置页那句
       if syncer.upgraded, !toldSyncUpgrade, island.content?.tone != .warning {
@@ -1731,6 +1734,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 开着时再呼出一次，高度变了带动画
   private func refreshHome(appearing: Bool) {
     let fresh = WhatsNew.current()
+    // 底栏「设置」的橙点直接读同步的状态（被观察的：主界面开着时也跟着变，U1）
+    homeModel.syncer = noteSyncer
     homeModel.update(
       Home.sections(
         state: menuState, keys: hotKeys.bindings.mapValues(\.display),
@@ -2092,34 +2097,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     submenu.addItem(.separator())
     if let until = reminders.pausedUntil {
-      submenu.addAction(
-        "恢复提醒（暂停到 \(until.formatted(date: .omitted, time: .shortened))）", symbol: "play.circle",
-        color: color
-      ) { [unowned self] in
+      // 今天之内只写钟点；到明天的带上哪天（「暂停到明天 8:00」，第五轮体检 E6）
+      let title: LocalizedStringResource =
+        Calendar.current.isDateInToday(until)
+        ? "恢复提醒（暂停到 \(until.formatted(date: .omitted, time: .shortened))）"
+        : "恢复提醒（暂停到\(Self.pauseDay(until))）"
+      submenu.addAction(title, symbol: "play.circle", color: color) { [unowned self] in
         reminders.pause(until: nil)
         island.show("提醒恢复了", tone: .success, symbol: "checkmark.circle.fill")
       }
     } else {
-      let tomorrow = Calendar.current.date(
-        byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: .now))
-      for (title, until) in [
-        ("暂停全部提醒 1 小时" as LocalizedStringResource, Date.now.addingTimeInterval(3600)),
-        ("暂停到明天", tomorrow),
-      ] {
-        guard let until else { continue }
+      // 「暂停到明天」= 明天第一个时段开始，没设时段的到 8:00；半夜之后、今天的还没到时是今天的（E6：原来到 0:00 就结束，
+      // 周六零点弹出工作日的提醒）。菜单上直接写到几点：今天的只写钟点。菜单每次打开时重建，时刻是打开那一刻算的
+      func pauseItem(_ title: LocalizedStringResource, until: Date) {
         submenu.addAction(title, symbol: "pause.circle", color: color) { [unowned self] in
           reminders.pause(until: until)
-          island.show(
-            "提醒暂停到 \(until.formatted(date: .omitted, time: .shortened))",
-            detail: "这期间到点的，之后合成一条告诉你", tone: .info)
+          let time = until.formatted(date: .omitted, time: .shortened)
+          // 英文句中的 tomorrow 小写：明天的单独一句，不拼摘要里的「Tomorrow at」
+          let notice: LocalizedStringResource =
+            if Calendar.current.isDateInToday(until) {
+              "提醒暂停到 \(time)"
+            } else if Calendar.current.isDateInTomorrow(until) {
+              "提醒暂停到明天 \(time)"
+            } else {
+              "提醒暂停到\(Self.pauseDay(until))"
+            }
+          island.show(notice, detail: "这期间到点的，之后合成一条告诉你", tone: .info)
         }
       }
+      pauseItem("暂停全部提醒 1 小时", until: .now.addingTimeInterval(3600))
+      let morning = reminders.pauseUntilTomorrow()
+      let title: LocalizedStringResource =
+        Calendar.current.isDateInToday(morning)
+        ? "暂停到 \(morning.formatted(date: .omitted, time: .shortened))"
+        : "暂停到\(Self.pauseDay(morning))"
+      pauseItem(title, until: morning)
     }
     submenu.addItem(.separator())
     submenu.addAction(
       "管理提醒…", symbol: MenuExtra.settings.symbol, color: NSColor(MenuExtra.settings.color)
     ) { [unowned self] in showSettings(page: .reminders) }
     item.submenu = submenu
+  }
+
+  /// 暂停到哪天几点的说法：「今天 15:30」「明天 8:00」「11月3日 8:00」（同提醒摘要里一次性的时间）
+  private static func pauseDay(_ until: Date) -> String {
+    Reminder.Schedule(kind: .once, date: until).summary(now: .now, calendar: .current)
   }
 
   /// 状态屏的全局快捷键（快捷键、菜单栏子菜单的「选择状态…」）：先出选状态的面板，选一个再进（Z13a）；设置 › 状态屏
@@ -2156,7 +2179,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 岛上的「勾选同步」：跳到 设置 › 通用（同步那一节在里面；从只同步便签的版本升上来时）
   private var openSyncSettings: Island.Action {
-    .init("勾选同步", opens: true) { [unowned self] in showSettings(page: .general) }
+    .init("勾选同步", opens: true) { [unowned self] in showSyncSettings() }
+  }
+
+  /// 设置 › 通用，滚到「同步」那一节（刘海岛上「打开同步设置」「勾选同步」，第五轮体检 U1）
+  private func showSyncSettings() {
+    showSettings(page: .general)
+    // 设置窗开着 sheet 时不换页也不退页（同 SettingsWindow.show 的口径）：没到通用页、挂着 sheet 都不动
+    guard settingsWindow.window.attachedSheet == nil, settingsNavigation.page == .general else {
+      return
+    }
+    settingsNavigation.path = []
+    settingsNavigation.revealsSync = true
   }
 
   /// 暂停记录剪贴板的三处一起设：采集、面板底栏、菜单栏图标的暂停角标（X13）

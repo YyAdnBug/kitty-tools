@@ -103,7 +103,15 @@ struct WebDAVTests {
     #expect(try failure(507) == .full)
     #expect(try failure(500) == .status(500))
     #expect(WebDAV.failure(URLError(.notConnectedToInternet)) == .offline("没联网"))
-    #expect(WebDAV.failure(URLError(.serverCertificateUntrusted)).message.contains("证书"))
+    // 中途断了和没联网分开说；证书几种各说各的（第五轮体检 U2③）
+    #expect(WebDAV.failure(URLError(.networkConnectionLost)) == .offline("连接中途断了"))
+    for code in [URLError.Code.serverCertificateUntrusted, .serverCertificateHasUnknownRoot] {
+      #expect(WebDAV.failure(URLError(code)).message.contains("钥匙串访问"))
+    }
+    for code in [URLError.Code.serverCertificateHasBadDate, .serverCertificateNotYetValid] {
+      #expect(WebDAV.failure(URLError(code)).message.contains("过期"))
+    }
+    #expect(WebDAV.failure(URLError(.secureConnectionFailed)) == .offline("加密连接没建成"))
   }
 
   /// 走一遍真的解析（用 list 的那条路：解析 + 认出自己）

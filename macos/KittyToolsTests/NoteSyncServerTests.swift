@@ -3,6 +3,8 @@
 // 偏好域、各自的镜像目录；密码存在内存里，不碰钥匙串）——连上（没有的文件夹建好、有库的接着用、不往放着别的东西的文件夹里
 // 撒子文件夹、密码不对说清楚）、便签和片段来回传、一台连服务器一台直接用那个文件夹也能合、图片上传下载（不留临时文件）、
 // 没变的文件不再拿、一轮的请求数用完了下一轮接着传 / 接着拿、服务器说请求太多就退避、连不上停在这一轮、停止同步清掉密码和镜像。
+// 第五轮体检：服务器改了密码之后自动的轮不再去试、「更新密码」接着同步（E1），停着该让人知道的时候（U1），镜像在跑的那一轮
+// 走完再删、启动时清掉残留的（E14）。
 // 都在临时目录、临时偏好域里，用完删；不碰真实的数据目录、偏好、钥匙串。
 
 import Foundation
@@ -286,6 +288,102 @@ struct NoteSyncServerTests {
         ).path))
   }
 
+  /// 服务器上改了密码（E1）：停在「密码不对」（一轮只碰一次 401），之后自动的轮一个请求都不发、用户主动的一轮照发；
+  /// 「更新密码」只换「钥匙串」里的、镜像留着，接着同步。要你处理的马上算该让人知道（U1），好了收掉
+  @Test func rejectedPasswordStopsAutomaticRounds() async throws {
+    let host = try makeServer()
+    defer { cleanUp(host) }
+    let a = try Mac(host: "a", root: root, session: FakeDAV.session())
+    a.store.create(body: "一", now: .now)
+    #expect(await a.syncer.enable(server: account(host)) == nil)
+    await a.syncer.round()
+    let mirror = try #require(a.syncer.folder)
+    FakeDAV.set(host) { $0.password = "新密码" }
+    FakeDAV.clearLog(host)
+    await a.syncer.round()
+    #expect(a.syncer.status == .stopped(.unauthorized))
+    #expect(FakeDAV.log(host).count == 1)
+    #expect(a.syncer.needsPassword && a.syncer.needsAttention && a.syncer.told == [.unauthorized])
+    FakeDAV.clearLog(host)
+    await a.syncer.round()
+    #expect(FakeDAV.log(host).isEmpty && a.syncer.status == .stopped(.unauthorized))
+    await a.syncer.round(manual: true)
+    #expect(FakeDAV.log(host).count == 1 && a.syncer.status == .stopped(.unauthorized))
+    a.syncer.updatePassword("新密码")
+    #expect(a.password == "新密码")
+    await a.syncer.round()
+    #expect(a.syncer.status == .idle && a.syncer.folder == mirror)
+    #expect(!a.syncer.needsAttention && a.syncer.told.isEmpty)
+  }
+
+  /// 钥匙串里没有密码：一个请求都不发，停在要你处理的「没有密码」、给「更新密码…」；填上接着同步
+  @Test func missingPasswordAsksForOne() async throws {
+    let host = try makeServer()
+    defer { cleanUp(host) }
+    let a = try Mac(host: "a", root: root, session: FakeDAV.session())
+    #expect(await a.syncer.enable(server: account(host)) == nil)
+    await a.syncer.round()
+    // 重新打开 App，钥匙串里的没了
+    let reopened = NoteSyncer(store: a.store, defaults: a.defaults, mirrors: a.syncer.mirrors)
+    reopened.session = FakeDAV.session()
+    reopened.computerName = { "a" }
+    reopened.editing = { [] }
+    reopened.loadPassword = { nil }
+    var saved: String?
+    reopened.savePassword = { saved = $0 }
+    FakeDAV.clearLog(host)
+    await reopened.round()
+    #expect(reopened.status == .stopped(.noPassword) && FakeDAV.log(host).isEmpty)
+    #expect(reopened.needsPassword && reopened.needsAttention && reopened.told == [.noPassword])
+    reopened.updatePassword(FakeDAV.password)
+    #expect(saved == FakeDAV.password)
+    await reopened.round()
+    #expect(reopened.status == .idle && !reopened.needsAttention)
+  }
+
+  /// 连不上这类多半自己会好的（U1）：一直停满 30 分钟才算该让人知道、这一段只说一次；好了从头算
+  @Test func slowProblemsWaitBeforeTelling() async throws {
+    let host = try makeServer()
+    defer { cleanUp(host) }
+    let a = try Mac(host: "a", root: root, session: FakeDAV.session())
+    #expect(await a.syncer.enable(server: account(host)) == nil)
+    await a.syncer.round()
+    // 墙钟和醒着的时间（uptime）分开给：睡着时墙钟走、uptime 不走
+    var now = Date.now
+    var awake: TimeInterval = 1000
+    a.syncer.clock = { now }
+    a.syncer.uptime = { awake }
+    func pass(_ seconds: TimeInterval, asleep: Bool = false) {
+      now += seconds
+      if !asleep { awake += seconds }
+    }
+    FakeDAV.set(host) { $0.down = true }
+    await a.syncer.round()
+    pass(29 * 60)
+    await a.syncer.round()
+    #expect(!a.syncer.needsAttention && a.syncer.told.isEmpty)
+    pass(2 * 60)
+    await a.syncer.round()
+    #expect(a.syncer.needsAttention && a.syncer.told == [nil])
+    pass(60)
+    await a.syncer.round()
+    #expect(a.syncer.told == [nil])
+    FakeDAV.set(host) { $0.down = false }
+    await a.syncer.round()
+    #expect(a.syncer.status == .idle && !a.syncer.needsAttention && a.syncer.told.isEmpty)
+    // 睡着的那段不算（合盖通勤回来）：醒着停 20 分钟 → 睡 2 小时 → 醒来不说 → 再醒着 11 分钟就说（醒着的加起来满 30 分钟）
+    FakeDAV.set(host) { $0.down = true }
+    await a.syncer.round()
+    pass(20 * 60)
+    await a.syncer.round()
+    pass(2 * 3600, asleep: true)
+    await a.syncer.round()
+    #expect(!a.syncer.needsAttention && a.syncer.told.isEmpty)
+    pass(11 * 60)
+    await a.syncer.round()
+    #expect(a.syncer.needsAttention && a.syncer.told == [nil])
+  }
+
   /// 服务器上的那个文件夹里放着别的东西、又没有同步记录：不往里撒子文件夹
   @Test func refusesFolderWithOtherThings() async throws {
     let host = try makeServer()
@@ -406,6 +504,118 @@ struct NoteSyncServerTests {
     _ = try? await WebDAV.session.data(for: request)
   }
 
+  /// 镜像（E14）：只删名字是编号的子文件夹（别的东西不是这里建的），当前那个留着；启动时清掉上次没删完的
+  @Test func staleMirrorsAreRemoved() async throws {
+    let host = try makeServer()
+    defer { cleanUp(host) }
+    let a = try Mac(host: "a", root: root, session: FakeDAV.session())
+    #expect(await a.syncer.enable(server: account(host)) == nil)
+    let mirror = try #require(a.syncer.folder)
+    let parent = mirror.deletingLastPathComponent()
+    let stale = parent.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    let other = parent.appending(path: "别的", directoryHint: .isDirectory)
+    for folder in [stale, other] {
+      try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    }
+    a.syncer.removeStaleMirrors()
+    for _ in 0..<200 where FileManager.default.fileExists(atPath: stale.path) {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(!FileManager.default.fileExists(atPath: stale.path))
+    #expect(FileManager.default.fileExists(atPath: mirror.path))
+    #expect(FileManager.default.fileExists(atPath: other.path))
+  }
+
+  /// 停止同步时正好有一轮在跑（E14）：那一轮取消掉、走完之后镜像删干净，不会被它拿下来的文件又建回来
+  @Test func disableWaitsForRunningRound() async throws {
+    let host = try makeServer()
+    defer { cleanUp(host) }
+    let session = FakeDAV.session()
+    let a = try Mac(host: "a", root: root, session: session)
+    let b = try Mac(host: "b", root: root, session: session)
+    #expect(await a.syncer.enable(server: account(host)) == nil)
+    await a.syncer.round()
+    #expect(await b.syncer.enable(server: account(host)) == nil)
+    b.store.create(body: "B 写的", now: .now)
+    await b.syncer.round()
+    let mirror = try #require(a.syncer.folder)
+    // 每个请求慢一点：a 的这一轮还在拿 b 的便签时停止同步
+    FakeDAV.set(host) { $0.delay = 0.1 }
+    FakeDAV.clearLog(host)
+    a.syncer.start()
+    for _ in 0..<300 where FakeDAV.log(host).isEmpty {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    a.syncer.disable()
+    // 等那一轮走完（请求停了半秒）
+    var count = -1
+    while count != FakeDAV.log(host).count {
+      count = FakeDAV.log(host).count
+      try await Task.sleep(for: .milliseconds(500))
+    }
+    for _ in 0..<200 where FileManager.default.fileExists(atPath: mirror.path) {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(!FileManager.default.fileExists(atPath: mirror.path))
+  }
+
+  /// 停止同步紧接着又连上（E14）：旧的那一轮还没收尾时新镜像就建好了（看过的那一眼交进来，连接不用再发请求）；旧的那一轮
+  /// 走完之后删的是旧镜像，新镜像留着（留哪个是删的时候再看的）
+  @Test func reconnectKeepsTheNewMirror() async throws {
+    let host = try makeServer()
+    defer { cleanUp(host) }
+    let session = FakeDAV.session()
+    let a = try Mac(host: "a", root: root, session: session)
+    let b = try Mac(host: "b", root: root, session: session)
+    #expect(await a.syncer.enable(server: account(host)) == nil)
+    await a.syncer.round()
+    #expect(await b.syncer.enable(server: account(host)) == nil)
+    b.store.create(body: "B 写的", now: .now)
+    await b.syncer.round()
+    let old = try #require(a.syncer.folder)
+    let seen = try await NoteSyncServer.inspect(
+      account(host), session: session, device: a.store.deviceID
+    ).get()
+    FakeDAV.set(host) { $0.delay = 0.1 }
+    FakeDAV.clearLog(host)
+    a.syncer.start()
+    for _ in 0..<300 where FakeDAV.log(host).isEmpty {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    a.syncer.disable()
+    #expect(await a.syncer.enable(server: account(host), seen: seen) == nil)
+    let new = try #require(a.syncer.folder)
+    #expect(new != old)
+    var count = -1
+    while count != FakeDAV.log(host).count {
+      count = FakeDAV.log(host).count
+      try await Task.sleep(for: .milliseconds(500))
+    }
+    for _ in 0..<200 where FileManager.default.fileExists(atPath: old.path) {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(!FileManager.default.fileExists(atPath: old.path))
+    #expect(FileManager.default.fileExists(atPath: new.path))
+  }
+
+  /// 表单收起了（取消）：看过的那一眼交进来、不用再发请求的那条路上，落盘之前看到取消就什么都不记（U2）
+  @Test func cancelledConnectWritesNothing() async throws {
+    let host = try makeServer()
+    defer { cleanUp(host) }
+    let session = FakeDAV.session()
+    let a = try Mac(host: "a", root: root, session: session)
+    #expect(await a.syncer.enable(server: account(host)) == nil)
+    let b = try Mac(host: "b", root: root, session: session)
+    let seen = try await NoteSyncServer.inspect(
+      account(host), session: session, device: b.store.deviceID
+    ).get()
+    let connecting = Task { await b.syncer.enable(server: account(host), seen: seen) }
+    connecting.cancel()
+    #expect(await connecting.value != nil)
+    #expect(!b.syncer.isEnabled && b.password == nil && b.syncer.server == nil)
+    #expect(!FileManager.default.fileExists(atPath: b.syncer.mirrors.path))
+  }
+
   /// 停止同步：偏好、密码清掉，镜像删掉（主线程外）；服务器上的东西留着
   @Test func disableForgetsServer() async throws {
     let host = try makeServer()
@@ -433,7 +643,8 @@ struct NoteSyncServerTests {
 
 /// 假的 WebDAV 服务器：拦下发往 `*.kitty-fake.test` 的请求，`/dav/` 底下对应一个临时文件夹，按请求真读真写（PROPFIND
 /// Depth 0 / 1、GET、PUT（If-None-Match: *）、DELETE、MKCOL、MOVE（Overwrite: F））。每个主机一份：根目录、记下的请求
-/// （「方法 /dav/ 之后的路径」），故障开关（busy：回 503 + Retry-After 120；down：连不上）
+/// （「方法 /dav/ 之后的路径」），故障开关（busy：回 503 + Retry-After 120；down：连不上），认的密码（password：改了它 =
+/// 服务器上改了密码），每个请求慢多少（delay）
 nonisolated final class FakeDAV: URLProtocol {
   static let user = "kitty"
   static let password = "密码 pw"
@@ -443,6 +654,8 @@ nonisolated final class FakeDAV: URLProtocol {
     var log: [String] = []
     var busy = false
     var down = false
+    var password = FakeDAV.password
+    var delay: TimeInterval = 0
   }
 
   private static let hosts = Mutex<[String: Host]>([:])
@@ -493,10 +706,11 @@ nonisolated final class FakeDAV: URLProtocol {
     let method = request.httpMethod ?? "GET"
     let path = Self.relative(url)
     Self.set(name) { $0.log.append("\(method) \(path ?? "?")") }
+    if host.delay > 0 { Thread.sleep(forTimeInterval: host.delay) }
     let (status, headers, body) =
       host.busy
       ? (503, ["Retry-After": "120"], Data())
-      : respond(method, path: path, root: host.root, url: url)
+      : respond(method, path: path, root: host.root, url: url, password: host.password)
     let response = HTTPURLResponse(
       url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers)!
     client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
@@ -512,11 +726,11 @@ nonisolated final class FakeDAV: URLProtocol {
     return rest.isEmpty ? "/" : rest
   }
 
-  private func respond(_ method: String, path: String?, root: URL, url: URL)
+  private func respond(_ method: String, path: String?, root: URL, url: URL, password: String)
     -> (Int, [String: String], Data)
   {
     let expected =
-      "Basic " + Data("\(Self.user):\(Self.password)".utf8).base64EncodedString()
+      "Basic " + Data("\(Self.user):\(password)".utf8).base64EncodedString()
     guard request.value(forHTTPHeaderField: "Authorization") == expected else {
       return (401, ["WWW-Authenticate": "Basic realm=\"fake\""], Data())
     }

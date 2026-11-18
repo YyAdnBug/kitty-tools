@@ -353,6 +353,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   var focusedCommand: String?
   /// 侧栏搜索搜到的没添加的插件、刚移除的插件：「全部插件」滚到它那一行、描一圈强调色，过一会儿清掉
   var focusedPlugin: Feature?
+  /// 通用页滚到「同步」那一节（刘海岛「打开同步设置」，第五轮体检 U1），滚过就清掉
+  var revealsSync = false
   /// 快捷键速查表（启动器里的「快捷键速查表」打开设置窗时盖上；页面里的「查看全部快捷键…」按钮自己管）
   var showsShortcuts = false
   /// 「新建脚本」的小表单（脚本命令第三轮 D2：设置里的按钮、启动器里的「新建脚本」都打开它；挂在窗口根上，同速查表——

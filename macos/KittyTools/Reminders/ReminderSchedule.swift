@@ -2,10 +2,11 @@
 // - 一次 / 每周 / 每月：严格晚于某一刻的下一次（按当地钟表时间算，B2：换了时区还是当地的 9 点；夏令时跳过的那个钟点
 //   取它后面最近的有效时刻）。
 // - 间隔：从「锚点」起数 every 分钟，那一刻落在勾了的那天的时段里才算；落在时段外就是下一个时段开始再数 every 分钟。
-//   锚点由 ReminderCenter 管：启动、醒来、解锁、离开电脑回来（B3）、点了「知道了」时设成那一刻。
+//   结束早于开始的时段跨过半夜（22:00–6:00，第五轮体检 U10）：算到第二天，归开始的那一天（周五勾了 = 周五 22:00 到周六 6:00）。
+//   锚点由 ReminderCenter 管：启动、醒来、解锁、离开电脑回来（B3）、暂停结束（E6）、点了「知道了」时设成那一刻。
 // - check：此刻哪几条该响、哪几条算错过（晚了超过 lateLimit，B4）、下一次最早什么时候要再看。
-//   间隔类晚了也不补（醒来时锚点已经重设），推过的也一样；正在岛上挂着的不重复响；锁着屏、在状态屏里（held）时一条都不响，
-//   等回来再看。一次 / 每周 / 每月都只算「上次处理到的那一刻」之后的：刚打开、刚改过时间的从那一刻算起，所以把一次性的
+//   间隔类晚了也不补（醒来时锚点已经重设），推过的也一样；正在岛上挂着的不重复响；锁着屏、在状态屏里、暂停着（held）时一条都不响，
+//   等回来再看（暂停着的间隔类同离开电脑，不攒，暂停结束从那一刻重新数，E6）。一次 / 每周 / 每月都只算「上次处理到的那一刻」之后的：刚打开、刚改过时间的从那一刻算起，所以把一次性的
 //   时间改到已经过了、打开一条过了时间的，都不会当场响或算错过（2026-11-04 评审）。
 
 import Foundation
@@ -62,27 +63,34 @@ nonisolated extension Reminder.Schedule {
     return nil
   }
 
-  /// date 落在哪个时段里（间隔类）：当天勾了、而且在 time…until 之间
+  /// date 落在哪个时段里（间隔类）：那天勾了、而且在 time…until 之间；跨过半夜的时段，前一天开始的那段也算
   func window(containing date: Date, calendar: Calendar) -> Range<Date>? {
-    guard let window = window(on: calendar.startOfDay(for: date), calendar: calendar),
-      window.contains(date)
-    else { return nil }
-    return window
+    let day = calendar.startOfDay(for: date)
+    for start in [calendar.date(byAdding: .day, value: -1, to: day), day].compactMap({ $0 }) {
+      if let window = window(on: start, calendar: calendar), window.contains(date) { return window }
+    }
+    return nil
   }
 
-  /// 某一天的时段；那天没勾给 nil
+  /// 某一天开始的时段；那天没勾给 nil。结束早于开始的跨过半夜、结束在第二天（U10）
   private func window(on day: Date, calendar: Calendar) -> Range<Date>? {
     guard days.contains(calendar.component(.weekday, from: day)),
       let start = Self.moment(time, on: day, calendar: calendar),
-      let end = Self.moment(until, on: day, calendar: calendar), start < end
+      let end = Self.moment(until > time ? until : until + 1440, on: day, calendar: calendar),
+      start < end
     else { return nil }
     return start..<end
   }
 
-  /// 某一天的第几分钟（按钟表时间：夏令时那天也是墙上的 9 点）；1440 = 第二天零点
-  private static func moment(_ minutes: Int, on day: Date, calendar: Calendar) -> Date? {
-    if minutes >= 1440 {
-      return calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: day))
+  /// 间隔类的时段有多长（分钟）：跨过半夜的算到第二天（22:00–6:00 = 480）
+  var windowMinutes: Int { until > time ? until - time : until + 1440 - time }
+
+  /// 某一天的第几分钟（按钟表时间：夏令时那天也是墙上的 9 点）；1440 = 第二天零点，再往后是第二天的第几分钟
+  fileprivate static func moment(_ minutes: Int, on day: Date, calendar: Calendar) -> Date? {
+    guard minutes < 1440 else {
+      guard let next = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: day))
+      else { return nil }
+      return minutes == 1440 ? next : moment(minutes - 1440, on: next, calendar: calendar)
     }
     return calendar.date(bySettingHour: minutes / 60, minute: minutes % 60, second: 0, of: day)
   }
@@ -104,15 +112,30 @@ nonisolated struct ReminderState: Codable, Equatable {
   /// 菜单栏「暂停全部提醒」到几点（D6）：这之前一条都不响，之后照「错过的」规矩补
   var pausedUntil: Date?
 
-  /// 系统时间往回调过（NSSystemClockDidChange）：记在「将来」的处理时刻收回到现在、推到的时刻最多再推 maxSnooze，
-  /// 不然要等真实时间追上才响（纯函数）
+  /// 系统时间变了（NSSystemClockDidChange：手动改、开关「自动设置时间」、对时）：只收明显往回调过的（纯函数，第五轮体检 E5）——
+  /// 记在「将来」超过 clockSlack 的处理时刻收回到现在（不然要等真实时间追上才响；差几秒的对时不动，免得刚响过的又响一次）；
+  /// 推到的时刻超过 maxSnooze（实际能推到的最远）才截回那么远：正常推后的一律不动（原来截到 30 分钟，推后 1 小时的
+  /// 一对时就提前到 30 分钟后响）；暂停超过 maxPause 才截回
   func pulledBack(now: Date, maxSnooze: TimeInterval) -> ReminderState {
     var next = self
-    for (id, mark) in marks where mark.at > now { next.marks[id]?.at = now }
+    for (id, mark) in marks where mark.at > now + Self.clockSlack { next.marks[id]?.at = now }
     for (id, date) in snoozed where date > now + maxSnooze { next.snoozed[id] = now + maxSnooze }
-    // 暂停最长到明天：调回去之后不会一停好几天
-    if let paused = pausedUntil, paused > now + 86_400 { next.pausedUntil = now + 86_400 }
+    if let paused = pausedUntil, paused > now + Self.maxPause {
+      next.pausedUntil = now + Self.maxPause
+    }
     return next
+  }
+
+  /// 时钟往回调多少以内不算（对时的几秒、几十秒）
+  static let clockSlack: TimeInterval = 60
+  /// 暂停最远到哪：「暂停到明天」到明天第一个时段开始，不会超过后天零点；调回去之后不会一停好几天
+  static let maxPause: TimeInterval = 2 * 86_400
+
+  /// 暂停到点了（纯函数，E6）：清掉记着的时刻、返回 true——间隔提醒从这一刻重新数（暂停期间它们不攒，同离开电脑）
+  mutating func endPause(now: Date) -> Bool {
+    guard let paused = pausedUntil, paused <= now else { return false }
+    pausedUntil = nil
+    return true
   }
 
   static func decode(_ data: Data?) -> ReminderState {
@@ -133,6 +156,8 @@ nonisolated enum ReminderCheck {
     var missed: [String] = []
     /// 下一次最早什么时候要再看（nil = 没有要等的）
     var next: Date?
+    /// 过了点、此刻又不在它的时段里的间隔类（第五轮体检）：不响，执行层从现在重新数、交给下一个时段
+    var rested: [String] = []
   }
 
   /// 每条该什么时候响：推过的按推到的时刻；间隔按锚点；一次 / 每周 / 每月按上一次处理到的那一刻往后算（一次的时间早于
@@ -154,7 +179,9 @@ nonisolated enum ReminderCheck {
   }
 
   /// 此刻的检查（纯函数）。关着的、正挂着的不算；held（锁着屏、在状态屏里）时一条都不响也不算错过，等回来再看；
-  /// away（5 分钟没碰键盘鼠标）时间隔类（没推过的）不响也不等，回来重设锚点再数（B3）；间隔类晚了不算错过（推过的也是）。
+  /// away（5 分钟没碰键盘鼠标）时间隔类（没推过的）不响也不等，回来重设锚点再数（B3）；间隔类晚了不算错过（推过的也是），
+  /// 但过了点、此刻已经不在它的时段里的（从状态屏出来、时钟往前跳、醒得晚：17:45 该响的 18:30 才看到，时段到 18:00）
+  /// 不在时段外补响，记进 rested、从现在数（推过的照响：那是自己要的时刻）。
   /// focus（专注模式滤镜让提醒安静着，2026-11-17 拍板 B6）：没开「专注模式时也照常提醒」的间隔类同 away，不攒，结束后重新数
   static func check(
     _ list: [Reminder], state: ReminderState, anchors: [String: Date], showing: Set<String>,
@@ -172,6 +199,13 @@ nonisolated enum ReminderCheck {
         result.next = min(result.next ?? due, due)
       } else if held {
         continue
+      } else if isInterval, state.snoozed[reminder.id] == nil,
+        reminder.schedule.window(containing: now, calendar: calendar) == nil
+      {
+        result.rested.append(reminder.id)
+        if let next = reminder.schedule.next(fromAnchor: now, calendar: calendar) {
+          result.next = min(result.next ?? next, next)
+        }
       } else if now.timeIntervalSince(due) <= lateLimit || isInterval {
         result.fire.append(reminder.id)
       } else {
@@ -196,6 +230,34 @@ nonisolated enum ReminderCheck {
       }
     }
     return next
+  }
+
+  /// 没设时段的「暂停到明天」到几点
+  static let morning = 8 * 60
+
+  /// 「暂停到明天」暂停到哪一刻（纯函数，第五轮体检 E6）：明天第一个时段开始；半夜 0:00 之后、今天第一个时段还没到时
+  /// 点的，是今天的那一刻（凌晨 1 点说「到明天」是到早上）。某一天的第一个时段：开着的、那天勾了的、设了时段（不是全天）的
+  /// 间隔提醒里最早的开始；一条都没有（没有间隔提醒、都是全天的、那天都不响）就是 8:00。
+  /// 只有一部分设了时段时也取设了的里最早的那个：全天的那几条本来什么时候都响，跟着晚一点恢复无妨；而先恢复到 8:00 的话，
+  /// 时段 9:00 起的那条照样要等到 9:00，「暂停到明天 8:00」说的就和设了时段的对不上。跨过半夜的时段按它开始的钟点算
+  /// （明天 22:00–6:00 = 到明天 22:00）；每周 / 每月的钟点不算时段（它们是一个时刻，暂停时到点的照「错过的」合成一条）
+  static func pauseUntilTomorrow(_ list: [Reminder], now: Date, calendar: Calendar) -> Date {
+    let today = calendar.startOfDay(for: now)
+    let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? today
+    for day in [today, tomorrow] {
+      let weekday = calendar.component(.weekday, from: day)
+      let starts = list.filter {
+        $0.isOn && $0.schedule.kind == .interval && $0.schedule.windowMinutes < 1440
+          && $0.schedule.days.contains(weekday)
+      }
+      .map(\.schedule.time)
+      if let at = Reminder.Schedule.moment(starts.min() ?? morning, on: day, calendar: calendar),
+        at > now
+      {
+        return at
+      }
+    }
+    return tomorrow
   }
 
   /// 专注模式滤镜让提醒安静着（focus）时，到点的这几条里先压着、不弹出的（纯函数，拍板 B2 B4）：没开「专注模式时也照常提醒」的

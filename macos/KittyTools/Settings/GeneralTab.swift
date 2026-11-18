@@ -99,6 +99,21 @@ struct GeneralTab: View {
   }
 
   private var form: some View {
+    ScrollViewReader { proxy in
+      sections
+        .onChange(of: navigation?.revealsSync, initial: true) {
+          guard navigation?.revealsSync == true else { return }
+          // 晚一拍再滚（同全部插件页：页面刚换过来时表单的行还没排好，当场滚不动）
+          Task {
+            try? await Task.sleep(for: .milliseconds(150))
+            proxy.scrollTo(SyncSection.anchor, anchor: .top)
+            navigation?.revealsSync = false
+          }
+        }
+    }
+  }
+
+  private var sections: some View {
     Form {
       Section {
         SettingsPushRow(
