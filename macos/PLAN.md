@@ -368,7 +368,7 @@ https://claude.ai/artifact/NQLWKFVipMqoqDabJ2ZQTf 当时没回，11-18 拍板页
   （`LauncherIcons.load`）；Tab 补全不 stat；收藏、常用里的文件和目录外的 App 在不在，呼出时在主线程外查（`checkPresence`）。
 - 路径的行的 ⌘K（文件搜索的结果、常用里的文件同样）：在终端中打开 ⌘T（设置 › 访达右键「用 App 打开」里排第一的终端，没有就是系统「终端」；
   选中文件开它所在的文件夹）、拷贝文件 ⇧⌘C、复制终端写法的路径 ⌥⌘C（`FinderLink.shellText`）。移到废纸篓只在主文件夹里面给（主文件夹本身、
-  它下面的系统文件夹、资源库第一层不给），仍不二次确认，岛上多一个「放回」（`FileMoves.land`，不覆盖）。
+  它下面的系统文件夹、资源库第一层不给），仍不二次确认，岛上多一个「放回」（`FileMoves.land`，不覆盖）。（并进 0.10.1 时和第五轮体检 U5① 合成一个：岛上的按钮是「撤销」，用 `LauncherModel.putBack`——原处有同名的报错、不覆盖，设置里脚本的「移到废纸篓」同用它）
 - 真机实测（按需，`TEST_RUNNER_KITTY_LIVE_PATH=<报告目录>` 跑 `PathBrowserTests/liveRealFolders()`：Dev 版身份读本机真实文件夹，
   只读、不改偏好）：2026-11-18 本机 20 个输入都在 25 ms 内（/usr/bin 第一次 24.6 ms，别的 0.4–4.5 ms），没问过授权时文稿 / 桌面 / 下载、
   日历、别的 App 的容器都只出提示行、没弹框；报告在主检出 `macos/build/research/launcher-path-live-2026-11-18/`。

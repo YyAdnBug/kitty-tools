@@ -1980,6 +1980,33 @@ import SwiftUI
       userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
   }
 
+  /// 键盘换了选中、换了状态，焦点却没动（启动器、剪贴板、翻译历史、App 快捷键的 ↑↓，⌘K 菜单，便签任务的 ⌘T）：
+  /// 读屏开着时说「标题，种类」（第五轮体检 A1 A4）。连按时只说停下来的那一下（0.15 s 内再来的顶掉前一句）；
+  /// 读屏没开什么都不做。两段字到真要说的那一刻才取（读屏没开、连按被顶掉的不白算：剪贴板的摘要要整段收拾），
+  /// 标题太长的只说前 100 个字。面板收起时还没说的那句作废（cancelSettled）
+  static func announceSettled(
+    _ title: @escaping @autoclosure () -> String,
+    _ detail: @escaping @autoclosure () -> String? = nil
+  ) {
+    guard NSWorkspace.shared.isVoiceOverEnabled else { return }
+    settling?.cancel()
+    settling = Task {
+      try? await Task.sleep(for: .milliseconds(150))
+      guard !Task.isCancelled else { return }
+      let parts = [String(title().prefix(100)), detail()].compactMap { $0 }.filter { !$0.isEmpty }
+      post(parts.joined(separator: comma))
+    }
+  }
+
+  /// 还没说出来的那一句不说了（浮层收起：↩ 执行、Esc 关掉之后不该再念上一行）
+  static func cancelSettled() {
+    settling?.cancel()
+    settling = nil
+  }
+
+  /// 等着说的那一句（announceSettled 的节流）
+  private static var settling: Task<Void, Never>?
+
   /// 自带实心底的符号（xxx.circle.fill，还有警告默认的三角、强制结束的八角）：「符号一种颜色、底是语气色」的两色画法
   /// 只有它们画得对。别的（裸符号、空心圆）两色会整个画成第一种颜色、语气色不出现，宽的还会撑出前导槽——由岛垫一个
   /// 语气色圆（IslandLeading）。调用处：有圆底变体的传圆底变体，没有的照传，岛来垫

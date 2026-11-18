@@ -213,6 +213,9 @@ struct ProviderCardView: View {
         Button(isCollapsed ? "展开" : "收起", systemImage: "chevron.down", action: onToggleCollapse)
           .rotationEffect(.degrees(isCollapsed ? 0 : 180))
           .help(isCollapsed ? "展开：以后自动翻译" : "收起：以后不自动翻译，点开再翻")
+          // 读屏名字带上服务名（第五轮体检 A4①）：几张卡分不清，它还决定这个服务以后自不自动翻译
+          .accessibilityLabel(isCollapsed ? "展开\(name)" : "收起\(name)")
+          .accessibilityHint(isCollapsed ? "以后自动翻译" : "以后不自动翻译，点开再翻")
       }
     }
     .frame(height: 18)

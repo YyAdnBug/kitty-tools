@@ -797,4 +797,21 @@ struct ClipboardPanelTests {
     ThumbnailView.dropCards()
     #expect(!ThumbnailView.cardKeys.contains(cardKey))
   }
+
+  /// 第五轮体检 U8：只按一个收藏夹筛、里面一条都没有时是「这个收藏夹还是空的」，有搜索词、别的筛选或收藏夹里有东西时不是
+  @Test func emptyCollection() throws {
+    let (model, store) = try makeModel(["一", "二"])
+    let group = try #require(store.createGroup(named: "空的"))
+    #expect(!model.isEmptyGroup)
+    model.groupFilter = .group(group.id)
+    #expect(model.visibleItems.isEmpty && model.isEmptyGroup && model.isFiltered)
+    model.query = "一"
+    #expect(!model.isEmptyGroup)
+    model.query = ""
+    model.scope = .snippets
+    #expect(!model.isEmptyGroup)
+    model.scope = .all
+    store.assign([try item(model, "一").id], to: group.id)
+    #expect(!model.isEmptyGroup && model.visibleItems.map(\.text) == ["一"])
+  }
 }

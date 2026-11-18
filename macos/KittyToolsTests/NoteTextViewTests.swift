@@ -476,6 +476,23 @@ struct NoteTextViewTests {
     #expect(rig.editor.string == "- [ ] 已经有 了")
   }
 
+  /// 第五轮体检 A4②：读屏念一段字时，行首的任务方框念成它的状态；代码块里的、行中间的照字念；存储、长度都不动
+  @Test func tasksReadAsTheirState() throws {
+    let body = "☐ 买菜\n◧ 写报告\n  ☒ 不做了\n普通 ☑ 一行\n```\n☐ 代码\n```"
+    let rig = try Rig(body)
+    let text = rig.editor.string as NSString
+    let all = NSRange(location: 0, length: text.length)
+    let spoken = try #require(rig.editor.accessibilityString(for: all))
+    let cancelled = String(localized: "task.cancelled", defaultValue: "取消")
+    #expect(spoken == "待办 买菜\n进行中 写报告\n  \(cancelled) 不做了\n普通 ☑ 一行\n```\n☐ 代码\n```")
+    #expect(rig.editor.accessibilityAttributedString(for: all)?.string == spoken)
+    // 读屏一个字一个字念：方框那个字念成状态，别的字照念
+    #expect(rig.editor.accessibilityString(for: text.range(of: "◧")) == "进行中")
+    #expect(rig.editor.accessibilityString(for: text.range(of: "写")) == "写")
+    #expect(
+      rig.editor.string == body && rig.editor.accessibilityNumberOfCharacters() == text.length)
+  }
+
   /// ⌘T：光标所在行、选区碰到的每一行；一步撤销；选区跟着挪
   @Test func toggleTaskCommand() throws {
     let rig = try Rig("周报\n- 报销单\n\n普通", steps: true)

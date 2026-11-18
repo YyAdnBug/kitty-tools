@@ -469,4 +469,45 @@ struct LauncherBatch5Tests {
     model.query = "cb 会议"
     #expect(model.results.map(\.kind) == [.clip])
   }
+
+  /// 第五轮体检 U9：⌘1 对的是第一条看得见的行（露出一半以上才算），按住 ⌘ 的数字和 ⌘N 执行的行都从它起编
+  @Test func shortcutsFollowTheFirstVisibleRow() throws {
+    let apps = (1...20).map { app("App\($0)") }
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: apps)
+    model.query = "App"
+    try #require(model.results.count >= 12 && model.groups.isEmpty)
+    let row: CGFloat = LauncherPanelView.rowHeight
+    let inset = LauncherPanelView.inset
+    #expect(LauncherPanelView.firstVisibleRow(top: 0, in: model) == 0)
+    #expect(LauncherPanelView.firstVisibleRow(top: -30, in: model) == 0)  // 顶上回弹
+    // 第 3 行（下标 2）露出一半多一点 / 少一点
+    #expect(LauncherPanelView.firstVisibleRow(top: inset + row * 2.4, in: model) == 2)
+    #expect(LauncherPanelView.firstVisibleRow(top: inset + row * 2.6, in: model) == 3)
+    model.listTop = inset + row * 5
+    #expect(model.shortcutBase == 5)
+    // 滚过了头（结果变少了，位置还没跟上）：不越界
+    model.listTop = 100_000
+    #expect(model.shortcutBase == 0)
+  }
+
+  /// 第五轮体检 U5①：「撤销」把文件从废纸篓挪回原处；原处又有了同名的就不挪、不覆盖
+  @Test func putBackFromTrash() throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    let trash = root.appending(path: "Trash")
+    try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let original = root.appending(path: "报告.txt")
+    let trashed = trash.appending(path: "报告.txt")
+    try Data("原来的".utf8).write(to: trashed)
+    var done = 0
+    LauncherModel.putBack(trashed, to: original, island: nil) { done += 1 }.run()
+    #expect(done == 1 && (try? String(contentsOf: original, encoding: .utf8)) == "原来的")
+    #expect(!FileManager.default.fileExists(atPath: trashed.path))
+    // 原处又有了一个同名的：废纸篓里那份不动，原处的不被覆盖
+    try FileManager.default.moveItem(at: original, to: trashed)
+    try Data("新的".utf8).write(to: original)
+    LauncherModel.putBack(trashed, to: original, island: nil) { done += 1 }.run()
+    #expect(done == 1 && (try? String(contentsOf: original, encoding: .utf8)) == "新的")
+    #expect(FileManager.default.fileExists(atPath: trashed.path))
+  }
 }

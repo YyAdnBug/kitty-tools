@@ -98,14 +98,15 @@ struct ShotHistoryView: View {
         Button("全选") { model.pickAll() }.keyboardShortcut("a")
         Button("拷贝") { model.copySelection() }
           .keyboardShortcut("c").disabled(!model.canCopy)
+        // 钉图是单键 T（同截图时的钉图；第五轮体检 U4③：⌘P 是系统留给打印的）
+        Button("钉到屏幕") { if let item { model.actions.pin(item) } }
+          .keyboardShortcut("t", modifiers: []).disabled(!isImage)
       }
       .disabled(searching)
       Button("改标注") { if let item { edit(item) } }
         .keyboardShortcut(.return, modifiers: []).disabled(item == nil)
       Button(ScreenshotOutput.saveTitle) { model.saveSelection() }
         .keyboardShortcut("s").disabled(!model.canSave)
-      Button("钉到屏幕") { if let item { model.actions.pin(item) } }
-        .keyboardShortcut("p").disabled(!isImage)
       Button("识字并拷贝") { if let item { model.actions.recognize(item) } }
         .keyboardShortcut("o").disabled(!isImage)
       Button("在访达中显示") { model.revealSelection() }
@@ -297,7 +298,7 @@ struct ShotHistoryView: View {
         row(String(localized: "另存为…"), "square.and.arrow.down.on.square", key: "⇧⌘S") {
           model.actions.saveAs(item)
         }
-        row(String(localized: "钉到屏幕"), "pin", key: "⌘P") { model.actions.pin(item) }
+        row(String(localized: "钉到屏幕"), "pin", key: "T") { model.actions.pin(item) }
         row(String(localized: "识字并拷贝"), "text.viewfinder", key: "⌘O") {
           model.actions.recognize(item)
         }

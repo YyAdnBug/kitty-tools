@@ -91,6 +91,8 @@ import SwiftUI
     let current = selection.flatMap { id in rows.firstIndex { $0.id == id } }
     let next = current.map { min(max($0 + step, 0), rows.count - 1) } ?? 0
     selection = rows[next].id
+    // 焦点一直在搜索框：说出选中的那一项和它的快捷键（A1）
+    Island.announceSettled(rows[next].title, rows[next].keys)
   }
 
   /// 搜索框的按键（CommandTextField）：↑↓ 换选中、↩ 执行、Esc 先清空搜索（清空了再按交给面板收起）

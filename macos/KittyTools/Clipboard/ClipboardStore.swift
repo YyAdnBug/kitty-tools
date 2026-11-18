@@ -248,13 +248,14 @@ import Observation
       assign(Set(members), to: group.id)
     case .unretained(let before):
       let groupIDs = Set(groups.map(\.id))
-      for old in before {
-        update([old.id]) { item in
-          item.favorite = old.favorite
-          item.isSnippet = old.isSnippet
-          // 期间收藏夹被删掉（没撤销）就留在默认收藏
-          item.groupID = old.groupID.flatMap { groupIDs.contains($0) ? $0 : nil }
-        }
+      // 一个事务改回去（第五轮体检 P4：全选 500 条取消收藏再 ⌘Z，原来是 500 次落盘）
+      let old = Dictionary(before.map { ($0.id, $0) }) { first, _ in first }
+      update(Set(old.keys)) { item in
+        guard let was = old[item.id] else { return }
+        item.favorite = was.favorite
+        item.isSnippet = was.isSnippet
+        // 期间收藏夹被删掉（没撤销）就留在默认收藏
+        item.groupID = was.groupID.flatMap { groupIDs.contains($0) ? $0 : nil }
       }
     }
     return last

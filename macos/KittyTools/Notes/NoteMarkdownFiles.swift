@@ -909,6 +909,25 @@ nonisolated enum NoteMarkdownFiles {
       NoteImages.Image(id: stored.image.id, ext: stored.image.ext, width: width))
   }
 
+  /// 「导入…」选中的那些（文件夹读第一层的 .md / .markdown，文件要是 .md / .markdown / .txt）按文件名排好；
+  /// 看是不是文件夹、列文件夹都在主线程外（第五轮体检 P2）
+  @concurrent static func sources(in urls: [URL]) async -> [Source] {
+    var sources: [Source] = []
+    for url in urls {
+      var isDirectory: ObjCBool = false
+      FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+      if isDirectory.boolValue {
+        sources += markdownFiles(in: url).map { Source(url: $0, root: url) }
+      } else if ["md", "markdown", "txt"].contains(url.pathExtension.lowercased()) {
+        sources.append(Source(url: url, root: url.deletingLastPathComponent()))
+      }
+    }
+    return sources.sorted {
+      $0.url.lastPathComponent.localizedStandardCompare($1.url.lastPathComponent)
+        == .orderedAscending
+    }
+  }
+
   /// 目录里第一层的 .md / .markdown（跳过隐藏文件、不进子文件夹）；选文件夹时用
   static func markdownFiles(in folder: URL) -> [URL] {
     let names =

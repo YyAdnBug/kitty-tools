@@ -307,6 +307,7 @@ private struct CommandRow: View {
   var refresh: () -> Void = {}
   /// 录快捷键时的提示（缺修饰键、重复）
   @State private var message: String?
+  @Environment(Island.self) private var island: Island?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
@@ -398,12 +399,30 @@ private struct CommandRow: View {
           // 自带的在 App 包里，不在原地改（复制一份再改）
           Button("编辑脚本") { ScriptLibrary.edit(script.path) }
           Divider()
-          Button("移到废纸篓", role: .destructive) {
-            NSWorkspace.shared.recycle([URL(filePath: script.path)]) { _, _ in
-              Task { @MainActor in refresh() }
-            }
-          }
+          Button("移到废纸篓", role: .destructive) { recycle(script) }
         }
+      }
+    }
+  }
+
+  /// 移到废纸篓：岛上说一声、带「撤销」挪回原处（第五轮体检 U5①，同启动器 ⌘K「移到废纸篓」）
+  private func recycle(_ script: ScriptCommand) {
+    let original = URL(filePath: script.path)
+    Task {
+      do {
+        // 只移一样：按原网址查不到（网址的写法差一点）就取唯一那一项
+        let moved = try await NSWorkspace.shared.recycle([original])
+        let trashed = moved[original] ?? moved.values.first
+        refresh()
+        island?.show(
+          "已移到废纸篓「\(script.title)」", symbol: "trash.circle.fill",
+          actions: trashed.map {
+            [LauncherModel.putBack($0, to: original, island: island, done: refresh)]
+          }
+            ?? [])
+      } catch {
+        refresh()
+        island?.show("没能移到废纸篓", detail: "\(error.localizedDescription)", tone: .error)
       }
     }
   }

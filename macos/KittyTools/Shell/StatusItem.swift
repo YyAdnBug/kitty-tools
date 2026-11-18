@@ -229,8 +229,45 @@ final class StatusItem: NSObject, NSMenuDelegate {
   }
 
   func menuNeedsUpdate(_ menu: NSMenu) {
+    // 子菜单也挂着这个代理（下面换高亮的图），它们是跟着整个菜单一起建的，不在这里重建
+    guard menu === self.menu else { return }
     menu.removeAllItems()
+    Self.menuImages = [:]
     buildMenu(menu)
+    func adopt(_ menu: NSMenu) {
+      for case let submenu? in menu.items.map(\.submenu) {
+        submenu.delegate = self
+        adopt(submenu)
+      }
+    }
+    adopt(menu)
+  }
+
+  /// 高亮的那一行图标换成白色模板图、离开的换回家族色（第五轮体检 A4④）
+  func menu(_ menu: NSMenu, willHighlight item: NSMenuItem?) {
+    // 这一层里别的都换回去（不靠 highlightedItem 在这一刻是不是旧的那项）
+    for other in menu.items where other !== item { Self.highlight(other, false) }
+    if let item { Self.highlight(item, true) }
+  }
+
+  /// 收起时这一层全换回彩色（子菜单收起时不一定先收到 willHighlight(nil)）
+  func menuDidClose(_ menu: NSMenu) {
+    for item in menu.items { Self.highlight(item, false) }
+  }
+
+  /// 菜单栏菜单里家族色的图标在高亮时换成模板图（第五轮体检 A4④）：系统的高亮是强调色的底、字反白，家族色的符号在上面
+  /// 几乎看不见；模板图跟着字一起反白。NSMenuItem 没有「高亮时的图」，由菜单的代理在 willHighlight 时换。
+  /// 记的是 addAction 放上去的两张图（彩色、模板），按菜单项认；每次重建菜单时清空。只换之后没被换掉的那张
+  /// （状态屏的状态行换成了表情，不动）
+  static var menuImages: [ObjectIdentifier: (colored: NSImage?, plain: NSImage)] = [:]
+
+  static func highlight(_ item: NSMenuItem, _ highlighted: Bool) {
+    guard let pair = menuImages[ObjectIdentifier(item)] else { return }
+    if highlighted, item.image === pair.colored {
+      item.image = pair.plain
+    } else if !highlighted, item.image === pair.plain {
+      item.image = pair.colored
+    }
   }
 
   /// 图标在屏幕上的位置（藏着时 nil）
@@ -496,6 +533,11 @@ extension NSMenu {
     item.representedObject = run
     item.image = NSImage.symbol(symbol)?
       .withSymbolConfiguration(.init(hierarchicalColor: color))
+    // 高亮时换上的模板图（StatusItem.highlight）。具名的图是共用的一份：拷一份再改成模板
+    if let plain = NSImage.symbol(symbol)?.copy() as? NSImage {
+      plain.isTemplate = true
+      StatusItem.menuImages[ObjectIdentifier(item)] = (item.image, plain)
+    }
     item.keyEquivalentModifierMask = modifiers
     addItem(item)
     return item

@@ -6887,6 +6887,16 @@
         }
       }
     },
+    "不是任务了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not a task"
+          }
+        }
+      }
+    },
     "不是压缩包，或者是不支持的格式" : {
       "localizations" : {
         "en" : {
@@ -7713,12 +7723,32 @@
         }
       }
     },
+    "以后不自动翻译，点开再翻" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Won’t translate automatically; expand to translate"
+          }
+        }
+      }
+    },
     "以后列在「新建文件」里" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Also list it under “New File”"
+          }
+        }
+      }
+    },
+    "以后自动翻译" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Translates automatically from now on"
           }
         }
       }
@@ -12035,6 +12065,16 @@
         }
       }
     },
+    "原处已经有同名的了，没有覆盖" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An item with the same name is already there, so nothing was replaced"
+          }
+        }
+      }
+    },
     "原处已经有同名的，或者挪过去的又被挪走、改了名" : {
       "localizations" : {
         "en" : {
@@ -13883,6 +13923,26 @@
         }
       }
     },
+    "启用的服务只能查单词" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your services only look up words"
+          }
+        }
+      }
+    },
+    "启用的服务只能查单词，翻译句子要再启用一个翻译服务" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your services only look up words. To translate sentences, turn on another translation service."
+          }
+        }
+      }
+    },
     "启用脚本命令" : {
       "localizations" : {
         "en" : {
@@ -14809,6 +14869,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copy text in another app and the panel pops up with a translation (links, paths, and numbers are skipped)"
+          }
+        }
+      }
+    },
+    "在别的条目上按 ⌘K，选「移到收藏夹」放进来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Press ⌘K on another item and choose “Move to Collection” to add it here."
           }
         }
       }
@@ -16062,6 +16132,16 @@
         }
       }
     },
+    "子菜单" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Submenu"
+          }
+        }
+      }
+    },
     "子菜单里按这个顺序列（拖动调整），后面接最近用「选择文件夹…」选过的 3 个；这次用不上的会变灰。" : {
       "localizations" : {
         "en" : {
@@ -17083,6 +17163,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Expand"
+          }
+        }
+      }
+    },
+    "展开%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expand %@"
           }
         }
       }
@@ -25214,6 +25304,16 @@
         }
       }
     },
+    "收起%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collapse %@"
+          }
+        }
+      }
+    },
     "收起工具 / 退出（画过要按两下）" : {
       "localizations" : {
         "en" : {
@@ -31619,6 +31719,16 @@
         }
       }
     },
+    "没能放回「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t put back “%@”"
+          }
+        }
+      }
+    },
     "没能放回压缩包" : {
       "localizations" : {
         "en" : {
@@ -36351,6 +36461,16 @@
         }
       }
     },
+    "翻译句子要再启用一个翻译服务" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To translate sentences, turn on another translation service."
+          }
+        }
+      }
+    },
     "翻译失败" : {
       "localizations" : {
         "en" : {
@@ -40009,6 +40129,16 @@
         }
       }
     },
+    "这个收藏夹还是空的" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This collection is empty"
+          }
+        }
+      }
+    },
     "这个文件夹不在了" : {
       "localizations" : {
         "en" : {
@@ -43113,16 +43243,6 @@
         }
       }
     },
-    "可以在废纸篓里把它拖回去" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You can drag it back out of the Trash"
-          }
-        }
-      }
-    },
     "在终端中打开" : {
       "localizations" : {
         "en" : {
@@ -43199,16 +43319,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No permission to view what’s in “%@”"
-          }
-        }
-      }
-    },
-    "没能放回" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn’t put it back"
           }
         }
       }
