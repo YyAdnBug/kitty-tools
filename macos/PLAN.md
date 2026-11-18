@@ -2041,6 +2041,37 @@ Alfred 的 Related Apps、BetterTouchTool 按 App 停用，调研和测开销的
 - 验证：单测 `AppShortcutsTests`（还原快捷键、标题、状态机、分组、排版、时长；`TEST_RUNNER_KITTY_LIVE_MENU=1` 实读访达）；
   截图自检 `SnapshotProbeTests/appShortcuts()`（图以 app-shortcuts- 开头）。真机手感：HANDTEST「App 快捷键手测」，**都还没走**。
 
+### 搁着的计划（第四轮体检新功能，2026-11-17）
+
+- 来由：第四轮体检（2026-10-30）的 24 项新功能 X1–X24 加 T3、T5，拍板页「全部按推荐」；2026-11-17 用户「先按照你推荐的全部开始执行直至全部完成」。
+  推荐「做」的 X1–X20、T3、T5 在 `claude/backlog-0de062`（工作树 `.claude/worktrees/backlog-0de062`，从 `i18n-wip` 的 `161c2925`）按族分 5 批做完、
+  各批评审后一个修改提交（86cc9cb8；99f966e8 / 789679d4；8ce9274d / 09c70e9d；87736032 / f21f4d4f；2626a860 / fa0808b8）；
+  选了「以后」的 X21–X24 没做（§12「以后可能做的」）。拍板页的源文件在主检出 `macos/build/research/checkup-4-2026-10-30/build-decisions.py`。
+- 翻译（X1 X2）：`Lang` 末尾加 19 种（共 30 种），各家语言码对照写在 `Language.swift` / 各 Provider（百度用自己的三字母码；挪威语在百度、有道、Google、火山、
+  腾讯是 no，微软、DeepL 是 nb——百度、腾讯、DeepL 的码没在官方文档逐个核对，按记忆写的）；泰文不进查词。长文分段 `LongText`：只切大模型（智谱 1024、
+  AI 服务按 max_tokens），估出来超过上限六成时按段 / 句 / 字切，依次翻、同一张卡里接着显示；传统接口不切（拍板写「约 2000 字」，实际按 token 预算）。
+- 剪贴板（X3 X13 X20 T5）：带图的 RTFD 优先存（扁平包里除了正文还有别的文件才算，2 MB 上限，ponytail：不算进图片占用）；暂停时菜单栏图标挂灰色暂停角标；
+  片段占位符的日期偏移 / 自定格式（只认像日期格式的，`Snippet.isDateFormat`）和填空 `{input:名字}`（拖出去不问、原样留着）；数据库「重新开始」后把
+  `damaged-…/backups` 里的设置自动备份拷回来。规矩在 mac-clipboard。
+- 便签（X4 X5 X6 X16 X19）：粘网页 / 文稿转 Markdown（`NoteRichPaste`，纯函数；先去掉会去外面取东西的标签；⌥⇧⌘V 粘纯文本）；快速记一条贴图
+  （草稿里的图算有人引用）；全部便签窗口多选和整批操作（`NoteStore.updateAll` / `erase(all:)` 一个事务）、导入后整批撤回；新全局动作
+  「屏幕边缘的便签」（`HotKeyAction.noteDeck`，枚举末尾、不设默认键）和扇出后的 ↑↓ ↩ Esc；按最近修改排（只在「全部」）。
+- 截图录制（X7 X8 X9 X17 X18）：键名、默认值照 Windows 先做的那版。缩略图「改标注」走长图标注那扇窗口，等历史记好这一条接着改；带指针
+  （冻结帧时画进去，识字 / 截图翻译不带）；隐藏桌面图标（截图排除访达桌面图标层那扇窗口；录屏排除整个访达、每秒补列它别的窗口——一闪而过的菜单
+  最多晚 1 秒，设置页写明）；标注裁剪（键 X，`ShotKey.crop`；出图只渲框里那一块；回写历史时一定重写原图、写完盘才换标注和尺寸、清掉钉回原位的框，
+  `ShotHistory.update(cropped:)`）；录屏选麦克风（开流那一刻核对，不在了跟随系统、岛上说；录音不动——要换采集方式，没做）。
+- 启动器、外壳、程序坞（X10 X11 X12 X14 X15 T3）：快捷指令走系统的 `/usr/bin/shortcuts`（进程外列 / 跑，不带输入、不收输出，ponytail）；更新的
+  跳过版本（`Prefs.updateSkippedVersion`，本机）和后台下载、退出时安装（`Prefs.updateInstallOnQuit`，默认开）：**退出时装和点「更新」走同一个
+  `Updater.replace`**，校验一条不少（sha256、bundle id、版本号、架构、团队签名），装不成照常退出；解包、验签的子进程 2 分钟上限。
+  评审后加固（包在缓存目录里一放几天，本机别的进程写得进去）：解出来是符号链接的拒绝；换上之后对装好的那一份再核一遍、
+  不过就换回原来的（原来的暂放成同文件夹里的隐藏项 `.<名字>.before-update`，核过就删、下次启动也清）；退出时最多等 30 秒；
+  磁盘上已经是一样新或更新的版本就不装；同一版按「版本号 + 下载地址」认。主界面打字转启动器；
+  关于页「反馈问题」（只预填版本号、芯片、系统版本）；程序坞预览卡片的最小化（AXMinimized）和中键关；别名查重算上应用别名。
+- 和 Windows 不一样的：Windows 先做了 X8 X9 X17 X18（键名照抄）；其余是 mac 先做，Windows 还没有。快捷指令、程序坞预览的中键 / 最小化、
+  AX 相关的几项 Windows 要另找做法。
+- 验证：各批全量单测、swift-format、Dev 偏好 md5 不变；新单测 `LongTextTests`、`NoteBacklogTests`、`ShotBacklogTests`、`ShellBacklogTests`、
+  `ShotHistoryTests.updateCroppedRewritesTheOriginal` 等；屏外截图在 `macos/build/shots-b2` … `shots-b5`。真机：HANDTEST「搁着的计划手测」1–26，**都还没走**。
+
 ## 11½. Whisker 设计语言改造（2026-09-25 起）
 
 已归档到 `docs/archive/PLAN-12.md` §11½（A–E 各阶段的内容、状态和 2026-09-26 的交接）。现状：A 基础与招牌时刻、B 界面重做、C 品牌、E 截图重设计都已完成（待手测）；D 深度只剩「macOS 26 玻璃 + `.icon`」——玻璃分支第 11 批已写好，等 26 测试机按 `HANDTEST.md`「macOS 26 手测」实测，`.icon` 也等 26。规范正文在 `.claude/skills/mac-whisker/rule.md`（核心）和各 `mac-whisker/<界面>.md`。
@@ -2050,6 +2081,11 @@ Alfred 的 Related Apps、BetterTouchTool 按 App 停用，调研和测开销的
 > 2026-10-03 瘦身：原来的完成记录和整段的「下一步」「暂不发版」「发布」「接手须知」原样挪到 `docs/archive/PLAN-12.md`；**手测清单**（原「待用户手测」那一大段）原样挪到 `HANDTEST.md`，条目和编号不变——代码注释里的「PLAN §12 第 N 条」「§12「录屏 / 录音手测」N」「§12「macOS 26 手测」第 1 条」都去那里按小节名找。新的手测条目加在 `HANDTEST.md` 里。2026-11-01（第四轮体检 W1）起这些旧条目连同「发版冒烟清单」又原样挪进了 `docs/archive/HANDTEST-2026-10.md`（编号不变，上面这些引用和下文的「`HANDTEST.md`「X 手测」N」都去那里找）；`HANDTEST.md` 现在是「真机回归清单」+ 正在验收的那一轮。
 
 > 2026-10-28（第三轮体检第 7 批）：2026-10-22 及更早的进度记录、做完的「已知的小毛病」、旧的「现状」「下一步」原样挪到 `docs/archive/PLAN-batches-2026-10.md` §12；AGENTS.md「项目概述」原来的长段原样挪到本节末尾「各族进度摘要（原 AGENTS 项目概述）」。
+
+**2026-11-17 – 18：搁着的计划**（§10「搁着的计划（第四轮体检新功能）」）：第四轮体检选了「做」的 X1–X20 和 T3、T5，用户「先按照你推荐的全部
+开始执行直至全部完成」。分支 `claude/backlog-0de062`（工作树 `.claude/worktrees/backlog-0de062`，从 `i18n-wip` 的 `161c2925`）按族五批、
+各批评审后一个修改提交，第六批写文档、更新日志（并进 0.10.0 那一条，中英）；`MARKETING_VERSION` 没动。没并进 `i18n-wip` / macos、没 push、
+没打 tag。测试包 `Kitty Tools_0.10.0_搁着的计划_arm64.dmg`。待手测 HANDTEST「搁着的计划手测」1–26。X21–X24 照拍板留到以后。
 
 **2026-11-17：平滑滚动插件**（§10「平滑滚动」，issue #14）：先在 `smooth-scroll-wip`（检出 `kitty-tools-macos-smoothscroll`，
 从 origin/macos `09e5eced`）做完第 1 批、跑过实机自检；同日用户「修改的功能都放到 0.10.0 里面去」「合并到 i18n-wip」，
