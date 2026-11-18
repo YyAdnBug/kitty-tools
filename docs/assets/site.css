@@ -1425,6 +1425,7 @@ a.card:hover {
 }
 .step-copy {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   align-content: start;
   position: relative;
@@ -1590,13 +1591,10 @@ a.card:hover {
   padding: 10px 12px;
   border-radius: 10px;
   background: var(--fill-control);
-  overflow-x: auto;
 }
 .cmd code {
   background: none;
   padding: 0;
-  white-space: nowrap;
-  overflow-wrap: normal;
   flex: 1;
 }
 .copy {
