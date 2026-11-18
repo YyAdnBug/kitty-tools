@@ -771,7 +771,7 @@ struct SnapshotProbeTests {
       try snapshot(
         TranslateTab(services: services, history: history, speaker: speaker)
           .environment(navigation),
-        size: NSSize(width: 590, height: 1720), dark: dark,
+        size: NSSize(width: 590, height: 1780), dark: dark,
         to: "\(out)/settings-translate-list\(suffix).png")
       try snapshot(
         TranslateServiceDetail(store: services, id: TranslateService.Kind.deepl.rawValue),

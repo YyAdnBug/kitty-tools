@@ -150,6 +150,8 @@ enum Prefs {
   static let translateWordRecording = "translateWordRecording"
   /// 英文单词的发音：us（美音，默认）/ uk（英音）
   static let translateWordAccent = "translateWordAccent"
+  /// 朗读速度（倍数，issue #35）：Speaker.speeds 的四档之一，默认 1（正常）；所有喇叭都按它，真人录音也跟着变
+  static let translateSpeechSpeed = "translateSpeechSpeed"
 
   /// 截图 ⌘S 快速保存的目录（设置 › 截图「快速保存到」选的；「另存为」不改它，体检 A28）；没设 = 系统截屏的存储位置
   nonisolated static let screenshotSaveDirectory = "screenshotSaveDirectory"
@@ -671,6 +673,7 @@ enum Prefs {
       translateWordMode: true,
       translateWordRecording: true,
       translateWordAccent: "us",
+      translateSpeechSpeed: 1.0,
       translateFontScale: 1.0,
       translateCollapsedServices: "",
       ocrJoinLines: false,

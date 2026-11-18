@@ -11983,6 +11983,16 @@
         }
       }
     },
+    "原文、译文和单词的小喇叭都按它读，练听力可以放慢" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Applies to every speaker button; slow it down for listening practice"
+          }
+        }
+      }
+    },
     "原文为空或太长" : {
       "localizations" : {
         "en" : {
@@ -28000,6 +28010,16 @@
         }
       }
     },
+    "朗读速度" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speaking rate"
+          }
+        }
+      }
+    },
     "未命名" : {
       "localizations" : {
         "en" : {
@@ -29288,6 +29308,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "正常" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Normal"
           }
         }
       }
