@@ -197,6 +197,13 @@ TEST_RUNNER_KITTY_LIVE_SMOOTH_SCROLL=1 xcodebuild -project macos/KittyTools.xcod
 TEST_RUNNER_KITTY_ISLAND_FRAMES=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/IslandFrameProbeTests/measure()'
 
+# 访达右键新建文件后进入改名的是不是新文件的实机自检（按需，约 20 秒，要测试宿主有「辅助功能」授权；issue #34；**跑之前先问用户**、
+# 跑的时候手离开键鼠；开始前就开着的访达窗口收尾时不关）：访达到前台，在临时文件夹里
+# 分栏（两种位置）/ 列表 / 图标 / 画廊各新建一个，看进入改名的是新文件、别的没被改名，Esc 退出、关掉新开的窗口。改了
+# NewFile.revealForRename / finderSelects、每个 macOS 大版本跑一遍（读的是访达的辅助功能结构）
+TEST_RUNNER_KITTY_LIVE_FINDER_RENAME=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:'KittyToolsTests/NewFileTests/liveRenameLandsOnNewFile()'
+
 # 框选遮罩「鼠标动一下」的探针（按需，屏外，几秒；grep「selection-probe」：放大镜采样、待选 / 框好 / 拖框时
 # 设一次 mouse 各要多久。量的只是主线程的那一下——跟不跟手得真机看，鼠标移动事件是合并的，靠
 # SelectionView.followPointer 那条显示链每帧补读光标位置）

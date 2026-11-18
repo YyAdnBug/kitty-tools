@@ -7,7 +7,8 @@
 // - 「自定义后缀…」：App 弹框问后缀（扩展是后台进程，弹不出窗口），建一个空的「JSON 文件.json」（英文界面「JSON File.json」）；
 //   框里「以后列在「新建文件」里」默认勾着：模板文件夹里也放一个同名的空文件，已经有这个后缀的模板（含自带的）就不放。
 // 拷一份到右键的那个文件夹，名字同模板，重名加「 2」；新文件的日期是现在（拷贝会带着模板的旧日期）；建不成响一声、记错误码。
-// 建好后同访达的「新建文件夹」、Windows 的新建：在访达里选中它、进入改名（revealForRename，按回车要辅助功能授权）。
+// 建好后同访达的「新建文件夹」、Windows 的新建：在访达里选中它、进入改名（revealForRename，按回车要辅助功能授权；
+// 按之前用辅助功能核对访达里选中的正好是新文件，对不上只选中不改名——issue #34：回车落到父文件夹上，⌘⌫ 删了整个文件夹）。
 // 名字、后缀的收拾是纯函数（NewFileTests）。
 // 安全（2026-11-08 评审）：凭证在偏好里，本机别的程序读得到、也能投网址过来，但它没有本 App 的文件夹授权（桌面 / 文稿 / 下载，
 // 用户给过的话还有完全磁盘访问）。所以：模板只认真放在模板文件夹里的——数据目录、模板文件夹、模板本身都不能是替身（符号链接），
@@ -201,9 +202,10 @@ nonisolated enum NewFile {
   /// 建好后同访达的「新建文件夹」：在访达里选中它、进入改名（按一下回车）。建在桌面上的不这么做：选中桌面上的东西会
   /// 另开一个「桌面」窗口（同几家成熟产品：桌面上新建不弹窗），只建好放在那里。ponytail: 在访达窗口里打开着「桌面」文件夹
   /// 新建时也不进入改名（分不出右键的是桌面还是那个窗口，要控制访达的自动化授权）按回车要辅助功能授权，没有就只选中。
-  /// 照 RClick 的做法等访达到了前台再按（它的更新记录：固定延时在慢的文件夹里会漏掉）：每 50 ms 看一次、最多 2 秒，
-  /// 到了再等 0.1 秒。ponytail: 按回车时看不到访达里选中的是不是新文件（要控制访达的自动化授权），选中还没落下时
-  /// 会让原来选中的那个进入改名——只是进入改名、不会改掉名字，按 Esc 就退出
+  /// **回车只在访达里有焦点的那个视图选中的正好是新文件时才按**（issue #34）：选中是访达自己过一会儿才落下的（27.0.1 实测，
+  /// 访达已在前台时 0.1–0.35 秒），原来到了前台再等 0.1 秒就按，回车落在原来选中的那个上——分栏视图里焦点还在左边那一栏，
+  /// 进入改名的是父文件夹，用户接着按 ⌘⌫ 删的也是它。现在每 50 ms 问一次（finderSelects），最多 4 秒；对不上就只选中、不进改名。
+  /// 等多久不影响按到哪（按之前核对过）：实机自检六次里有两次 2 秒内没对上（查过的那次 3 秒后对上了），所以给 4 秒
   @MainActor static func revealForRename(_ url: URL) {
     let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
     guard
@@ -212,17 +214,75 @@ nonisolated enum NewFile {
     else { return }
     NSWorkspace.shared.activateFileViewerSelecting([url])
     guard Permissions.isAccessibilityTrusted else { return }
-    let finderIsFront = {
-      NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.finder"
+    let frontFinder = {
+      NSWorkspace.shared.frontmostApplication.flatMap {
+        $0.bundleIdentifier == "com.apple.finder" ? $0.processIdentifier : nil
+      }
     }
     Task {
-      for _ in 0..<40 where !finderIsFront() {
+      let clock = ContinuousClock()
+      let deadline = clock.now + .seconds(4)
+      while clock.now < deadline {
+        // 问完再看一眼访达还在前台、还是那一个（问的那一会儿用户可能切走了）
+        if let pid = frontFinder(), await finderSelects(only: url, pid: pid), frontFinder() == pid {
+          Paster.press(kVK_Return)
+          return
+        }
         try? await Task.sleep(for: .milliseconds(50))
       }
-      guard finderIsFront() else { return }
-      try? await Task.sleep(for: .milliseconds(100))
-      Paster.press(kVK_Return)
+      Log.finder.info("新建文件：访达里选中的不是新文件，只选中、没进入改名")
     }
+  }
+
+  /// 访达此刻有焦点的那个视图里，选中的只有 url 这一个。图标、列表、分栏（有焦点的那一栏）、画廊四种视图实测（27.0.1）
+  /// 结构一样：焦点元素是列表（AXList / AXOutline），选中的项（AXSelectedChildren / AXSelectedRows）往下一两层有个带 AXURL
+  /// 的元素（文件引用网址，解成路径）。侧栏、搜索框、桌面拿到焦点时对不上。辅助功能跨进程读，放在主线程外（mac-native §3）
+  @concurrent static func finderSelects(only url: URL, pid: pid_t) async -> Bool {
+    let app = AXUIElementCreateApplication(pid)
+    guard let focused = axElements(app, kAXFocusedUIElementAttribute)?.first,
+      let items = axElements(focused, kAXSelectedRowsAttribute)
+        ?? axElements(focused, kAXSelectedChildrenAttribute),
+      // 多选的不用一个个读（选着几千个时每一轮都要读几千次）
+      items.count == 1
+    else { return false }
+    return selectsOnly(
+      url.resolvingSymlinksInPath(), items.map { fileURL(in: $0)?.resolvingSymlinksInPath() })
+  }
+
+  /// 选中的正好是这一个：多选、读不出是哪个文件的、别的文件都不算（NewFileTests 锁住）
+  static func selectsOnly(_ target: URL, _ selected: [URL?]) -> Bool {
+    guard selected.count == 1, let only = selected[0] else { return false }
+    return FileMoves.plainPath(only) == FileMoves.plainPath(target)
+  }
+
+  /// 选中的一项是哪个文件：它自己或往下两层里第一个带 AXURL 的（列表视图是 行 › 格 › 文字框）
+  private static func fileURL(in item: AXUIElement) -> URL? {
+    var level = [item]
+    for depth in 0...2 {
+      for element in level {
+        AXUIElementSetMessagingTimeout(element, 0.2)
+        var value: CFTypeRef?
+        if AXUIElementCopyAttributeValue(element, kAXURLAttribute as CFString, &value) == .success,
+          let value, CFGetTypeID(value) == CFURLGetTypeID()
+        {
+          // 上面认过类型。访达给的是文件引用网址（file:///.file/id=…），解成路径
+          return (value as! NSURL).filePathURL
+        }
+      }
+      if depth < 2 { level = level.flatMap { axElements($0, kAXChildrenAttribute) ?? [] } }
+    }
+    return nil
+  }
+
+  /// 读一个是元素（或元素数组）的属性：单个的包成一个；每次先设超时（只管设了的那一个元素，取回来的子元素默认等 6 秒）
+  private static func axElements(_ element: AXUIElement, _ attribute: String) -> [AXUIElement]? {
+    AXUIElementSetMessagingTimeout(element, 0.2)
+    var value: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
+      let value
+    else { return nil }
+    if CFGetTypeID(value) == AXUIElementGetTypeID() { return [value as! AXUIElement] }
+    return value as? [AXUIElement]
   }
 
   // MARK: 从剪贴板新建
