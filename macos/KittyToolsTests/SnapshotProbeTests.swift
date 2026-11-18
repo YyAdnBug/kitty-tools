@@ -5258,7 +5258,7 @@ struct SnapshotProbeTests {
       dark: false, to: "\(out)/app-shortcuts-settings-off.png")
   }
 
-  /// 设置 › 访达右键整页（「压缩时跳过」那一行的小字：填了一串、有一条写错了），推进去的「压缩时跳过」（空着、很多项带写错的，
+  /// 设置 › 访达右键整页（「压缩时跳过」那一行的小字：填了一串、有一条写错了；另一张「⌘X 剪切、⌘V 移动」开着、没授权），推进去的「压缩时跳过」（空着、很多项带写错的，
   /// 浅 / 深），「+」弹出的小框（空着、能加、带「/」、已经有了；屏外画不出 popover，单画里面那块）。几秒，图以 finder- 开头：
   /// -only-testing:'KittyToolsTests/SnapshotProbeTests/finderMenuSettings()'。偏好读临时偏好域
   @Test(.enabled(if: directory != nil)) func finderMenuSettings() throws {
@@ -5283,6 +5283,16 @@ struct SnapshotProbeTests {
       FinderMenuTab(extensionEnabled: true, finderAutomation: .denied, desktopInICloud: true)
         .defaultAppStorage(prefs),
       size: NSSize(width: 640, height: 560), dark: false, to: "\(out)/finder-settings-icloud.png")
+    // 「在访达里用 ⌘X 剪切、⌘V 移动」开着、没有辅助功能授权（「整理文件」里一行橙字 +「打开系统设置」）
+    prefs.set(true, forKey: Prefs.finderMenuKeys)
+    try snapshot(
+      FinderMenuTab(
+        extensionEnabled: true, finderAutomation: .granted, desktopInICloud: false,
+        accessibilityTrusted: false
+      )
+      .defaultAppStorage(prefs),
+      size: NSSize(width: 640, height: 2400), dark: false, to: "\(out)/finder-settings-keys.png")
+    prefs.removeObject(forKey: Prefs.finderMenuKeys)
     func page() -> some View { NavigationStack { CompressSkipPage() }.defaultAppStorage(prefs) }
     prefs.removeObject(forKey: Prefs.finderCompressSkip)
     for dark in [false, true] {

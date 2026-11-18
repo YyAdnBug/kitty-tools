@@ -9,6 +9,8 @@
 // 「压缩和解压」里另有一行「压缩时跳过 ›」（2026-11-13 拍板 Z1，Prefs.finderCompressSkip）：小字写跳哪几个，推进 CompressSkipPage
 //   （2026-11-15 原来的一行文本框改成推进去的一页）。页头画在自己的 NavigationStack 里，推进时一起换掉。
 // 「拷贝」「整理文件」「压缩和解压」「隐藏、哈希、删除」——每一项一个开关（FinderMenuItem，2026-11-08 右键扩充拍板 A2；同几家成熟产品每项能单独关），页脚说做法。
+//   「整理文件」里另有「在访达里用 ⌘X 剪切、⌘V 移动」（Prefs.finderMenuKeys，默认关，FinderKeys，issue #33）：开着又没有辅助功能
+//   授权时下面一行橙字 + 打开辅助功能设置的按钮（同 设置 › 刘海岛「音量和亮度」）。
 // 「「移动到」「复制到」的常用文件夹」——Prefs.finderTransferFolders（~ 开头的写法，默认桌面、文稿、下载）：加、移除。
 // 「在 App 中打开」——访达右键里列哪几个 App（菜单项照访达自己的写法「在“终端”中打开」）（Prefs.finderOpenWithApps，默认只有终端）：加（正在运行的 / 从「应用程序」里选）、移除；
 //   列表的写法同 剪贴板 › 不记录这些 App（从偏好现读再改、写回）。功能关着时这一组变灰。
@@ -23,6 +25,8 @@ struct FinderMenuTab: View {
   /// 截图自检传固定的：控制访达的授权、桌面 / 文稿是不是同步在 iCloud 里
   var finderAutomation: Permissions.AutomationState?
   var desktopInICloud: Bool?
+  /// 截图自检传固定的：辅助功能给没给（「⌘X 剪切、⌘V 移动」开着时下面那行橙字）
+  var accessibilityTrusted: Bool?
   @State private var automation = Permissions.automation(Self.finderID)
   @State private var enabled = FIFinderSyncController.isExtensionEnabled
   @State private var folders = Self.storedFolders
@@ -33,6 +37,9 @@ struct FinderMenuTab: View {
   @AppStorage(Prefs.finderMenuGrouped) private var grouped = false
   @AppStorage(Prefs.finderCompressSkip) private var compressSkip = ""
   @AppStorage(Prefs.finderTrashAfterExtract) private var trashAfterExtract = false
+  @AppStorage(Prefs.finderMenuKeys) private var keys = false
+  /// 设置窗重新当 key 时 +1：从系统设置给完辅助功能回来，「没有授权」那一行跟着重查
+  @State private var accessChecks = 0
   /// 推进「压缩时跳过」用（截图自检单独画这一页时没有）
   @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
 
@@ -52,6 +59,7 @@ struct FinderMenuTab: View {
       form.onSettingsBecameKey {
         enabled = FIFinderSyncController.isExtensionEnabled
         automation = Permissions.automation(Self.finderID)
+        accessChecks += 1
       }
     }
     .navigationTitle(SettingsPage.finderMenu.title)
@@ -120,12 +128,28 @@ struct FinderMenuTab: View {
       Section {
         ItemToggle(.transfer)
         ItemToggle(.cut)
+        // 访达里的 ⌘X / ⌘V（FinderKeys，issue #33，默认关）
+        Toggle(isOn: $keys) {
+          Text("在访达里用 ⌘X 剪切、⌘V 移动")
+          Text("和右键「剪切」是同一个剪切；剪切之后按 ⌘V 是移动，没剪切时照常粘贴")
+        }
+        // 开关关着时不去查授权
+        if keys, !(accessibilityTrusted ?? Permissions.isAccessibilityTrusted) {
+          LabeledContent {
+            Button(Permissions.Kind.accessibility.settingsTitle) {
+              Permissions.Kind.accessibility.openSettings()
+            }
+          } label: {
+            Text("没有「辅助功能」授权，接不住这两个键").foregroundStyle(.orange)
+          }
+          .id(accessChecks)
+        }
         ItemToggle(.deskAlias)
       } header: {
         Text("整理文件")
       } footer: {
         SectionFootnote(
-          "不会覆盖：重名的自动加「 2」。搬得久时刘海岛显示进度、能停下，做完带「在访达中显示」。剪切之后又拷了别的东西，剪切就作废。"
+          "不会覆盖：重名的自动加「 2」。搬得久时刘海岛显示进度、能停下，做完带「在访达中显示」。剪切之后又拷了别的东西，剪切就作废。⌘X、⌘V 只管按给访达的：改名、搜索时照常剪切粘贴，别的 App 不受影响；⌘V 的移动是访达自己做的（同 ⌥⌘V），重名时访达会问，撤销按 ⌘Z。要「辅助功能」授权。"
         )
       }
       .gated(by: .finderMenu)

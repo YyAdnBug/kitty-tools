@@ -454,6 +454,9 @@ enum Prefs {
   /// 访达右键把我们的项都收进一个「Kitty Tools ▸」子菜单（默认关、平铺在第一层；设置 › 访达右键，2026-11-08 用户同意的建议）。
   /// 扩展读同一个键，键名和默认值在 KittyToolsFinder/FinderMenu 里抄了一份
   nonisolated static let finderMenuGrouped = "finderMenuGrouped"
+  /// 访达里用 ⌘X 剪切、⌘V 移动（FinderMenu/FinderKeys.swift，issue #33，2026-11-18）：没存过 = 关；要「辅助功能」授权。
+  /// 只有 App 读。跟着这台 Mac 的授权走：**不注册默认值**——不导出、不同步（同 islandKeyLevels）
+  static let finderMenuKeys = "finderMenuKeys"
   /// 访达右键压缩时另外跳过的名字（设置 › 访达右键「压缩时跳过」，2026-11-13 拍板 Z1）：逗号隔开，* ? 通配，只认名字不认路径，
   /// 默认空 = 和原来一样（Mac 杂文件照旧总跳过）。只有 App 读，扩展不读；注册了默认值，跟着导出、同步（Z4）
   nonisolated static let finderCompressSkip = "finderCompressSkip"

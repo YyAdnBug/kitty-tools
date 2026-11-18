@@ -6765,12 +6765,12 @@
         }
       }
     },
-    "不会覆盖：重名的自动加「 2」。搬得久时刘海岛显示进度、能停下，做完带「在访达中显示」。剪切之后又拷了别的东西，剪切就作废。" : {
+    "不会覆盖：重名的自动加「 2」。搬得久时刘海岛显示进度、能停下，做完带「在访达中显示」。剪切之后又拷了别的东西，剪切就作废。⌘X、⌘V 只管按给访达的：改名、搜索时照常剪切粘贴，别的 App 不受影响；⌘V 的移动是访达自己做的（同 ⌥⌘V），重名时访达会问，撤销按 ⌘Z。要「辅助功能」授权。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nothing is overwritten: duplicate names get “ 2” added. For long transfers, the Notch shows progress and lets you stop, then offers “Show in Finder” when done. A cut is canceled if you copy something else afterward."
+            "value" : "Nothing is overwritten: duplicate names get “ 2” added. For long transfers, the Notch shows progress and lets you stop, then offers “Show in Finder” when done. A cut is canceled if you copy something else afterward. ⌘X and ⌘V only apply to keys sent to Finder: they cut and paste text as usual while you rename or search, and other apps aren’t affected. The move on ⌘V is done by Finder itself (same as ⌥⌘V), so Finder asks about duplicate names and ⌘Z undoes it. Requires Accessibility permission."
           }
         }
       }
@@ -10893,6 +10893,16 @@
         }
       }
     },
+    "到别的文件夹按 ⌘V，或者空白处右键「粘贴」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Press ⌘V in another folder, or right-click empty space and choose “Paste”"
+          }
+        }
+      }
+    },
     "到别的文件夹空白处右键「粘贴」，或者在访达里按 ⌥⌘V" : {
       "localizations" : {
         "en" : {
@@ -12573,12 +12583,12 @@
         }
       }
     },
-    "只在你右键时动" : {
+    "只在你右键时动；打开了「⌘X 剪切、⌘V 移动」才看着按给访达的这两个键，别的键不看、不记" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Runs only when you right-click"
+            "value" : "Runs only when you right-click. With “Use ⌘X to cut and ⌘V to move” on, it also watches those two keys in Finder; other keys aren’t looked at or recorded"
           }
         }
       }
@@ -13917,6 +13927,16 @@
         }
       }
     },
+    "和右键「剪切」是同一个剪切；剪切之后按 ⌘V 是移动，没剪切时照常粘贴" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Same as “Cut” in the right-click menu. After cutting, ⌘V moves the items; otherwise ⌘V pastes as usual"
+          }
+        }
+      }
+    },
     "和启动器命令「%@」重复" : {
       "localizations" : {
         "en" : {
@@ -15087,6 +15107,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Search Finder for the typed text"
+          }
+        }
+      }
+    },
+    "在访达里用 ⌘X 剪切、⌘V 移动" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use ⌘X to cut and ⌘V to move in Finder"
           }
         }
       }
@@ -22058,6 +22088,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Opens “%@”"
+          }
+        }
+      }
+    },
+    "打开「⌘X 剪切、⌘V 移动」时接住访达里的这两个键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Catches ⌘X and ⌘V in Finder when “Use ⌘X to cut and ⌘V to move” is on"
           }
         }
       }
@@ -30029,6 +30069,16 @@
         }
       }
     },
+    "没有「辅助功能」授权，接不住这两个键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Accessibility permission, so these two keys can’t be caught"
+          }
+        }
+      }
+    },
     "没有「辅助功能」授权，接不住这几个键" : {
       "localizations" : {
         "en" : {
@@ -36095,6 +36145,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Can also show your next event and volume and brightness levels"
+          }
+        }
+      }
+    },
+    "能在访达里用 ⌘X 剪切、⌘V 移动" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cut with ⌘X and move with ⌘V in Finder"
           }
         }
       }
