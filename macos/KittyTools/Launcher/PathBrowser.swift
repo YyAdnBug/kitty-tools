@@ -200,23 +200,27 @@ nonisolated enum PathBrowser {
     }
   }
 
-  /// 列哪些：没打字时只列看得见的（在隐藏文件夹里全列）；打了字先名字开头对上的、再名字中间对上的，都在全部里找。
+  /// 列哪些：没打字时只列看得见的（在隐藏文件夹里全列）；打了字先名字开头对上的（在全部里找），再名字中间对上的
+  /// （至少两个字、点开头的不比中间，不带隐藏项）。
   /// 交回前 limit 项和一共多少项
   static func pick(_ entries: [Entry], filter: String, in directory: String) -> (
     entries: [Entry], total: Int
   ) {
     let key = LauncherMatch.fold(filter)
+    let showsHidden = directory.split(separator: "/").contains { $0.hasPrefix(".") }
     let matched: [Entry]
     if key.isEmpty {
-      let showsHidden = directory.split(separator: "/").contains { $0.hasPrefix(".") }
       matched = showsHidden ? entries : entries.filter { !$0.isHidden }
-    } else if key.hasPrefix(".") {
-      // 点开头是在找隐藏项：只比开头（不然带扩展名的文件全都「名字中间有 .」）
+    } else if key.hasPrefix(".") || key.count < 2 {
+      // 点开头是在找隐藏项、一个字的话名字中间几乎都有它（真机实测 ~/L 带出一串点文件）：只比开头
       matched = entries.filter { $0.key.hasPrefix(key) }
     } else {
+      // 名字中间对上的不带隐藏项（在隐藏文件夹里除外）
       matched =
         entries.filter { $0.key.hasPrefix(key) }
-        + entries.filter { !$0.key.hasPrefix(key) && $0.key.contains(key) }
+        + entries.filter {
+          !$0.key.hasPrefix(key) && $0.key.contains(key) && (showsHidden || !$0.isHidden)
+        }
     }
     return (Array(matched.prefix(limit)), matched.count)
   }

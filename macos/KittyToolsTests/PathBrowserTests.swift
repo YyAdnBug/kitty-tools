@@ -56,11 +56,14 @@ struct PathBrowserTests {
       PathBrowser.pick(entries, filter: "", in: "/").entries.map(\.name) == [
         "Applications", "Users", "my-users.txt",
       ])
-    // 打了字在全部里找：开头对上的在前（不分大小写），名字中间对上的在后
+    // 打了字在全部里找：开头对上的在前（不分大小写），名字中间对上的在后（至少两个字、不带隐藏项）
     #expect(
-      PathBrowser.pick(entries, filter: "u", in: "/").entries.map(\.name) == [
+      PathBrowser.pick(entries, filter: "u", in: "/").entries.map(\.name) == ["Users", "usr"])
+    #expect(
+      PathBrowser.pick(entries, filter: "us", in: "/").entries.map(\.name) == [
         "Users", "usr", "my-users.txt",
       ])
+    #expect(PathBrowser.pick(entries, filter: "sr", in: "/").entries.isEmpty)
     #expect(PathBrowser.pick(entries, filter: ".", in: "/").entries.map(\.name) == [".zshrc"])
     // 进到隐藏文件夹里：全列
     #expect(PathBrowser.pick(entries, filter: "", in: "/Users/x/.local").total == entries.count)
@@ -202,5 +205,41 @@ struct PathBrowserTests {
     // 不在路径模式
     model.query = "alpine"
     #expect(model.pathRequest == nil)
+  }
+
+  /// 真机实测（按需：TEST_RUNNER_KITTY_LIVE_PATH=<报告目录>）：用本机真实的文件夹走一遍启动器的路径模式，记下每个输入列出了什么、
+  /// 读了多久，写进 <目录>/report.md。只读：不改偏好（读 Dev 版的「问过授权没有」），桌面 / 文稿这类按开关挡住、不会去读
+  @MainActor
+  @Test(
+    .enabled(if: ProcessInfo.processInfo.environment["KITTY_LIVE_PATH"] != nil))
+  func liveRealFolders() async throws {
+    let out = try #require(ProcessInfo.processInfo.environment["KITTY_LIVE_PATH"])
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    let containers =
+      (try? FileManager.default.contentsOfDirectory(
+        atPath: NSHomeDirectory() + "/Library/Containers"))?.sorted().first
+    var queries = [
+      "~", "~/", "~/.", "~/.loc", "~/.local", "~/L", "/", "/u", "/Applications/", "/usr/bin/",
+      "/usr/bin/sw", "~/Documents/", "~/Desktop/", "~/Downloads/", "~/Library/Containers/",
+      "~/Library/Calendars/", "/Volumes/", "/tmp", "/nope/",
+    ]
+    if let containers { queries.append("~/Library/Containers/\(containers)/") }
+    var report = "# 路径模式真机实测\n\n本机 \(ProcessInfo.processInfo.operatingSystemVersionString)；"
+    report += "问过文件夹授权：\(UserDefaults.standard.bool(forKey: Prefs.folderAccessRequested))\n\n"
+    for query in queries {
+      let start = ContinuousClock.now
+      model.query = query
+      await model.pathLookup()
+      let elapsed = ContinuousClock.now - start
+      let rows = model.results.prefix(8).map { row in
+        row.kind == .prompt ? "〔\(row.title)〕" : row.title
+      }
+      report +=
+        "- `\(query)`（\(elapsed.formatted(.units(allowed: [.milliseconds], fractionalPart: .show(length: 1))))，"
+      report += "\(model.results.count) 行）：\(rows.joined(separator: " · "))"
+      report += model.results.isEmpty ? "〔空：\(model.emptyText)〕" : ""
+      report += "\n"
+    }
+    try report.write(toFile: out + "/report.md", atomically: true, encoding: .utf8)
   }
 }

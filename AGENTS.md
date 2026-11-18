@@ -203,6 +203,11 @@ TEST_RUNNER_KITTY_ISLAND_FRAMES=1 xcodebuild -project macos/KittyTools.xcodeproj
 TEST_RUNNER_KITTY_SELECTION_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/SelectionProbeTests/measure()'
 
+# 启动器路径模式的真机实测（按需，几秒，只读：Dev 版身份读本机真实的 ~、/、/Applications、/usr/bin、桌面 / 文稿（按开关挡住）等，
+# 每个输入列了什么、读了多久写进 <目录>/report.md）
+TEST_RUNNER_KITTY_LIVE_PATH=/tmp/kitty-path xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:'KittyToolsTests/PathBrowserTests/liveRealFolders()'
+
 # 启动台的性能 / 内存探针（按需，屏外，几秒；grep「launchpad-probe」：扫目录、第一帧、翻页布局、footprint）
 TEST_RUNNER_KITTY_LAUNCHPAD_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/LaunchpadProbeTests/measure()'
