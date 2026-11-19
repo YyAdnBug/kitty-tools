@@ -27,6 +27,7 @@
 
 import AppKit
 import OSLog
+import Synchronization
 
 @Observable final class Updater {
   struct Release: Equatable, Sendable {
@@ -854,15 +855,17 @@ import OSLog
 /// 服务器没给大小就不报。回调都在会话自己的线程上
 private final class DownloadWatcher: NSObject, URLSessionTaskDelegate {
   private let report: @Sendable (Double) -> Void
-  /// 只在 didCreateTask 里写一次，之后只是拿着（放掉就不再观察）
-  nonisolated(unsafe) private var observation: NSKeyValueObservation?
+  /// 只在 didCreateTask 里写一次，之后只是拿着（放掉就不再观察）。委托的回调在会话的线程上，所以放在 Mutex 里
+  private let observation = Mutex<NSKeyValueObservation?>(nil)
 
   init(report: @escaping @Sendable (Double) -> Void) { self.report = report }
 
   nonisolated func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
-    observation = task.progress.observe(\.fractionCompleted) { [report] _, _ in
-      let expected = task.countOfBytesExpectedToReceive
-      if expected > 0 { report(Double(task.countOfBytesReceived) / Double(expected)) }
+    observation.withLock {
+      $0 = task.progress.observe(\.fractionCompleted) { [report] _, _ in
+        let expected = task.countOfBytesExpectedToReceive
+        if expected > 0 { report(Double(task.countOfBytesReceived) / Double(expected)) }
+      }
     }
   }
 }

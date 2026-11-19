@@ -17,6 +17,7 @@
 // 才是那一张。提示收起后缩回耳朵。
 // 挂着直到处理（pin，2026-11-04 提醒 C2）：到点的提醒不到点收起，中间来的别的提示先显示、收起后换回它；只有它的按钮、×、
 // 双指上滑收得掉（×、上滑告诉调用方「处理了」）。一次只挂一条（几条提醒由调用方合成一条）。
+// 活动、那一张和键盘、听刘海和鼠标拆在同目录的 Island+Activity / +Board / +Notch.swift，画面在 IslandView.swift（第五轮体检 H1）。
 
 import AppKit
 import OSLog
@@ -101,43 +102,43 @@ import SwiftUI
   }
 
   /// 正在显示的内容；nil = 内容已退场（形体可能还在缩回）
-  private(set) var content: Content?
+  var content: Content?
   /// 形体展开着
-  private(set) var isOpen = false
+  var isOpen = false
   /// 每次出错 +1，触发抖动
   private(set) var shakes = 0
   /// 这一条的按钮；内容换了就跟着换
-  private(set) var actions: [Action] = []
+  var actions: [Action] = []
   /// 鼠标停在岛上（指针动过、落在形状里才算，拍板 B6）
-  private(set) var isHovered = false
+  var isHovered = false
   /// 正按着拖岛上的东西（播放卡片的进度条）：拖出岛外也照旧算指针在岛上，松手再按位置算（holdPointer）
-  @ObservationIgnored private var isDragging = false
+  @ObservationIgnored var isDragging = false
   /// 长成了卡片：悬停时展开；离开后照旧开着直到收起（进行中的离开就合上，它还要挂着）
-  private(set) var isExpanded = false
+  var isExpanded = false
   /// 「那一张」开着：点刘海、快捷键「打开刘海岛」叫出来的（快捷动作 + 最近的提示，IslandBoard）
-  private(set) var isBoardOpen = false { didSet { syncFullScreenAlpha() } }
+  var isBoardOpen = false { didSet { syncFullScreenAlpha() } }
   /// 没有提示、没开那一张时指针停在刘海上：岛轻轻鼓起一点，告诉你能点
-  private(set) var isPeeking = false
+  var isPeeking = false
   /// 最近的提示：本次启动以来最近 historyLimit 条，新的在前；进行中的不记
   private(set) var history: [Record] = []
   /// 那一张上的快捷动作：打开时从 boardActions 取一次
-  private(set) var quickActions: [Action] = []
+  var quickActions: [Action] = []
   /// 那一张上列不列最近的提示（设置 › 刘海岛，Prefs.islandShowsHistory）：打开时读一次。不列也照样记着
-  private(set) var showsHistory = true
+  var showsHistory = true
   /// 那一张上的月历（设置 › 刘海岛「日程」，Prefs.islandCalendar；IslandCalendar.swift）：打开时读一次——哪一天
   /// （nil = 不显示）、今天的日程（nil = 没有「日历」授权）
-  private(set) var calendarDay: Date?
-  private(set) var agenda: Agenda?
+  var calendarDay: Date?
+  var agenda: Agenda?
   /// 今天的日程从哪来（AppDelegate 接到 NextEvent.agenda；岛自己不碰 EventKit）。没授权返回 nil
   @ObservationIgnored var agendaProvider: (() -> Agenda?)?
   /// 一直挂着的活动（IslandActivity.swift）；耳朵上露最要紧的一个（activity）
-  private(set) var activities: [Activity] = []
+  var activities: [Activity] = []
   /// 耳朵该露着：有活动、有刘海屏。提示、那一张开着时照旧是它们，收起后缩回耳朵（不缩进刘海、窗口不移走）
-  private(set) var isShowingWings = false
+  var isShowingWings = false
   /// 展开着的卡片是哪个活动的（点耳朵展开的）：它更新时卡片原地换，结束时收起；卡片上标题旁边挂它的实时读数
-  private(set) var expandedActivity: String?
+  var expandedActivity: String?
   /// 没有刘海屏时活动挂在菜单栏里（刘海岛扩展 H1，IslandMenuItem）
-  @ObservationIgnored private lazy var menuItem: IslandMenuItem = {
+  @ObservationIgnored lazy var menuItem: IslandMenuItem = {
     let item = IslandMenuItem()
     item.onClick = { [weak self] in self?.expand($0) }
     return item
@@ -176,34 +177,34 @@ import SwiftUI
   /// 触感（设置 › 刘海岛「触感反馈」，A5）：滑动切歌、展开活动、进度条拖到头时触控板一下。摆出来的岛不给
   @ObservationIgnored var haptics = true
   /// 点到了岛本身（耳朵、刘海）：整座岛缩一下再弹回（C2；IslandView 看它的次数）
-  private(set) var presses = 0
+  var presses = 0
   /// 岛上现在是哪个活动的「一瞥」（glance）；不是就是 nil
-  @ObservationIgnored private var glancing: String?
+  @ObservationIgnored var glancing: String?
   /// 岛上现在是音量 / 亮度的那一行（showLevel）；不是就是 nil
-  private(set) var level: Level? { didSet { syncFullScreenAlpha() } }
+  var level: Level? { didSet { syncFullScreenAlpha() } }
   /// 音量 / 亮度到头了还在按（Level.pushed）的次数：每多一次，细条往那一头顶出去一下再弹回（第五轮体检 U13；IslandLevelBar）
   private(set) var levelBumps = 0
   /// 形体现在按音量 / 亮度提示的样子算（刘海两边各伸出一截、不往下长）。比 level 多留一拍：收回时内容先开始退、形体
   /// 晚两帧才缩，这一拍里 level 已经没了、形体得还是提示的样子——不然会按上一份内容的大小往下鼓出一块空的再缩回
-  private(set) var levelShaped = false
+  var levelShaped = false
   /// 形体捏回刘海（每侧只多 4 pt，里面什么都不画）：换不同种类的内容时先捏一下、再长成新的（2026-11-14 照 Alcove
   /// 的逐帧实录：耳朵 → 音量提示是先缩回刘海约 0.3 秒、再往两边长开约 0.4 秒；音量换亮度、提示收回耳朵同样）
-  private(set) var pinched = false
-  @ObservationIgnored private var pinch: Task<Void, Never>?
+  var pinched = false
+  @ObservationIgnored var pinch: Task<Void, Never>?
   /// 形体「坐」在刘海里：和收着时一样窄（藏在真刘海后面），但和刘海一样高。空刘海上出音量 / 亮度提示之前先（不带
   /// 动画）换成它、收回时缩到它为止（缩完再不带动画换回收着的样子）——提示就只往两边长 / 缩，高度不变；直接从收着的
   /// 样子（比刘海矮 6）长的话，两边伸出来的那一截是一边伸一边往下长的（Alcove 的实录里高度一直是刘海的高度）。
   /// 只在刘海屏、岛上空着（没开、没耳朵、没鼓起）时算数：isSeated
-  private(set) var seated = false
+  var seated = false
   /// 刚收起的那个音量 / 亮度提示：再留 0.3 秒给画面（IslandView 把它原地淡掉、跟着形体的边往回走；当场拆掉它就
   /// 停在原位、被缩回来的边切掉）。摆出来的岛、减弱动态效果不留
   private(set) var departingLevel: Level?
   @ObservationIgnored private var departing: Task<Void, Never>?
   /// 正捏着、等着出的那个音量 / 亮度（捏的时候又按了键就换成最新的）
-  @ObservationIgnored private var pendingLevel: Level?
+  @ObservationIgnored var pendingLevel: Level?
   /// 捏多久再长出来
   static let pinchTime = Duration.milliseconds(240)
-  @ObservationIgnored private var hoverExpand: Task<Void, Never>?
+  @ObservationIgnored var hoverExpand: Task<Void, Never>?
   /// 刘海岛插件添加着（Feature.island，2026-11-13 插件化 P1b；AppDelegate 跟着开关给）：点刘海那一张、活动（耳朵、菜单栏那一项、
   /// 进行中缩进耳朵）、刘海上常驻的鼠标监听都归它。没添加时只弹提示（0.7.0 之前的样子）：setActivity 不收、进行中照旧挂着、
   /// 不常驻监听（点刘海另由 respondsToNotch 关掉，快捷键「打开刘海岛」随插件不注册）。摆出来的岛（截图自检、单测）是 true
@@ -225,45 +226,45 @@ import SwiftUI
     }
   }
   /// 用快捷键叫出的那一张上，←→ 选中的快捷动作（第几个；鼠标叫出的、没有快捷动作时是 nil，U9）
-  private(set) var boardSelection: Int?
+  var boardSelection: Int?
   /// 键盘交给了提示 / 卡片上的按钮（快捷键「打开刘海岛」，第五轮体检 A2）：选中的是 actions 里第几个（0 = 主按钮）；没交是 nil
-  private(set) var buttonSelection: Int?
+  var buttonSelection: Int?
   /// 那一张是用快捷键叫出的、正临时拿着键盘（或者键盘交给了提示上的按钮）：收起时还回去
-  @ObservationIgnored private var holdsKeyboard = false
+  @ObservationIgnored var holdsKeyboard = false
   /// 键盘交给进行中的提示、挂着的提醒（它们不到点收起）之后多久没按键就还回去
-  @ObservationIgnored private var keyIdle: Task<Void, Never>?
+  @ObservationIgnored var keyIdle: Task<Void, Never>?
   /// 叫出那一张之前本 App 里当 key 的窗口（固定着的剪贴板面板、设置窗）：还键盘时还给它
-  @ObservationIgnored private weak var keyBeforeBoard: NSWindow?
+  @ObservationIgnored weak var keyBeforeBoard: NSWindow?
   /// 快捷动作从哪来（AppDelegate 给：截图、录屏、录音、识字、截图翻译、快速记一条，照设置里的先后；关掉的、关着的功能不给）
   @ObservationIgnored var boardActions: () -> [Action] = { [] }
   /// 各块屏上硬件刘海的位置（屏幕坐标）：屏幕变了就重算
-  @ObservationIgnored private var notchRects: [CGRect] = []
+  @ObservationIgnored var notchRects: [CGRect] = []
   /// start() 过、而且有刘海屏：监听一直装着（点刘海、停在刘海上要它们），收起后不卸。没有刘海的 Mac 照旧显示时装、收起后卸
-  @ObservationIgnored private var watchesNotch = false
+  @ObservationIgnored var watchesNotch = false
   /// 收起后形体还在缩回（retract 动画那 0.34 s）：这时不鼓，免得把还在缩的窗口改回小的、截掉一截
-  @ObservationIgnored private var isRetracting = false
+  @ObservationIgnored var isRetracting = false
   /// 这会儿不响应刘海（AppDelegate 给：截图 / 录屏框选中、启动台开着、状态屏里）：点它、停在它上面都不算
   @ObservationIgnored var isSuppressed: () -> Bool = { false }
-  @ObservationIgnored private var screenObserver: Any?
-  @ObservationIgnored private(set) var geometry = Geometry.capsule(menuBar: 24)
-  @ObservationIgnored private var window: IslandPanel?
-  @ObservationIgnored private var host: IslandHost?
-  @ObservationIgnored private var dwell: Task<Void, Never>?
+  @ObservationIgnored var screenObserver: Any?
+  @ObservationIgnored var geometry = Geometry.capsule(menuBar: 24)
+  @ObservationIgnored var window: IslandPanel?
+  @ObservationIgnored var host: IslandHost?
+  @ObservationIgnored var dwell: Task<Void, Never>?
   /// 这一条到点收起的时刻；悬停时停住，离开后接着走剩下的（至少 leaveDelay）
-  @ObservationIgnored private var deadline = ContinuousClock.now
+  @ObservationIgnored var deadline = ContinuousClock.now
   @ObservationIgnored private var remaining = Duration.zero
   /// 内容换过 / 刚展开的时刻：之后 clickGuard 以内的点击不算（拍板 B6，按钮会挪位置）
-  @ObservationIgnored private var changedAt: ContinuousClock.Instant?
+  @ObservationIgnored var changedAt: ContinuousClock.Instant?
   /// 上一次换面（展开某个活动的卡片、轮到那一张）的时刻：之后 turnGuard 之内的点刘海 / 往下滑不轮
-  @ObservationIgnored private var turnedAt: ContinuousClock.Instant?
+  @ObservationIgnored var turnedAt: ContinuousClock.Instant?
   /// 鼠标在岛上时来的新提示：移开再换上，只留最新一条（拍板 B5）
-  @ObservationIgnored private var pending: (content: Content, actions: [Action])?
+  @ObservationIgnored var pending: (content: Content, actions: [Action])?
   /// 挂着直到处理的那一条（提醒，PLAN §10「提醒」C2；pin）：不到点收起，别的提示来了先显示那条、收起后换回它
   @ObservationIgnored private var pinned:
     (content: Content, actions: [Action], onClose: () -> Void)?
-  @ObservationIgnored private var monitors: [Any] = []
+  @ObservationIgnored var monitors: [Any] = []
   /// 悬停期间每 0.2 s 再核一次指针：从岛直接挪进本 App 不收鼠标移动的窗口时没有移动事件，靠它发现离开
-  @ObservationIgnored private var hoverCheck: Task<Void, Never>?
+  @ObservationIgnored var hoverCheck: Task<Void, Never>?
   /// 形状在窗口里的位置（IslandView 量了报上来，左上角原点）：判断指针在不在岛上
   @ObservationIgnored var shapeFrame = CGRect.zero { didSet { syncBackdrop() } }
   /// 展开成大面（卡片、那一张）时四周的渐进模糊（设置 › 刘海岛；IslandBackdrop.swift，私有接口，取不到就没有）
@@ -284,7 +285,7 @@ import SwiftUI
   }
 
   /// 现在藏着（窗口在刘海屏上、全屏、不是那一张、不是音量 / 亮度提示）
-  private var hidesNow: Bool {
+  var hidesNow: Bool {
     guard hiddenForFullScreen, !isBoardOpen, level == nil, let window,
       let notch = Self.notchScreen
     else { return false }
@@ -513,7 +514,7 @@ import SwiftUI
   /// 改**（settle）：先单独改它们、再 withAnimation 换 content 的话，SwiftUI 会按事务排两遍——第一遍是「旧内容 + 新标记」，
   /// 比如播放卡片的 expandedActivity 清掉了、content 还在，就按普通提示画出一行（强调色圆底的音符 + 歌名）；这一行是不带
   /// 动画插进来的、紧接着带着动画退场，于是每次收起都闪一下（2026-11-14 用户报，逐帧实录抓到）。dismiss、openBoard 同
-  private func apply(
+  func apply(
     _ next: Content, actions: [Action], quiet: Bool = false, announces: Bool = true,
     level: Level? = nil, card: String? = nil
   ) {
@@ -589,7 +590,7 @@ import SwiftUI
   }
 
   /// 到点收起
-  private func arm(_ delay: Duration) {
+  func arm(_ delay: Duration) {
     dwell?.cancel()
     deadline = .now + delay
     dwell = Task { [weak self] in
@@ -599,7 +600,7 @@ import SwiftUI
   }
 
   /// 岛的宽度跟着内容变时用的曲线
-  private static var resize: Animation {
+  static var resize: Animation {
     Style.reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.32, bounce: 0.15)
   }
 
@@ -712,7 +713,7 @@ import SwiftUI
   }
 
   /// 岛上现在就是挂着的那一条
-  private var isShowingPinned: Bool { pinned != nil && content == pinned?.content }
+  var isShowingPinned: Bool { pinned != nil && content == pinned?.content }
 
   /// 内容刚换过 / 刚展开（按钮挪了位置）的那一下不算点击
   private var isSettled: Bool {
@@ -1056,153 +1057,9 @@ import SwiftUI
     NSHapticFeedbackManager.defaultPerformer.perform(pattern, performanceTime: .now)
   }
 
-  // MARK: 活动
-
-  /// 耳朵上露的那一个（拍板 B2）
-  var activity: Activity? { Activity.top(activities) }
-
-  /// 卡片展开着的那个活动
-  var cardActivity: Activity? { activities.first { $0.id == expandedActivity } }
-
-  /// 开始 / 更新一个活动（同一个 id 再来一次 = 原地换，开始的时刻不变）。刘海屏上收起时挂到耳朵上；
-  /// 它的卡片正展开着就原地换内容和按钮
-  func setActivity(_ activity: Activity) {
-    guard hasExtras else { return }
-    var next = activity
-    if let index = activities.firstIndex(where: { $0.id == activity.id }) {
-      next.started = activities[index].started
-      activities[index] = next
-    } else {
-      activities.append(next)
-    }
-    if expandedActivity == next.id, content != nil {
-      content = next.content
-      actions = next.actions
-      buttonsChanged()
-    }
-    refreshWings()
-  }
-
-  /// 活动结束：它的卡片正展开着就收起；没有活动了耳朵缩回刘海
-  func endActivity(_ id: String) {
-    guard activities.contains(where: { $0.id == id }) else { return }
-    // 它的卡片（或者它的一瞥）正出着：先收（内容清掉），再把活动拿走——反过来有一拍「内容还在、活动没了」，会闪出
-    // 一条普通样式的行；一瞥留着的话指针移上去会展开成普通卡片
-    if expandedActivity == id || glancing == id, content != nil { dismiss() }
-    activities.removeAll { $0.id == id }
-    if expandedActivity == id { expandedActivity = nil }
-    refreshWings()
-  }
-
-  /// 点耳朵：最要紧的那个活动展开成卡片（同悬停展开的样子），收起后回到耳朵
-  private func expandActivity() {
-    if let activity { expand(activity.id) }
-  }
-
-  /// 某个活动展开成卡片（耳朵、菜单栏那一项都走这里）
-  private func expand(_ id: String) {
-    guard let activity = activities.first(where: { $0.id == id }) else { return }
-    hoverExpand?.cancel()
-    hoverExpand = nil
-    haptic()
-    isPeeking = false
-    turnedAt = .now
-    // 「是它的卡片」和内容在同一个事务里换（apply 的说明）
-    apply(activity.content, actions: activity.actions, quiet: true, card: activity.id)
-    withAnimation(Self.resize) { isExpanded = true }
-  }
-
-  /// 耳朵该不该露：有活动、有刘海屏（摆出来的岛看给的几何）。没开着别的时当场长出 / 缩回；开着提示、那一张时只改标记，
-  /// 它们收起时（dismiss）照这个缩回耳朵
-  private func refreshWings() {
-    let wanted = activity != nil && canShowWings
-    if !isStaged { menuItem.show(IslandMenuItem.pick(activities, wings: canShowWings)) }
-    guard wanted != isShowingWings else { return }
-    if wanted, !isOpen, !isStaged { showWindow(on: Self.notchScreen) }
-    withAnimation((wanted ? Style.Motion.island : Style.Motion.retract).animation()) {
-      isShowingWings = wanted
-    }
-    guard !wanted, !isOpen, !isStaged else { return }
-    Task { [weak self] in
-      try? await Task.sleep(for: Self.retractTime)
-      guard let self, !self.isOpen, !self.isPeeking, !self.isShowingWings else { return }
-      self.window?.orderOut(nil)
-    }
-  }
-
-  /// 有刘海的那块屏（耳朵挂在它上面）；没有是 nil
-  private static var notchScreen: NSScreen? {
-    NSScreen.screens.first { notchRect(of: $0) != nil }
-  }
-
-  /// 挂得了耳朵：有刘海屏（摆出来的岛看给的几何）
-  private var canShowWings: Bool {
-    if isStaged {
-      if case .notch = geometry { true } else { false }
-    } else {
-      Self.notchScreen != nil
-    }
-  }
-
-  // MARK: 慢的长任务缩进耳朵（刘海岛扩展 C4）
-
-  /// 进行中的提示挂满这么久还没做完，缩回耳朵
-  static let progressCollapse = Duration.seconds(3)
-  /// 缩进耳朵的进行中多久没有新进度就收掉（同原来进行中提示的 60 s 兜底）
-  static let progressExpiry = Duration.seconds(60)
-  @ObservationIgnored private var collapseTask: Task<Void, Never>?
-  @ObservationIgnored private var expiryTask: Task<Void, Never>?
-
-  /// 缩进耳朵的进行中那个活动的编号：key 分开不同的句子（译文可能撞），取出来的字分开同一句插了不同的值
-  static func progressID(_ title: LocalizedStringResource) -> String {
-    "progress:" + title.key + "\u{1F}" + String(localized: title)
-  }
-
-  /// 进行中的提示出来了：挂满 3 秒还是它（指针不在上面）就缩进耳朵；指针在上面就等它离开
-  private func collapseLater(_ title: LocalizedStringResource) {
-    collapseTask?.cancel()
-    guard hasExtras else { return }
-    collapseTask = Task { [weak self] in
-      try? await Task.sleep(for: Self.progressCollapse)
-      while !Task.isCancelled {
-        guard let self, let content = self.content, content.tone == .progress,
-          content.source == title
-        else { return }
-        if !self.isHovered, !self.isBoardOpen, !self.holdsKeyboard {
-          return self.collapseProgress(content)
-        }
-        try? await Task.sleep(for: .seconds(1))
-      }
-    }
-  }
-
-  /// 把正显示着的进行中提示换成耳朵上的活动（左一圈进度、右百分比；说不出做到哪的只有记号），按钮（停止）跟过去，
-  /// 提示收起、缩回耳朵。没有刘海屏时照旧挂着（菜单栏那一项是第 1-3 批）
-  func collapseProgress(_ content: Content) {
-    guard hasExtras, canShowWings, self.content == content else { return }
-    setActivity(
-      Activity(
-        id: Self.progressID(content.source), kind: .progress, title: content.title,
-        detail: content.detail, symbol: content.symbol,
-        trailing: content.fraction.map { .fraction($0) } ?? .none, actions: actions,
-        source: content.source))
-    expireProgressLater()
-    dismiss()
-  }
-
-  /// 缩进耳朵的进行中都收掉（结果来了）
-  private func endProgress() {
-    for activity in activities where activity.kind == .progress { endActivity(activity.id) }
-    expiryTask?.cancel()
-  }
-
-  private func expireProgressLater() {
-    expiryTask?.cancel()
-    expiryTask = Task { [weak self] in
-      try? await Task.sleep(for: Self.progressExpiry)
-      if !Task.isCancelled { self?.endProgress() }
-    }
-  }
+  /// 慢的进行中提示缩进耳朵、缩进去以后到点收掉（Island+Activity.swift 的 collapseLater、expireProgressLater）
+  @ObservationIgnored var collapseTask: Task<Void, Never>?
+  @ObservationIgnored var expiryTask: Task<Void, Never>?
 
   /// 收起：内容糊着退、形体只晚两帧就缩回刘海（一起走），动画结束再移走窗口。鼠标在岛上时排着一条的（点了 ×、按钮，
   /// 或者调用方自己收），直接换成排着的那条
@@ -1297,251 +1154,9 @@ import SwiftUI
 
   /// 缩回动画走完的时间（retract 0.34 s + 余量）：之后才移走窗口
   /// （缩回的弹簧标的 0.34 s 是感知上的时长，真停稳还要一会儿；终点藏在刘海后面，多留一会儿看不出来）
-  private static let retractTime = Duration.milliseconds(600)
+  static let retractTime = Duration.milliseconds(600)
   /// 收起时形体比内容晚多久开始缩
   private static let retractLag = Duration.milliseconds(30)
-
-  /// 打开 / 收起那一张（快捷键「打开刘海岛」、点刘海）。岛上正有提示时换成那一张（那条已经记在列表里）。
-  /// byKeyboard：快捷键叫出的——临时当 key，Esc / ←→ / ↩ 能用，到点自己收（U9）；岛上正挂着带按钮的提示 / 卡片时
-  /// 先把键盘交给它的按钮（focusButtons），已经交给它了再按一次才换成那一张（第五轮体检 A2）
-  func toggleBoard(byKeyboard: Bool = false) {
-    if isBoardOpen { return dismiss() }
-    if byKeyboard, !holdsKeyboard, focusButtons() { return }
-    openBoard(byKeyboard: byKeyboard)
-  }
-
-  /// 键盘交给岛上那条提示 / 那张卡片的按钮（第五轮体检 A2；HIG：每个操作都要能用键盘做——「删除 → 撤销」「清掉草稿 →
-  /// 恢复」这类只在岛上给出路）：收着的一行只露主按钮，先展开成卡片（全部按钮都看得见），选中主按钮；之后 ↩ 执行选中的、
-  /// ←→ 换（卡片上主按钮在最右：← 往左 = 往后一个，到头回绕）、Esc 收（同 ×：挂着的提醒也算处理了）。窗口临时当 key、
-  /// 不激活本 App；读屏念标题和选中的按钮。没有带按钮的东西（音量提示、一瞥、播放卡片、空着）返回 false
-  private func focusButtons() -> Bool {
-    guard hasButtonsToFocus, let content, let window else { return false }
-    if !isExpanded {
-      changedAt = .now
-      withAnimation(Self.bloom) { isExpanded = true }
-    }
-    buttonSelection = 0
-    takeKeyboard(window)
-    armKeyboard()
-    if actions.count == 1 {
-      Self.announce("\(content.title)，回车「\(actions[0].title)」，Esc 关闭")
-    } else {
-      Self.announce("\(content.title)，左右键选按钮，回车执行，Esc 关闭；现在是「\(actions[0].title)」")
-    }
-    return true
-  }
-
-  /// 岛上正挂着能交键盘的按钮：一条提示、一张活动的卡片，带至少一个按钮（音量提示、一瞥没有按钮；播放卡片的按钮不是
-  /// Island.Action，另有自己的手势）。全屏时藏着的岛（hidesNow：窗口全透明）不算——不然一扇看不见的窗口当 key，全屏 App
-  /// 里打的字全被吞、↩ 执行看不见的按钮（评审 1）；这时照旧开那一张（那一张不藏）
-  var hasButtonsToFocus: Bool {
-    content != nil && !actions.isEmpty && level == nil && !isGlance && cardActivity?.media == nil
-      && !hidesNow
-  }
-
-  /// 拿着键盘时没人按键多久还回去：那一张、会到点收起的提示 / 卡片重新数 6 秒、到点收起（收起时还键盘）；进行中的提示、
-  /// 挂着的提醒不到点收起——只还键盘，照指针不在上面时的样子合回一行（排着的那条换上来，同 hover(false)）
-  private func armKeyboard() {
-    keyIdle?.cancel()
-    keyIdle = nil
-    guard !isBoardOpen, content?.tone == .progress || isShowingPinned else {
-      if !isHovered { arm(Self.boardKeyboardDwell) }
-      return
-    }
-    keyIdle = Task { [weak self] in
-      try? await Task.sleep(for: Self.boardKeyboardDwell)
-      guard !Task.isCancelled else { return }
-      self?.dropKeyboard()
-    }
-  }
-
-  /// 键盘不在岛上了（6 秒没按键、点了别处让岛不再是 key，评审 5）：还回去；原来在提示的按钮上、指针又不在岛上时照
-  /// hover(false) 的样子收拾——排着的那条换上来，进行中的、挂着的提醒合回一行（会到点收起的照旧等它自己的时间）
-  private func dropKeyboard() {
-    guard holdsKeyboard else { return }
-    let onButtons = !isBoardOpen
-    releaseKeyboard()
-    guard onButtons, !isHovered else { return }
-    if let (next, actions) = pending {
-      pending = nil
-      return apply(next, actions: actions)
-    }
-    if content?.tone == .progress || isShowingPinned {
-      withAnimation(Style.Motion.retract.animation()) { isExpanded = false }
-    }
-  }
-
-  /// 按钮换了（活动原地更新、挂着的提醒换按钮）：键盘在按钮上时选中的跟着夹，没有按钮了就还键盘（A2，评审 4）
-  private func buttonsChanged() {
-    guard let selection = buttonSelection else { return }
-    if let kept = Self.reselected(selection, count: actions.count) {
-      buttonSelection = kept
-    } else {
-      releaseKeyboard()
-    }
-  }
-
-  /// 按钮换了之后选中哪一个（纯函数）：还在范围里不动，超出了夹到最后一个，没有按钮了是 nil
-  static func reselected(_ selection: Int, count: Int) -> Int? {
-    count == 0 ? nil : min(selection, count - 1)
-  }
-
-  private func openBoard(byKeyboard: Bool = false) {
-    // 键盘原来在提示的按钮上（A2，再按一次快捷键）：交给那一张；不是按键开的就还回去
-    buttonSelection = nil
-    if !byKeyboard { releaseKeyboard() }
-    dwell?.cancel()
-    hoverCheck?.cancel()
-    // 正捏着等出音量 / 亮度的提示：不出了（不然那一张刚开出来就被它顶掉，后来的动作反而输）
-    pinch?.cancel()
-    pendingLevel = nil
-    showsHistory = UserDefaults.standard.bool(forKey: Prefs.islandShowsHistory)
-    // 摆出来的岛（单测、截图）用给进来的那一天，不读偏好、不读日程
-    if !isStaged {
-      calendarDay = UserDefaults.standard.bool(forKey: Prefs.islandCalendar) ? .now : nil
-      agenda = calendarDay == nil ? nil : agendaProvider?()
-    }
-    // 进行中的提示留着（排着，progress() 接着改它的百分比），收起那一张时换回来；别的排着的：列着最近的提示时丢掉（它
-    // 已经在列表里了），不列时照样留到那一张收起再出（评审 4：不然这条提示从没露过面）
-    if let content, content.tone == .progress {
-      pending = (content, actions)
-    } else if pending?.content.tone != .progress {
-      if showsHistory { pending = nil }
-      onToneChange?(nil)
-    }
-    isRetracting = false
-    quickActions = boardActions()
-    changedAt = .now
-    deadline = .now
-    showWindow()
-    // 决定画哪一种内容的那几样和 content 在同一个事务里清（见 apply 的说明）
-    withAnimation(isOpen ? Self.resize : Style.Motion.island.animation()) {
-      isOpen = true
-      seated = false
-      content = nil
-      isBoardOpen = true
-      actions = []
-      expandedActivity = nil
-      glancing = nil
-      level = nil
-      levelShaped = false
-      isExpanded = false
-      isPeeking = false
-      isHovered = false
-      pinched = false
-    }
-    let heading =
-      quickActions.isEmpty && calendarDay != nil && !showsHistory
-      ? String(localized: "月历")
-      : !showsHistory
-        ? String(localized: "快捷动作")
-        : quickActions.isEmpty ? String(localized: "最近的提示") : String(localized: "最近的提示和快捷动作")
-    guard byKeyboard, let window else { return Self.post(heading) }
-    boardSelection = quickActions.isEmpty ? nil : 0
-    takeKeyboard(window)
-    armKeyboard()
-    Self.announce(
-      quickActions.isEmpty
-        ? "\(heading)，按 Esc 关闭"
-        : "\(heading)，左右键选快捷动作，回车执行，Esc 关闭；现在是「\(quickActions[0].title)」")
-  }
-
-  /// 那一张没人碰时多久自己收（同带按钮的岛）
-  static let boardKeyboardDwell = Duration.seconds(6)
-
-  /// 快捷键叫出的那一张、键盘交给提示上的按钮时：临时当 key（窗口是不激活本 App 的面板，前台 App 不变）
-  private func takeKeyboard(_ window: IslandPanel) {
-    if let key = NSApp.keyWindow, key !== window { keyBeforeBoard = key }
-    holdsKeyboard = true
-    window.keyable = true
-    window.onKey = { [weak self] in self?.keyPressed($0) }
-    // 点了别的 App、别的窗口拿走了键盘：岛就不再拿着它（不然新提示照样排着、再按快捷键直接换成那一张，评审 5）
-    window.onResign = { [weak self] in self?.dropKeyboard() }
-    window.makeKey()
-  }
-
-  /// 窗口当 key 时 sendEvent 交过来的按键：那一张开着归那一张，不然归提示上的按钮
-  private func keyPressed(_ event: NSEvent) {
-    guard holdsKeyboard else { return }
-    if isBoardOpen { boardKey(event) } else { buttonKey(event) }
-  }
-
-  /// 那一张上的按键：Esc 收、←→ 选（到头回绕）、↩ 执行；别的键吞掉、不响
-  private func boardKey(_ event: NSEvent) {
-    // 按了键就重新计时（鼠标停在岛上时计时本来就停着）
-    armKeyboard()
-    switch Int(event.keyCode) {
-    case 53:
-      dismiss()
-    case 123, 124:
-      guard
-        let next = Self.moved(
-          boardSelection, by: event.keyCode == 123 ? -1 : 1,
-          count: quickActions.count)
-      else { return }
-      boardSelection = next
-      Self.post(quickActions[next].title)
-    case 36, 76:
-      if let index = boardSelection, quickActions.indices.contains(index) {
-        perform(quickActions[index], checked: false)
-      }
-    default:
-      break
-    }
-  }
-
-  /// 提示 / 卡片上的按钮拿着键盘时的按键（A2）：Esc 收（同 ×）、←→ 换按钮、↩ 执行选中的；别的键吞掉、不响
-  private func buttonKey(_ event: NSEvent) {
-    guard let selection = buttonSelection, content != nil else { return }
-    armKeyboard()
-    switch Int(event.keyCode) {
-    case 53:
-      swipeAway()
-    case 123, 124:
-      guard
-        let next = Self.moved(
-          selection, by: Self.buttonStep(left: event.keyCode == 123), count: actions.count)
-      else { return }
-      buttonSelection = next
-      Self.post(actions[next].title)
-    case 36, 76:
-      if actions.indices.contains(selection) { perform(actions[selection], checked: false) }
-    default:
-      break
-    }
-  }
-
-  /// 卡片上的按钮从右往左排（主按钮 actions[0] 在最右，挨着 ×）：← 是往后一个、→ 是往前一个（纯函数）
-  static func buttonStep(left: Bool) -> Int { left ? 1 : -1 }
-
-  /// ←→ 选快捷动作（纯函数）：到头回绕；还没选中时从第一个起；没有快捷动作是 nil
-  static func moved(_ selection: Int?, by step: Int, count: Int) -> Int? {
-    guard count > 0 else { return nil }
-    guard let selection else { return 0 }
-    return ((selection + step) % count + count) % count
-  }
-
-  /// 收起 / 换成别的提示时把键盘还回去：叫出之前本 App 里有 key 窗口就还给它；本 App 不在前台（键盘本来在别的 App 里）
-  /// 就 deactivate 一次——不激活的面板收起后 AppKit 会把 key 交给本进程别的面板、一直不放（同 NoteFloats.returnKeyboard）
-  private func releaseKeyboard() {
-    keyIdle?.cancel()
-    keyIdle = nil
-    guard holdsKeyboard else { return }
-    holdsKeyboard = false
-    boardSelection = nil
-    buttonSelection = nil
-    window?.keyable = false
-    window?.onKey = nil
-    // 先摘：下面把键盘还给别的窗口时岛会 resignKey
-    window?.onResign = nil
-    defer { keyBeforeBoard = nil }
-    guard window?.isKeyWindow == true else { return }
-    if let previous = keyBeforeBoard, previous.isVisible {
-      previous.makeKey()
-    } else if !NSApp.isActive {
-      NSApp.deactivate()
-    }
-  }
 
   /// 双指在岛上往上滑多少算收起（pt，按手指方向）
   static let swipeDistance: CGFloat = 24
@@ -1626,7 +1241,7 @@ import SwiftUI
 
   /// 摆好窗口、拿到最前（摆出来的岛不建）。窗口在屏上时不动它（尺寸一次定死，见 Geometry.windowSize）。
   /// 先不接鼠标，指针落在形状上再接（hover）
-  private func showWindow(on screen: NSScreen? = nil) {
+  func showWindow(on screen: NSScreen? = nil) {
     guard !isStaged else { return }
     let fresh = self.window == nil
     let window = self.window ?? makeWindow()
@@ -1641,251 +1256,8 @@ import SwiftUI
     watchMouse()
   }
 
-  /// 开始听刘海（AppDelegate 启动后调一次）：指针停在刘海上鼓起一点，点刘海打开 / 收起那一张。监听从此一直装着
-  /// （只看位置、不吞事件；鼠标移动和点击都不要授权）
-  func start() {
-    updateNotches()
-    prepareWindow()
-    screenObserver = NotificationCenter.default.addObserver(
-      forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
-    ) { [weak self] _ in
-      MainActor.assumeIsolated { self?.updateNotches() }
-    }
-  }
-
-  /// 刘海屏的 Mac：启动时先把窗口建好、按刘海屏收着的样子排一遍（不显示）——第一次停到刘海上就有现成的窗口和
-  /// 动画的起点，也不用在那一下当场建窗口
-  private func prepareWindow() {
-    guard !isStaged, window == nil,
-      let screen = NSScreen.screens.first(where: { Self.notchRect(of: $0) != nil })
-    else { return }
-    geometry = Self.geometry(of: screen)
-    let window = makeWindow()
-    self.window = window
-    host?.rootView = IslandView(island: self)
-    window.contentView?.layoutSubtreeIfNeeded()
-  }
-
-  /// 屏幕变了（接上 / 拔掉外接屏、合盖、改分辨率）：重算刘海在哪；没有刘海屏就不常驻监听。
-  /// 每块屏的几何写进日志（`log show --predicate 'category == "island"'`）：新机型我们没有真机，靠用户发来这几行
-  private func updateNotches() {
-    for screen in NSScreen.screens {
-      let kind =
-        Self.hasSystemIsland(screen)
-        ? "系统灵动岛" : Self.notchRect(of: screen) == nil ? "胶囊" : "刘海"
-      Log.island.notice(
-        "\(screen.localizedName, privacy: .public)：\(kind, privacy: .public)，frame \(screen.frame.debugDescription, privacy: .public)，菜单栏 \(Double(screen.frame.maxY - screen.visibleFrame.maxY))，安全区顶 \(Double(screen.safeAreaInsets.top))，辅助区 \((screen.auxiliaryTopLeftArea ?? .zero).debugDescription, privacy: .public) / \((screen.auxiliaryTopRightArea ?? .zero).debugDescription, privacy: .public)"
-      )
-    }
-    notchRects = NSScreen.screens.compactMap(Self.notchRect(of:))
-    rewatchNotch()
-    // 合盖只用外接屏、又打开：耳朵跟着收掉 / 长回来
-    refreshWings()
-    // 耳朵露着、没展开（放歌、录制、保持唤醒挂一整天的那种）：按现在的刘海屏重摆一次——改了「更多空间」这类缩放、接上
-    // 外接屏让内建屏的坐标变了，刘海的位置和宽高都可能变，窗口不挪的话耳朵就不对着真刘海（第五轮体检 E12）。
-    // 展开着的（提示、卡片、那一张）不动：内容正在屏上，当场挪会跳一下
-    // ponytail: 展开期间换了屏的，收起后缩回耳朵时不重摆（要等耳朵收掉、下一次长出来，或者下一次换屏）；真碰到再在
-    // dismiss 缩回耳朵那一步补一次 place
-    if isShowingWings, !isOpen, !isStaged, let window, let screen = Self.notchScreen {
-      place(window, on: screen)
-    }
-  }
-
-  /// 有刘海屏、插件也添加着才常驻监听（点刘海、停在刘海上、耳朵的悬停要它们）；否则照旧显示时装、收起后卸
-  private func rewatchNotch() {
-    watchesNotch = hasExtras && !notchRects.isEmpty
-    if watchesNotch { watchMouse() } else if !isOpen { unwatchMouse() }
-  }
-
-  /// 硬件刘海在屏幕上的那一块（屏幕坐标）；没有刘海的屏是 nil
-  static func notchRect(of screen: NSScreen) -> CGRect? {
-    guard case .notch(let width, let height) = geometry(of: screen) else { return nil }
-    return CGRect(
-      x: screen.frame.midX - width / 2, y: screen.frame.maxY - height, width: width, height: height)
-  }
-
-  /// 指针在不在某块刘海上：只认刘海本身（鼓起那一圈是画出来的样子，不算——离刘海最近的菜单栏项可能就在那一圈里），
-  /// 按指针的算法含屏幕最顶那一行、不往上越过顶边（上面摆着的外接屏底边那一条不算）
-  static func onNotch(_ point: CGPoint, notches: [CGRect]) -> Bool {
-    notches.contains { NSMouseInRect(point, $0, false) }
-  }
-
-  /// 听鼠标：别的 App 上的走全局监听，本 App 窗口上的（包括接了鼠标的岛自己）走本地监听。只看位置，不吞事件；
-  /// 鼠标移动和点击都不要辅助功能授权。指针不动就不算悬停：岛冒在静止的指针下面时，那一下点击照旧落到后面（B6）
-  private func watchMouse() {
-    guard monitors.isEmpty else { return }
-    let events: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDown]
-    let local = NSEvent.addLocalMonitorForEvents(matching: events) { [weak self] event in
-      let swallow = MainActor.assumeIsolated { self?.handle(event, local: true) ?? false }
-      return swallow ? nil : event
-    }
-    let global = NSEvent.addGlobalMonitorForEvents(matching: events) { [weak self] event in
-      _ = MainActor.assumeIsolated { self?.handle(event, local: false) }
-    }
-    monitors = [local, global].compactMap { $0 }
-  }
-
-  /// 一个鼠标事件；返回本地监听要不要吞掉它：落在岛自己窗口上、已经当成开 / 关那一张处理掉的那一下吞掉（不然它接着发给岛，
-  /// 从鼓起点开时窗口刚加高，按旧位置会点中列表里的某一行）
-  private func handle(_ event: NSEvent, local: Bool) -> Bool {
-    guard event.type == .leftMouseDown else {
-      track()
-      return false
-    }
-    // 本 App 别的窗口盖着刘海时（截图遮罩、启动台），点在它们上面不算点刘海；双击只认第一下
-    let ownsClick = !local || event.window == nil || event.window === window
-    let toggled = click(onNotch: ownsClick, repeated: event.clickCount > 1)
-    return toggled && local && event.window === window
-  }
-
-  /// 点了一下：点在刘海上 = 没开着东西时打开（openTop：有活动是它的卡片，没有是那一张）、那一张开着时收起、活动的卡片
-  /// 开着时轮到下一个（rotate）；别的提示开着时不管（屏幕最顶那一行窗口收不到点击，全局监听收得到）。
-  /// 那一张、活动的卡片（播放卡片没有 ×）开着时点在它外面 = 收起。返回这一下处理掉了没有（本地监听据此吞掉它）。
-  /// repeated：双击的第二、三下——不算点刘海（不然开了又关、连轮两个）；卡片开着时照样吞掉，别落到卡片上被当成
-  /// 点它的打开类按钮（tapped，评审 3）
-  private func click(onNotch allowed: Bool, repeated: Bool = false) -> Bool {
-    let mouse = NSEvent.mouseLocation
-    if allowed, respondsToNotch, !isSuppressed(), Self.onNotch(mouse, notches: notchRects) {
-      if repeated {
-        if content != nil, cardActivity != nil { return true }
-      } else {
-        switch Self.notchClick(
-          hasContent: content != nil, boardOpen: isBoardOpen, cardOpen: cardActivity != nil)
-        {
-        case .open:
-          presses += 1
-          openTop()
-          return true
-        case .closeBoard:
-          presses += 1
-          toggleBoard()
-          return true
-        case .rotate:
-          // 刚换过面时不轮（rotate 自己挡），这一下照样吞掉
-          presses += 1
-          rotate()
-          return true
-        case .ignore: break
-        }
-      }
-    }
-    if isBoardOpen || (content != nil && cardActivity != nil), let window,
-      !NSMouseInRect(mouse, shapeOnScreen(window), false)
-    {
-      dismiss()
-    }
-    return false
-  }
-
-  /// 指针停在刘海上（没有提示、没开那一张）：鼓起一点，窗口这时接住点击；离开就缩回、移走窗口
-  /// 鼓起 / 缩回的曲线由 IslandView 定（鼓起 0.2 s easeOut，缩回同收起）
-  private func peek(_ on: Bool) {
-    guard on != isPeeking, !isStaged else { return }
-    if on {
-      // 先摆好窗口（新建的先按收着的样子排一遍），再鼓：顺序反了第一次鼓起没有动画
-      showWindow()
-      window?.ignoresMouseEvents = false
-      isPeeking = true
-      return
-    }
-    isPeeking = false
-    hoverExpand?.cancel()
-    hoverExpand = nil
-    window?.ignoresMouseEvents = true
-    Task { [weak self] in
-      try? await Task.sleep(for: Self.retractTime)
-      guard let self, !self.isOpen, !self.isPeeking, !self.isShowingWings else { return }
-      self.window?.orderOut(nil)
-    }
-  }
-
-  enum NotchClick { case open, closeBoard, rotate, ignore }
-
-  /// 点在刘海上该做什么（纯函数）：那一张开着 = 收起；什么都没开 = 打开；活动的卡片开着 = 轮到下一个；别的提示开着不管
-  static func notchClick(hasContent: Bool, boardOpen: Bool, cardOpen: Bool) -> NotchClick {
-    if boardOpen { return .closeBoard }
-    if !hasContent { return .open }
-    return cardOpen ? .rotate : .ignore
-  }
-
-  /// 停在耳朵 / 刘海上多久自动展开
-  static let hoverExpandDelay = Duration.milliseconds(300)
-
-  /// 指针在鼓起的岛上：排「停一下自动展开」（C1）。只在有活动露着时（没有活动时悬停只鼓起、点了才开那一张）；刘海
-  /// 正中和两只耳朵都算（2026-11-14：原来刘海正中不算，点它出的是另一张面）；正在播放的右耳是播放 / 暂停钮，停在它
-  /// 上面不展开（不然正要点，卡片先盖上来）。到点时还鼓着、岛上没别的东西、没在框选才展开；展开后当指针在岛上（它就停在那儿，没有鼠标移动来报）：
-  /// 不然窗口不接鼠标、卡片照没人看的提示 2 秒就收
-  private func armHoverExpand(_ mouse: NSPoint) {
-    guard hoverExpands, isPeeking, content == nil, !isBoardOpen, let top = activity, let window,
-      Self.hoverExpands(
-        pointerX: mouse.x, shape: shapeOnScreen(window), onMedia: top.media != nil,
-        notch: respondsToNotch)
-    else {
-      hoverExpand?.cancel()
-      hoverExpand = nil
-      return
-    }
-    guard hoverExpand == nil else { return }
-    let delay = hoverDelay
-    hoverExpand = Task { [weak self] in
-      try? await Task.sleep(for: delay)
-      guard let self, !Task.isCancelled else { return }
-      self.hoverExpand = nil
-      guard self.isPeeking, self.content == nil, !self.isBoardOpen, !self.isSuppressed() else {
-        return
-      }
-      self.expandActivity()
-      self.hover(true)
-    }
-  }
-
-  /// 指针在这个横坐标上停着算不算要展开（纯函数）：左耳算；右耳算，除非是正在播放（那一截是播放 / 暂停钮）；中间的
-  /// 刘海也算，除非设置里关了「点刘海打开」（notch）。耳朵 = 形体两头往里一只耳朵宽（另加鼓起的那一圈 8 pt）
-  static func hoverExpands(pointerX: CGFloat, shape: CGRect, onMedia: Bool, notch: Bool = true)
-    -> Bool
-  {
-    if pointerX > shape.maxX - wing - 8 { return !onMedia }
-    return pointerX < shape.minX + wing + 8 || notch
-  }
-
-  private func shapeOnScreen(_ window: NSWindow) -> CGRect {
-    let frame = window.frame
-    return CGRect(
-      x: frame.minX + shapeFrame.minX, y: frame.maxY - shapeFrame.maxY,
-      width: shapeFrame.width, height: shapeFrame.height)
-  }
-
-  private func unwatchMouse() {
-    monitors.forEach(NSEvent.removeMonitor)
-    monitors = []
-  }
-
-  // ponytail: 指针停在本 App 不收鼠标移动的窗口（设置窗）上、又正好在岛下面时，本地监听收不到移动，不会展开
-  // （离开由 hoverCheck 兜住）；岛在屏幕最顶上，和面板、设置窗叠到的机会很小，真碰到再给那几扇窗口开 acceptsMouseMovedEvents
-  private func track() {
-    // 拖着时不算进出。兜底：松手那一下没送到窗口（拖着时锁屏、切桌面）就照按键的实际状态放开，不然卡片永远不收
-    if isDragging, NSEvent.pressedMouseButtons & 1 == 0 { isDragging = false }
-    guard !isDragging else { return }
-    // 全屏时藏着：不接鼠标（不然看不见的岛会吞掉全屏时滑下来的菜单栏上的点击）
-    if hidesNow { return }
-    let mouse = NSEvent.mouseLocation
-    // 音量 / 亮度的提示上没有能点的东西：不算悬停（不停计时、窗口不接鼠标，底下的菜单栏照常点）
-    if isShowingLevel { return }
-    if content != nil || isBoardOpen {
-      if let window { hover(NSMouseInRect(mouse, shapeOnScreen(window), false)) }
-      return
-    }
-    // 刚收起、还在缩回时不鼓
-    guard !isOpen, !isRetracting else { return }
-    let onWings =
-      isShowingWings && window.map { NSMouseInRect(mouse, shapeOnScreen($0), false) } == true
-    peek(
-      !isSuppressed() && (onWings || (respondsToNotch && Self.onNotch(mouse, notches: notchRects))))
-    armHoverExpand(mouse)
-  }
-
   /// 放到鼠标所在屏（耳朵给的是刘海屏）顶部正中（刘海屏贴着顶边，其它屏在菜单栏下方）。只在窗口不在屏上时调
-  private func place(_ window: IslandPanel, on target: NSScreen? = nil) {
+  func place(_ window: IslandPanel, on target: NSScreen? = nil) {
     guard let screen = target ?? NSScreen.underMouse else { return }
     geometry = Self.geometry(of: screen)
     let size = geometry.windowSize
@@ -1932,7 +1304,7 @@ import SwiftUI
     #endif
   }
 
-  private func makeWindow() -> IslandPanel {
+  func makeWindow() -> IslandPanel {
     let panel = IslandPanel(
       contentRect: CGRect(origin: .zero, size: geometry.windowSize),
       styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -2048,827 +1420,6 @@ extension [Island.Action] {
   }
 }
 
-/// 岛的画面：一块定死的透明画布上，黑色形体（刘海屏带耳朵的下巴 / 其它屏的胶囊）+ 内容（一行、卡片或那一张）。
-/// **动画只有一份几何**（宽、高、耳朵、底角）：形体、裁内容的遮罩、阴影都读它，弹簧只推这几个数；内容按最终尺寸一次排好、
-/// 被同一个形体裁出来，每帧只是路径在变，形体和内容天然同步（2026-10-26 用户报卡顿，照开源刘海项目改：jackson-storm/
-/// DynamicNotch 的遮罩、CodeIsland 的最小尺寸和开 / 关两条弹簧、boring.notch 的收起不过冲，调研在
-/// build/research/notch-oss-shell.md §5.3）
-struct IslandView: View {
-  let island: Island
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  /// 内容排好的大小：只记正在出场 / 显示着的那一份（换内容时退场的旧内容不算，免得形体先撑到两者的并集再缩回）；
-  /// 收起后留着最后一份，形体照它缩回
-  @State private var contentSize = CGSize.zero
-  /// 收着时那一行多宽：卡片至少这么宽——卡片盖得住那一行，指针不会因为展开被挤到外面（进行中的会来回开合），
-  /// 主按钮展开前后也差不多在同一处
-  @State private var rowWidth: CGFloat = 0
-
-  var body: some View {
-    let geometry = island.geometry
-    let shape = shape(geometry)
-    ZStack(alignment: .top) {
-      backdrop(shape)
-      ZStack(alignment: .top) {
-        content.padding(.top, shape.contentTop)
-        // 刘海两边的东西贴着形体的边走：形体这一刻多宽，跟着形体的那条曲线逐帧报给它们（EdgeRide）
-        Group {
-          wings(geometry)
-          levelWings(geometry)
-        }
-        .modifier(
-          EdgeRide(
-            width: shape.frame.width, notch: geometry.notchWidth, levelWing: island.levelWing)
-        )
-        // 减弱动态效果时不挂这条（形体本来就不伸缩；curve 是 nil，挂上会把这棵子树里同一拍的动画清掉）
-        .animation(curve, value: reduceMotion ? 0 : shape.frame.width)
-      }
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-      .mask { IslandOutline(shape: shape).animation(curve, value: shape) }
-    }
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-    .contentShape(IslandOutline(shape: shape))
-    .onTapGesture { island.tapped() }
-    .onChange(of: shape.frame, initial: true) { island.shapeFrame = shape.frame }
-    .onChange(of: island.wantsBackdrop) { island.syncBackdrop() }
-    .modifier(Shake(count: island.shakes, enabled: !reduceMotion))
-    .modifier(Press(count: island.presses, enabled: !reduceMotion))
-    .modifier(Presence(island: island, capsule: shape.capsule, reduceMotion: reduceMotion))
-    .environment(\.colorScheme, .dark)
-  }
-
-  /// 这一刻形体该长成什么样（目标值，不是动画中途的值）：刘海屏开着时 = 内容 + 刘海，最小刘海宽 + 64、下巴 36；
-  /// 指针停在刘海上鼓起一圈；收起缩进真刘海里面（IslandGeometry.tucked）。无刘海屏一直是内容那么大（收起靠缩放 + 淡出）
-  private func shape(_ geometry: Island.Geometry) -> IslandGeometry {
-    let canvas = Island.canvasWidth
-    switch geometry {
-    case .notch(let notchWidth, let notchHeight):
-      // 减弱动态效果：形体不伸缩（一直是开着的大小），整座岛只淡入淡出；鼓起、耳朵照常
-      let wings = island.isShowingWings && !island.isOpen
-      let open = island.isOpen || (reduceMotion && !island.isPeeking && !wings)
-      let peek = island.isPeeking && !island.isOpen
-      let large = island.isExpanded || island.isBoardOpen || island.cardActivity != nil
-      // 捏回刘海（换内容的中间那一下）：每侧只多 4；音量 / 亮度的提示：只在刘海两边各伸出一截、和刘海一样高
-      // （IslandLevelWings）；坐在刘海里（Island.seated）：收着那么窄、刘海那么高
-      if island.pinched || island.levelShaped || island.isSeated {
-        let tucked = IslandGeometry.tucked(notchWidth: notchWidth, notchHeight: notchHeight)
-        let shown = island.pinched || island.levelShaped
-        let width =
-          island.pinched
-          ? notchWidth + 8 : (island.levelShaped ? notchWidth + island.levelWing * 2 : tucked.width)
-        let height = notchHeight + (island.levelShaped ? Island.levelDrop : 0)
-        return IslandGeometry(
-          frame: CGRect(x: (canvas - width) / 2, y: 0, width: width, height: height),
-          ear: shown ? 10 : 0, bottom: shown ? 12 : 8, floor: tucked, contentTop: notchHeight,
-          capsule: false)
-      }
-      let size =
-        if open {
-          // 一瞥：和耳朵一样宽（耳朵还露着，只是往下垂了一行）
-          CGSize(
-            width: max(notchWidth + (island.isGlance ? Island.wing * 2 : 64), contentSize.width),
-            height: notchHeight + max(Island.chin, contentSize.height))
-        } else if wings {
-          // 耳朵：刘海两侧各 36，和刘海同高；指针停上去同样鼓起一圈
-          CGSize(
-            width: notchWidth + Island.wing * 2 + (peek ? Island.peekGrow.width * 2 : 0)
-              + abs(island.stretch),
-            height: notchHeight + (peek ? Island.peekGrow.height : 0))
-        } else if peek {
-          CGSize(
-            width: notchWidth + Island.peekGrow.width * 2,
-            height: notchHeight + Island.peekGrow.height)
-        } else {
-          IslandGeometry.tucked(notchWidth: notchWidth, notchHeight: notchHeight)
-        }
-      var geometry = IslandGeometry(
-        frame: CGRect(x: (canvas - size.width) / 2, y: 0, width: size.width, height: size.height),
-        // 圆角照 Alcove 的实录量的（2026-11-14；同一种量法它的卡片底角约 32、顶上的弧高 15 往外 18，我们原来 15 / 6）：
-        // 大面（卡片、那一张）底角 44、顶上两侧的弧 24；一行的提示 24 / 12；耳朵、鼓起 10
-        ear: open ? (large ? Island.largeEar : 12) : (peek || wings ? 10 : 0),
-        bottom: open ? (large ? Island.largeCorner : 24) : (peek ? 13 : (wings ? 12 : 8)),
-        floor: IslandGeometry.tucked(notchWidth: notchWidth, notchHeight: notchHeight),
-        contentTop: notchHeight, capsule: false)
-      // 滑动切歌：只往一侧伸（另一侧的边不动）——整体宽了 stretch、中线往那一侧挪一半
-      if wings, !open { geometry.shift = island.stretch / 2 }
-      return geometry
-    case .capsule:
-      let size = CGSize(
-        width: min(max(120, contentSize.width), Island.maxWidth),
-        height: max(Island.chin, contentSize.height))
-      return IslandGeometry(
-        frame: CGRect(x: (canvas - size.width) / 2, y: 2, width: size.width, height: size.height),
-        ear: 0, bottom: Island.chin / 2, floor: .zero, contentTop: 2, capsule: true)
-    }
-  }
-
-  /// 形体的弹簧：开着（出现、展开、换内容、开那一张）带一点弹；收起不过冲（终点藏在刘海里，过冲会露出来）；
-  /// 鼓起是 pop（小东西出现的那条，带一点弹）。减弱动态效果时不伸缩
-  private var curve: Animation? {
-    if reduceMotion { return nil }
-    // 捏回刘海 0.24 s、音量 / 亮度的提示长开 0.4 s，都不过冲（照 Alcove 的实录）
-    if island.pinched { return .smooth(duration: 0.24) }
-    if island.levelShaped { return .smooth(duration: 0.4) }
-    // 音量 / 亮度的提示收回空刘海：比别的收起慢一点、尾巴长（Alcove：约 0.09 s 走一半、0.27 s 走九成）
-    if island.isSeated { return .smooth(duration: 0.42) }
-    if island.isOpen {
-      // 大面（卡片、那一张）冲过头一点再落回；一行的提示、一瞥不过冲那么多
-      return island.isExpanded || island.isBoardOpen
-        ? Island.bloom : Style.Motion.island.animation()
-    }
-    return island.isPeeking ? Style.Motion.pop.animation() : Style.Motion.retract.animation()
-  }
-
-  /// 黑底：刘海屏纯黑带耳朵，无刘海屏 black 0.92 + 发丝线的圆角卡片；只有开着时有阴影（挂在纯形体上，不挂在内容上）
-  /// 不按两种屏分支（分支一换就是新视图，动画没有起点）：两种屏只是颜色、描边的参数不同
-  private func backdrop(_ shape: IslandGeometry) -> some View {
-    let outline = IslandOutline(shape: shape)
-    return outline.fill(.black.opacity(shape.capsule ? 0.92 : 1))
-      .overlay(
-        outline.hairlineBorder(.white.opacity(shape.capsule ? 0.12 : island.outlined ? 0.22 : 0))
-      )
-      // 音量 / 亮度的提示贴在刘海那一行里，不算展开：没有阴影。
-      // ponytail: 没有刘海的屏上有模糊时不画阴影（同第 12 批）——形体离窗口上沿只有 2 pt，又宽又淡的那一圈会在
-      // 卡片上方被窗口切成一道平顶；要补就把那块屏上的窗口往上加高（place 的 top、shape 里胶囊的 y 一起改）
-      .islandShadow(
-        open: island.isOpen && (shape.capsule ? !island.blursNow : !island.levelShaped),
-        soft: island.blursNow
-      )
-      .animation(curve, value: shape)
-  }
-
-  /// 收着是一行（前导 + 标题 + 详情 + 主按钮），展开是卡片；那一张开着时是 IslandBoard。换内容时模糊交叉替换，
-  /// 新的晚 60 ms 出场
-  @ViewBuilder private var content: some View {
-    ZStack(alignment: .top) {
-      if island.isBoardOpen {
-        IslandBoard(island: island)
-          .measured { report($0) }
-          .transition(appear)
-      } else if island.isShowingLevel, let level = island.level {
-        // 音量 / 亮度：没有刘海的屏上是一行（换数不重新出场）；刘海屏上画在刘海两边（levelWings），这里不占地方
-        if case .capsule = island.geometry {
-          IslandLevelRow(level: level, accent: island.levelAccent, bumps: island.levelBumps)
-            .measured { report($0) }
-            .transition(appear)
-        }
-      } else if island.content != nil, let media = island.cardActivity?.media {
-        // 点耳朵展开的正在播放：播放卡片（IslandMedia.swift）；换歌、暂停原地换，不重新出场
-        IslandMediaCard(island: island, media: media)
-          .measured { report($0) }
-          .transition(appear)
-      } else if island.isGlance, !island.isExpanded, let content = island.content,
-        case .notch(let width, _) = island.geometry
-      {
-        // 一瞥（换歌）：耳朵上的封面和波形不动（wings），下面只垂一行「♪ 歌名 · 艺人」，和耳朵一样宽、放不下截断
-        // （2026-11-14 照 Alcove 的实录：原来整条换成带缩略图的一行，耳朵跟着没了）
-        glanceRow(content, width: width + Island.wing * 2)
-          .measured { report($0) }
-          .id(content.title + (content.detail ?? ""))
-          .transition(appear)
-      } else if let content = island.content {
-        Group {
-          if content.isPinned {
-            // 收着、展开是同一个视图（不交叉淡入淡出）：第一行一直不动，展开只往下长
-            pinnedCard(content).measured { report($0) }
-          } else if island.isExpanded {
-            card(content).measured { report($0) }.transition(.opacity)
-          } else {
-            row(content).measured { report($0) }.transition(.opacity)
-          }
-        }
-        // 进行中的岛只按标题认：详情里的百分比一直在变，不能每变一次就整行重新出场
-        .id(content.tone == .progress ? content.title : content.title + (content.detail ?? ""))
-        .transition(appear)
-      }
-    }
-  }
-
-  /// 耳朵上的两小块（收起、有活动时）：画在刘海那一行里，不垫刘海高度；出现、换了露的活动都是模糊着进出（melt）
-  @ViewBuilder private func wings(_ geometry: Island.Geometry) -> some View {
-    // 一瞥出着时耳朵照旧露着（它只是往下垂了一行）。岛上的东西已经在退、形体还没开始缩的那两帧（dismiss 的
-    // retractLag：content 空了、isOpen 还是 true）也算——不然一瞥收回时耳朵会被拆掉再重建、闪一下（评审 1）；
-    // 别的提示收起时耳朵早两帧开始进来
-    // 捏回刘海时（island.pinched）不拆：原地淡掉、跟着边往回走（见 EdgeRide）
-    if case .notch(let width, let height) = geometry, island.isShowingWings,
-      !island.isOpen || island.isGlance || (island.content == nil && !island.isBoardOpen),
-      let activity = island.activity
-    {
-      ZStack {
-        IslandWings(
-          activity: activity, notchWidth: width, notchHeight: height, peeking: island.isPeeking,
-          skip: island.skip, focusMark: island.focusMark
-        )
-        .id(activity.id)
-        .transition(melt)
-        // 滑动切歌：伸出去的那一截里的箭头（形体的那一截由 shape() 伸出来）
-        if island.stretch != 0 {
-          let side: CGFloat = island.stretch > 0 ? 1 : -1
-          Image(systemName: island.stretch > 0 ? "forward.fill" : "backward.fill")
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.white.opacity(0.9))
-            .frame(height: height)
-            .offset(
-              x: side
-                * (width / 2 + Island.wing + (island.isPeeking ? Island.peekGrow.width : 0)
-                  + Island.stretchReach / 2 - 3)
-            )
-            .transition(melt)
-            .accessibilityHidden(true)
-        }
-      }
-      .modifier(Melt(progress: island.pinched ? 0 : 1, scales: false))
-      .animation(.smooth(duration: 0.24), value: island.pinched)
-      .allowsHitTesting(!island.pinched)
-      .transition(melt)
-    }
-  }
-
-  /// 音量 / 亮度的提示（刘海屏）：画在刘海那一行里、刘海两边；换数不重新出场
-  @ViewBuilder private func levelWings(_ geometry: Island.Geometry) -> some View {
-    // 捏回刘海时、刚收起的那 0.3 秒（departingLevel）不拆：原地淡掉、跟着边往回走（同耳朵）
-    if case .notch(let width, let height) = geometry,
-      let level = island.isShowingLevel ? island.level : island.departingLevel
-    {
-      let fading = island.pinched || !island.isShowingLevel
-      IslandLevelWings(
-        level: level, notchWidth: width, notchHeight: height + Island.levelDrop,
-        accent: island.levelAccent, percent: island.levelPercent, bumps: island.levelBumps
-      )
-      .modifier(Melt(progress: fading ? 0 : 1, scales: false))
-      .animation(.smooth(duration: 0.24), value: fading)
-      // 换了种类（音量 → 亮度）是另一个：旧的糊着退、新的糊着进（进来的慢半拍：形体长到一半才看得清，同 Alcove）
-      .id(level.identity)
-      .transition(
-        reduceMotion
-          ? melt
-          : .asymmetric(
-            insertion: .modifier(active: Melt(progress: 0), identity: Melt(progress: 1))
-              .animation(.smooth(duration: 0.3).delay(0.08)),
-            removal: melt))
-    }
-  }
-
-  /// 内容量好的大小：岛上有东西时才记（收起后退场的那一份不覆盖，形体照最后一份缩回）
-  private func report(_ size: CGSize) {
-    guard island.content != nil || island.isBoardOpen, size.width > 0 else { return }
-    contentSize = size
-  }
-
-  /// 内容出场：晚 60 ms，blur 8 → 0、scale 0.9 → 1（顶部锚点）、透明度（smooth 0.28）；退场同一套反着走、0.18 s
-  /// （2026-11-14 照 Alcove：内容进出一律「模糊 + 缩放」，原来退场是 0.12 s 纯淡出）。形体那边同时在长 / 缩，内容被它裁着
-  private var appear: AnyTransition {
-    reduceMotion
-      ? .opacity
-      : .asymmetric(
-        insertion: .modifier(
-          active: Emerge(progress: 0), identity: Emerge(progress: 1)
-        ).animation(.smooth(duration: 0.28).delay(0.06)),
-        removal: .modifier(
-          active: Emerge(progress: 0), identity: Emerge(progress: 1)
-        ).animation(.easeIn(duration: 0.18)))
-  }
-
-  /// 刘海那一行里的小东西（耳朵上的封面、读数、音量提示）进出：blur 6 → 0、scale 0.85 → 1（原地）、透明度，0.24 s；
-  /// 减弱动态效果时只淡
-  private var melt: AnyTransition {
-    reduceMotion
-      ? .opacity.animation(.easeInOut(duration: 0.2))
-      : .modifier(active: Melt(progress: 0), identity: Melt(progress: 1))
-        .animation(.smooth(duration: 0.24))
-  }
-
-  /// 一瞥的那一行：音符 + 歌名 + 「· 艺人」，居中，12 pt；和耳朵那一条一样宽
-  private func glanceRow(_ content: Island.Content, width: CGFloat) -> some View {
-    HStack(spacing: 5) {
-      Image(symbol: content.symbol)
-        .font(.system(size: 10, weight: .semibold))
-        .foregroundStyle(.white.opacity(0.55))
-      Text(content.title)
-        .font(.system(size: 12, weight: .semibold))
-        .foregroundStyle(.white.opacity(0.95))
-        .layoutPriority(1)
-      if let detail = content.detail {
-        Text("· \(detail)")
-          .font(.system(size: 12))
-          .foregroundStyle(.white.opacity(0.55))
-      }
-    }
-    .lineLimit(1)
-    .truncationMode(.tail)
-    .padding(.horizontal, 14)
-    .frame(width: width, height: Island.chin - 4)
-    .accessibilityElement(children: .combine)
-  }
-
-  private func row(_ content: Island.Content) -> some View {
-    let room = Island.rowRoom(
-      title: content.title, detail: content.detail, buttons: island.actions.prefix(1).map(\.title),
-      fraction: content.fraction != nil)
-    return HStack(spacing: 10) {
-      IslandLeading(content: content)
-      // 放得下时不套 frame：排法和原来一模一样
-      if let cap = room.title {
-        title(content).frame(maxWidth: cap, alignment: .leading)
-      } else {
-        title(content)
-      }
-      if let activity = island.cardActivity { IslandActivityReading(activity: activity) }
-      fractionBar(content)
-      if let detail = content.detail { inlineDetail(detail, content, width: room.detail) }
-      if let first = island.actions.first {
-        IslandButton(title: first.title, prominent: false, selected: island.buttonSelection == 0) {
-          island.perform(first)
-        }
-      }
-    }
-    .frame(height: Island.chin)
-    .padding(.horizontal, 18)
-    .fixedSize(horizontal: true, vertical: false)
-    .onGeometryChange(for: CGFloat.self) {
-      $0.size.width
-    } action: { width in
-      rowWidth = width
-    }
-  }
-
-  /// 展开的卡片：第一行和收着时同高，按钮（主按钮在最右）和 × 在这一行；完整详情折在下面，最多 4 行。
-  /// 宽度按第一行和详情排成一行的长度取大的，至少和收着时那一行一样宽、最宽 460
-  private func card(_ content: Island.Content) -> some View {
-    CardLayout(minWidth: rowWidth - 36, maxWidth: Island.maxWidth - 36) {
-      HStack(spacing: 10) {
-        IslandLeading(content: content)
-        title(content)
-        if let activity = island.cardActivity { IslandActivityReading(activity: activity) }
-        fractionBar(content)
-        Spacer(minLength: 12)
-        HStack(spacing: 8) {
-          actionButtons
-          Button {
-            island.close()
-          } label: {
-            Image(systemName: "xmark")
-              .font(.system(size: 9, weight: .bold))
-              .foregroundStyle(.white.opacity(0.8))
-              .frame(width: 20, height: 20)
-              .background(Circle().fill(.white.opacity(0.16)))
-          }
-          .buttonStyle(IslandButtonStyle())
-          .accessibilityLabel("关闭")
-        }
-      }
-      .frame(height: Island.chin)
-      if let detail = content.detail { foldedDetail(detail, content) }
-    }
-    .padding(.horizontal, 18)
-  }
-
-  /// 挂着直到处理的那条（提醒，Island.pin）：收着和展开是同一个视图。按钮一开始就全露着（主按钮白底在最右，同卡片），
-  /// 展开只往下长出完整详情——第一行不重排（行内的详情原地淡掉、位置空着）、宽度只按第一行定，指针移上去前后按钮、
-  /// 标题在屏上一点不挪（2026-11-18 用户反馈：原来悬停才冒出来的「稍后」挤进「知道了」原来的位置、× 又插在它右边，
-  /// 好几次点错）。没有 ×：它就是主按钮「知道了」，双指上滑照旧
-  private func pinnedCard(_ content: Island.Content) -> some View {
-    let expanded = island.isExpanded
-    let room = Island.rowRoom(
-      title: content.title, detail: content.detail, buttons: island.actions.map(\.title),
-      fraction: false)
-    return CardLayout(minWidth: 0, maxWidth: Island.maxWidth - 36, firstRowOnly: true) {
-      HStack(spacing: 10) {
-        IslandLeading(content: content)
-        title(content).frame(maxWidth: room.title, alignment: .leading)
-        if let detail = content.detail {
-          inlineDetail(detail, content, width: room.detail)
-            .opacity(expanded ? 0 : 1)
-            .accessibilityHidden(expanded)
-        }
-        HStack(spacing: 8) { actionButtons }
-      }
-      .frame(height: Island.chin)
-      if expanded, let detail = content.detail { foldedDetail(detail, content) }
-    }
-    .padding(.horizontal, 18)
-  }
-
-  /// 这一条的按钮，主按钮（第一个，白底黑字）在最右
-  private var actionButtons: some View {
-    ForEach(Array(island.actions.enumerated().reversed()), id: \.offset) { index, action in
-      IslandButton(
-        title: action.title, prominent: index == 0, selected: island.buttonSelection == index
-      ) { island.perform(action) }
-    }
-  }
-
-  /// 收着那一行里的详情：一行、中间截断
-  private func inlineDetail(_ detail: String, _ content: Island.Content, width: CGFloat)
-    -> some View
-  {
-    Text(detail)
-      .font(detailFont(content))
-      .foregroundStyle(.white.opacity(0.55))
-      .lineLimit(1)
-      .truncationMode(.middle)
-      .frame(maxWidth: width, alignment: .leading)
-  }
-
-  /// 卡片里折在第一行下面的完整详情：最多 4 行，和标题左对齐
-  private func foldedDetail(_ detail: String, _ content: Island.Content) -> some View {
-    Text(detail)
-      .font(detailFont(content))
-      .foregroundStyle(.white.opacity(0.55))
-      .lineLimit(4)
-      .fixedSize(horizontal: false, vertical: true)
-      .padding(.leading, 32)
-      .padding(.bottom, 12)
-  }
-
-  private func title(_ content: Island.Content) -> some View {
-    Text(content.title)
-      .font(.system(size: 13, weight: .semibold))
-      .foregroundStyle(.white.opacity(0.95))
-      .lineLimit(1)
-  }
-
-  /// 进行中的详情是会变的百分比：数字等宽，岛不跟着一宽一窄地抖
-  private func detailFont(_ content: Island.Content) -> Font {
-    content.tone == .progress ? .system(size: 13).monospacedDigit() : .system(size: 13)
-  }
-
-  @ViewBuilder private func fractionBar(_ content: Island.Content) -> some View {
-    if let fraction = content.fraction {
-      // 知道做到哪了（下载、转 GIF、压缩）：56 × 4 的细条，底 white 0.18、填语气色，跟着进度线性走
-      Capsule().fill(.white.opacity(0.18))
-        .overlay(alignment: .leading) {
-          Rectangle().fill(IslandLeading.tint(content.tone))
-            .frame(width: 56 * min(max(fraction, 0), 1))
-        }
-        .clipShape(Capsule())
-        .frame(width: 56, height: 4)
-        .animation(reduceMotion ? nil : .linear(duration: 0.2), value: fraction)
-        .accessibilityHidden(true)
-    }
-  }
-
-}
-
-/// 前导位置（22 × 22）：语气色圆底的符号、取色的色块或截图的缩略图。提示和那一张里的列表共用
-struct IslandLeading: View {
-  let content: Island.Content
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  var body: some View {
-    switch content.leading {
-    // 色块和缩略图的描边同一种：发丝线（0.5 pt，增强对比度 1 pt）
-    case .color(let color):
-      let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
-      shape.fill(Color(nsColor: color))
-        .overlay(shape.hairlineBorder(.white.opacity(0.25)))
-        .frame(width: 22, height: 22)
-    case .thumbnail(let image):
-      let shape = RoundedRectangle(cornerRadius: 4, style: .continuous)
-      Image(nsImage: image)
-        .resizable()
-        .aspectRatio(contentMode: .fill)
-        .frame(width: 26, height: 18)
-        .clipShape(shape)
-        .overlay(shape.hairlineBorder(.white.opacity(0.25)))
-    case .tone:
-      // 底上的符号：成功 / 警告 / 错误是白的；信息 / 进行中的底是强调色，黄、橙、绿这些亮强调色上要换深色
-      let ink =
-        content.tint.map(Self.ink(on:))
-        ?? (content.tone == .info || content.tone == .progress ? Style.onBrand : .white)
-      let plate = content.tint.map { Color(nsColor: $0) } ?? Self.tint(content.tone)
-      Group {
-        if Island.hasPlate(content.symbol) {
-          Image(symbol: content.symbol)
-            .symbolRenderingMode(.palette)
-            .foregroundStyle(ink, plate)
-        } else {
-          // 没有圆底变体的符号：垫一个语气色圆。圆是同字号的 circle.fill，和 xxx.circle.fill 的圆一样大（约 18.5 pt）；
-          // 符号放进 12 × 12（和系统圆底符号里的那个差不多大），宽的（键盘、带角标的文件夹）跟着缩，不出圆
-          Image(systemName: "circle.fill")
-            .foregroundStyle(plate)
-            .overlay {
-              Image(symbol: content.symbol)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 12, height: 12)
-                .foregroundStyle(ink)
-            }
-        }
-      }
-      .font(.system(size: 18, weight: .semibold))
-      .contentTransition(.symbolEffect(.replace.magic(fallback: .downUp.byLayer)))
-      .symbolEffect(.breathe.pulse, isActive: content.tone == .progress && !reduceMotion)
-      .symbolEffect(.bounce, value: content.tone == .success ? content.title : "")
-      .frame(width: 22, height: 22)
-    }
-  }
-
-  /// 自己颜色的圆底（专注模式、日历的颜色）上的符号：亮的底（黄、薄荷绿……）用深色，别的用白（评审：黄底白字看不清）
-  static func ink(on color: NSColor) -> Color {
-    guard let rgb = color.usingColorSpace(.sRGB) else { return .white }
-    let luminance =
-      0.2126 * rgb.redComponent + 0.7152 * rgb.greenComponent + 0.0722 * rgb.blueComponent
-    return luminance > 0.6 ? .black.opacity(0.85) : .white
-  }
-
-  static func tint(_ tone: Island.Tone) -> Color {
-    switch tone {
-    case .success: Color(nsColor: .systemGreen)
-    case .info, .progress: Style.brand
-    case .warning: Color(nsColor: .systemOrange)
-    case .error: Color(nsColor: .systemRed)
-    }
-  }
-}
-
-/// 点到了岛本身：整座岛缩到 0.96 再弹回（顶边不动，同岛上按钮按下的手感），count 变一次播一次
-private struct Press: ViewModifier {
-  let count: Int
-  let enabled: Bool
-
-  func body(content: Content) -> some View {
-    content.keyframeAnimator(initialValue: CGFloat(1), trigger: count) { view, scale in
-      view.scaleEffect(enabled ? scale : 1, anchor: .top)
-    } keyframes: { _ in
-      KeyframeTrack {
-        CubicKeyframe(0.96, duration: 0.08)
-        SpringKeyframe(1, duration: 0.26, spring: .snappy)
-      }
-    }
-  }
-}
-
-/// 岛在不在：无刘海屏收起时缩到 0.6、淡掉（顶部锚点）；刘海屏减弱动态效果时只淡入淡出。都是渲染变换，不重排；
-/// 不按两种屏分支（理由同 backdrop）
-private struct Presence: ViewModifier {
-  let island: Island
-  let capsule: Bool
-  let reduceMotion: Bool
-
-  func body(content: Content) -> some View {
-    let open = island.isOpen
-    let shown =
-      capsule ? open : !(reduceMotion && !open && !island.isPeeking && !island.isShowingWings)
-    return
-      content
-      .scaleEffect(capsule && !open && !reduceMotion ? 0.6 : 1, anchor: .top)
-      .opacity(shown ? 1 : 0)
-  }
-}
-
-extension View {
-  /// 量这块内容排好的大小（出现时、变了时各报一次；动画中途不报：内容自己不做尺寸动画）
-  fileprivate func measured(_ report: @escaping (CGSize) -> Void) -> some View {
-    onGeometryChange(for: CGSize.self) {
-      $0.size
-    } action: {
-      report($0)
-    }
-  }
-}
-
-/// 岛上的胶囊按钮：12 semibold、高约 22；主按钮（展开后最右那个）白底黑字，其余 white 0.16 底白字。
-/// selected：键盘交给了这几个按钮、选中的是它（快捷键「打开刘海岛」，第五轮体检 A2）——外面隔 3 pt 一圈 2 pt 强调色焦点环，
-/// 同那一张上选中的快捷动作
-struct IslandButton: View {
-  let title: String
-  let prominent: Bool
-  var selected = false
-  let action: () -> Void
-
-  var body: some View {
-    Button(action: action) {
-      Text(title)
-        .font(.system(size: 12, weight: .semibold))
-        .foregroundStyle(prominent ? .black : .white)
-        .lineLimit(1)
-        .fixedSize()
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-        .background(Capsule(style: .continuous).fill(.white.opacity(prominent ? 0.92 : 0.16)))
-        // 屏外截图自检里这一圈两头各多一小段竖线，真机没有（来历见 Style.swift 的 hudSkin）
-        .overlay {
-          if selected {
-            Capsule(style: .continuous).strokeBorder(Style.brand, lineWidth: 2).padding(-3)
-          }
-        }
-    }
-    .buttonStyle(IslandButtonStyle())
-    .accessibilityLabel(title)
-    .accessibilityAddTraits(selected ? .isSelected : [])
-  }
-}
-
-/// 按下缩到 0.96、淡一点（不当 key 的窗口里 SwiftUI 的悬停不可靠，不做悬停底）
-struct IslandButtonStyle: ButtonStyle {
-  func makeBody(configuration: Configuration) -> some View {
-    configuration.label
-      .scaleEffect(configuration.isPressed ? 0.96 : 1)
-      .opacity(configuration.isPressed ? 0.8 : 1)
-  }
-}
-
-/// 卡片的排法：宽度取各行排成一行时最长的那个（夹到 minWidth…maxWidth，往上取整：正好等于理想宽度时取整会把按钮挤成「…」），
-/// 每一行在这个宽度里排、详情折行
-/// nonisolated：Layout 是非隔离协议，纯几何计算
-nonisolated private struct CardLayout: Layout {
-  var minWidth: CGFloat
-  var maxWidth: CGFloat
-  /// 只按第一行定宽、详情在这个宽度里折行（挂着的那条：展开前后一样宽，按钮不挪）
-  var firstRowOnly = false
-
-  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-    let width = cardWidth(subviews)
-    let height = subviews.reduce(0) {
-      $0 + $1.sizeThatFits(ProposedViewSize(width: width, height: nil)).height
-    }
-    return CGSize(width: width, height: height)
-  }
-
-  func placeSubviews(
-    in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()
-  ) {
-    var y = bounds.minY
-    for subview in subviews {
-      let height = subview.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil)).height
-      subview.place(
-        at: CGPoint(x: bounds.minX, y: y),
-        proposal: ProposedViewSize(width: bounds.width, height: height))
-      y += height
-    }
-  }
-
-  private func cardWidth(_ subviews: Subviews) -> CGFloat {
-    let rows = firstRowOnly ? subviews.prefix(1) : subviews
-    let widest = rows.map { $0.sizeThatFits(.unspecified).width }.max() ?? 0
-    return min(max(widest.rounded(.up), minWidth), maxWidth)
-  }
-}
-
-extension View {
-  /// 展开态的阴影（mac-whisker §3「层级」：black 0.45 / 模糊 14 / 向下 6）：刘海下巴和无刘海的胶囊同一组
-  /// soft：四周有渐进模糊时换成又宽又淡的一圈压暗（2026-11-14 量 Alcove：6 pt 处暗 20%、16 pt 处 13%、26 pt 处
-  /// 8%、36 pt 处 5%、46 pt 处 3%；这组参数屏上量到 12 / 8 / 5 / 3）。原来那道又窄又重的压在模糊上，背后的字像被
-  /// 抹掉了；整个不要又浮不起来
-  fileprivate func islandShadow(open: Bool, soft: Bool = false) -> some View {
-    shadow(
-      color: .black.opacity(open ? (soft ? 0.6 : 0.45) : 0), radius: soft ? 32 : 14,
-      y: soft ? 2 : 6)
-  }
-}
-
-/// 把形体这一刻的宽度（动画中途的值）折成「刘海两边的东西要往中间挪多少」报下去（Island.ride）：形体的宽度变了，
-/// 它跟着同一条曲线逐帧重算——耳朵、音量 / 亮度的提示就贴着边一起走。形体比它们宽时两个数都是 0、不变，不会每帧
-/// 重画（展开成卡片的那几百毫秒里什么都不做）。没有刘海的屏上不用。
-/// 两条屏上录出来的教训：① 要用普通的 `.modifier(…).animation(curve, value:)`——写成
-/// `.animation(curve) { $0.modifier(EdgeRide(…)) }` 时环境里的数根本传不下去（两个数一直是 0）；② 形体捏回刘海时
-/// 耳朵、音量提示都不拆，原地淡掉（wings / levelWings 里的 Melt(scales: false)）——这样跟边走不靠「退场中的视图还
-/// 收不收得到更新」
-/// nonisolated：动画的中间值是系统插的，不保证在主线程上设（mac-native §3，同 IslandOutline）；body 照旧在主线程
-nonisolated private struct EdgeRide: ViewModifier, Animatable {
-  var width: CGFloat
-  /// 刘海宽；没有刘海的屏是 nil
-  let notch: CGFloat?
-  /// 音量 / 亮度那种提示每侧伸出多宽（专注模式的随名字长短，Island.levelWing）
-  let levelWing: CGFloat
-
-  var animatableData: CGFloat {
-    get { width }
-    set { width = newValue }
-  }
-
-  @MainActor func body(content: Content) -> some View {
-    if let notch {
-      content
-        .environment(
-          \.islandWingRide, Island.ride(wing: Island.wing, notch: notch, shape: width)
-        )
-        .environment(
-          \.islandLevelRide, Island.ride(wing: levelWing, notch: notch, shape: width))
-    } else {
-      content
-    }
-  }
-}
-
-/// 刘海那一行里的小东西进出：blur 6 → 0、scale 0.85 → 1（原地）、透明度。scales false：不缩放（捏回刘海时原地淡掉
-/// 的耳朵、音量提示：它们自己跟着边走，整条再朝中间缩就离边越来越远）
-private struct Melt: ViewModifier {
-  let progress: Double
-  var scales = true
-
-  func body(content: Content) -> some View {
-    content
-      .blur(radius: 6 * (1 - progress))
-      .scaleEffect(scales ? 0.85 + 0.15 * progress : 1)
-      .opacity(progress)
-  }
-}
-
-/// 内容出场：blur 8 → 0、scale 0.9 → 1（顶部锚点）、透明度
-private struct Emerge: ViewModifier {
-  let progress: Double
-
-  func body(content: Content) -> some View {
-    content
-      .blur(radius: 8 * (1 - progress))
-      .scaleEffect(0.9 + 0.1 * progress, anchor: .top)
-      .opacity(progress)
-  }
-}
-
-/// 形体的一份几何：画布里的位置大小、耳朵、底角（动画只推这几个数），和不参与动画的最小尺寸（真刘海：弹簧过冲也露不出来）
-nonisolated struct IslandGeometry: Equatable {
-  var frame: CGRect
-  var ear: CGFloat
-  var bottom: CGFloat
-  var floor: CGSize
-  /// 内容从多高开始排（刘海屏在刘海下面，无刘海屏离画布顶 2）
-  var contentTop: CGFloat
-  /// 无刘海屏的圆角卡片（没有耳朵、四角同一个半径）
-  var capsule: Bool
-  /// 形体的中线往右挪多少（滑动切歌时往一侧伸；平时 0）。可动画
-  var shift: CGFloat = 0
-
-  /// 刘海屏收起时的形体：缩进真刘海里面（每侧让出 6、底边让出 6、没有耳朵、底角 8），被硬件刘海整个挡住。
-  /// 收起的终点要是比刘海大（原来每侧宽 2、顶上带 6 的耳朵），缩回走完移走窗口时露在外面的那几点黑边一下子没了，
-  /// 看着像最后卡了一下（2026-10-26 用户录屏：提示收起、悬停刘海后退出都这样）；出现时也从刘海里面长出来。
-  /// notchWidth 是 Island.geometry 给的宽（真刘海 + 4）
-  static func tucked(notchWidth: CGFloat, notchHeight: CGFloat) -> CGSize {
-    CGSize(width: max(notchWidth - 16, 0), height: max(notchHeight - 6, 0))
-  }
-}
-
-/// 刘海岛形体：刘海屏是顶边两侧向外弯出的「耳朵」（凹弧接到菜单栏顶边）+ 圆角下巴；无刘海屏是圆角 = 半高（最大 18）的
-/// 连续圆角矩形，一行时就是胶囊，展开成卡片后圆角 18，同一种形状能连续变。宽高、耳朵、底角可动画；路径按画布居中
-/// nonisolated：path(in:) 可能在 SwiftUI 的异步渲染线程上调，纯几何计算，不绑定主线程
-nonisolated struct IslandOutline: InsettableShape {
-  var shape: IslandGeometry
-  var inset: CGFloat = 0
-
-  var animatableData:
-    AnimatablePair<
-      AnimatablePair<AnimatablePair<CGFloat, CGFloat>, AnimatablePair<CGFloat, CGFloat>>, CGFloat
-    >
-  {
-    get {
-      AnimatablePair(
-        AnimatablePair(
-          AnimatablePair(shape.frame.width, shape.frame.height),
-          AnimatablePair(shape.ear, shape.bottom)),
-        shape.shift)
-    }
-    set {
-      let size = newValue.first.first
-      shape.frame.origin.x += (shape.frame.width - size.first) / 2
-      shape.frame.size = CGSize(width: size.first, height: size.second)
-      shape.ear = newValue.first.second.first
-      shape.bottom = newValue.first.second.second
-      shape.shift = newValue.second
-    }
-  }
-
-  func inset(by amount: CGFloat) -> IslandOutline {
-    var copy = self
-    copy.inset += amount
-    return copy
-  }
-
-  func path(in canvas: CGRect) -> Path {
-    let width = max(shape.frame.width, shape.floor.width)
-    let height = max(shape.frame.height, shape.floor.height)
-    let rect = CGRect(
-      x: canvas.midX - width / 2 + shape.shift, y: canvas.minY + shape.frame.minY, width: width,
-      height: height
-    ).insetBy(dx: inset, dy: inset)
-    guard !shape.capsule else {
-      return RoundedRectangle(
-        cornerRadius: max(min(shape.bottom, rect.height / 2) - inset, 0), style: .continuous
-      )
-      .path(in: rect)
-    }
-    let ear = min(shape.ear, rect.width / 4, rect.height / 2)
-    let bottom = min(shape.bottom, (rect.width - ear * 2) / 2, rect.height - ear)
-    var path = Path()
-    path.move(to: CGPoint(x: rect.minX - ear, y: rect.minY))
-    path.addQuadCurve(
-      to: CGPoint(x: rect.minX, y: rect.minY + ear), control: CGPoint(x: rect.minX, y: rect.minY))
-    path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - bottom))
-    path.addQuadCurve(
-      to: CGPoint(x: rect.minX + bottom, y: rect.maxY), control: CGPoint(x: rect.minX, y: rect.maxY)
-    )
-    path.addLine(to: CGPoint(x: rect.maxX - bottom, y: rect.maxY))
-    path.addQuadCurve(
-      to: CGPoint(x: rect.maxX, y: rect.maxY - bottom), control: CGPoint(x: rect.maxX, y: rect.maxY)
-    )
-    path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + ear))
-    path.addQuadCurve(
-      to: CGPoint(x: rect.maxX + ear, y: rect.minY), control: CGPoint(x: rect.maxX, y: rect.minY))
-    path.closeSubpath()
-    return path
-  }
-}
-
 /// 岛的窗口：无边框窗口默认当不了 key，「那一张」用快捷键叫出时要临时当 key 收 Esc / ←→ / ↩（U9）——只为这个子类化
 /// （mac-overlay-panel §1 的例外）。平时 keyable 是 false，同普通的 NSPanel、当不了 key。当着 key 的那几秒里按键全归岛：
 /// 普通键在 sendEvent 里交给岛（岛不认的也吞掉、不响），带 ⌘ 的组合在 performKeyEquivalent 里吞掉（不让 ⌘Q 退出本 App、
@@ -2902,7 +1453,7 @@ final class IslandPanel: NSPanel {
 
 /// 岛的宿主：接着鼠标时第一下点击就给按钮（本 App 不在前台时也一样，G23）；指针在岛上时双指往上滑收起。
 /// 平时窗口整个不接鼠标，这两样都不起作用
-private final class IslandHost: NSHostingView<IslandView> {
+final class IslandHost: NSHostingView<IslandView> {
   weak var island: Island?
   /// 这一次手势里手指往上走了多少（往下是负的）、往左走了多少（往右是负的）；够了收 / 开 / 切歌一次，同一次手势不再算
   private var swipe: CGFloat = 0
