@@ -86,10 +86,10 @@ enum WhatsNew {
     Entry(
       id: "interface-language", version: "0.10.0", feature: nil, page: .general,
       section: GeneralTab.languageLabel),
-    // 0.10.0 另有 设置 › 截图「也认网页里的元素」（截图识别元素第三轮，拨过算看过）
+    // 0.10.0 另有 设置 › 截图「也认网页里的元素」（截图识别元素第三轮，拨过算看过；0.10.1 设置改版并进高级里的「悬停时识别」）
     Entry(
       id: "screenshot-web-elements", version: "0.10.0", feature: .screenshot, page: .screenshot,
-      section: "也认网页里的元素"),
+      section: "悬停时识别"),
     // 0.10.0 的四个新插件（插件页改版 E1）：没添加时在「全部插件」那一行、侧栏「全部插件」上标，添加了算碰过；四个算一个
     Entry(
       id: "plugin-keep-awake", version: "0.10.0", feature: nil, page: .plugins, plugin: .keepAwake),

@@ -359,7 +359,10 @@ nonisolated enum Recovery {
     let backupDay =
       problem.settingsBackupDay.map { describe($0, now: now, calendar: calendar) } ?? ""
     let note = String(
-      localized: "选了重新开始，片段、文字收藏和生词本之后还能导回来：每天的自动备份会留一份在原处，到 设置 › 通用 点「从备份恢复」，选 \(backupDay)那一份。")
+      localized: """
+        选了重新开始，片段、文字收藏和生词本之后还能导回来：每天的自动备份会留一份在原处，\
+        到 设置 › 通用 › 备份与导出导入 点「从备份恢复」，选 \(backupDay)那一份。
+        """)
     // 说明文件留在哪的那一段后面接这一段（没有那种备份就没有这一段）
     let tail = (problem.hasSettingsBackup ? [kept, note] : [kept]) + [reason]
     guard let backup = problem.backup else {

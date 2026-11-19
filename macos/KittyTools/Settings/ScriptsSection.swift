@@ -300,32 +300,47 @@ struct ScriptsSection: View {
   }
 }
 
-/// 设置里推进一页的那种行：标题 + 一行小字 + 右边 ›（整行能点）
+/// 设置里推进一页的那种行：标题（+ 一行小字）+ 行尾的现在的状态 + 右边 ›（整行能点）。设置改版 S1 起推进子页的行只写
+/// 行尾状态（短：中文 10 个字、英文 18 个字符以内，长的写成小字），一串摘要的（功能、插件、应用别名……）照旧写小字
 struct SettingsPushRow: View {
   /// 别处算好的字（一句摘要）传 "\(x)"（TRANSLATION.md 二）
   let title: LocalizedStringResource
-  let detail: LocalizedStringResource
+  /// 三元式先在外面算成 LocalizedStringResource 再传（可选参数里直接写，抽字时第二个分支会漏掉）
+  var detail: LocalizedStringResource? = nil
   /// 名字后面挂「新」（WhatsNew）
   var isNew = false
+  /// 行尾的状态（「开着 · 右边」「2 分钟前」「缺 1 项」）
+  var value: LocalizedStringResource? = nil
+  /// 状态是要处理的问题：橙字（同有序列表的状态副标题）
+  var valueIsProblem = false
   let action: () -> Void
 
   var body: some View {
     Button(action: action) {
       LabeledContent {
-        // 同可排序列表里推进的那种箭头（翻译服务、网页搜索、提醒）
-        Image(systemName: "chevron.forward")
-          .foregroundStyle(.tertiary)
-          .accessibilityHidden(true)
+        HStack(spacing: 6) {
+          if let value {
+            Text(plain: value)
+              .foregroundStyle(OrderedList.statusStyle(isProblem: valueIsProblem))
+              .lineLimit(1)
+          }
+          // 同可排序列表里推进的那种箭头（翻译服务、网页搜索、提醒）
+          Image(systemName: "chevron.forward")
+            .foregroundStyle(.tertiary)
+            .accessibilityHidden(true)
+        }
       } label: {
         HStack(spacing: 6) {
           Text(plain: title)
           if isNew { NewTag() }
         }
-        Text(plain: detail)
+        if let detail { Text(plain: detail) }
       }
       .contentShape(.rect)
     }
     .buttonStyle(.plain)
+    // 读屏：行尾的状态读成值（「权限，缺 1 项」）
+    .accessibilityValue(value.map { String(localized: $0) } ?? "")
     .accessibilityHint("打开「\(String(localized: title))」")
   }
 }

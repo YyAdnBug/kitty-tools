@@ -166,6 +166,27 @@
         }
       }
     },
+    "%@ · 这个文件夹" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · This folder"
+          }
+        }
+      }
+    },
+    "%@ · 高级" : {
+      "comment" : "设置页「高级…」表单的标题，%@ 是页名",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Advanced"
+          }
+        }
+      }
+    },
     "%@ × %@ 像素" : {
       "localizations" : {
         "en" : {
@@ -434,6 +455,44 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The %@ plugin isn’t added, so this isn’t syncing; add it under Plugins above to resume"
+          }
+        }
+      }
+    },
+    "%@改回了 %lld 项" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: %2$#@items@ restored"
+          },
+          "substitutions" : {
+            "items" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg setting"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg settings"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@改回了 %2$lld 项"
           }
         }
       }
@@ -2409,12 +2468,12 @@
     "60 fps" : {
       "shouldTranslate" : false
     },
-    "60 fps 更顺，文件大约大一半；大屏上可能录不满 60。文件嫌大：标准清晰度在高分屏上宽高各减半，文件小一半多，小字会糊一些；HEVC 同样的画面小三分之一左右，部分 App 和旧设备可能放不了。录好的也可以在角落的缩略图上点「压缩」另存一份小的。麦克风：录制条上的麦克风开着时录哪一个，选的那个没接着时这次用系统默认的；录音照旧用系统默认的输入。只显示快捷键：带 ⌘ ⌃ ⌥ 的组合键、Esc 和 F 键才进画面，打字不显示。" : {
+    "60 fps 更顺，文件大约大一半；大屏上可能录不满 60。HEVC 同样的画面小三分之一左右，部分 App 和旧设备可能放不了。只显示快捷键：带 ⌘ ⌃ ⌥ 的组合键、Esc 和 F 键才进画面，打字不显示。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "60 fps is smoother, and files are about half again as large; large displays may not reach 60. If files are too big: Standard sharpness halves the width and height on high-resolution displays, making files less than half the size with slightly blurrier small text. HEVC makes the same footage about a third smaller, but some apps and older devices may not play it. You can also click “Compress” on the corner thumbnail to save a smaller copy. Microphone: which one to record when the microphone is on in the recording bar; if it isn’t connected, the system default input is used that time. Audio recordings always use the system default input. Shortcuts only: only combinations with ⌘ ⌃ ⌥, Esc, and F-keys appear in the recording; typing doesn’t."
+            "value" : "60 fps is smoother, and files are about half again as large; large displays may not reach 60. HEVC makes the same footage about a third smaller, but some apps and older devices may not play it. Shortcuts only: only combinations with ⌘ ⌃ ⌥, Esc, and F-keys appear in the recording; typing doesn’t."
           }
         }
       }
@@ -4819,16 +4878,16 @@
     "search.about.autoCheck" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "更新"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Update"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "更新"
           }
         }
       }
@@ -4836,16 +4895,16 @@
     "search.about.installOnQuit" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "更新,下载"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Update,Download"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "更新,下载"
           }
         }
       }
@@ -4853,16 +4912,16 @@
     "search.appShortcuts.delay" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "多久"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "How Long,Delay"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "多久"
           }
         }
       }
@@ -4870,16 +4929,16 @@
     "search.appShortcuts.hold" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "按住,长按"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hold,Long Press"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "按住,长按"
           }
         }
       }
@@ -4887,16 +4946,16 @@
     "search.appShortcuts.key" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "⌘,Command"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "⌘,Command,Modifier Key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "⌘,Command"
           }
         }
       }
@@ -4904,16 +4963,16 @@
     "search.bluetoothSnooze.lidOnly" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "合盖,盖子"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Close Lid,Lid"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "合盖,盖子"
           }
         }
       }
@@ -4921,16 +4980,33 @@
     "search.bluetoothSnooze.reopen" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wake"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "唤醒"
           }
-        },
+        }
+      }
+    },
+    "search.clipboard.autoClear" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wake"
+            "value" : "Clear,Quit,Lock Screen"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "清空,退出,锁屏"
           }
         }
       }
@@ -4938,16 +5014,16 @@
     "search.clipboard.blockSensitive" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "密钥,银行卡,密码,敏感"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Secrets,Card Numbers,Passwords,Sensitive"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "密钥,银行卡,密码,敏感"
           }
         }
       }
@@ -4955,50 +5031,16 @@
     "search.clipboard.clearNow" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "清空"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Clear"
           }
-        }
-      }
-    },
-    "search.clipboard.clearOnLock" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "清空,锁屏"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear,Lock Screen"
-          }
-        }
-      }
-    },
-    "search.clipboard.clearOnQuit" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "清空,退出"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear,Quit"
+            "value" : "清空"
           }
         }
       }
@@ -5006,16 +5048,16 @@
     "search.clipboard.excludedApps" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "排除,不记录"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Exclude,Ignore"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "排除,不记录"
           }
         }
       }
@@ -5023,16 +5065,16 @@
     "search.clipboard.imageBudget" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "图片,占用,空间"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Images,Storage,Space"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "图片,占用,空间"
           }
         }
       }
@@ -5040,16 +5082,16 @@
     "search.clipboard.lens" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "透镜,预览"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lens,Preview"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "透镜,预览"
           }
         }
       }
@@ -5057,16 +5099,16 @@
     "search.clipboard.linkPreview" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "链接,网页,标题"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Links,Web Page,Title"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "链接,网页,标题"
           }
         }
       }
@@ -5074,16 +5116,16 @@
     "search.clipboard.ocr" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "识别,文字,OCR"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Recognize,Text,OCR"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "识别,文字,OCR"
           }
         }
       }
@@ -5091,16 +5133,16 @@
     "search.clipboard.panelPosition" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "位置,跟随鼠标,上次位置,屏幕上方"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Position,Near Pointer,Last Position,Top of Screen"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "位置,跟随鼠标,上次位置,屏幕上方"
           }
         }
       }
@@ -5108,16 +5150,16 @@
     "search.clipboard.panelSize" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "宽度,行数"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Width,Rows"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "宽度,行数"
           }
         }
       }
@@ -5125,16 +5167,16 @@
     "search.clipboard.pasteOnClick" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "单击,双击,点击"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Click,Single Click,Double-click"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "单击,双击,点击"
           }
         }
       }
@@ -5142,16 +5184,16 @@
     "search.clipboard.pastePlain" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "纯文本,格式"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Plain Text,Formatting"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "纯文本,格式"
           }
         }
       }
@@ -5159,16 +5201,16 @@
     "search.clipboard.retention" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "历史,天数,保留,永久"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "History,Days,Keep,Forever"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "历史,天数,保留,永久"
           }
         }
       }
@@ -5176,16 +5218,16 @@
     "search.dockPreview.cmdTab" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Command Tab,切换器"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Command Tab,App Switcher"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Command Tab,切换器"
           }
         }
       }
@@ -5193,16 +5235,16 @@
     "search.dockPreview.delay" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "延迟,多久"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Delay,How Long"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "延迟,多久"
           }
         }
       }
@@ -5210,16 +5252,16 @@
     "search.finderMenu.archive" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "压缩,解压,zip,7z,乱码"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Compress,Extract,Unzip,zip,7z,Garbled Names"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "压缩,解压,zip,7z,乱码"
           }
         }
       }
@@ -5227,16 +5269,16 @@
     "search.finderMenu.copy" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "拷贝路径,复制路径,名称"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copy Path,Path,Name"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "拷贝路径,复制路径,名称"
           }
         }
       }
@@ -5244,16 +5286,16 @@
     "search.finderMenu.folders" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "常用文件夹"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Favorite Folders"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "常用文件夹"
           }
         }
       }
@@ -5261,16 +5303,16 @@
     "search.finderMenu.hidden" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "隐藏,哈希,彻底删除"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hide,Hash,Delete Immediately"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "隐藏,哈希,彻底删除"
           }
         }
       }
@@ -5278,16 +5320,16 @@
     "search.finderMenu.menu" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "右键菜单,子菜单,扩展"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Context Menu,Submenu,Extension"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "右键菜单,子菜单,扩展"
           }
         }
       }
@@ -5295,16 +5337,16 @@
     "search.finderMenu.newFile" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "模板,后缀"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Templates,File Extension"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "模板,后缀"
           }
         }
       }
@@ -5312,16 +5354,16 @@
     "search.finderMenu.openWith" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "终端,编辑器,打开方式"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Terminal,Editor,Open With"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "终端,编辑器,打开方式"
           }
         }
       }
@@ -5329,16 +5371,16 @@
     "search.finderMenu.organize" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "移动,复制,剪切,粘贴,替身"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Move,Copy,Cut,Paste,Alias"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "移动,复制,剪切,粘贴,替身"
           }
         }
       }
@@ -5346,16 +5388,16 @@
     "search.general.accent" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "主题色,颜色"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Theme Color,Color,Highlight"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "主题色,颜色"
           }
         }
       }
@@ -5363,16 +5405,16 @@
     "search.general.accessibility" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "权限,授权"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Permissions,Access"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "权限,授权"
           }
         }
       }
@@ -5380,16 +5422,16 @@
     "search.general.appearance" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "浅色,深色,暗黑,主题"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Light,Dark,Dark Mode,Theme"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "浅色,深色,暗黑,主题"
           }
         }
       }
@@ -5397,16 +5439,16 @@
     "search.general.backup" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "备份"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Backup"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "备份"
           }
         }
       }
@@ -5414,16 +5456,16 @@
     "search.general.clipboardAccess" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "权限,隐私,从其他 App 粘贴"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Permissions,Privacy,Paste from Other Apps"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "权限,隐私,从其他 App 粘贴"
           }
         }
       }
@@ -5431,16 +5473,16 @@
     "search.general.dataFolder" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "数据,访达,文件夹"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Data,Finder,Folder"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "数据,访达,文件夹"
           }
         }
       }
@@ -5448,16 +5490,16 @@
     "search.general.dockIcon" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "程序坞,Dock"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dock"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "程序坞,Dock"
           }
         }
       }
@@ -5465,16 +5507,16 @@
     "search.general.features" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "模块,关闭,停用,启用"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Modules,Turn Off,Disable,Enable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "模块,关闭,停用,启用"
           }
         }
       }
@@ -5482,16 +5524,16 @@
     "search.general.iconStyle" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "彩色,单色"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Colorful,Monochrome"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "彩色,单色"
           }
         }
       }
@@ -5499,16 +5541,16 @@
     "search.general.language" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "英文,中文,English,界面语言"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "English,Chinese,Language,Interface Language"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "英文,中文,English,界面语言"
           }
         }
       }
@@ -5516,16 +5558,16 @@
     "search.general.login" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "开机,登录,自启,登录项"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Startup,Login,Open at Login,Login Items"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "开机,登录,自启,登录项"
           }
         }
       }
@@ -5533,16 +5575,16 @@
     "search.general.menuBarIcon" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "菜单栏,状态栏,隐藏图标"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Menu Bar,Status Bar,Hide Icon"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "菜单栏,状态栏,隐藏图标"
           }
         }
       }
@@ -5550,16 +5592,16 @@
     "search.general.microphone" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "权限,授权"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Permissions,Access"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "权限,授权"
           }
         }
       }
@@ -5567,16 +5609,16 @@
     "search.general.mirror" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "备份,文件夹,云盘"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Backup,Folder,iCloud Drive"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "备份,文件夹,云盘"
           }
         }
       }
@@ -5584,16 +5626,16 @@
     "search.general.plugins" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "扩展,添加"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Extensions,Add"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "扩展,添加"
           }
         }
       }
@@ -5601,16 +5643,16 @@
     "search.general.restore" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "从备份恢复,恢复"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Restore from Backup,Restore"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "从备份恢复,恢复"
           }
         }
       }
@@ -5618,16 +5660,16 @@
     "search.general.screenRecording" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "权限,授权"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Permissions,Access"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "权限,授权"
           }
         }
       }
@@ -5635,16 +5677,16 @@
     "search.general.squeeze" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "挤压,弹开,动画,动效"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Squeeze,Spring,Animation,Motion"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "挤压,弹开,动画,动效"
           }
         }
       }
@@ -5652,16 +5694,33 @@
     "search.general.sync" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud,iCloud Drive,WebDAV,Server,Multiple Macs,Another Mac"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "iCloud,云盘,WebDAV,服务器,多台,另一台"
           }
+        }
+      }
+    },
+    "search.general.syncPeers" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "同步,另一台,Mac,电脑"
+          }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iCloud,iCloud Drive,WebDAV,Server,Multiple Macs,Another Mac"
+            "value" : "Sync,Another Mac,Mac,Computer"
           }
         }
       }
@@ -5669,16 +5728,16 @@
     "search.general.transfer" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "导出,导入,迁移,换电脑,配置"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Export,Import,Migrate,New Mac,Configuration"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "导出,导入,迁移,换电脑,配置"
           }
         }
       }
@@ -5686,16 +5745,16 @@
     "search.hotkeys.blocked" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "停用,屏蔽,不响应"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Disable,Block,Ignore"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "停用,屏蔽,不响应"
           }
         }
       }
@@ -5703,16 +5762,16 @@
     "search.hotkeys.panels" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "速查"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Keyboard Shortcuts,Cheat Sheet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "速查"
           }
         }
       }
@@ -5720,16 +5779,16 @@
     "search.hotkeys.shotOutput" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "截图,钉图,长截图,识字"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Screenshot,Pin,Scrolling Capture,Capture Text"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "截图,钉图,长截图,识字"
           }
         }
       }
@@ -5737,16 +5796,16 @@
     "search.hotkeys.shotTools" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "截图,标注"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Screenshot,Annotate"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "截图,标注"
           }
         }
       }
@@ -5754,16 +5813,16 @@
     "search.island.actions" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "那一张,排序"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Card,Order"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "那一张,排序"
           }
         }
       }
@@ -5771,16 +5830,16 @@
     "search.island.blur" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "模糊"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Blur"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "模糊"
           }
         }
       }
@@ -5788,16 +5847,16 @@
     "search.island.calendar" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "月历,日历"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Month Calendar,Calendar"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "月历,日历"
           }
         }
       }
@@ -5805,16 +5864,16 @@
     "search.island.calendarColors" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "日历,颜色"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Calendar,Color"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "日历,颜色"
           }
         }
       }
@@ -5822,16 +5881,16 @@
     "search.island.calendarDots" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "月历"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Calendar"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "月历"
           }
         }
       }
@@ -5839,16 +5898,16 @@
     "search.island.eventChime" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "日程"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Events"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "日程"
           }
         }
       }
@@ -5856,16 +5915,16 @@
     "search.island.focus" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "专注模式,勿扰,睡眠"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Focus,Do Not Disturb,Sleep"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "专注模式,勿扰,睡眠"
           }
         }
       }
@@ -5873,16 +5932,16 @@
     "search.island.focusPinned" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "专注模式"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Focus"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "专注模式"
           }
         }
       }
@@ -5890,16 +5949,16 @@
     "search.island.focusQuiet" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "专注模式"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Focus"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "专注模式"
           }
         }
       }
@@ -5907,16 +5966,16 @@
     "search.island.focusSleepSound" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "专注模式,睡眠"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Focus,Sleep"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "专注模式,睡眠"
           }
         }
       }
@@ -5924,16 +5983,16 @@
     "search.island.focusWaveform" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "专注模式"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Focus"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "专注模式"
           }
         }
       }
@@ -5941,16 +6000,16 @@
     "search.island.haptics" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "触感,震动"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Haptics,Vibration"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "触感,震动"
           }
         }
       }
@@ -5958,16 +6017,16 @@
     "search.island.hidesFromCapture" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "截图,录屏"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Screenshots,Screen Recording"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "截图,录屏"
           }
         }
       }
@@ -5975,16 +6034,16 @@
     "search.island.hidesInFullScreen" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "全屏"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Full Screen"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "全屏"
           }
         }
       }
@@ -5992,16 +6051,16 @@
     "search.island.hourlyChime" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "报时"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Chime,Hourly"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "报时"
           }
         }
       }
@@ -6009,16 +6068,16 @@
     "search.island.hoverExpands" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "悬停,自动展开"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hover,Expand Automatically"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "悬停,自动展开"
           }
         }
       }
@@ -6026,16 +6085,16 @@
     "search.island.keyLevels" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "音量,亮度,静音"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Volume,Brightness,Mute"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "音量,亮度,静音"
           }
         }
       }
@@ -6043,16 +6102,16 @@
     "search.island.levelAccent" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "音量,亮度"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Volume,Brightness"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "音量,亮度"
           }
         }
       }
@@ -6060,16 +6119,16 @@
     "search.island.levelPercent" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "音量,亮度,百分比"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Volume,Brightness,Percentage"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "音量,亮度,百分比"
           }
         }
       }
@@ -6077,16 +6136,16 @@
     "search.island.levelStay" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "音量,亮度"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Volume,Brightness"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "音量,亮度"
           }
         }
       }
@@ -6094,16 +6153,16 @@
     "search.island.mediaColor" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "封面,颜色"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Artwork,Color"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "封面,颜色"
           }
         }
       }
@@ -6111,16 +6170,16 @@
     "search.island.musicFavorite" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "收藏,音乐"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Favorite,Music"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "收藏,音乐"
           }
         }
       }
@@ -6128,16 +6187,16 @@
     "search.island.nextEvent" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "日程,日历,会议"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Events,Calendar,Meeting"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "日程,日历,会议"
           }
         }
       }
@@ -6145,16 +6204,16 @@
     "search.island.notchClicks" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "那一张,点刘海"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Card,Click the Notch"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "那一张,点刘海"
           }
         }
       }
@@ -6162,16 +6221,16 @@
     "search.island.noticeBattery" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "电池"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Battery"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "电池"
           }
         }
       }
@@ -6179,16 +6238,16 @@
     "search.island.noticeHeadphones" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "耳机,AirPods"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Headphones,AirPods"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "耳机,AirPods"
           }
         }
       }
@@ -6196,16 +6255,16 @@
     "search.island.noticeLength" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "提示"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Notices,Hint"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "提示"
           }
         }
       }
@@ -6213,16 +6272,16 @@
     "search.island.noticeLowPower" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "低电量模式"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Low Power Mode"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "低电量模式"
           }
         }
       }
@@ -6230,16 +6289,16 @@
     "search.island.noticeNetwork" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "网络,Wi-Fi"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Network,Wi-Fi"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "网络,Wi-Fi"
           }
         }
       }
@@ -6247,16 +6306,16 @@
     "search.island.noticePower" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "电源,充电"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Power,Charging"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "电源,充电"
           }
         }
       }
@@ -6264,16 +6323,16 @@
     "search.island.nowPlaying" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "正在播放,音乐,封面,切歌"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Now Playing,Music,Artwork,Skip Track"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "正在播放,音乐,封面,切歌"
           }
         }
       }
@@ -6281,16 +6340,16 @@
     "search.island.outlined" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "细边,轮廓"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Outline,Border"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "细边,轮廓"
           }
         }
       }
@@ -6298,16 +6357,16 @@
     "search.island.showDeclined" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "日程,拒绝"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Events,Declined"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "日程,拒绝"
           }
         }
       }
@@ -6315,16 +6374,16 @@
     "search.island.showsHistory" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "通知"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Notifications"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "通知"
           }
         }
       }
@@ -6332,16 +6391,16 @@
     "search.island.trackPeek" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "歌名"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Song Title"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "歌名"
           }
         }
       }
@@ -6349,16 +6408,16 @@
     "search.keepAwake.display" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "屏幕,熄屏"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Display,Display Sleep"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "屏幕,熄屏"
           }
         }
       }
@@ -6366,16 +6425,16 @@
     "search.keepAwake.now" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "时长,停止"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Duration,Stop"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "时长,停止"
           }
         }
       }
@@ -6383,16 +6442,16 @@
     "search.keepAwake.schedule" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "定时,时段,工作日"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Schedule,Time Range,Weekdays"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "定时,时段,工作日"
           }
         }
       }
@@ -6400,16 +6459,16 @@
     "search.launcher.appAliases" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "别名"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Alias"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "别名"
           }
         }
       }
@@ -6417,16 +6476,16 @@
     "search.launcher.browsers" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "书签,浏览历史,浏览器,Safari,Chrome,Edge,Arc,Brave,Firefox,完全磁盘访问"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bookmarks,Browsing History,Browser,Safari,Chrome,Edge,Arc,Brave,Firefox,Full Disk Access"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "书签,浏览历史,浏览器,Safari,Chrome,Edge,Arc,Brave,Firefox,完全磁盘访问"
           }
         }
       }
@@ -6434,16 +6493,16 @@
     "search.launcher.clearUsage" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "使用记录,清空"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Usage,Clear"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "使用记录,清空"
           }
         }
       }
@@ -6451,16 +6510,16 @@
     "search.launcher.commands" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "命令,别名,系统命令"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Commands,Aliases,System Commands"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "命令,别名,系统命令"
           }
         }
       }
@@ -6468,16 +6527,16 @@
     "search.launcher.fileSearch" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "文件,文件搜索,open,find,文件夹授权"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Files,File Search,open,find,Folder Access"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "文件,文件搜索,open,find,文件夹授权"
           }
         }
       }
@@ -6485,16 +6544,16 @@
     "search.launcher.frequent" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "常用,最近,使用记录,收藏"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Frequent,Recent,Usage,Favorites"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "常用,最近,使用记录,收藏"
           }
         }
       }
@@ -6502,16 +6561,16 @@
     "search.launcher.keys" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "按键,速查"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Keys,Keyboard Shortcuts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "按键,速查"
           }
         }
       }
@@ -6519,16 +6578,16 @@
     "search.launcher.panelPosition" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "位置,跟随鼠标,上次位置,屏幕上方"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Position,Near Pointer,Last Position,Top of Screen"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "位置,跟随鼠标,上次位置,屏幕上方"
           }
         }
       }
@@ -6536,16 +6595,16 @@
     "search.launcher.panelSize" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "宽度,行数"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Width,Rows"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "宽度,行数"
           }
         }
       }
@@ -6553,16 +6612,16 @@
     "search.launcher.romanInput" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "英文,输入法"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "English,Input Source"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "英文,输入法"
           }
         }
       }
@@ -6570,16 +6629,16 @@
     "search.launcher.scripts" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "脚本,AI,新建脚本"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Scripts,AI,New Script"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "脚本,AI,新建脚本"
           }
         }
       }
@@ -6587,16 +6646,16 @@
     "search.launcher.shortcuts" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "快捷指令,Shortcuts"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Shortcuts,Shortcuts App"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "快捷指令,Shortcuts"
           }
         }
       }
@@ -6604,16 +6663,16 @@
     "search.launcher.webSearch" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "搜索引擎,快捷链接,关键词,兜底"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Search Engine,Quicklinks,Keyword,Fallback"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "搜索引擎,快捷链接,关键词,兜底"
           }
         }
       }
@@ -6621,16 +6680,16 @@
     "search.launchpad.columns" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "列,排列"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Columns,Layout"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "列,排列"
           }
         }
       }
@@ -6638,16 +6697,16 @@
     "search.launchpad.corner" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "触发角"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hot Corner"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "触发角"
           }
         }
       }
@@ -6655,16 +6714,16 @@
     "search.launchpad.import" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "导入"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Import"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "导入"
           }
         }
       }
@@ -6672,16 +6731,16 @@
     "search.launchpad.keys" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "按键,速查"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Keys,Keyboard Shortcuts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "按键,速查"
           }
         }
       }
@@ -6689,16 +6748,16 @@
     "search.launchpad.pinch" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "捏合,四指,五指"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pinch,Four Fingers,Five Fingers"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "捏合,四指,五指"
           }
         }
       }
@@ -6706,16 +6765,16 @@
     "search.launchpad.reset" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "恢复默认,排列"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Restore Defaults,Layout"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "恢复默认,排列"
           }
         }
       }
@@ -6723,16 +6782,16 @@
     "search.launchpad.rows" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "行,排列"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rows,Layout"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "行,排列"
           }
         }
       }
@@ -6758,16 +6817,16 @@
     "search.notes.deck" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "屏幕边缘,边缘,药丸,标签"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Screen Edge,Edge,Pill,Tabs"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "屏幕边缘,边缘,药丸,标签"
           }
         }
       }
@@ -6775,16 +6834,16 @@
     "search.notes.deckDisplay" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "屏幕边缘,主显示器"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Screen Edge,Main Display"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "屏幕边缘,主显示器"
           }
         }
       }
@@ -6792,16 +6851,16 @@
     "search.notes.deckEdge" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "屏幕边缘,左边,右边"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Screen Edge,Left,Right"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "屏幕边缘,左边,右边"
           }
         }
       }
@@ -6809,16 +6868,16 @@
     "search.notes.deckHidesPill" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "药丸"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pill"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "药丸"
           }
         }
       }
@@ -6826,16 +6885,16 @@
     "search.notes.deckOverFullScreen" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "全屏"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Full Screen"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "全屏"
           }
         }
       }
@@ -6843,16 +6902,16 @@
     "search.notes.deckSize" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "屏幕边缘,标签"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Screen Edge,Tabs"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "屏幕边缘,标签"
           }
         }
       }
@@ -6860,16 +6919,16 @@
     "search.notes.deckStyle" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "标签,色块"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tabs,Color Chips"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "标签,色块"
           }
         }
       }
@@ -6877,16 +6936,16 @@
     "search.notes.export" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "导出,备份"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Export,Backup"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "导出,备份"
           }
         }
       }
@@ -6894,16 +6953,16 @@
     "search.notes.fontSize" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "字号,字体大小"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Text Size,Font Size"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "字号,字体大小"
           }
         }
       }
@@ -6911,16 +6970,16 @@
     "search.notes.import" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "导入"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Import"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "导入"
           }
         }
       }
@@ -6928,16 +6987,16 @@
     "search.notes.keys" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "按键,速查"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Keys,Keyboard Shortcuts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "按键,速查"
           }
         }
       }
@@ -6945,16 +7004,16 @@
     "search.notes.lineSpacing" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "行高,间距"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Line Height,Spacing"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "行高,间距"
           }
         }
       }
@@ -6962,16 +7021,16 @@
     "search.notes.markdown" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "粗体,斜体,链接,代码块"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bold,Italic,Link,Code Block"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "粗体,斜体,链接,代码块"
           }
         }
       }
@@ -6979,16 +7038,16 @@
     "search.notes.openAll" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "归档,最近删除"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Archive,Recently Deleted"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "归档,最近删除"
           }
         }
       }
@@ -6996,16 +7055,16 @@
     "search.record.audioSource" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "录音,系统声音,麦克风"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Audio Recording,System Audio,Microphone"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "录音,系统声音,麦克风"
           }
         }
       }
@@ -7013,16 +7072,16 @@
     "search.record.codec" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "H.264,HEVC,体积"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "H.264,HEVC,File Size"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "H.264,HEVC,体积"
           }
         }
       }
@@ -7030,16 +7089,16 @@
     "search.record.countdown" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "倒数"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Countdown"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "倒数"
           }
         }
       }
@@ -7047,16 +7106,16 @@
     "search.record.cursor" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "光标"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cursor,Pointer"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "光标"
           }
         }
       }
@@ -7064,16 +7123,16 @@
     "search.record.frameRate" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "fps"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "fps,Frames Per Second"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "fps"
           }
         }
       }
@@ -7081,16 +7140,16 @@
     "search.record.keys" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "按键,速查"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Keys,Keyboard Shortcuts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "按键,速查"
           }
         }
       }
@@ -7098,16 +7157,16 @@
     "search.record.keysShown" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "按键,只显示快捷键"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Keys,Show Shortcuts Only"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "按键,只显示快捷键"
           }
         }
       }
@@ -7115,16 +7174,16 @@
     "search.record.microphone" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "输入,话筒"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Input,Mic"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "输入,话筒"
           }
         }
       }
@@ -7132,16 +7191,16 @@
     "search.record.saveFolder" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "保存,文件夹"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Save,Folder"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "保存,文件夹"
           }
         }
       }
@@ -7149,16 +7208,16 @@
     "search.record.sharpness" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "分辨率,画质,文件大小"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Resolution,Quality,File Size"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "分辨率,画质,文件大小"
           }
         }
       }
@@ -7166,16 +7225,16 @@
     "search.record.startsImmediately" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "立即开始,控制条"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Start Immediately,Control Bar"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "立即开始,控制条"
           }
         }
       }
@@ -7183,16 +7242,16 @@
     "search.reminders.focus" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "专注模式,勿扰"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Focus,Do Not Disturb"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "专注模式,勿扰"
           }
         }
       }
@@ -7200,16 +7259,16 @@
     "search.reminders.list" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "定时,闹钟,倒计时"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Timer,Alarm,Countdown"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "定时,闹钟,倒计时"
           }
         }
       }
@@ -7217,16 +7276,16 @@
     "search.reminders.snooze" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "稍后,推迟"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Snooze,Postpone"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "稍后,推迟"
           }
         }
       }
@@ -7234,16 +7293,16 @@
     "search.screenshot.copyAs" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "拷贝,复制,文件,PNG,对拷线"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copy,File,PNG,Transfer Cable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "拷贝,复制,文件,PNG,对拷线"
           }
         }
       }
@@ -7251,16 +7310,16 @@
     "search.screenshot.cursor" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "指针,鼠标指针"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pointer,Mouse Pointer"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "指针,鼠标指针"
           }
         }
       }
@@ -7268,33 +7327,33 @@
     "search.screenshot.editKeys" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "快捷键,改键"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Keyboard Shortcuts,Change Keys"
           }
-        }
-      }
-    },
-    "search.screenshot.findsElements" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "元素,识别,悬停"
+            "value" : "快捷键,改键"
           }
-        },
+        }
+      }
+    },
+    "search.screenshot.elements" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Elements,Detect,Hover"
+            "value" : "Elements,Detect,Hover,Window,Web Pages,Browser"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "元素,识别,悬停,窗口,网页,浏览器"
           }
         }
       }
@@ -7302,16 +7361,16 @@
     "search.screenshot.hideDesktop" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "桌面图标,隐藏"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Desktop Icons,Hide"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "桌面图标,隐藏"
           }
         }
       }
@@ -7319,16 +7378,16 @@
     "search.screenshot.hint" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "提示"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Notices,Hint"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "提示"
           }
         }
       }
@@ -7336,16 +7395,33 @@
     "search.screenshot.history" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "History,Screenshot History"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "历史,截图历史"
           }
+        }
+      }
+    },
+    "search.screenshot.historyClear" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "清空,删除,截图历史"
+          }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "History,Screenshot History"
+            "value" : "Clear,Delete,Screenshot History"
           }
         }
       }
@@ -7353,16 +7429,33 @@
     "search.screenshot.historyDays" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Screenshot History,Days"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "截图历史,天数"
           }
+        }
+      }
+    },
+    "search.screenshot.historyOpen" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "截图历史,窗口"
+          }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Screenshot History,Days"
+            "value" : "Screenshot History,Window"
           }
         }
       }
@@ -7370,16 +7463,16 @@
     "search.screenshot.historySize" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "截图历史,空间"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Screenshot History,Space"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "截图历史,空间"
           }
         }
       }
@@ -7387,16 +7480,16 @@
     "search.screenshot.joinLines" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "识字,换行,二维码"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Capture Text,Line Breaks,QR Code"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "识字,换行,二维码"
           }
         }
       }
@@ -7404,16 +7497,16 @@
     "search.screenshot.keepsColors" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "原色,压暗,遮罩"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Original Colors,Dim,Overlay"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "原色,压暗,遮罩"
           }
         }
       }
@@ -7421,16 +7514,16 @@
     "search.screenshot.keys" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "按键,速查"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Keys,Keyboard Shortcuts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "按键,速查"
           }
         }
       }
@@ -7438,16 +7531,16 @@
     "search.screenshot.loupe" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "放大镜,取色,色值"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Magnifier,Color Picker,Color Value"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "放大镜,取色,色值"
           }
         }
       }
@@ -7455,16 +7548,16 @@
     "search.screenshot.pinText" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "钉图,选字"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pin,Select Text"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "钉图,选字"
           }
         }
       }
@@ -7472,16 +7565,16 @@
     "search.screenshot.placement" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "缩略图,晾衣绳,角落"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Thumbnail,Clothesline,Corner"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "缩略图,晾衣绳,角落"
           }
         }
       }
@@ -7489,16 +7582,16 @@
     "search.screenshot.saveFolder" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "保存,存储,目录,文件夹"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Save,Location,Folder,Directory"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "保存,存储,目录,文件夹"
           }
         }
       }
@@ -7506,16 +7599,16 @@
     "search.screenshot.shutter" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "快门,声音"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Shutter,Sound"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "快门,声音"
           }
         }
       }
@@ -7523,33 +7616,16 @@
     "search.screenshot.toolbar" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "工具栏,靠右,居中,录制条"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Toolbar,Right,Center,Recording Bar"
           }
-        }
-      }
-    },
-    "search.screenshot.webElements" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "网页,浏览器"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web Pages,Browser"
+            "value" : "工具栏,靠右,居中,录制条"
           }
         }
       }
@@ -7557,16 +7633,16 @@
     "search.smoothScroll.distance" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "速度,距离"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Speed,Distance"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "速度,距离"
           }
         }
       }
@@ -7574,16 +7650,16 @@
     "search.smoothScroll.excluded" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "停用,游戏,虚拟机,远程桌面"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Disable,Games,Virtual Machine,Remote Desktop"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "停用,游戏,虚拟机,远程桌面"
           }
         }
       }
@@ -7591,16 +7667,16 @@
     "search.smoothScroll.reverseHorizontal" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "反向,横向"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reverse,Horizontal"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "反向,横向"
           }
         }
       }
@@ -7608,16 +7684,16 @@
     "search.smoothScroll.reverseVertical" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "反向,自然滚动"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reverse,Natural Scrolling"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "反向,自然滚动"
           }
         }
       }
@@ -7625,16 +7701,16 @@
     "search.smoothScroll.strength" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "平滑,惯性"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Smooth,Inertia"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "平滑,惯性"
           }
         }
       }
@@ -7642,16 +7718,16 @@
     "search.statusScreen.animations" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "动画,表情,出场"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Animation,Emoji,Entrance"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "动画,表情,出场"
           }
         }
       }
@@ -7659,16 +7735,16 @@
     "search.statusScreen.entersFirst" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "直接进入,预览卡片"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Enter Directly,Preview Cards"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "直接进入,预览卡片"
           }
         }
       }
@@ -7676,16 +7752,16 @@
     "search.statusScreen.exit" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "退出,Esc"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Exit,Esc"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "退出,Esc"
           }
         }
       }
@@ -7693,16 +7769,16 @@
     "search.statusScreen.exitHint" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "退出,提示"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Exit,Hint"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "退出,提示"
           }
         }
       }
@@ -7710,16 +7786,16 @@
     "search.statusScreen.list" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "告示,样式"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Notice,Style"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "告示,样式"
           }
         }
       }
@@ -7727,16 +7803,16 @@
     "search.translate.copyRecognized" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "截图翻译,原文"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Translate Screenshot,Original Text"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "截图翻译,原文"
           }
         }
       }
@@ -7744,16 +7820,16 @@
     "search.translate.dictionaryApp" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "词典,牛津"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dictionary,Oxford"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "词典,牛津"
           }
         }
       }
@@ -7761,16 +7837,16 @@
     "search.translate.fontScale" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "字号,大小"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Text Size,Font Size"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "字号,大小"
           }
         }
       }
@@ -7778,16 +7854,16 @@
     "search.translate.history" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "历史"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "History"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "历史"
           }
         }
       }
@@ -7795,16 +7871,16 @@
     "search.translate.historyExport" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "导出,CSV,Anki,清空,历史"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Export,CSV,Anki,Clear,History"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "导出,CSV,Anki,清空,历史"
           }
         }
       }
@@ -7812,16 +7888,16 @@
     "search.translate.historyLimit" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "历史,条数"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "History,Limit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "历史,条数"
           }
         }
       }
@@ -7829,16 +7905,16 @@
     "search.translate.keys" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "按键,速查"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Keys,Keyboard Shortcuts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "按键,速查"
           }
         }
       }
@@ -7846,16 +7922,16 @@
     "search.translate.overlay" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "截图翻译,盖回"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Translate Screenshot,On the Image"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "截图翻译,盖回"
           }
         }
       }
@@ -7863,16 +7939,16 @@
     "search.translate.panelPosition" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "位置,跟随鼠标"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Position,Near Pointer"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "位置,跟随鼠标"
           }
         }
       }
@@ -7880,16 +7956,16 @@
     "search.translate.panelSize" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "宽度,高度"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Width,Height"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "宽度,高度"
           }
         }
       }
@@ -7897,16 +7973,16 @@
     "search.translate.removeNewlines" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "换行,PDF"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Line Breaks,PDF"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "换行,PDF"
           }
         }
       }
@@ -7914,16 +7990,16 @@
     "search.translate.services" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "服务,密钥,智谱,OpenAI,Anthropic,DeepL,Google,百度,有道,微软,AI,模型"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Services,API Key,Zhipu,OpenAI,Anthropic,DeepL,Google,Baidu,Youdao,Microsoft,AI,Model"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "服务,密钥,智谱,OpenAI,Anthropic,DeepL,Google,百度,有道,微软,AI,模型"
           }
         }
       }
@@ -7931,16 +8007,16 @@
     "search.translate.speechSpeed" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "朗读,语速,慢速"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Speak,Speech Rate,Slow"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "朗读,语速,慢速"
           }
         }
       }
@@ -7948,16 +8024,16 @@
     "search.translate.systemDictionary" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "词典,释义,查词"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dictionary,Definitions,Look Up"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "词典,释义,查词"
           }
         }
       }
@@ -7965,16 +8041,16 @@
     "search.translate.wordAccent" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "美音,英音"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "US English,UK English,Accent"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "美音,英音"
           }
         }
       }
@@ -7982,16 +8058,16 @@
     "search.translate.wordMode" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "查词,音标,例句"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Look Up,Phonetics,Examples"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "查词,音标,例句"
           }
         }
       }
@@ -7999,16 +8075,33 @@
     "search.translate.wordRecording" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pronunciation,Human Voice,Youdao"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "发音,真人,有道"
           }
+        }
+      }
+    },
+    "settings.restoreDefaults" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "恢复默认"
+          }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pronunciation,Human Voice,Youdao"
+            "value" : "Restore Defaults"
           }
         }
       }
@@ -8809,6 +8902,26 @@
         }
       }
     },
+    "↩ 允许读取外接盘和网络盘（系统可能会再问一次）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "↩ to allow reading external and network drives (macOS may ask again)"
+          }
+        }
+      }
+    },
+    "↩ 在访达中打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "↩ opens it in Finder"
+          }
+        }
+      }
+    },
     "↩ 打开剪贴板面板；输入「cb 空格 关键词」直接搜" : {
       "localizations" : {
         "en" : {
@@ -9135,6 +9248,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "“%@” went back to the edge"
+          }
+        }
+      }
+    },
+    "「%@」是别的 App 的数据，这里不列" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” holds another app’s data and isn’t listed here"
           }
         }
       }
@@ -9489,6 +9612,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No features are checked. When you need one, turn it on in Settings › General › Features."
+          }
+        }
+      }
+    },
+    "一个搜索框打开 App、文件、网页和命令" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open apps, files, web pages, and commands from one search field"
           }
         }
       }
@@ -10056,6 +10189,16 @@
         }
       }
     },
+    "不常改的外观和图标" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rarely changed looks and icons"
+          }
+        }
+      }
+    },
     "不是 UTF-8 文本" : {
       "localizations" : {
         "en" : {
@@ -10172,6 +10315,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No Icon"
+          }
+        }
+      }
+    },
+    "不让电脑睡、不让屏幕熄" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keeps your Mac and display awake"
           }
         }
       }
@@ -10526,16 +10679,6 @@
         }
       }
     },
-    "也认网页里的元素" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Also detect elements in web pages"
-          }
-        }
-      }
-    },
     "书签 · %@ · %@" : {
       "localizations" : {
         "en" : {
@@ -10718,6 +10861,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pick a “%@” below"
+          }
+        }
+      }
+    },
+    "从不" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Never"
           }
         }
       }
@@ -11636,6 +11789,16 @@
         }
       }
     },
+    "便签长什么样、放在屏幕哪里" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How notes look and where they sit on screen"
+          }
+        }
+      }
+    },
     "便签，%lld 条" : {
       "localizations" : {
         "en" : {
@@ -11891,6 +12054,16 @@
         }
       }
     },
+    "停了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stopped"
+          }
+        }
+      }
+    },
     "停在刘海上会鼓起一点，点一下或者两指往下滑打开：刘海两边挂着东西时是它的卡片，没有时是快捷动作" : {
       "localizations" : {
         "en" : {
@@ -11911,12 +12084,12 @@
         }
       }
     },
-    "停在程序坞图标上时弹出的窗口缩略图：开关和要给的授权" : {
+    "停在程序坞图标上时弹出窗口缩略图" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Window thumbnails when you hover over a Dock icon: on or off, and the permissions it needs"
+            "value" : "Window thumbnails when you hover over a Dock icon"
           }
         }
       }
@@ -12138,6 +12311,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Allow Calendar Access"
+          }
+        }
+      }
+    },
+    "允许读取" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow Reading"
           }
         }
       }
@@ -12382,12 +12565,12 @@
         }
       }
     },
-    "全屏的图标网格：排法、翻页、搜索、文件夹、捏合" : {
+    "全屏的图标网格怎么排、怎么打开" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The full-screen icon grid: layout, pages, search, folders, pinch"
+            "value" : "How the full-screen app grid is laid out and opened"
           }
         }
       }
@@ -12734,6 +12917,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "When off, the shortcut first shows preview cards to choose from"
+          }
+        }
+      }
+    },
+    "关着时，按快捷键（或点菜单栏、启动器里的「录音」）先在屏幕底部打开录音控制条，点 ● 或再按一次才开始录。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When off, the shortcut (or “Record Audio” in the menu bar or Launcher) first opens the audio control bar at the bottom of the screen; click ● or press it again to start."
           }
         }
       }
@@ -14224,22 +14417,22 @@
         }
       }
     },
+    "到点提醒你，时间和方式你来定" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reminders at the times and in the ways you choose"
+          }
+        }
+      }
+    },
     "到点提醒你：一次、每天、每周或每隔一阵" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reminds you on time: once, daily, weekly, or at intervals"
-          }
-        }
-      }
-    },
-    "到点提醒你：什么时候响、用什么方式、点了「稍后」推多久" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reminds you on time: when, how, and how long Snooze waits"
           }
         }
       }
@@ -14434,6 +14627,16 @@
         }
       }
     },
+    "剪贴板历史留多久、怎么粘贴、哪些不记" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How long Clipboard History keeps items, how it pastes, what it skips"
+          }
+        }
+      }
+    },
     "剪贴板图片" : {
       "localizations" : {
         "en" : {
@@ -14574,16 +14777,6 @@
         }
       }
     },
-    "功能、插件、外观、菜单栏、登录时打开、权限、同步、导出与导入、数据目录" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Features, plugins, appearance, menu bar, open at login, permissions, sync, export and import, data folder"
-          }
-        }
-      }
-    },
     "加了 Kitty Tools 滤镜的专注模式开着时，这一条照样按上面的方式提醒" : {
       "localizations" : {
         "en" : {
@@ -14630,16 +14823,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "the secure connection couldn’t be established"
-          }
-        }
-      }
-    },
-    "动效" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Motion"
           }
         }
       }
@@ -15090,16 +15273,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "History,Days,Keep,Forever,Images,Storage,Preview,Links,Web Page,Format,Plain Text,Recognize,Text,OCR,Privacy,Keys,Bank Card,Clear,Quit,Lock Screen,Exclude,App,Favorites,Collections,Snippets,Password,Sensitive,Website,Title,Lens,Click,Double-click,Paste,Position,Panel Position,Mouse,Follow Mouse,Last Position"
-          }
-        }
-      }
-    },
-    "历史上限、面板、内容格式和隐私" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "History limit, panel, content formats, and privacy"
           }
         }
       }
@@ -16666,7 +16839,7 @@
         }
       }
     },
-    "同步停了：到 设置 › 通用「同步」里看为什么" : {
+    "同步停了：到 设置 › 通用 › 同步 里看为什么" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -16892,16 +17065,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Skip Back 15 Seconds"
-          }
-        }
-      }
-    },
-    "启动" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Startup"
           }
         }
       }
@@ -17850,12 +18013,12 @@
         }
       }
     },
-    "在 设置 › 截图 里打开「保留截图历史」，截图、长截图和录屏录音就会留在这里" : {
+    "在 设置 › 截图 › 截图历史 里打开「保留截图历史」，截图、长截图和录屏录音就会留在这里" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Turn on “Keep Screenshot History” in Settings › Screenshot to keep screenshots, scrolling captures, and recordings here"
+            "value" : "Turn on “Keep Screenshot History” in Settings › Screenshot › Screenshot History to keep screenshots, scrolling captures, and recordings here"
           }
         }
       }
@@ -18342,6 +18505,16 @@
         }
       }
     },
+    "在终端中打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open in Terminal"
+          }
+        }
+      }
+    },
     "在菜单栏显示图标" : {
       "localizations" : {
         "en" : {
@@ -18418,6 +18591,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Show in Finder (files)"
+          }
+        }
+      }
+    },
+    "在访达里右键多出来的几项" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extra items when you right-click in Finder"
           }
         }
       }
@@ -18618,6 +18801,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sound & Nagging"
+          }
+        }
+      }
+    },
+    "备份与导出导入" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backup, Export & Import"
           }
         }
       }
@@ -18986,6 +19179,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copy result 1–9"
+          }
+        }
+      }
+    },
+    "复制终端写法的路径" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy Path for Terminal"
           }
         }
       }
@@ -21906,6 +22109,16 @@
         }
       }
     },
+    "已恢复默认" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Defaults Restored"
+          }
+        }
+      }
+    },
     "已恢复默认排列" : {
       "localizations" : {
         "en" : {
@@ -22004,6 +22217,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copied name"
+          }
+        }
+      }
+    },
+    "已拷贝文件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copied file"
           }
         }
       }
@@ -23492,6 +23715,16 @@
         }
       }
     },
+    "开着" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On"
+          }
+        }
+      }
+    },
     "开着 %lld 个；关着：%@" : {
       "localizations" : {
         "en" : {
@@ -23922,12 +24155,12 @@
         }
       }
     },
-    "录屏的画质、倒数和按键，录音的来源" : {
+    "录屏的画质和声音，录音录什么" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Screen recording quality, countdown, and keys; audio recording sources"
+            "value" : "Screen recording quality and sound, and what audio recordings capture"
           }
         }
       }
@@ -23982,12 +24215,12 @@
         }
       }
     },
-    "录系统声音时菜单栏会出现屏幕录制指示；锁屏会停止；不能暂停。立即开始关着时，按快捷键（或点菜单栏、启动器里的「录音」）先在屏幕底部打开录音控制条，点 ● 或再按一次才开始录。" : {
+    "录系统声音时菜单栏会出现屏幕录制指示；锁屏会停止；不能暂停。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "When recording system audio, the menu bar shows the screen recording indicator; locking the screen stops it, and you can’t pause. With immediate start off, the shortcut (or “Record Audio” in the menu bar or Launcher) first opens the audio control bar at the bottom of the screen; click ● or press it again to start."
+            "value" : "When recording system audio, the menu bar shows the screen recording indicator; locking the screen stops it, and you can’t pause."
           }
         }
       }
@@ -24386,16 +24619,6 @@
         }
       }
     },
-    "快速保存、拷贝为图像还是文件、工具栏位置、快门声、缩略图和识字" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Quick save, copy as image or file, toolbar position, shutter sound, thumbnail, and text capture"
-          }
-        }
-      }
-    },
     "快速保存到" : {
       "localizations" : {
         "en" : {
@@ -24767,12 +24990,12 @@
         }
       }
     },
-    "悬停时识别窗口里的元素" : {
+    "悬停时识别" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Detect elements in windows on hover"
+            "value" : "Detect on Hover"
           }
         }
       }
@@ -25233,6 +25456,16 @@
         }
       }
     },
+    "截完的图放哪、怎么拷、留不留历史" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Where screenshots go, how they’re copied, and the history"
+          }
+        }
+      }
+    },
     "截屏失败" : {
       "localizations" : {
         "en" : {
@@ -25493,12 +25726,12 @@
         }
       }
     },
-    "打开 设置 › 通用，打开或关掉功能" : {
+    "打开 设置 › 通用 › 功能，打开或关掉功能" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Opens Settings › General, where you turn features on or off"
+            "value" : "Opens Settings › General › Features, where you turn features on or off"
           }
         }
       }
@@ -25963,6 +26196,16 @@
         }
       }
     },
+    "找不到「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t find “%@”"
+          }
+        }
+      }
+    },
     "找不到同步文件夹：没接上、被挪走或删了，找到了自己接着同步" : {
       "localizations" : {
         "en" : {
@@ -26423,12 +26666,12 @@
         }
       }
     },
-    "拦住键盘鼠标的全屏告示：有哪些状态、各是什么样子、怎么退出" : {
+    "拦住键盘鼠标的全屏告示" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A full-screen notice that blocks the keyboard and mouse: the statuses, how each looks, and how to exit"
+            "value" : "A full-screen notice that blocks the keyboard and mouse"
           }
         }
       }
@@ -26511,6 +26754,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copy Image"
+          }
+        }
+      }
+    },
+    "拷贝文件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy File"
           }
         }
       }
@@ -26737,16 +26990,6 @@
         }
       }
     },
-    "按住 ⌘ 弹出的当前 App 快捷键：按多久、要给的授权" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The current app’s shortcuts, shown when you hold ⌘: how long to hold and the permission it needs"
-          }
-        }
-      }
-    },
     "按住,长按,⌘,Command,菜单,菜单栏,快捷键列表,快捷键提示,当前 App,多久,辅助功能" : {
       "localizations" : {
         "en" : {
@@ -26763,6 +27006,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Hold a key to show"
+          }
+        }
+      }
+    },
+    "按住一个键，看当前 App 的全部快捷键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hold a key to see the current app’s shortcuts"
           }
         }
       }
@@ -27445,6 +27698,16 @@
         }
       }
     },
+    "接着输入名字筛选；↩ 在访达中打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep typing a name to filter; ↩ opens it in Finder"
+          }
+        }
+      }
+    },
     "控制条开着、还没开始时开始录音（点控制条的 ● 同样）" : {
       "localizations" : {
         "en" : {
@@ -27705,16 +27968,6 @@
         }
       }
     },
-    "插件 · 不让电脑睡、不让屏幕熄：手动开一段，或按时段自动开" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Plugin · Keeps your Mac and display awake: for a while, or on a schedule"
-          }
-        }
-      }
-    },
     "插件 · 用得上再勾，以后也能在 设置 › 全部插件 里添加" : {
       "localizations" : {
         "en" : {
@@ -27831,16 +28084,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Search"
-          }
-        }
-      }
-    },
-    "搜索 App、文件、书签与历史、网页搜索与快捷链接、脚本命令、命令和别名" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Search apps, files, bookmarks and history; web search and quicklinks; script commands; commands and aliases"
           }
         }
       }
@@ -28359,6 +28602,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Favorites and snippets aren’t affected"
+          }
+        }
+      }
+    },
+    "收藏和片段不清" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Favorites and snippets stay"
           }
         }
       }
@@ -29147,6 +29400,16 @@
         }
       }
     },
+    "文件大小和录音怎么开始" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "File size, and how audio recording starts"
+          }
+        }
+      }
+    },
     "文件太大，选一个 20 MB 以内的短音频" : {
       "localizations" : {
         "en" : {
@@ -29243,6 +29506,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The folder’s contents stay, and the data on this Mac isn’t changed"
+          }
+        }
+      }
+    },
+    "文件嫌大：标准清晰度在高分屏上宽高各减半，文件小一半多，小字会糊一些。录好的也可以在角落的缩略图上点「压缩」另存一份小的。麦克风：录制条上的麦克风开着时录哪一个，选的那个没接着时这次用系统默认的；录音照旧用系统默认的输入。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "If files are too big: Standard sharpness halves the width and height on high-resolution displays, making files less than half the size with slightly blurrier small text. You can also click “Compress” on the corner thumbnail to save a smaller copy. Microphone: which one to record when the microphone is on in the recording bar; if it isn’t connected, the system default input is used that time. Audio recordings always use the system default input."
           }
         }
       }
@@ -30401,12 +30674,12 @@
         }
       }
     },
-    "晾衣绳挂的就是历史里的那几条，要先打开上面的「保留截图历史」。" : {
+    "晾衣绳挂的是截图历史，先打开截图历史" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The Clothesline shows items from Screenshot History. Turn on “Keep Screenshot History” above first."
+            "value" : "The Clothesline shows Screenshot History. Turn it on first"
           }
         }
       }
@@ -32251,6 +32524,16 @@
         }
       }
     },
+    "框选和识别的细节" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details of selecting and detecting"
+          }
+        }
+      }
+    },
     "框选完工具栏贴在选区下方，放不下时在上方。靠右时从左上往右下拖完，✓ 就在鼠标旁边；录屏的录制条也这样摆" : {
       "localizations" : {
         "en" : {
@@ -32729,16 +33012,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Now Playing"
-          }
-        }
-      }
-    },
-    "正在播放、下一个日程和月历、音量和亮度、点刘海打开的快捷动作和最近的提示、自动展开、触感反馈、系统提示" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Now playing, next event and calendar, volume and brightness, quick actions and recent notices, auto-expand, haptics, system notices"
           }
         }
       }
@@ -33570,6 +33843,16 @@
         }
       }
     },
+    "没备成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backup failed"
+          }
+        }
+      }
+    },
     "没复制成「%@」" : {
       "localizations" : {
         "en" : {
@@ -34030,6 +34313,16 @@
         }
       }
     },
+    "没有名字里有「%@」的项" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No items match “%@”"
+          }
+        }
+      }
+    },
     "没有后台进程" : {
       "localizations" : {
         "en" : {
@@ -34346,6 +34639,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No permission to replace the app in “%@”. Update from an administrator account, or download it from the releases page and replace it yourself."
+          }
+        }
+      }
+    },
+    "没有权限查看「%@」里的东西" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No permission to view what’s in “%@”"
           }
         }
       }
@@ -35314,16 +35617,6 @@
         }
       }
     },
-    "浏览器和一部分用网页技术做的 App 不主动交出网页里的元素。打开后第一次停到它上面时请它打开辅助功能（只有位置和名字的那一档），一直开到它退出，可能让它稍慢一点" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Browsers and some apps built with web technology don’t expose the elements in their pages. When on, the first time you hover over one, Kitty Tools asks it to turn on accessibility (the lightest level, positions and names only); it stays on until the app quits and may slow it down slightly"
-          }
-        }
-      }
-    },
     "浮动便签" : {
       "localizations" : {
         "en" : {
@@ -36032,6 +36325,16 @@
         }
       }
     },
+    "点刘海叫出什么，刘海两边挂什么" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What the notch opens, and what shows beside it"
+          }
+        }
+      }
+    },
     "点刘海叫出快捷动作和最近的提示" : {
       "localizations" : {
         "en" : {
@@ -36491,7 +36794,7 @@
         }
       }
     },
-    "现在也能同步设置、片段和收藏这些了，到 设置 › 通用「同步」里勾上" : {
+    "现在也能同步设置、片段和收藏这些了，到 设置 › 通用 › 同步 里勾上" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -37037,16 +37340,6 @@
         }
       }
     },
-    "电脑睡下去时关掉蓝牙、醒来再打开：什么时候关、要给的授权" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Turn Bluetooth off when your Mac sleeps and back on at wake: when to turn it off, and the access it needs"
-          }
-        }
-      }
-    },
     "电脑睡下去时关掉蓝牙：放进包里不会被蓝牙鼠标、键盘弄醒，睡着的 Mac 也不会抢走手机连着的耳机。接着外接显示器时不关；关机不管。" : {
       "localizations" : {
         "en" : {
@@ -37063,6 +37356,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Turns Bluetooth off when your Mac goes to sleep, so Bluetooth mice and keyboards can’t wake it in a bag, and a sleeping Mac won’t take over headphones connected to your phone. Bluetooth stays on with an external display connected; shutting down isn’t affected. If your Mac falls asleep with the lid open and you close it later, Bluetooth stays on that time."
+          }
+        }
+      }
+    },
+    "电脑睡下去时关蓝牙，醒来再打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turns Bluetooth off while your Mac sleeps"
           }
         }
       }
@@ -37206,16 +37509,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "While kept open: moves the selection"
-          }
-        }
-      }
-    },
-    "留着看、接着改的东西：屏幕边缘的那一叠、字号和行距，存在哪、怎么备份" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Things to keep and come back to: the stack at the screen edge, text size and line spacing, storage and backups"
           }
         }
       }
@@ -38251,6 +38544,16 @@
         }
       }
     },
+    "窗口里的元素" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elements in Windows"
+          }
+        }
+      }
+    },
     "立即同步" : {
       "localizations" : {
         "en" : {
@@ -38367,6 +38670,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Second language"
+          }
+        }
+      }
+    },
+    "等你确认" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Needs confirmation"
           }
         }
       }
@@ -39379,6 +39692,16 @@
         }
       }
     },
+    "缺 %lld 项" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld missing"
+          }
+        }
+      }
+    },
     "网址" : {
       "localizations" : {
         "en" : {
@@ -39546,6 +39869,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Food & Drink"
+          }
+        }
+      }
+    },
+    "翻成什么语言、用哪些服务、怎么弹出来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Which languages and services, and how translations appear"
           }
         }
       }
@@ -40020,6 +40353,16 @@
         }
       }
     },
+    "自动备份关着" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto backup off"
+          }
+        }
+      }
+    },
     "自动复制译文" : {
       "localizations" : {
         "en" : {
@@ -40056,6 +40399,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Detect Language"
+          }
+        }
+      }
+    },
+    "自动清空普通历史" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear History Automatically"
           }
         }
       }
@@ -40401,16 +40754,6 @@
         }
       }
     },
-    "菜单栏" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Menu Bar"
-          }
-        }
-      }
-    },
     "菜单栏、主界面，或在启动器里打「awake 2小时」" : {
       "localizations" : {
         "en" : {
@@ -40722,6 +41065,16 @@
         }
       }
     },
+    "要先允许访问「%@」才能列出里面的东西" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow access to “%@” to list what’s in it"
+          }
+        }
+      }
+    },
     "要先勾选「翻译服务」" : {
       "localizations" : {
         "en" : {
@@ -40732,7 +41085,7 @@
         }
       }
     },
-    "要同步哪几类，到 设置 › 通用「同步」里勾上" : {
+    "要同步哪几类，到 设置 › 通用 › 同步 里勾上" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -41070,6 +41423,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Let AI Write It"
+          }
+        }
+      }
+    },
+    "让鼠标滚轮滑着滚" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Makes the mouse wheel glide"
           }
         }
       }
@@ -41636,16 +41999,6 @@
         }
       }
     },
-    "语言、翻译服务与密钥、历史" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Languages, translation services and keys, history"
-          }
-        }
-      }
-    },
     "说明" : {
       "localizations" : {
         "en" : {
@@ -41934,6 +42287,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Can’t Read This App’s Menus"
+          }
+        }
+      }
+    },
+    "读取「%@」上的内容前先确认一次" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm once before reading “%@”"
           }
         }
       }
@@ -42786,6 +43149,28 @@
         }
       }
     },
+    "还有 %lld 项" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld more item"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld more items"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "还没允许" : {
       "localizations" : {
         "en" : {
@@ -42876,22 +43261,22 @@
         }
       }
     },
-    "还没有——在另一台电脑的 设置 › 通用 里连同一个服务器上的同一个文件夹" : {
+    "还没有——在另一台电脑的 设置 › 通用 › 同步 里连同一个服务器上的同一个文件夹" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "None yet — connect to the same folder on the same server in Settings › General on another computer"
+            "value" : "None yet — connect to the same folder on the same server in Settings › General › Sync on another computer"
           }
         }
       }
     },
-    "还没有——在另一台电脑的 设置 › 通用 里选同一个文件夹" : {
+    "还没有——在另一台电脑的 设置 › 通用 › 同步 里选同一个文件夹" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "None yet — choose the same folder in Settings › General on another computer"
+            "value" : "None yet — choose the same folder in Settings › General › Sync on another computer"
           }
         }
       }
@@ -43340,6 +43725,16 @@
         }
       }
     },
+    "这个文件夹" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This folder"
+          }
+        }
+      }
+    },
     "这个文件夹不在了" : {
       "localizations" : {
         "en" : {
@@ -43716,6 +44111,16 @@
         }
       }
     },
+    "这台 Mac 上 Kitty Tools 的样子、启动和授权" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How Kitty Tools looks, starts, and what it can access"
+          }
+        }
+      }
+    },
     "这台 Mac 上有的系统接口用不了：%@。" : {
       "localizations" : {
         "en" : {
@@ -43892,6 +44297,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Using the system default input this time; change it in Settings › Recording"
+          }
+        }
+      }
+    },
+    "这次运行里便签用不了，同步也用不了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notes aren’t available this session, so sync isn’t either"
           }
         }
       }
@@ -44216,6 +44631,16 @@
         }
       }
     },
+    "连网页里的也认" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Also in Web Pages"
+          }
+        }
+      }
+    },
     "退出" : {
       "localizations" : {
         "en" : {
@@ -44236,12 +44661,12 @@
         }
       }
     },
-    "退出 App 时清空普通历史" : {
+    "退出 App 时" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Clear history when quitting"
+            "value" : "When Quitting"
           }
         }
       }
@@ -44272,6 +44697,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Exit passcode"
+          }
+        }
+      }
+    },
+    "退出或锁屏时" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When Quitting or Locking"
           }
         }
       }
@@ -44322,6 +44757,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "With PNG File, the clipboard holds an image file, just like copying a file: you can paste it into chats and folders, and clipboard-sharing tools that only handle files can transfer it. Apps that only accept images can’t paste it"
+          }
+        }
+      }
+    },
+    "选「连网页里的也认」时：浏览器和一部分用网页技术做的 App 不主动交出网页里的元素，第一次停到它上面时请它打开辅助功能（只有位置和名字的那一档），一直开到它退出，可能让它稍慢一点。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "With “Also in Web Pages”: browsers and some apps built with web technology don’t expose the elements in their pages, so the first time you hover over one, Kitty Tools asks it to turn on accessibility (the lightest level, positions and names only); it stays on until the app quits and may slow it down slightly."
           }
         }
       }
@@ -44518,12 +44963,12 @@
         }
       }
     },
-    "选了重新开始，便签的文字之后还能导回来：到 设置 › 通用 点「从备份恢复」，选 %@那份，只勾「便签」（%lld 条；图片和「最近删除」里的不在里面）。" : {
+    "选了重新开始，便签的文字之后还能导回来：到 设置 › 通用 › 备份与导出导入 点「从备份恢复」，选 %@那份，只勾「便签」（%lld 条；图片和「最近删除」里的不在里面）。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "If you start over, you can bring the note text back later: in Settings › General, click “Restore from Backup”, choose the %1$@ backup, and check only “Notes” (%2$#@notes@; images and items in Recently Deleted aren’t included)."
+            "value" : "If you start over, you can bring the note text back later: in Settings › General › Backup, Export & Import, click “Restore from Backup”, choose the %1$@ backup, and check only “Notes” (%2$#@notes@; images and items in Recently Deleted aren’t included)."
           },
           "substitutions" : {
             "notes" : {
@@ -44556,12 +45001,12 @@
         }
       }
     },
-    "选了重新开始，片段、文字收藏和生词本之后还能导回来：每天的自动备份会留一份在原处，到 设置 › 通用 点「从备份恢复」，选 %@那一份。" : {
+    "选了重新开始，片段、文字收藏和生词本之后还能导回来：每天的自动备份会留一份在原处，到 设置 › 通用 › 备份与导出导入 点「从备份恢复」，选 %@那一份。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "If you start over, you can bring snippets, text favorites, and the Word List back later: the daily automatic backups stay in place, so in Settings › General, click “Restore from Backup” and choose the one from %@."
+            "value" : "If you start over, you can bring snippets, text favorites, and the Word List back later: the daily automatic backups stay in place, so in Settings › General › Backup, Export & Import, click “Restore from Backup” and choose the one from %@."
           }
         }
       }
@@ -45358,22 +45803,22 @@
         }
       }
     },
+    "锁屏时" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When the Screen Locks"
+          }
+        }
+      }
+    },
     "锁屏时已自动停止" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stopped automatically when the screen locked"
-          }
-        }
-      }
-    },
-    "锁屏时清空普通历史" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear history when the screen locks"
           }
         }
       }
@@ -45791,6 +46236,16 @@
         }
       }
     },
+    "面板的样子和图片里的字" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How the panel looks, and text in images"
+          }
+        }
+      }
+    },
     "面板里的按键" : {
       "localizations" : {
         "en" : {
@@ -45928,6 +46383,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Malay"
+          }
+        }
+      }
+    },
+    "高级…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Advanced…"
+          }
+        }
+      }
+    },
+    "高级设置" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Advanced Settings"
           }
         }
       }
@@ -46262,16 +46737,6 @@
         }
       }
     },
-    "鼠标滚轮滑着滚：滑多久、滚多远、鼠标单独反向、在哪些 App 里停用" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "A gliding mouse wheel: how long it glides, how far it scrolls, mouse-only reversing, and the apps it’s turned off in"
-          }
-        }
-      }
-    },
     "鼠标离屏幕边缘多近就展开" : {
       "localizations" : {
         "en" : {
@@ -46390,188 +46855,6 @@
                 }
               }
             }
-          }
-        }
-      }
-    },
-    "%@ · 这个文件夹" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ · This folder"
-          }
-        }
-      }
-    },
-    "↩ 允许读取外接盘和网络盘（系统可能会再问一次）" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "↩ to allow reading external and network drives (macOS may ask again)"
-          }
-        }
-      }
-    },
-    "↩ 在访达中打开" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "↩ opens it in Finder"
-          }
-        }
-      }
-    },
-    "「%@」是别的 App 的数据，这里不列" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "“%@” holds another app’s data and isn’t listed here"
-          }
-        }
-      }
-    },
-    "允许读取" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Allow Reading"
-          }
-        }
-      }
-    },
-    "在终端中打开" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open in Terminal"
-          }
-        }
-      }
-    },
-    "复制终端写法的路径" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copy Path for Terminal"
-          }
-        }
-      }
-    },
-    "已拷贝文件" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copied file"
-          }
-        }
-      }
-    },
-    "找不到「%@」" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Can’t find “%@”"
-          }
-        }
-      }
-    },
-    "拷贝文件" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copy File"
-          }
-        }
-      }
-    },
-    "接着输入名字筛选；↩ 在访达中打开" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keep typing a name to filter; ↩ opens it in Finder"
-          }
-        }
-      }
-    },
-    "没有名字里有「%@」的项" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No items match “%@”"
-          }
-        }
-      }
-    },
-    "没有权限查看「%@」里的东西" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No permission to view what’s in “%@”"
-          }
-        }
-      }
-    },
-    "要先允许访问「%@」才能列出里面的东西" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Allow access to “%@” to list what’s in it"
-          }
-        }
-      }
-    },
-    "读取「%@」上的内容前先确认一次" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Confirm once before reading “%@”"
-          }
-        }
-      }
-    },
-    "还有 %lld 项" : {
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld more item"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld more items"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "这个文件夹" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This folder"
           }
         }
       }

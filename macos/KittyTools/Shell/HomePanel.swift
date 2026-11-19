@@ -406,7 +406,7 @@ struct HomeView: View {
         .foregroundStyle(Style.brandInk)
         .pointerStyle(.link)
         .accessibilityLabel("管理功能")
-        .accessibilityHint("打开 设置 › 通用，打开或关掉功能")
+        .accessibilityHint("打开 设置 › 通用 › 功能，打开或关掉功能")
     }
     .font(.system(size: 11))
     .padding(.leading, Home.inset + 10)
@@ -473,7 +473,7 @@ struct HomeView: View {
       }
       .contentShape(.rect)
     }
-    .help(isTroubled(extra) ? Text("同步停了：到 设置 › 通用「同步」里看为什么") : Text(verbatim: ""))
+    .help(isTroubled(extra) ? Text("同步停了：到 设置 › 通用 › 同步 里看为什么") : Text(verbatim: ""))
     .accessibilityLabel(
       extra == .quit
         ? String(localized: "退出 Kitty Tools")

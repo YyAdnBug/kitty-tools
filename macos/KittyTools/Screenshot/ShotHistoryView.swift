@@ -188,7 +188,7 @@ struct ShotHistoryView: View {
     } else if !(screenshotOn && keepsHistory) {
       EmptyState(symbol: "clock.arrow.circlepath", title: "截图历史已关闭") {
         VStack(spacing: 6) {
-          Text("在 设置 › 截图 里打开「保留截图历史」，截图、长截图和录屏录音就会留在这里")
+          Text("在 设置 › 截图 › 截图历史 里打开「保留截图历史」，截图、长截图和录屏录音就会留在这里")
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
           Button("打开设置", action: model.openSettings)

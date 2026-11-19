@@ -24,6 +24,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
   case generalMicrophone = "general.microphone"
   case generalClipboardAccess = "general.clipboardAccess"
   case generalSync = "general.sync"
+  case generalSyncPeers = "general.syncPeers"
   case generalTransfer = "general.transfer"
   case generalBackup = "general.backup"
   case generalRestore = "general.restore"
@@ -41,8 +42,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
   case clipboardPastePlain = "clipboard.pastePlain"
   case clipboardOCR = "clipboard.ocr"
   case clipboardBlockSensitive = "clipboard.blockSensitive"
-  case clipboardClearOnQuit = "clipboard.clearOnQuit"
-  case clipboardClearOnLock = "clipboard.clearOnLock"
+  case clipboardAutoClear = "clipboard.autoClear"
   case clipboardClearNow = "clipboard.clearNow"
   case clipboardExcludedApps = "clipboard.excludedApps"
   // 启动器
@@ -90,12 +90,13 @@ enum SettingsItem: String, CaseIterable, Identifiable {
   case screenshotHistory = "screenshot.history"
   case screenshotHistoryDays = "screenshot.historyDays"
   case screenshotHistorySize = "screenshot.historySize"
+  case screenshotHistoryOpen = "screenshot.historyOpen"
+  case screenshotHistoryClear = "screenshot.historyClear"
   case screenshotHint = "screenshot.hint"
   case screenshotLoupe = "screenshot.loupe"
   case screenshotToolbar = "screenshot.toolbar"
   case screenshotKeepsColors = "screenshot.keepsColors"
-  case screenshotFindsElements = "screenshot.findsElements"
-  case screenshotWebElements = "screenshot.webElements"
+  case screenshotElements = "screenshot.elements"
   case screenshotPlacement = "screenshot.placement"
   case screenshotPinText = "screenshot.pinText"
   case screenshotJoinLines = "screenshot.joinLines"
@@ -237,21 +238,31 @@ enum SettingsItem: String, CaseIterable, Identifiable {
     let keywords: LocalizedStringResource?
     /// 这一行读写的偏好键（恢复默认用；按钮、状态行、用户自己攒的列表空着）
     let keys: [String]
+    /// 在页里哪儿：外面、哪个子页、「高级…」表单
+    let place: Place
+  }
+
+  /// 一行在页里的位置（设置改版 S1）
+  enum Place: Hashable {
+    case page
+    case subpage(SettingsSubpage)
+    case advanced
   }
 
   /// 有搜索词的一项。title、keywords 经参数传进来：switch 的每个分支都抽得进目录（TRANSLATION.md 二）
   private static func row(
     _ page: SettingsPage, _ title: LocalizedStringResource, _ keywords: LocalizedStringResource,
-    keys: [String] = []
+    keys: [String] = [], place: Place = .page
   ) -> Info {
-    Info(page: page, title: title, keywords: keywords, keys: keys)
+    Info(page: page, title: title, keywords: keywords, keys: keys, place: place)
   }
 
   /// 只靠标题就找得到的一项
   private static func row(
-    _ page: SettingsPage, _ title: LocalizedStringResource, keys: [String] = []
+    _ page: SettingsPage, _ title: LocalizedStringResource, keys: [String] = [],
+    place: Place = .page
   ) -> Info {
-    Info(page: page, title: title, keywords: nil, keys: keys)
+    Info(page: page, title: title, keywords: nil, keys: keys, place: place)
   }
 
   // swift-format-ignore: 一项一行，排成表好对着页面看
@@ -281,22 +292,22 @@ enum SettingsItem: String, CaseIterable, Identifiable {
       Self.row(
         .general, "呼出面板时挤压弹开",
         LocalizedStringResource("search.general.squeeze", defaultValue: "挤压,弹开,动画,动效"),
-        keys: [Prefs.panelSqueezeEntrance])
+        keys: [Prefs.panelSqueezeEntrance], place: .advanced)
     case .generalMenuBarIcon:
       Self.row(
         .general, "在菜单栏显示图标",
         LocalizedStringResource("search.general.menuBarIcon", defaultValue: "菜单栏,状态栏,隐藏图标"),
-        keys: [Prefs.statusItemVisible])
+        keys: [Prefs.statusItemVisible], place: .advanced)
     case .generalIconStyle:
       Self.row(
         .general, "图标样式",
         LocalizedStringResource("search.general.iconStyle", defaultValue: "彩色,单色"),
-        keys: [Prefs.statusItemStyle])
+        keys: [Prefs.statusItemStyle], place: .advanced)
     case .generalDockIcon:
       Self.row(
         .general, "在程序坞显示图标",
         LocalizedStringResource("search.general.dockIcon", defaultValue: "程序坞,Dock"),
-        keys: [Prefs.dockIconOnTahoe])
+        keys: [Prefs.dockIconOnTahoe], place: .advanced)
     case .generalLogin:
       Self.row(
         .general, "登录时自动打开",
@@ -304,42 +315,57 @@ enum SettingsItem: String, CaseIterable, Identifiable {
     case .generalAccessibility:
       Self.row(
         .general, "辅助功能",
-        LocalizedStringResource("search.general.accessibility", defaultValue: "权限,授权"))
+        LocalizedStringResource("search.general.accessibility", defaultValue: "权限,授权"),
+        place: .subpage(.generalPermissions))
     case .generalScreenRecording:
       Self.row(
         .general, "屏幕录制",
-        LocalizedStringResource("search.general.screenRecording", defaultValue: "权限,授权"))
+        LocalizedStringResource("search.general.screenRecording", defaultValue: "权限,授权"),
+        place: .subpage(.generalPermissions))
     case .generalMicrophone:
       Self.row(
-        .general, "麦克风", LocalizedStringResource("search.general.microphone", defaultValue: "权限,授权")
-      )
+        .general, "麦克风",
+        LocalizedStringResource("search.general.microphone", defaultValue: "权限,授权"),
+        place: .subpage(.generalPermissions))
     case .generalClipboardAccess:
       Self.row(
         .general, "剪贴板访问",
-        LocalizedStringResource("search.general.clipboardAccess", defaultValue: "权限,隐私,从其他 App 粘贴"))
+        LocalizedStringResource("search.general.clipboardAccess", defaultValue: "权限,隐私,从其他 App 粘贴"),
+        place: .subpage(.generalPermissions))
     case .generalSync:
       Self.row(
         .general, "同步",
-        LocalizedStringResource("search.general.sync", defaultValue: "iCloud,云盘,WebDAV,服务器,多台,另一台"))
+        LocalizedStringResource("search.general.sync", defaultValue: "iCloud,云盘,WebDAV,服务器,多台,另一台"),
+        place: .subpage(.generalSync))
+    case .generalSyncPeers:
+      Self.row(
+        .general, "其他电脑",
+        LocalizedStringResource("search.general.syncPeers", defaultValue: "同步,另一台,Mac,电脑"),
+        place: .subpage(.generalSync))
     case .generalTransfer:
       Self.row(
         .general, "设置与数据",
-        LocalizedStringResource("search.general.transfer", defaultValue: "导出,导入,迁移,换电脑,配置"))
+        LocalizedStringResource("search.general.transfer", defaultValue: "导出,导入,迁移,换电脑,配置"),
+        place: .subpage(.generalBackup))
     case .generalBackup:
       Self.row(
-        .general, "每天自动备份", LocalizedStringResource("search.general.backup", defaultValue: "备份"))
+        .general, "每天自动备份", LocalizedStringResource("search.general.backup", defaultValue: "备份"),
+        place: .subpage(.generalBackup))
     case .generalRestore:
       Self.row(
         .general, "已有的备份",
-        LocalizedStringResource("search.general.restore", defaultValue: "从备份恢复,恢复"))
+        LocalizedStringResource("search.general.restore", defaultValue: "从备份恢复,恢复"),
+        place: .subpage(.generalBackup))
     case .generalMirror:
       Self.row(
         .general, "另存一份到",
-        LocalizedStringResource("search.general.mirror", defaultValue: "备份,文件夹,云盘"))
+        LocalizedStringResource("search.general.mirror", defaultValue: "备份,文件夹,云盘"),
+        place: .subpage(.generalBackup))
     case .generalDataFolder:
       Self.row(
         .general, "数据目录",
-        LocalizedStringResource("search.general.dataFolder", defaultValue: "数据,访达,文件夹"))
+        LocalizedStringResource("search.general.dataFolder", defaultValue: "数据,访达,文件夹"),
+        place: .advanced)
     case .clipboardRetention:
       Self.row(
         .clipboard, "保留普通历史",
@@ -354,12 +380,12 @@ enum SettingsItem: String, CaseIterable, Identifiable {
     case .clipboardLens:
       Self.row(
         .clipboard, "显示透镜", LocalizedStringResource("search.clipboard.lens", defaultValue: "透镜,预览"),
-        keys: [Prefs.clipboardShowPreview])
+        keys: [Prefs.clipboardShowPreview], place: .advanced)
     case .clipboardLinkPreview:
       Self.row(
         .clipboard, "链接显示网页标题和图片",
         LocalizedStringResource("search.clipboard.linkPreview", defaultValue: "链接,网页,标题"),
-        keys: [Prefs.clipboardLinkPreview])
+        keys: [Prefs.clipboardLinkPreview], place: .advanced)
     case .clipboardPasteOnClick:
       Self.row(
         .clipboard, "单击条目直接粘贴",
@@ -370,11 +396,12 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         .clipboard, "面板位置",
         LocalizedStringResource(
           "search.clipboard.panelPosition", defaultValue: "位置,跟随鼠标,上次位置,屏幕上方"),
-        keys: [Prefs.clipboardPanelPosition])
+        keys: [Prefs.clipboardPanelPosition], place: .advanced)
     case .clipboardPanelSize:
       Self.row(
         .clipboard, "面板大小",
-        LocalizedStringResource("search.clipboard.panelSize", defaultValue: "宽度,行数"))
+        LocalizedStringResource("search.clipboard.panelSize", defaultValue: "宽度,行数"),
+        place: .advanced)
     case .clipboardPastePlain:
       Self.row(
         .clipboard, "默认粘贴为纯文本",
@@ -384,22 +411,17 @@ enum SettingsItem: String, CaseIterable, Identifiable {
       Self.row(
         .clipboard, "识别图片中的文字，用于搜索",
         LocalizedStringResource("search.clipboard.ocr", defaultValue: "识别,文字,OCR"),
-        keys: [Prefs.clipboardImageOCR])
+        keys: [Prefs.clipboardImageOCR], place: .advanced)
     case .clipboardBlockSensitive:
       Self.row(
         .clipboard, "不记录疑似密钥和银行卡号",
         LocalizedStringResource("search.clipboard.blockSensitive", defaultValue: "密钥,银行卡,密码,敏感"),
         keys: [Prefs.clipboardBlockSensitive])
-    case .clipboardClearOnQuit:
+    case .clipboardAutoClear:
       Self.row(
-        .clipboard, "退出 App 时清空普通历史",
-        LocalizedStringResource("search.clipboard.clearOnQuit", defaultValue: "清空,退出"),
-        keys: [Prefs.clipboardClearOnQuit])
-    case .clipboardClearOnLock:
-      Self.row(
-        .clipboard, "锁屏时清空普通历史",
-        LocalizedStringResource("search.clipboard.clearOnLock", defaultValue: "清空,锁屏"),
-        keys: [Prefs.clipboardClearOnLock])
+        .clipboard, "自动清空普通历史",
+        LocalizedStringResource("search.clipboard.autoClear", defaultValue: "清空,退出,锁屏"),
+        keys: [Prefs.clipboardClearOnQuit, Prefs.clipboardClearOnLock])
     case .clipboardClearNow:
       Self.row(
         .clipboard, "立即清空普通历史…",
@@ -575,57 +597,62 @@ enum SettingsItem: String, CaseIterable, Identifiable {
       Self.row(
         .screenshot, "截图带上鼠标指针",
         LocalizedStringResource("search.screenshot.cursor", defaultValue: "指针,鼠标指针"),
-        keys: [Prefs.screenshotCursor])
+        keys: [Prefs.screenshotCursor], place: .advanced)
     case .screenshotHideDesktop:
       Self.row(
         .screenshot, "截图、录屏时隐藏桌面图标",
         LocalizedStringResource("search.screenshot.hideDesktop", defaultValue: "桌面图标,隐藏"),
-        keys: [Prefs.captureHideDesktopIcons])
+        keys: [Prefs.captureHideDesktopIcons], place: .advanced)
     case .screenshotHistory:
       Self.row(
         .screenshot, "保留截图历史",
         LocalizedStringResource("search.screenshot.history", defaultValue: "历史,截图历史"),
-        keys: [Prefs.shotHistory])
+        keys: [Prefs.shotHistory], place: .subpage(.screenshotHistory))
     case .screenshotHistoryDays:
       Self.row(
         .screenshot, "保留",
         LocalizedStringResource("search.screenshot.historyDays", defaultValue: "截图历史,天数"),
-        keys: [Prefs.shotHistoryDays])
+        keys: [Prefs.shotHistoryDays], place: .subpage(.screenshotHistory))
     case .screenshotHistorySize:
       Self.row(
         .screenshot, "最多占用",
         LocalizedStringResource("search.screenshot.historySize", defaultValue: "截图历史,空间"),
-        keys: [Prefs.shotHistoryMegabytes])
+        keys: [Prefs.shotHistoryMegabytes], place: .subpage(.screenshotHistory))
+    case .screenshotHistoryOpen:
+      Self.row(
+        .screenshot, "打开截图历史…",
+        LocalizedStringResource("search.screenshot.historyOpen", defaultValue: "截图历史,窗口"),
+        place: .subpage(.screenshotHistory))
+    case .screenshotHistoryClear:
+      Self.row(
+        .screenshot, "现在清空…",
+        LocalizedStringResource("search.screenshot.historyClear", defaultValue: "清空,删除,截图历史"),
+        place: .subpage(.screenshotHistory))
     case .screenshotHint:
       Self.row(
         .screenshot, "框选时显示操作提示",
         LocalizedStringResource("search.screenshot.hint", defaultValue: "提示"),
-        keys: [Prefs.screenshotShowsHint])
+        keys: [Prefs.screenshotShowsHint], place: .advanced)
     case .screenshotLoupe:
       Self.row(
         .screenshot, "框选时的放大镜",
         LocalizedStringResource("search.screenshot.loupe", defaultValue: "放大镜,取色,色值"),
-        keys: [Prefs.screenshotLoupe])
+        keys: [Prefs.screenshotLoupe], place: .advanced)
     case .screenshotToolbar:
       Self.row(
         .screenshot, "工具栏位置",
         LocalizedStringResource("search.screenshot.toolbar", defaultValue: "工具栏,靠右,居中,录制条"),
-        keys: [Prefs.screenshotToolbarAlign])
+        keys: [Prefs.screenshotToolbarAlign], place: .advanced)
     case .screenshotKeepsColors:
       Self.row(
         .screenshot, "框选时保持屏幕原色",
         LocalizedStringResource("search.screenshot.keepsColors", defaultValue: "原色,压暗,遮罩"),
-        keys: [Prefs.screenshotKeepsColors])
-    case .screenshotFindsElements:
+        keys: [Prefs.screenshotKeepsColors], place: .advanced)
+    case .screenshotElements:
       Self.row(
-        .screenshot, "悬停时识别窗口里的元素",
-        LocalizedStringResource("search.screenshot.findsElements", defaultValue: "元素,识别,悬停"),
-        keys: [Prefs.screenshotFindsElements])
-    case .screenshotWebElements:
-      Self.row(
-        .screenshot, "也认网页里的元素",
-        LocalizedStringResource("search.screenshot.webElements", defaultValue: "网页,浏览器"),
-        keys: [Prefs.screenshotFindsWebElements])
+        .screenshot, "悬停时识别",
+        LocalizedStringResource("search.screenshot.elements", defaultValue: "元素,识别,悬停,窗口,网页,浏览器"),
+        keys: [Prefs.screenshotFindsElements, Prefs.screenshotFindsWebElements], place: .advanced)
     case .screenshotPlacement:
       Self.row(
         .screenshot, "截完图放哪",
@@ -635,12 +662,12 @@ enum SettingsItem: String, CaseIterable, Identifiable {
       Self.row(
         .screenshot, "钉图上的字可以直接选",
         LocalizedStringResource("search.screenshot.pinText", defaultValue: "钉图,选字"),
-        keys: [Prefs.pinSelectsText])
+        keys: [Prefs.pinSelectsText], place: .advanced)
     case .screenshotJoinLines:
       Self.row(
         .screenshot, "识字后把同一段里的换行接起来",
         LocalizedStringResource("search.screenshot.joinLines", defaultValue: "识字,换行,二维码"),
-        keys: [Prefs.ocrJoinLines])
+        keys: [Prefs.ocrJoinLines], place: .advanced)
     case .screenshotKeys:
       Self.row(
         .screenshot, "框选、标注、长截图和录屏的按键",
@@ -655,7 +682,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
     case .recordFrameRate:
       Self.row(
         .record, "帧率", LocalizedStringResource("search.record.frameRate", defaultValue: "fps"),
-        keys: [Prefs.screenRecordFrameRate])
+        keys: [Prefs.screenRecordFrameRate], place: .advanced)
     case .recordSharpness:
       Self.row(
         .record, "清晰度",
@@ -665,7 +692,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
       Self.row(
         .record, "编码",
         LocalizedStringResource("search.record.codec", defaultValue: "H.264,HEVC,体积"),
-        keys: [Prefs.screenRecordCodec])
+        keys: [Prefs.screenRecordCodec], place: .advanced)
     case .recordCountdown:
       Self.row(
         .record, "开始前倒数", LocalizedStringResource("search.record.countdown", defaultValue: "倒数"),
@@ -681,7 +708,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
       Self.row(
         .record, "显示按键时",
         LocalizedStringResource("search.record.keysShown", defaultValue: "按键,只显示快捷键"),
-        keys: [Prefs.screenRecordKeysShortcutsOnly])
+        keys: [Prefs.screenRecordKeysShortcutsOnly], place: .advanced)
     case .recordAudioSource:
       Self.row(
         .record, "来源",
@@ -691,7 +718,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
       Self.row(
         .record, "按快捷键后立即开始录音",
         LocalizedStringResource("search.record.startsImmediately", defaultValue: "立即开始,控制条"),
-        keys: [Prefs.audioRecordStartsImmediately])
+        keys: [Prefs.audioRecordStartsImmediately], place: .advanced)
     case .recordKeys:
       Self.row(
         .record, "录屏和录音的按键", LocalizedStringResource("search.record.keys", defaultValue: "按键,速查"))
@@ -1126,8 +1153,32 @@ enum SettingsItem: String, CaseIterable, Identifiable {
 
   var page: SettingsPage { info.page }
 
-  /// 侧栏结果那一行下面写的位置（第 2 批起挪进子页、「高级…」的写成「截图 › 截图历史」「截图 · 高级」）
-  var location: String { page.title }
+  var place: Place { info.place }
+
+  /// 侧栏结果那一行下面写的位置：页名，挪进子页、「高级…」的写成「截图 › 截图历史」「截图 · 高级」
+  var location: String {
+    switch place {
+    case .page: page.title
+    case .subpage(let subpage): subpage.location
+    case .advanced: page.advancedTitle
+    }
+  }
+
+  /// 这一页的「高级…」表单里有没有新功能（WhatsNew 按行的标题认）：按钮左边挂「新」
+  static func advancedIsNew(on page: SettingsPage, fresh: Set<String>) -> Bool {
+    allCases.contains {
+      $0.page == page && $0.place == .advanced
+        && WhatsNew.marks(section: $0.info.title, of: page, in: fresh)
+    }
+  }
+
+  /// 这个子页里有没有新功能：推进行标题后挂「新」
+  static func subpageIsNew(_ subpage: SettingsSubpage, fresh: Set<String>) -> Bool {
+    allCases.contains {
+      $0.place == .subpage(subpage)
+        && WhatsNew.marks(section: $0.info.title, of: subpage.page, in: fresh)
+    }
+  }
 
   /// 这台 Mac 上有没有这一行（只在 macOS 26 上的、15.4 起才有的）
   /// 这台 Mac 上、这会儿页面上有没有这一行（只在 macOS 26 上的、15.4 起才有的、多块屏才有的、截图功能开着才有的）：
@@ -1149,6 +1200,9 @@ enum SettingsItem: String, CaseIterable, Identifiable {
     case .screenshotHistoryDays, .screenshotHistorySize:
       defaults.bool(forKey: Prefs.shotHistory) ? self : .screenshotHistory
     case .generalMirror: SettingsBackup.isEnabled(defaults) ? self : .generalBackup
+    // 「其他电脑」只在同步开着时有
+    case .generalSyncPeers:
+      defaults.string(forKey: Prefs.notesSyncFolder) != nil ? self : .generalSync
     default: self
     }
   }
