@@ -138,9 +138,17 @@ struct FinderMenuTab: View {
         ItemToggle(.cut)
         // 访达里的 ⌘X / ⌘V（FinderKeys，issue #33，默认关）
         Toggle(isOn: $keys) {
-          Text("在访达里用 ⌘X 剪切、⌘V 移动")
+          HStack(spacing: 6) {
+            Text("在访达里用 ⌘X 剪切、⌘V 移动")
+            if let navigation,
+              WhatsNew.marks(section: "在访达里用 ⌘X 剪切、⌘V 移动", of: .finderMenu, in: navigation.fresh)
+            {
+              NewTag()
+            }
+          }
           Text("和右键「剪切」是同一个剪切；剪切之后按 ⌘V 是移动，没剪切时照常粘贴")
         }
+        .onChange(of: keys) { WhatsNew.touch(section: "在访达里用 ⌘X 剪切、⌘V 移动", of: .finderMenu) }
         // 开关关着时不去查授权
         if keys, !(accessibilityTrusted ?? Permissions.isAccessibilityTrusted) {
           LabeledContent {

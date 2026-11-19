@@ -244,9 +244,13 @@ struct TranslateTab: View {
           .labelsHidden()
           .fixedSize()
         } label: {
-          Text("朗读速度")
+          HStack(spacing: 6) {
+            Text("朗读速度")
+            if WhatsNew.marks(section: "朗读速度", of: .translate, in: navigation.fresh) { NewTag() }
+          }
           Text("原文、译文和单词的小喇叭都按它读，练听力可以放慢")
         }
+        .onChange(of: speechSpeed) { WhatsNew.touch(section: "朗读速度", of: .translate) }
         .settingsAnchor(.translateSpeechSpeed)
       } header: {
         Text("朗读")

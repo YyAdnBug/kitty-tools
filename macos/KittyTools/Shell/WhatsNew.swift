@@ -102,6 +102,19 @@ enum WhatsNew {
     Entry(
       id: "plugin-app-shortcuts", version: "0.10.0", feature: nil, page: .plugins,
       plugin: .appShortcuts),
+    // 0.10.1：延时截图（新动作：菜单、主界面、快捷键，用过一次算看过）、设置 › 访达右键「在访达里用 ⌘X 剪切、⌘V 移动」
+    // （拨过算看过）、设置 › 翻译 › 查词与朗读「朗读速度」（选过一档算看过；推进行跟着挂，SettingsItem.subpageIsNew）。
+    // 设置改版和搜索落到行（整个设置窗都变了，挂哪都不对）、讲解外文句子和附加要求（在每个大模型服务的详情里，列表上没有一处能挂）、
+    // 启动器路径模式和搜菜单项（打字就出来，没有入口）、窗口截图的阴影（截图 › 高级里的一行，改样子）不标，交给更新日志
+    Entry(
+      id: "delayed-screenshot", version: "0.10.1", feature: .screenshot,
+      actions: [.delayedScreenshot]),
+    Entry(
+      id: "finder-keys", version: "0.10.1", feature: .finderMenu, page: .finderMenu,
+      section: "在访达里用 ⌘X 剪切、⌘V 移动"),
+    Entry(
+      id: "speech-speed", version: "0.10.1", feature: .translate, page: .translate,
+      section: "朗读速度"),
   ]
 
   /// 一版最多标几个（拍板 B1：标多了到处都是「新」，等于没标）。同一版的几个新插件算一个：都只标在「全部插件」一处
