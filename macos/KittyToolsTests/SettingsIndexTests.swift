@@ -82,6 +82,8 @@ struct SettingsIndexTests {
     let skipped: Set<SettingsItem> = [
       .generalLanguage, .notesOpenAll, .generalAccessibility, .generalScreenRecording,
       .generalMirror, .clipboardPanelSize, .launcherPanelSize, .translatePanelSize,
+      // 推进行的标题是子页名（SettingsSubpage.title）
+      .launcherScripts,
     ]
     for item in SettingsItem.allCases where !skipped.contains(item) {
       let title = "\"" + item.info.title.key + "\""
@@ -248,5 +250,60 @@ struct SettingsPlacesTests {
     #expect(
       text(ScreenshotTab.historyValue(keeps: true, days: 30, megabytes: 2048))
         == "30 天 · 2 GB")
+  }
+}
+
+/// 第 3 批：翻译、启动器、便签、刘海岛的子页
+struct SettingsPagesTests {
+  private func text(_ value: LocalizedStringResource) -> String { String(localized: value) }
+
+  /// 「英文单词发音」：两个键的四种组合读得回来，换一项只写变了的键
+  @Test func wordVoiceWritesOnlyChangedKeys() {
+    typealias Choice = TranslateTab.WordVoice
+    for recording in [false, true] {
+      for accent in ["us", "uk"] {
+        let old = Choice(recording: recording, accent: accent)
+        #expect(old.recording == recording && old.accent == accent)
+        for new in Choice.allCases {
+          let writes = new.writes(from: old)
+          #expect(writes.recording == (new.recording == recording ? nil : new.recording))
+          #expect(writes.accent == (new.accent == accent ? nil : new.accent))
+        }
+      }
+    }
+    // 导入、同步来的怪值当美音
+    #expect(Choice(recording: true, accent: "xx") == .humanUS)
+  }
+
+  /// 搜子页的名字，落到那个子页的第一行
+  @Test func subpageTitlesAreSearchable() {
+    for subpage in SettingsSubpage.allCases {
+      let first = SettingsItem.allCases.first { $0.place == .subpage(subpage) }
+      let hits = SettingsItem.matching(String(localized: subpage.title), hidden: [], limit: .max)
+      #expect(
+        first.map(hits.contains) == true, "搜「\(String(localized: subpage.title))」找不到 \(subpage)")
+    }
+  }
+
+  /// 推进行行尾那一句
+  @Test func pushRowValues() {
+    #expect(text(TranslateTab.lookupValue(dictionary: true, voice: .humanUK)) == "词典 · 真人英音")
+    #expect(text(TranslateTab.lookupValue(dictionary: false, voice: .systemUS)) == "系统美音")
+    #expect(text(TranslateTab.historyValue(enabled: false, limit: 5000)) == "关")
+    #expect(text(TranslateTab.historyValue(enabled: true, limit: 0)) == "不限")
+    // 数字按界面语言排（5,000）
+    #expect(
+      text(TranslateTab.historyValue(enabled: true, limit: 5000))
+        == String(localized: "最多 \(5000) 条"))
+    #expect(text(LauncherTab.scriptsValue(on: false, scripts: 3, problems: 1).text) == "关")
+    #expect(LauncherTab.scriptsValue(on: true, scripts: 3, problems: 1).isProblem)
+    #expect(text(LauncherTab.scriptsValue(on: true, scripts: 3, problems: 0).text) == "3 个脚本")
+    #expect(text(NotesTab.deckValue(enabled: true, edge: .left)) == "开着 · 左边")
+    #expect(text(NotesTab.deckValue(enabled: false, edge: .left)) == "关")
+    #expect(
+      text(IslandCalendarPage.value(nextEvent: true, calendar: false, hourly: true)) == "开着 2 样")
+    #expect(text(IslandNoticesPage.value([false, false])) == "关")
+    #expect(IslandLevelsPage.value(on: true, catches: false).isProblem)
+    #expect(text(IslandLevelsPage.value(on: false, catches: false).text) == "关")
   }
 }

@@ -5,7 +5,8 @@
 // 一个自己的脚本都没有时一行「还没有自己的脚本」带「用例子新建」（查天气，建好就能跑），
 // 另加的文件夹（只读、能移除）和「添加文件夹…」、把脚本文件拖进来导入（先看一眼全文，写明以你的身份运行、能用本 App 已有的
 // 授权，点「导入」才复制进默认文件夹）、读不成的脚本和原因（橙字）。
-// 「命令」：一行「命令和别名」推进 LauncherCommandsPage（那张名称 / 别名 / 启用的表），行里写各有几条、关了几条。
+// 「命令和别名」一行（LauncherCommandsRow）推进 LauncherCommandsPage（那张名称 / 别名 / 启用的表），行里写各有几条、关了几条。
+// 设置改版（2026-11-18）起「脚本命令」这一节在 设置 › 启动器 › 脚本命令 子页里，「命令和别名」那一行留在启动器页外面。
 // 选文件夹的面板挂成设置窗上的表单（同全局同步的「选择文件夹…」）。
 
 import SwiftUI
@@ -15,7 +16,6 @@ struct ScriptsSection: View {
   let library: ScriptLibrary?
   @AppStorage(Prefs.launcherScripts) private var scriptsOn = true
   @AppStorage(Prefs.scriptFolders) private var foldersText = ""
-  @AppStorage(Prefs.launcherCommandsOff) private var offText = ""
   @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
   @Environment(Island.self) private var island: Island?
   /// 拖进来、等着看一眼再导入的那个
@@ -60,10 +60,13 @@ struct ScriptsSection: View {
       }
       // 拨过开关、新建过脚本，「新」就算看过了（光点进这一页不算；WhatsNew）
       .onChange(of: scriptsOn) { touchNew() }
+      .settingsAnchor(.launcherScriptsEnabled)
       Group {
+        // 子页里再推一层：path 两项（启动器 › 脚本命令 › 怎么写脚本）
         SettingsPushRow(title: "怎么写脚本", detail: "三步上手、开头几行怎么写、结果给谁，带一个能直接用的例子") {
-          navigation?.path = [ScriptGuidePage.route]
+          navigation?.path = [SettingsSubpage.launcherScripts.route, ScriptGuidePage.route]
         }
+        .settingsAnchor(.launcherScriptsGuide)
         LabeledContent {
           HStack {
             Button("复制写法说明", action: copyGuide)
@@ -73,6 +76,7 @@ struct ScriptsSection: View {
           Text("让 AI 来写")
           Text("把写法说明贴给你常用的 AI、在最后写上想做什么；它给的脚本复制下来，点「从剪贴板新建」")
         }
+        .settingsAnchor(.launcherScriptsAI)
         LabeledContent {
           HStack {
             Button("新建脚本", action: newScript)
@@ -89,6 +93,7 @@ struct ScriptsSection: View {
           .lineLimit(1)
           .truncationMode(.middle)
         }
+        .settingsAnchor(.launcherScriptsFolder)
         if library?.hasNoOwnScripts == true {
           LabeledContent {
             Button("用例子新建") {
@@ -119,6 +124,7 @@ struct ScriptsSection: View {
           Text("其他文件夹")
           Text("比如放在 iCloud 云盘里、几台 Mac 共用的脚本文件夹（只读，不往里写）")
         }
+        .settingsAnchor(.launcherScriptsOtherFolders)
         dropZone
         ForEach(library?.problems ?? [], id: \.path) { problem in
           LabeledContent {
@@ -132,9 +138,6 @@ struct ScriptsSection: View {
         }
       }
       .disabled(!scriptsOn)
-    } header: {
-      NewTitle("脚本命令", page: .launcher, fresh: navigation?.fresh ?? [])
-        .settingsAnchor(.launcherScripts)
     } footer: {
       SectionFootnote(
         "脚本以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制等授权，只放你信得过的脚本；从网上下载的，第一次运行前会先给你看一眼全文。Kitty Tools 自带的大功能（便签、刘海岛这些）是插件，在 设置 › 全部插件 里添加。"
@@ -154,39 +157,11 @@ struct ScriptsSection: View {
           "已存成「\(url.lastPathComponent)」", detail: "\(candidate.nextStep)", actions: [.reveal(url)])
       }
     }
-    Section {
-      SettingsPushRow(title: "命令和别名", detail: "\(commandsSummary)") {
-        navigation?.path = [LauncherCommandsPage.route]
-      }
-      .settingsAnchor(.launcherCommands)
-    } header: {
-      Text("命令")
-    } footer: {
-      SectionFootnote("给内置命令和脚本改在启动器里要打的词，关掉用不上的。")
-    }
   }
 
   private var addedFolders: [URL] {
     _ = foldersText  // 跟着偏好变
     return ScriptLibrary.addedFolders
-  }
-
-  /// 「命令和别名」那一行的小字：各有几条、关了几条
-  private var commandsSummary: String {
-    let rows = LauncherCommandsSection.rows(scripts: scriptsOn ? library?.scripts ?? [] : [])
-    let count = { (group: LauncherCommandsSection.Row.Group) in
-      rows.filter { $0.group == group }.count
-    }
-    var parts: [String] = []
-    if count(.mine) > 0 { parts.append(String(localized: "\(count(.mine)) 个我的脚本")) }
-    if count(.bundled) > 0 { parts.append(String(localized: "\(count(.bundled)) 个自带脚本")) }
-    parts += [
-      String(localized: "\(count(.keyword)) 个关键词命令"), String(localized: "\(count(.system)) 个系统命令"),
-    ]
-    let off = LauncherCommands.Settings(aliasesText: "", offText: offText).off
-    let closed = rows.filter { off.contains($0.id) }.count
-    let summary = parts.joinedAsList()
-    return closed > 0 ? String(localized: "\(summary)，关了 \(closed) 个") : summary
   }
 
   /// 「复制写法说明」：给 AI 的那一份（ScriptAIGuide）
@@ -247,6 +222,7 @@ struct ScriptsSection: View {
       isTargeted = $0
     }
     .accessibilityElement(children: .contain)
+    .settingsAnchor(.launcherScriptsImport)
   }
 
   /// 读一个要导入的文件、出「先看一眼」那张表单
@@ -405,5 +381,38 @@ private struct ScriptImportSheet: View {
     }
     .padding(20)
     .frame(width: 560)
+  }
+}
+
+/// 设置 › 启动器「命令和别名 ›」一行：推进那张表（LauncherCommandsPage），行里写各有几条、关了几条
+struct LauncherCommandsRow: View {
+  let library: ScriptLibrary?
+  @AppStorage(Prefs.launcherScripts) private var scriptsOn = true
+  @AppStorage(Prefs.launcherCommandsOff) private var offText = ""
+  @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
+
+  var body: some View {
+    SettingsPushRow(title: "命令和别名", detail: "\(summary)") {
+      navigation?.path = [LauncherCommandsPage.route]
+    }
+    .settingsAnchor(.launcherCommands)
+  }
+
+  /// 那一行的小字：各有几条、关了几条
+  private var summary: String {
+    let rows = LauncherCommandsSection.rows(scripts: scriptsOn ? library?.scripts ?? [] : [])
+    let count = { (group: LauncherCommandsSection.Row.Group) in
+      rows.filter { $0.group == group }.count
+    }
+    var parts: [String] = []
+    if count(.mine) > 0 { parts.append(String(localized: "\(count(.mine)) 个我的脚本")) }
+    if count(.bundled) > 0 { parts.append(String(localized: "\(count(.bundled)) 个自带脚本")) }
+    parts += [
+      String(localized: "\(count(.keyword)) 个关键词命令"), String(localized: "\(count(.system)) 个系统命令"),
+    ]
+    let off = LauncherCommands.Settings(aliasesText: "", offText: offText).off
+    let closed = rows.filter { off.contains($0.id) }.count
+    let summary = parts.joinedAsList()
+    return closed > 0 ? String(localized: "\(summary)，关了 \(closed) 个") : summary
   }
 }

@@ -10,6 +10,16 @@ enum SettingsSubpage: String, CaseIterable, Identifiable {
   case generalSync = "general.sync"
   case generalBackup = "general.backup"
   case screenshotHistory = "screenshot.history"
+  case translateLookup = "translate.lookup"
+  case translateHistory = "translate.history"
+  case launcherScripts = "launcher.scripts"
+  case notesDeck = "notes.deck"
+  case islandActions = "island.actions"
+  case islandMedia = "island.media"
+  case islandCalendar = "island.calendar"
+  case islandLevels = "island.levels"
+  case islandFocus = "island.focus"
+  case islandNotices = "island.notices"
 
   var id: String { rawValue }
 
@@ -17,6 +27,11 @@ enum SettingsSubpage: String, CaseIterable, Identifiable {
     switch self {
     case .generalPermissions, .generalSync, .generalBackup: .general
     case .screenshotHistory: .screenshot
+    case .translateLookup, .translateHistory: .translate
+    case .launcherScripts: .launcher
+    case .notesDeck: .notes
+    case .islandActions, .islandMedia, .islandCalendar, .islandLevels, .islandFocus, .islandNotices:
+      .island
     }
   }
 
@@ -26,6 +41,16 @@ enum SettingsSubpage: String, CaseIterable, Identifiable {
     case .generalSync: "同步"
     case .generalBackup: "备份与导出导入"
     case .screenshotHistory: "截图历史"
+    case .translateLookup: "查词与朗读"
+    case .translateHistory: "翻译历史"
+    case .launcherScripts: "脚本命令"
+    case .notesDeck: "屏幕边缘"
+    case .islandActions: "快捷动作"
+    case .islandMedia: "正在播放"
+    case .islandCalendar: "日程与月历"
+    case .islandLevels: "音量与亮度"
+    case .islandFocus: "专注模式"
+    case .islandNotices: "系统提示"
     }
   }
 

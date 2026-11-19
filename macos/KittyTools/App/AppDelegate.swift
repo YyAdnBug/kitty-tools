@@ -1856,7 +1856,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     case .done: break
     case .disabled:
       island.show(
-        "屏幕边缘的便签关着", detail: "到 设置 › 便签 打开「屏幕边缘」", tone: .info,
+        "屏幕边缘的便签关着", detail: "到 设置 › 便签 › 屏幕边缘 里打开", tone: .info,
         actions: [.init("打开设置", opens: true) { [unowned self] in showSettings(.notesDeck) }])
     case .empty:
       island.show(
@@ -1892,9 +1892,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 启动器里的内置动作（id 见 LauncherItem.actions，体检 A26）；启动器已收起。和菜单栏走同一个 run
   private func runLauncherAction(_ id: String) {
     // 脚本命令的两条（第二轮 D2）
-    // 新建脚本：打开 设置 › 启动器，盖上新建的小表单（第三轮 D2，和设置里的按钮同一张）
+    // 新建脚本：打开 设置 › 启动器 › 脚本命令，盖上新建的小表单（第三轮 D2，和设置里的按钮同一张）
     if id == LauncherItem.newScriptID {
-      showSettings(page: .launcher)
+      showSettings(page: .launcher, path: [SettingsSubpage.launcherScripts.route])
       // 速查表、欢迎引导盖着时不再叠一张（关了它也不会冒出来）
       guard settingsNavigation.page == .launcher, !settingsNavigation.showsShortcuts,
         !settingsNavigation.showsOnboarding
@@ -1906,9 +1906,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       Paster.write(string: ScriptAIGuide.text, record: true)
       island.show(
         "已复制脚本写法说明",
-        detail: "贴给你常用的 AI、写上想做什么；它给的脚本到 设置 › 启动器「从剪贴板新建」",
+        detail: "贴给你常用的 AI、写上想做什么；它给的脚本到 设置 › 启动器 › 脚本命令「从剪贴板新建」",
         actions: [
-          Island.Action("打开设置", opens: true) { [unowned self] in showSettings(page: .launcher) }
+          Island.Action("打开设置", opens: true) { [unowned self] in showSettings(.launcherScriptsAI) }
         ])
       return
     }
