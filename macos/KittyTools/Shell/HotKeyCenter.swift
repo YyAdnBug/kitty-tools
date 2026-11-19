@@ -137,13 +137,33 @@ struct HotKey: Codable, Hashable {
     return Self.character(for: UInt16(keyCode))?.uppercased() ?? "#\(keyCode)"
   }
 
-  /// 当前键盘布局下这个键打出的字符（中文输入法下用它背后的 ASCII 布局）
-  private static func character(for keyCode: UInt16) -> String? {
+  /// 当前键盘布局下这个键打出的字符（中文输入法下用它背后的 ASCII 布局）。modifiers：同时按着的 Carbon 修饰键位
+  /// （E9 查 ⌥ + 字母打出什么）；死键给的是它自己那个附加符号，不是字母
+  static func character(for keyCode: UInt16, modifiers: UInt32 = 0) -> String? {
+    currentLayout().flatMap { character(for: keyCode, modifiers: modifiers, in: $0) }
+  }
+
+  /// 当前键盘布局（中文输入法下是它背后的 ASCII 布局）的 uchr 数据
+  private static func currentLayout() -> Data? {
     guard let source = TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue(),
       let pointer = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData)
     else { return nil }
-    let data = Unmanaged<CFData>.fromOpaque(pointer).takeUnretainedValue() as Data
-    return data.withUnsafeBytes { buffer -> String? in
+    return Unmanaged<CFData>.fromOpaque(pointer).takeUnretainedValue() as Data
+  }
+
+  /// 当前键盘布局写着的第一种语言（波兰语 Pro 是 pl；E9 拿它补系统语言）
+  private static func currentLayoutLanguage() -> String? {
+    guard let source = TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue(),
+      let pointer = TISGetInputSourceProperty(source, kTISPropertyInputSourceLanguages)
+    else { return nil }
+    return (Unmanaged<CFArray>.fromOpaque(pointer).takeUnretainedValue() as? [String])?.first
+  }
+
+  /// 给定布局（uchr 数据）下这个键打出的字符（单测按 id 取系统自带的布局来算，不切换系统布局）
+  nonisolated static func character(for keyCode: UInt16, modifiers: UInt32 = 0, in data: Data)
+    -> String?
+  {
+    data.withUnsafeBytes { buffer -> String? in
       guard let layout = buffer.baseAddress?.assumingMemoryBound(to: UCKeyboardLayout.self) else {
         return nil
       }
@@ -151,7 +171,8 @@ struct HotKey: Codable, Hashable {
       var length = 0
       var characters = [UniChar](repeating: 0, count: 4)
       let status = UCKeyTranslate(
-        layout, keyCode, UInt16(kUCKeyActionDisplay), 0, UInt32(LMGetKbdType()),
+        layout, keyCode, UInt16(kUCKeyActionDisplay), (modifiers >> 8) & 0xFF,
+        UInt32(LMGetKbdType()),
         OptionBits(kUCKeyTranslateNoDeadKeysBit), &deadKeys, characters.count, &length, &characters)
       guard status == noErr, length > 0 else { return nil }
       return String(utf16CodeUnits: characters, count: length)
@@ -188,6 +209,150 @@ extension HotKey {
     kVK_ANSI_Keypad1, kVK_ANSI_Keypad2, kVK_ANSI_Keypad3, kVK_ANSI_Keypad4, kVK_ANSI_Keypad5,
     kVK_ANSI_Keypad6, kVK_ANSI_Keypad7, kVK_ANSI_Keypad8, kVK_ANSI_Keypad9,
   ]
+
+  /// 面板里的固定键（⌘ + 字母、标点，和钉图、长截图面板上不带 ⌘ 的单个字母）按「打出来的字」认（第五轮体检 E2）：给回美式键盘上
+  /// 打这个字的键位，调用方照旧拿 kVK_ANSI_* 比。德语键盘 Z、Y 互换、法语 A/Q Z/W 互换：⌘Z 认的是印着 Z 的那个键，同系统菜单。
+  /// 打出来的不是 ASCII 字母 / 标点（俄文、希腊文这类布局）就退回物理键位（照美式的位置认，同这些布局下按 ⌘ 时系统菜单的做法）。
+  /// 主键盘那一排数字、小键盘照旧按键位（法语键盘不按 ⇧ 时那一排打出的是 &é"'(，⌘1–9 认位置）；方向键、回车、Esc、Tab、Delete
+  /// 打出来的是控制字符、不在表里，也照旧按键位。字母不分大小写（⇧ 照旧看修饰键）；⌥ ⌃ 不改这里认的字。纯函数，配单测。
+  /// 录制框录的键（全局快捷键、截图时能改的键）不走这里：存的是物理键位、显示时按布局翻成字，本来就对得上。
+  /// characters 由 NSEvent.shortcutCharacters 给：按着 ⌘ 时取布局 ⌘ 那一层的字（Dvorak – QWERTY ⌘ 这类按 ⌘ 换成美式的布局），
+  /// 不按 ⌘ 的单键取 charactersIgnoringModifiers（typedCharacters）。
+  /// 「+」也认（北欧在美式 - 的位置、德西意在 ] 的位置，不按 ⇧ 就打出来）：当成 ⌘= 那个键（⌘+ 放大），调用方照旧 (=, ⌘ / ⌘⇧) 都认。
+  /// ponytail: 别的要按 ⇧ 才打得出的标点（法语键盘的「.」）照旧按键位；要认再把 ⇧ 也一起换算
+  nonisolated static func keyCode(_ keyCode: Int, typing characters: String?) -> Int {
+    guard !positionalKeys.contains(keyCode), let typed = characters?.lowercased(),
+      typed.count == 1, let character = typed.first, let mapped = usKeys[character]
+    else { return keyCode }
+    return mapped
+  }
+
+  /// 美式键盘不按 ⇧ 时每个字母、标点在哪个键上（加一个「+」，见上）
+  nonisolated private static let usKeys: [Character: Int] = {
+    let letters = [
+      kVK_ANSI_A, kVK_ANSI_B, kVK_ANSI_C, kVK_ANSI_D, kVK_ANSI_E, kVK_ANSI_F, kVK_ANSI_G,
+      kVK_ANSI_H, kVK_ANSI_I, kVK_ANSI_J, kVK_ANSI_K, kVK_ANSI_L, kVK_ANSI_M, kVK_ANSI_N,
+      kVK_ANSI_O, kVK_ANSI_P, kVK_ANSI_Q, kVK_ANSI_R, kVK_ANSI_S, kVK_ANSI_T, kVK_ANSI_U,
+      kVK_ANSI_V, kVK_ANSI_W, kVK_ANSI_X, kVK_ANSI_Y, kVK_ANSI_Z,
+    ]
+    var map = Dictionary(uniqueKeysWithValues: zip("abcdefghijklmnopqrstuvwxyz", letters))
+    let punctuation: [(Character, Int)] = [
+      ("-", kVK_ANSI_Minus), ("=", kVK_ANSI_Equal), ("[", kVK_ANSI_LeftBracket),
+      ("]", kVK_ANSI_RightBracket), (";", kVK_ANSI_Semicolon), ("'", kVK_ANSI_Quote),
+      ("\\", kVK_ANSI_Backslash), (",", kVK_ANSI_Comma), (".", kVK_ANSI_Period),
+      ("/", kVK_ANSI_Slash), ("`", kVK_ANSI_Grave), ("+", kVK_ANSI_Equal),
+    ]
+    for (character, code) in punctuation { map[character] = code }
+    return map
+  }()
+
+  /// 认哪一层的字（纯函数，配单测）：按着 ⌘ 时用布局 ⌘ 那一层的（取不到退回不按修饰键的），不按 ⌘ 时用不按修饰键的
+  nonisolated static func typedCharacters(command: Bool, commandLayer: String?, plain: String?)
+    -> String?
+  {
+    command ? commandLayer ?? plain : plain
+  }
+
+  /// 照旧按键位认的：主键盘那一排数字和整个小键盘
+  nonisolated private static let positionalKeys: Set<Int> = [
+    kVK_ANSI_0, kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_5, kVK_ANSI_6,
+    kVK_ANSI_7, kVK_ANSI_8, kVK_ANSI_9, kVK_ANSI_Keypad0, kVK_ANSI_Keypad1, kVK_ANSI_Keypad2,
+    kVK_ANSI_Keypad3, kVK_ANSI_Keypad4, kVK_ANSI_Keypad5, kVK_ANSI_Keypad6, kVK_ANSI_Keypad7,
+    kVK_ANSI_Keypad8, kVK_ANSI_Keypad9, kVK_ANSI_KeypadDecimal, kVK_ANSI_KeypadMultiply,
+    kVK_ANSI_KeypadPlus, kVK_ANSI_KeypadClear, kVK_ANSI_KeypadDivide, kVK_ANSI_KeypadEnter,
+    kVK_ANSI_KeypadMinus, kVK_ANSI_KeypadEquals,
+  ]
+}
+
+extension HotKey {
+  /// 只带 ⌥（或 ⌥⇧）的字母键在当前键盘布局下打出、这台 Mac 的语言里又用得到的那个字母（第五轮体检 E9）：设成全局快捷键后，
+  /// 这个字在别的 App 里就打不出来了（波兰语 Pro 布局的 ⌥A = ą；用美式布局的法语用户 ⌥C = ç，北欧用户 ⌥A ⌥O = å ø）。
+  /// 不是这种组合、打出来的不是非 ASCII 的字母（⌥Space 的不换行空格、⌥D 的 ∂、死键）、同一个布局不按 ⌥ 也打得出它的（土耳其 Q
+  /// 的 ç ö 有自己的键）、语言里用不到它的（中文、英文系统 ABC 布局的 ⌥C = ç）都是 nil。语言 = 系统的语言列表（读不到退回
+  /// Locale.preferredLanguages）加上当前布局写着的第一种语言（英文系统 + 波兰语 Pro 也算波兰语）。
+  /// 新装第一次启动时这样的默认键先不注册（HotKeyAction.seedNewInstall）；录制框录到时提示一句（不拦）。
+  /// ponytail: 两样没管——加拿大法语 CSA 布局的 ⌥A = æ（法语用到 æ，会被误扣，自己设回来）；美式布局上 ⌥N 是打 ñ 的死键，
+  /// 死键不算字母、⌥N（快速记一条）照旧注册，西班牙语用户要自己改键
+  var swallowedLetter: Character? {
+    guard modifiers & UInt32(cmdKey | controlKey) == 0, modifiers & UInt32(optionKey) != 0,
+      Self.specialKeys[Int(keyCode)] == nil, Self.functionKeys[Int(keyCode)] == nil,
+      let layout = Self.currentLayout()
+    else { return nil }
+    let languages = Self.languages(
+      system: InterfaceLanguage.systemLanguages, preferred: Locale.preferredLanguages,
+      layout: Self.currentLayoutLanguage())
+    return Self.swallowedLetter(
+      typed: Self.character(for: UInt16(keyCode), modifiers: modifiers, in: layout),
+      plain: Self.plainCharacters(in: layout), languages: languages)
+  }
+
+  /// 拿哪些语言判断（纯函数）：系统的语言列表（读不到用 preferred），布局的语言只在系统语言里没有同一种语言时才补——英文系统 +
+  /// 波兰语 Pro 补上 pl；瑞士德语布局写的是 de（字母里有 ß），系统是 de-CH（瑞士不用 ß），不补，免得 ⌥S 被当成吞 ß
+  nonisolated static func languages(system: [String], preferred: [String], layout: String?)
+    -> [String]
+  {
+    let base = system.isEmpty ? preferred : system
+    guard let layout else { return base }
+    let code = Locale.Language(identifier: layout).languageCode
+    return base.contains { Locale.Language(identifier: $0).languageCode == code }
+      ? base : base + [layout]
+  }
+
+  /// 这个布局不按修饰键、只按 ⇧ 时各个键打得出的字（小写）
+  nonisolated static func plainCharacters(in layout: Data) -> Set<String> {
+    var typed = Set<String>()
+    for code in 0..<UInt16(128) {
+      for modifiers in [0, UInt32(shiftKey)] {
+        if let text = character(for: code, modifiers: modifiers, in: layout) {
+          typed.insert(text.lowercased())
+        }
+      }
+    }
+    return typed
+  }
+
+  /// 纯函数：typed 是这个组合打出来的字，plain 是同一个布局不按 ⌥ 打得出的字（小写），languages 是这台 Mac 的语言（每种语言
+  /// 用到的字母取系统的 exemplarCharacterSet）
+  nonisolated static func swallowedLetter(typed: String?, plain: Set<String>, languages: [String])
+    -> Character?
+  {
+    guard let typed, typed.count == 1, let letter = typed.first, letter.isLetter, !letter.isASCII,
+      !plain.contains(typed.lowercased())
+    else { return nil }
+    let lower = typed.lowercased()
+    let used = languages.contains { language in
+      let set = NSLocale(localeIdentifier: language).object(forKey: .exemplarCharacterSet)
+      guard let set = set as? CharacterSet else { return false }
+      return lower.unicodeScalars.allSatisfy(set.contains)
+    }
+    return used ? letter : nil
+  }
+
+  /// 录制框录到会吞字母的组合时那一行的提示（E9，不拦）
+  var swallowHint: String? {
+    swallowedLetter.map {
+      String(
+        localized: "在现在的键盘布局下 \(display) 会打出「\(String($0))」，设成全局后别的 App 里就打不出这个字了")
+    }
+  }
+}
+
+extension NSEvent {
+  /// 这一下按键在面板里当成哪个键（HotKey.keyCode(_:typing:)，第五轮体检 E2）。只对按键事件用
+  var typedKeyCode: Int {
+    HotKey.keyCode(Int(keyCode), typing: shortcutCharacters)
+  }
+
+  /// 认快捷键用的字：按着 ⌘ 时取布局 ⌘ 那一层打出的字（Dvorak – QWERTY ⌘ 按 ⌘ 时换成美式；法语、德语、瑞典的 ⌘ 层和不按
+  /// 修饰键一样），不按 ⌘ 时取 charactersIgnoringModifiers（HotKey.typedCharacters）。只对按键事件用
+  var shortcutCharacters: String? {
+    let command = modifierFlags.contains(.command)
+    return HotKey.typedCharacters(
+      command: command,
+      commandLayer: command
+        ? characters(byApplyingModifiers: modifierFlags.intersection([.command, .shift])) : nil,
+      plain: charactersIgnoringModifiers)
+  }
 }
 
 /// 追加动作只能加在末尾：注册时用 allCases 的下标当热键 id
@@ -315,14 +480,60 @@ enum HotKeyAction: String, CaseIterable {
     }
   }
 
-  /// 没存过 → 默认组合；存了空数据 → 已清除（nil）
+  /// 没存过 → 默认组合（新装时替这台 Mac 空着的默认键除外，E9）；存了空数据 → 已清除（nil）
   var hotKey: HotKey? {
-    get { resolve { UserDefaults.standard.data(forKey: $0.prefsKey) } }
+    get {
+      resolve(withheld: Self.withheld()) { UserDefaults.standard.data(forKey: $0.prefsKey) }
+    }
     nonmutating set { UserDefaults.standard.set(Self.stored(newValue), forKey: prefsKey) }
   }
 
   /// 偏好里的键（设置的导出 / 导入也读写它，SettingsArchive）
   var prefsKey: String { "hotkey." + rawValue }
+
+  /// 新装第一次启动（第五轮体检 E9；时机、条件同 Feature.seedNewInstall：Prefs.registerDefaults 之前，没看过任何一版、引导也
+  /// 没开过）：默认键在这台的键盘布局和语言下会吞掉一个要用的字母的（HotKey.swallowedLetter），记进 Prefs.hotkeysWithheld——
+  /// 这台 Mac 上不取这个默认（没存过的当没设、不注册），快捷键页那一行橙字说明（withheldNote），要用自己设一个。
+  /// **不写 `hotkey.<动作>`**：那是改过的键，会跟着导出 / 同步去别的 Mac 把对面的默认键清掉，导入、加入同步时又被抹掉。
+  /// 自己设的、同步 / 导入来的键照样盖过它（存着的就用存着的）。升级上来的不碰。swallows 单测里换掉
+  static func seedNewInstall(
+    _ defaults: UserDefaults = .standard, domainName: String? = Bundle.main.bundleIdentifier,
+    swallows: (HotKey) -> Bool = { $0.swallowedLetter != nil }
+  ) {
+    let persisted = domainName.flatMap(defaults.persistentDomain(forName:)) ?? [:]
+    guard persisted[Prefs.lastSeenVersion] == nil, persisted[Prefs.onboardingScreen] == nil,
+      persisted[Prefs.hotkeysWithheld] == nil
+    else { return }
+    let withheld = allCases.filter { action in
+      persisted[action.prefsKey] == nil && action.defaultHotKey.map(swallows) == true
+    }
+    if !withheld.isEmpty { defaults.set(withheld.map(\.rawValue), forKey: Prefs.hotkeysWithheld) }
+  }
+
+  /// 这台 Mac 上替用户空着的默认键（E9，seedNewInstall 记的）
+  static func withheld(in defaults: UserDefaults = .standard) -> Set<HotKeyAction> {
+    Set(
+      (defaults.stringArray(forKey: Prefs.hotkeysWithheld) ?? []).compactMap(Self.init(rawValue:)))
+  }
+
+  /// 快捷键页这一行的橙字（E9）：新装时替这台 Mac 空着、现在也还空着的，说为什么空着；换了布局、现在不吞字母了的给一句通用的
+  var withheldNote: String? {
+    guard hotKey == nil, Self.withheld().contains(self), let key = defaultHotKey else {
+      return nil
+    }
+    guard let letter = key.swallowedLetter else { return Self.withheldNote }
+    return Self.withheldNote(key, letter: letter)
+  }
+
+  /// 换了布局、现在不吞字母了的那一句
+  static var withheldNote: String {
+    String(localized: "新装时按当时的键盘布局没占用这个默认键；要用就在右边设一个")
+  }
+
+  static func withheldNote(_ key: HotKey, letter: Character) -> String {
+    String(
+      localized: "在现在的键盘布局下 \(key.display) 用来打「\(String(letter))」，所以默认没占用；要用就在右边设一个")
+  }
 
   /// 偏好里存的数据：组合的 JSON；清除了 = 空数据
   static func stored(_ hotKey: HotKey?) -> Data {
@@ -331,11 +542,11 @@ enum HotKeyAction: String, CaseIterable {
 
   /// stored：各动作存的数据（nil = 没存过）。没存过取默认，但默认键已被别的动作自己设走时让给它、这个当没设：
   /// 改了默认键（A15 输入翻译 ⌘⇧I → ⌥T）以后，早先把 ⌥T 手动给了别的动作的人不该被新默认顶掉（抢先注册会让那个动作
-  /// 每次启动都注册失败）。只比别的动作存下的值，不递归取默认
-  func resolve(stored: (HotKeyAction) -> Data?) -> HotKey? {
+  /// 每次启动都注册失败）。只比别的动作存下的值，不递归取默认。withheld：这台 Mac 上替用户空着的默认键（E9），没存过也当没设
+  func resolve(withheld: Set<HotKeyAction> = [], stored: (HotKeyAction) -> Data?) -> HotKey? {
     let decode = { (data: Data) in try? JSONDecoder().decode(HotKey.self, from: data) }
     if let data = stored(self) { return decode(data) }
-    guard let fallback = defaultHotKey,
+    guard !withheld.contains(self), let fallback = defaultHotKey,
       !Self.allCases.contains(where: { $0 != self && stored($0).flatMap(decode) == fallback })
     else { return nil }
     return fallback

@@ -33,7 +33,7 @@ class NotePanel: NSPanel {
     if let done = OverlayPanel.undoRedo(event, in: self) { return done }
     // 不看 Caps Lock（同 OverlayPanel）
     guard event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command,
-      let action = OverlayPanel.editActions[event.charactersIgnoringModifiers?.lowercased() ?? ""]
+      let action = OverlayPanel.editActions[event.typedKeyCode]
     else { return false }
     return OverlayPanel.sendEditAction(action, from: self)
   }

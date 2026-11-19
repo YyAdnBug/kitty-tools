@@ -439,7 +439,7 @@ import SwiftUI
       return true
     }
     guard flags == [.command, .shift],
-      event.charactersIgnoringModifiers?.lowercased() == "s",
+      event.typedKeyCode == kVK_ANSI_S,
       let item = model.selected, item.filePath == nil  // 录制的那几条没有「另存为」
     else { return false }
     model.actions.saveAs(item)

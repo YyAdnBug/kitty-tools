@@ -250,7 +250,7 @@ import os
   func handleKeyEquivalent(_ event: NSEvent) -> Bool {
     guard event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command
     else { return false }
-    if Int(event.keyCode) == kVK_ANSI_V { return pasteImages(from: .general) }
+    if event.typedKeyCode == kVK_ANSI_V { return pasteImages(from: .general) }
     guard let digit = HotKey.digitKeys.firstIndex(of: Int(event.keyCode)) else { return false }
     select(digit)
     return true

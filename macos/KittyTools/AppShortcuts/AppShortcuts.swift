@@ -343,8 +343,7 @@ final class AppShortcuts {
   private func keyEquivalent(_ event: NSEvent) -> Bool {
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift, .function])
     guard flags.contains(.command) else { return false }
-    if Self.editsText(keyCode: event.keyCode, flags: flags, key: event.charactersIgnoringModifiers)
-    {
+    if Self.editsText(keyCode: event.keyCode, flags: flags, key: event.shortcutCharacters) {
       return false
     }
     let candidates = AppShortcutsModel.candidates(
@@ -362,12 +361,14 @@ final class AppShortcuts {
   /// ⌘⌫ ⌘⌦、⌘（加不加 ⇧）方向键，和收起面板的 ⌘W。不然在访达里打着字按 ⌘⌫ 清空，会把选中的文件移进废纸篓
   static func editsText(keyCode: UInt16, flags: NSEvent.ModifierFlags, key: String?) -> Bool {
     let flags = flags.intersection([.command, .control, .option, .shift])
-    let letter = key?.lowercased() ?? ""
+    // 按打出来的字认（E2，同各面板）
+    let letter = HotKey.keyCode(Int(keyCode), typing: key)
     let movement = [
       kVK_Delete, kVK_ForwardDelete, kVK_LeftArrow, kVK_RightArrow, kVK_UpArrow, kVK_DownArrow,
     ].contains(Int(keyCode))
-    return (flags == .command && ["a", "c", "v", "x", "z", "w"].contains(letter))
-      || (flags == [.command, .shift] && letter == "z")
+    let editing = [kVK_ANSI_A, kVK_ANSI_C, kVK_ANSI_V, kVK_ANSI_X, kVK_ANSI_Z, kVK_ANSI_W]
+    return (flags == .command && editing.contains(letter))
+      || (flags == [.command, .shift] && letter == kVK_ANSI_Z)
       || ((flags == .command || flags == [.command, .shift]) && movement)
   }
 

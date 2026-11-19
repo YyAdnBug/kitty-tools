@@ -9,6 +9,7 @@
 //   doCommandBy 或这里的 keyDown 两支收（焦点在搜索框时是前一支）。
 
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 
 final class LaunchpadPanel: NSPanel {
@@ -104,7 +105,7 @@ final class LaunchpadPanel: NSPanel {
       onLastPage?()
       return true
     }
-    if flags == .command, event.charactersIgnoringModifiers?.lowercased() == "w" {
+    if flags == .command, event.typedKeyCode == kVK_ANSI_W {
       onCloseRequest?()
       return true
     }

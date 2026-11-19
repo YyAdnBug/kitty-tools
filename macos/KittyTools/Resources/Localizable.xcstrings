@@ -2652,6 +2652,16 @@
         }
       }
     },
+    "Kitty Tools 不是从「应用程序」里打开的，没法原地更新：到发布页下载新版，拖进「应用程序」后从那里打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kitty Tools wasn’t opened from Applications, so it can’t update itself. Download the new version from the releases page, drag it to Applications, and open it from there."
+          }
+        }
+      }
+    },
     "Kitty Tools 便签 %@" : {
       "comment" : "导出的 Markdown 文件夹名，后面是日期",
       "localizations" : {
@@ -5262,6 +5272,24 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "持续%@"
+          }
+        }
+      }
+    },
+    "statusScreen.setPasscode" : {
+      "comment" : "设置 › 状态屏：确认设定退出密码的按钮（动词：设定）",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "设置"
           }
         }
       }
@@ -11015,6 +11043,26 @@
         }
       }
     },
+    "到发布页下载" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download from Releases Page"
+          }
+        }
+      }
+    },
+    "到发布页下载 %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Get %@ from Releases"
+          }
+        }
+      }
+    },
     "到点之后" : {
       "localizations" : {
         "en" : {
@@ -15103,6 +15151,38 @@
         }
       }
     },
+    "在现在的键盘布局下 %@ 会打出「%@」，设成全局后别的 App 里就打不出这个字了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On this keyboard layout, %1$@ types “%2$@”. As a global shortcut, it stops you from typing that letter in other apps."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "在现在的键盘布局下 %1$@ 会打出「%2$@」，设成全局后别的 App 里就打不出这个字了"
+          }
+        }
+      }
+    },
+    "在现在的键盘布局下 %@ 用来打「%@」，所以默认没占用；要用就在右边设一个" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On this keyboard layout, %1$@ types “%2$@”, so it isn’t assigned by default. Set a shortcut on the right if you want one."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "在现在的键盘布局下 %1$@ 用来打「%2$@」，所以默认没占用；要用就在右边设一个"
+          }
+        }
+      }
+    },
     "在监听的端口" : {
       "localizations" : {
         "en" : {
@@ -18677,6 +18757,16 @@
         }
       }
     },
+    "已恢复默认" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restored defaults"
+          }
+        }
+      }
+    },
     "已恢复默认排列" : {
       "localizations" : {
         "en" : {
@@ -21806,6 +21896,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Play shutter sound"
+          }
+        }
+      }
+    },
+    "截图时的 %lld 个快捷键" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld screenshot shortcut"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld screenshot shortcuts"
+                }
+              }
+            }
           }
         }
       }
@@ -26456,6 +26568,16 @@
         }
       }
     },
+    "新装时按当时的键盘布局没占用这个默认键；要用就在右边设一个" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Left unassigned at install because of the keyboard layout at the time. Set a shortcut on the right if you want one."
+          }
+        }
+      }
+    },
     "新装时插件都没添加。添加了才出现在侧栏、菜单栏、主界面、快捷键和启动器里；移除了设置和数据都留着，再添加就回来。" : {
       "localizations" : {
         "en" : {
@@ -30231,6 +30353,16 @@
         }
       }
     },
+    "没从「应用程序」里打开，没法原地更新" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not opened from Applications, can’t update itself"
+          }
+        }
+      }
+    },
     "没写名字的一台" : {
       "localizations" : {
         "en" : {
@@ -31041,12 +31173,22 @@
         }
       }
     },
-    "没有权限替换「%@」里的 App：请用管理员账户更新，或到发布页下载后手动替换" : {
+    "没有权限替换这个 App" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No permission to replace the app in “%@”. Update from an administrator account, or download it from the releases page and replace it yourself."
+            "value" : "No permission to replace this app"
+          }
+        }
+      }
+    },
+    "没有权限替换这个 App：到发布页下载新版，用管理员账户替换" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You don’t have permission to replace this app. Download the new version from the releases page and replace it using an administrator account."
           }
         }
       }
@@ -34539,6 +34681,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Not enough disk space (7z also needs room for a temporary copy on the startup disk)"
+          }
+        }
+      }
+    },
+    "磁盘空间不够，没装上新版本" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not enough disk space to install the update"
+          }
+        }
+      }
+    },
+    "磁盘空间不够：腾出一些空间后再点「更新并重新打开」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not enough disk space. Free up some space, then click Update and Relaunch again."
           }
         }
       }
@@ -38413,16 +38575,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Enter the Tencent Cloud SecretId and SecretKey in Settings first"
-          }
-        }
-      }
-    },
-    "请先把 Kitty Tools 拖进「应用程序」，从那里打开后再更新" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Move Kitty Tools to Applications and open it from there, then update"
           }
         }
       }

@@ -199,13 +199,22 @@ struct AboutTab: View {
           } else {
             Text("有新版本 \(release.version)")
           }
-          Button("更新并重新打开") { Task { await updater.install(.page) } }
-            .buttonStyle(BrandButtonStyle())
-            .disabled(updater.blocker != nil)
-          if let blocker = updater.blocker {
-            Text(blocker).foregroundStyle(.secondary)
+          if updater.obstacle != nil {
+            // 这份 App 原地换不了（E10）：只给发布页，原因写在下面一行
+            // 主按钮不让压窄（fixedSize）：屏外量出来的理想宽度差一点，原来会被截成「到发布页…」「Update and Relaun…」
+            Button("到发布页下载") { updater.openPage(release) }
+              .buttonStyle(BrandButtonStyle())
+              .fixedSize()
           } else {
-            link("更新内容") { NSWorkspace.shared.open(release.page) }
+            Button("更新并重新打开") { Task { await updater.install(.page) } }
+              .buttonStyle(BrandButtonStyle())
+              .fixedSize()
+              .disabled(updater.blocker != nil)
+            if let blocker = updater.blocker {
+              Text(blocker).foregroundStyle(.secondary)
+            } else {
+              link("更新内容") { NSWorkspace.shared.open(release.page) }
+            }
           }
           link("跳过这个版本") { updater.skip() }
         case .installing(let release):
@@ -228,15 +237,35 @@ struct AboutTab: View {
           .foregroundStyle(.secondary)
           link("现在重新打开") { NSApp.terminate(nil) }
         case .failed(let message):
-          Text(message).foregroundStyle(Color(nsColor: .systemRed))
-            .lineLimit(1).truncationMode(.tail)
-          link("重试") { await updater.check(.page) }
+          // 话长（限流、到发布页下载那半句）就折行写全（E10），悬停也看得到；两边留出页边（只给这一种，别的状态那一行不挤）
+          HStack(spacing: 8) {
+            Text(message).foregroundStyle(Color(nsColor: .systemRed))
+              .multilineTextAlignment(.center)
+              .fixedSize(horizontal: false, vertical: true)
+              .help(message)
+            link("重试") { await updater.check(.page) }
+          }
+          .padding(.horizontal, 28)
         }
       }
       .font(.callout)
-      // 定高：有按钮和只有文字的状态一样高，切换时下面的内容不跳
-      .frame(height: 24)
+      // 定高：有按钮和只有文字的状态一样高，切换时下面的内容不跳（检查失败的话长时折行、撑高）
+      .frame(minHeight: 24)
       .animation(Style.Motion.settle.animation(), value: updater.state)
+      // 有新版本却换不了 / 上一次没装上（E10）：原因写全，多行
+      if case .available(let release) = updater.state, release.version != updater.skipped,
+        let note = updater.obstacle?.reason ?? updater.failure?.message
+      {
+        Text(note)
+          .font(.callout)
+          .foregroundStyle(
+            updater.obstacle == nil
+              ? AnyShapeStyle(Color(nsColor: .systemRed)) : AnyShapeStyle(.secondary)
+          )
+          .multilineTextAlignment(.center)
+          .fixedSize(horizontal: false, vertical: true)
+          .padding(.horizontal, 28)
+      }
       // 两行竖排（英文并排一行放不下）
       VStack(alignment: .leading, spacing: 6) {
         Toggle("自动检查更新", isOn: $autoCheck)

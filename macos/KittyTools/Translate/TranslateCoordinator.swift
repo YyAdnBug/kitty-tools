@@ -623,7 +623,8 @@ import Observation
   func handleKeyEquivalent(_ event: NSEvent) -> Bool {
     if showsHistory, historyList.handleKeyEquivalent(event) { return true }
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
-    let code = Int(event.keyCode)
+    // 字母、标点按打出来的字认（E2）；数字照旧按键位
+    let code = event.typedKeyCode
     // ⌘+ 在多数键盘上要按 ⇧（⌘⇧=），两种都认
     guard flags == .command || (flags == [.command, .shift] && code == kVK_ANSI_Equal) else {
       return false

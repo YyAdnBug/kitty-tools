@@ -579,22 +579,22 @@ final class OverlayPanel: NSPanel {
     guard event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command else {
       return false
     }
-    // ⌘W 关闭（各浮层都认，固定着也关：固定只管点别处不收起）。本 App 不激活，主菜单的「关闭」收不到
-    if Int(event.keyCode) == kVK_ANSI_W {
+    // ⌘W 关闭（各浮层都认，固定着也关：固定只管点别处不收起）。本 App 不激活，主菜单的「关闭」收不到。
+    // 字母、标点按打出来的字认（E2：法语键盘上印着 W 的键在美式的 Z 位置），同下面的编辑键
+    if event.typedKeyCode == kVK_ANSI_W {
       dismiss()
       return true
     }
     // 浮层不激活本 App，主菜单的 ⌘C / ⌘V 等不一定收得到：直接发给当前输入框
-    guard let action = Self.editActions[event.charactersIgnoringModifiers?.lowercased() ?? ""]
-    else { return false }
+    guard let action = Self.editActions[event.typedKeyCode] else { return false }
     return Self.sendEditAction(action, from: self)
   }
 
-  /// 截图里输入文字时也用它（同样不激活本 App）
-  static let editActions: [String: Selector] = [
-    "x": #selector(NSText.cut(_:)), "c": #selector(NSText.copy(_:)),
-    "v": #selector(NSText.paste(_:)), "a": #selector(NSText.selectAll(_:)),
-    "z": Selector(("undo:")),
+  /// 截图里输入文字时也用它（同样不激活本 App）。键是 NSEvent.typedKeyCode（按打出来的字认，E2）
+  static let editActions: [Int: Selector] = [
+    kVK_ANSI_X: #selector(NSText.cut(_:)), kVK_ANSI_C: #selector(NSText.copy(_:)),
+    kVK_ANSI_V: #selector(NSText.paste(_:)), kVK_ANSI_A: #selector(NSText.selectAll(_:)),
+    kVK_ANSI_Z: Selector(("undo:")),
   ]
 
   /// ⌘Z 撤销 / ⇧⌘Z 重做**焦点所在的输入框**里打的字（NSWindow.undoFocusedText：直接动它登记撤销的那个栈，
@@ -603,7 +603,7 @@ final class OverlayPanel: NSPanel {
   static func undoRedo(_ event: NSEvent, in window: NSWindow) -> Bool? {
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
     guard flags == .command || flags == [.command, .shift],
-      event.charactersIgnoringModifiers?.lowercased() == "z", window.firstResponder is NSTextView
+      event.typedKeyCode == kVK_ANSI_Z, window.firstResponder is NSTextView
     else { return nil }
     return window.undoFocusedText(redo: flags != .command)
   }

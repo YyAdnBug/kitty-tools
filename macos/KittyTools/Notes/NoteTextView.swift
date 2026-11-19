@@ -68,6 +68,7 @@
 //   在那之前便签墙卡片照旧按段排（NoteStyles.center 把字夹在自己的行片段里）；要全对就在 Note.sanitized(text:) 里也换。
 
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 import Synchronization
 
@@ -1809,8 +1810,8 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   static func wrap(for event: NSEvent) -> NoteMarkdown.Wrap? {
     guard event.type == .keyDown else { return nil }
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
-    let key = event.charactersIgnoringModifiers?.lowercased()
-    return NoteMarkdown.Wrap.allCases.first { $0.modifiers == flags && $0.key == key }
+    let key = event.typedKeyCode
+    return NoteMarkdown.Wrap.allCases.first { $0.modifiers == flags && $0.keyCode == key }
   }
 
   /// ⌘B ⌘I ⇧⌘X ⌘E：窗口把 ⌘ 组合沿着视图树问一遍（在主菜单之前；那叠、浮动便签的面板先问过自己的键，
@@ -1818,7 +1819,7 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   override func performKeyEquivalent(with event: NSEvent) -> Bool {
     // ⌥⇧⌘V 粘贴为纯文本（X4：Markdown 开着时 ⌘V 会把网页、文稿的格式转成 Markdown，这个键照旧只要字）
     if event.modifierFlags.intersection([.command, .option, .shift, .control])
-      == [.command, .option, .shift], event.charactersIgnoringModifiers?.lowercased() == "v",
+      == [.command, .option, .shift], event.typedKeyCode == kVK_ANSI_V,
       window?.firstResponder === self, isEditable
     {
       if !hasMarkedText() { pasteAsPlainText(nil) }
@@ -2357,6 +2358,16 @@ extension NoteMarkdown.Wrap {
     case .italic: "i"
     case .strike: "x"
     case .code: "e"
+    }
+  }
+
+  /// 按键认的键位（NSEvent.typedKeyCode，按打出来的字认，E2），和 key 是同一个字母
+  var keyCode: Int {
+    switch self {
+    case .bold: kVK_ANSI_B
+    case .italic: kVK_ANSI_I
+    case .strike: kVK_ANSI_X
+    case .code: kVK_ANSI_E
     }
   }
 
