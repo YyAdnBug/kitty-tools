@@ -76,7 +76,7 @@ struct SyncSection: View {
           }
         part(
           SyncRecords.Kind.settings.rawValue, title: SyncRecords.Kind.settings.titleResource,
-          detail: "各页的设置、全局快捷键和功能开关；启动台、录音的麦克风、菜单栏图标这些跟着这台 Mac 的不同步")
+          detail: "各页的设置、快捷键和功能开关", info: "启动台、录音的麦克风、菜单栏图标这些跟着这台 Mac 的不同步。")
         part(
           NoteSyncer.notesPart, title: "便签", detail: "连同正文里的图片", feature: .notes,
           isOn: notesOn)
@@ -91,17 +91,18 @@ struct SyncSection: View {
           detail: "启动器里的网页搜索和快捷链接", feature: .launcher, isOn: launcherOn)
         part(
           SyncRecords.Kind.services.rawValue, title: SyncRecords.Kind.services.titleResource,
-          detail: "哪几个服务、顺序和设置；密钥不同步，别的 Mac 上要自己填一次", feature: .translate,
+          detail: "服务、顺序和设置，密钥不同步", info: "别的 Mac 上要自己填一次密钥。", feature: .translate,
           isOn: translateOn)
         part(
           SyncRecords.Kind.statuses.rawValue, title: SyncRecords.Kind.statuses.titleResource,
           detail: "状态屏里自己写的那几个状态", feature: .statusScreen, isOn: statusScreenOn)
         part(
           SyncRecords.Kind.reminders.rawValue, title: SyncRecords.Kind.reminders.titleResource,
-          detail: "有哪些提醒、各自的时间和方式；两台都开着时两台都响", feature: .reminders, isOn: remindersOn)
+          detail: "提醒和各自的时间，几台都会响", info: "有哪些提醒、各自的时间和方式都同步；几台都开着时几台都响。",
+          feature: .reminders, isOn: remindersOn)
         part(
           SyncRecords.Kind.launcher.rawValue, title: SyncRecords.Kind.launcher.titleResource,
-          detail: "空搜索框里收藏的那几个；这台没装的 App 不显示，装上就回来", feature: .launcher,
+          detail: "空搜索框里收藏的那几个", info: "这台没装的 App 不显示，装上就回来。", feature: .launcher,
           isOn: launcherOn)
         LabeledContent {
           EmptyView()
@@ -114,12 +115,15 @@ struct SyncSection: View {
         offRow
       }
     } header: {
-      NewTitle("同步", page: .general, fresh: navigation?.fresh ?? [])
-        .settingsAnchor(.generalSync)
+      HStack(spacing: 6) {
+        NewTitle("同步", page: .general, fresh: navigation?.fresh ?? [])
+        InfoButton(
+          "勾上的几类在几台电脑之间保持一样，取消一类只是不再同步它。每台电脑只往自己的那份里写、读所有电脑的，改动一般几十秒到几分钟传过去（看同步盘多快；连服务器时大约一分钟一轮）。两台都改了同一条时，后改的留下（便签的另一版放进「最近删除」）；别处删掉的片段、收藏和生词，这台 Mac 上只是不再收藏；一轮要删的太多会先停下来问。停止同步后，文件夹里的东西留着，这台 Mac 上的也不动。",
+          about: "同步")
+      }
+      .settingsAnchor(.generalSync)
     } footer: {
-      SectionFootnote(
-        "勾上的几类在几台电脑之间保持一样，取消一类只是不再同步它。同步文件夹（连服务器时是服务器上那个文件夹）里放的是不加密的文本文件和图片，能打开这个文件夹的人都看得到。每台电脑只往自己的那份里写、读所有电脑的，改动一般几十秒到几分钟传过去（看同步盘多快；连服务器时大约一分钟一轮）。两台都改了同一条时，后改的留下（便签的另一版放进「最近删除」）；别处删掉的片段、收藏和生词，这台 Mac 上只是不再收藏；一轮要删的太多会先停下来问。停止同步后，文件夹里的东西留着，这台 Mac 上的也不动。"
-      )
+      SectionFootnote("同步文件夹（连服务器时是服务器上那个文件夹）里是不加密的文本文件和图片，能打开它的人都看得到。")
     }
   }
 
@@ -314,24 +318,31 @@ struct SyncSection: View {
   /// 「同步的内容」里的一类：勾上才同步；它跟着的功能关着（插件没添加）时说一声（勾着也先不同步）
   private func part(
     _ name: String, title: LocalizedStringResource, detail: LocalizedStringResource,
-    feature: Feature? = nil,
+    info: LocalizedStringResource? = nil, feature: Feature? = nil,
     isOn featureOn: Bool = true
   ) -> some View {
-    Toggle(
-      isOn: Binding {
-        syncer.syncs(name)
-      } set: {
-        if $0, syncer.joins(name) { confirming = name } else { syncer.setSyncs(name, $0) }
-      }
+    SettingRow(
+      title: title, subtitle: Self.partDetail(detail, feature: feature, isOn: featureOn), info: info
     ) {
-      Text(title)
-      Text(
-        featureOn
-          ? detail
-          : feature?.isPlugin == true
-            ? "\(feature?.title ?? "")插件没添加，先不同步；在上面「插件」里添加就接着同步"
-            : "\(feature?.title ?? "")关着，先不同步；在上面「功能」里打开就接着同步")
+      Toggle(
+        String(localized: title),
+        isOn: Binding {
+          syncer.syncs(name)
+        } set: {
+          if $0, syncer.joins(name) { confirming = name } else { syncer.setSyncs(name, $0) }
+        }
+      )
+      .toggleStyle(.switch)
     }
+  }
+
+  /// 一类的那一句：它跟着的功能关着（插件没添加）时说先不同步、去哪打开（别写成三元式：抽字会漏）
+  static func partDetail(
+    _ detail: LocalizedStringResource, feature: Feature?, isOn: Bool
+  ) -> LocalizedStringResource {
+    guard !isOn, let feature else { return detail }
+    if feature.isPlugin { return "\(feature.title)插件没添加，先不同步；到 设置 › 全部插件 里添加就接着同步" }
+    return "\(feature.title)关着，先不同步；到 设置 › 通用 › 功能 里打开就接着同步"
   }
 
   /// 状态：上次同步的时刻（第一轮还没完时说正在同步）、还在下载几个

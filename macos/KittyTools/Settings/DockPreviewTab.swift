@@ -26,9 +26,14 @@ struct DockPreviewTab: View {
     Form {
       permissions(at: .top)
       Section {
-        Picker("停多久再弹出", selection: $delay) {
-          ForEach(Prefs.dockPreviewDelayChoices, id: \.self) { milliseconds in
-            Text(Self.title(milliseconds)).tag(milliseconds)
+        SettingRow(
+          title: "停多久再弹出",
+          info: "鼠标在程序坞的图标上停这么久才弹出，弹出后移到别的图标上马上换。点一张切到那扇窗口，悬停时点左上角的 ✕ 关掉它。最小化的、隐藏的和别的桌面上的窗口也列出来。"
+        ) {
+          Picker("停多久再弹出", selection: $delay) {
+            ForEach(Prefs.dockPreviewDelayChoices, id: \.self) { milliseconds in
+              Text(Self.title(milliseconds)).tag(milliseconds)
+            }
           }
         }
         .gated(by: .dockPreview)
@@ -41,10 +46,6 @@ struct DockPreviewTab: View {
         .settingsAnchor(.dockPreviewCmdTab)
       } header: {
         Text("程序坞预览")
-      } footer: {
-        SectionFootnote(
-          "鼠标在程序坞的图标上停这么久才弹出，弹出后移到别的图标上马上换。点一张切到那扇窗口，悬停时点左上角的 ✕ 关掉它。最小化的、隐藏的和别的桌面上的窗口也列出来。"
-        )
       }
       permissions(at: .bottom)
       PluginAboutSection(plugin: .dockPreview)

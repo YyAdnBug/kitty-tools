@@ -101,10 +101,11 @@ struct TranslateTab: View {
           }
           .settingsAnchor(.translateSecond)
         } header: {
-          Text("语言")
-        } footer: {
-          SectionFootnote(
-            "目标语言选「自动」时：原文是第一语言就译成第二语言，否则译成第一语言（简繁中文算同一种）。源语言和目标语言在翻译浮窗顶部切换，会一直记住。")
+          InfoHeader(
+            "语言",
+            info:
+              "目标语言选「自动」时：原文是第一语言就译成第二语言，否则译成第一语言（简繁中文算同一种）。源语言和目标语言在翻译浮窗顶部切换，会一直记住。"
+          )
         }
         // 两个选成同一种语言（简繁也算）就互换，免得「自动」变成中译中
         .onChange(of: first) { old, new in if sameLanguage(new, second) { second = old } }
@@ -117,30 +118,35 @@ struct TranslateTab: View {
             addMenu
           }
         } header: {
-          Text("翻译服务")
-            .settingsAnchor(.translateServices)
-        } footer: {
-          SectionFootnote(
-            "拖动调整顺序，结果按这个顺序显示；排在最前、翻译成功的那个服务的结果写入历史、用于自动复制和收藏。点一行进入设置。删掉的内置服务可以从「+」加回来，密钥还在。")
+          InfoHeader(
+            "翻译服务",
+            info:
+              "拖动调整顺序，结果按这个顺序显示；排在最前、翻译成功的那个服务的结果写入历史、用于自动复制和收藏。点一行进入设置。删掉的内置服务可以从「+」加回来，密钥还在。"
+          )
+          .settingsAnchor(.translateServices)
         }
         Section("行为") {
-          Toggle(isOn: $copyToTranslate) {
-            Text("复制即译")
-            Text("在别的 App 里复制文字，浮窗自动弹出翻译（网址、路径和数字不翻）")
+          SettingRow(title: "复制即译", subtitle: "复制文字就弹出翻译", info: "网址、路径和数字不翻。") {
+            Toggle("复制即译", isOn: $copyToTranslate)
+              .toggleStyle(.switch)
           }
           .settingsAnchor(.translateCopyToTranslate)
-          Toggle("自动复制译文", isOn: $autoCopy)
-            .help("复制即译弹出的翻译不会自动复制，免得覆盖你刚复制的原文")
-            .settingsAnchor(.translateAutoCopy)
-          Picker(selection: $panelPosition) {
-            Text("屏幕上方").tag("top")
-            Text("跟随鼠标").tag("mouse")
-            Text("上次位置").tag("last")
-          } label: {
-            Text("浮窗位置")
-            Text("划词、截图翻译、复制即译时出现的位置：屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边；输入翻译总在上次拖到的位置")
+          SettingRow(title: "自动复制译文", info: "复制即译弹出的翻译不会自动复制，免得覆盖你刚复制的原文。") {
+            Toggle("自动复制译文", isOn: $autoCopy)
+              .toggleStyle(.switch)
           }
-          .pickerStyle(.segmented)
+          .settingsAnchor(.translateAutoCopy)
+          SettingRow(
+            title: "浮窗位置",
+            info: "划词、截图翻译、复制即译时出现的位置：屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边；输入翻译总在上次拖到的位置。"
+          ) {
+            Picker("浮窗位置", selection: $panelPosition) {
+              Text("屏幕上方").tag("top")
+              Text("跟随鼠标").tag("mouse")
+              Text("上次位置").tag("last")
+            }
+            .pickerStyle(.segmented)
+          }
           .settingsAnchor(.translatePanelPosition)
         }
         Section {
@@ -165,11 +171,11 @@ struct TranslateTab: View {
         }
       }
       Section {
-        LabeledContent {
+        SettingRow(
+          title: "翻译浮窗里的按键", subtitle: "↩ 翻译，⌘1–9 复制结果，⌘Y 看历史",
+          info: "⌘R 重新翻译；划词来的翻译可以「替换原文」。"
+        ) {
           ShortcutsButton()
-        } label: {
-          Text("翻译浮窗里的按键")
-          Text("↩ 翻译，⌘R 重新翻译，⌘1–9 复制第 1–9 个结果，⌘Y 翻译历史；划词来的翻译可以「替换原文」")
         }
         .settingsAnchor(.translateKeys)
       }
@@ -190,26 +196,32 @@ struct TranslateTab: View {
       status: Self.lookupValue(dictionary: systemDictionary, voice: wordVoice.wrappedValue)
     ) {
       Section {
-        Toggle("查单个词时显示系统词典的释义", isOn: $systemDictionary)
-          .settingsAnchor(.translateSystemDictionary)
+        SettingRow(title: "查单个词时显示系统词典的释义", info: "查单个词时不自动复制、不给「替换原文」。") {
+          Toggle("查单个词时显示系统词典的释义", isOn: $systemDictionary)
+            .toggleStyle(.switch)
+        }
+        .settingsAnchor(.translateSystemDictionary)
         Toggle("查单个词时大模型按词典回答（读音、词性、例句）", isOn: $wordMode)
           .settingsAnchor(.translateWordMode)
-        LabeledContent {
+        SettingRow(
+          title: "系统词典的中文释义", subtitle: "想看中文释义，在「词典」里换词典",
+          info: "默认给英文词英英释义；在「词典」App 的设置里勾上「牛津英汉汉英词典」并拖到最前面，就会显示中文释义。"
+        ) {
           Button("打开「词典」") { NSWorkspace.shared.open(URL(string: "dict://")!) }
-        } label: {
-          Text("系统词典的中文释义")
-          Text("默认给英文词英英释义；在「词典」App 的设置里勾上「牛津英汉汉英词典」并拖到最前面，就会显示中文释义")
         }
         .settingsAnchor(.translateDictionaryApp)
       } header: {
         Text("查词")
-      } footer: {
-        SectionFootnote("查单个词时不自动复制、不给「替换原文」。")
       }
       .gated(by: .translate)
       Section {
-        Picker("英文单词发音", selection: wordVoice) {
-          ForEach(WordVoice.allCases, id: \.self) { Text(plain: $0.title).tag($0) }
+        SettingRow(
+          title: "英文单词发音", subtitle: "真人发音会把单词发给有道",
+          info: "取不到时用系统声音。句子用系统声音，可以在 系统设置 › 辅助功能 › 朗读内容 里下载音质更好的声音。"
+        ) {
+          Picker("英文单词发音", selection: wordVoice) {
+            ForEach(WordVoice.allCases, id: \.self) { Text(plain: $0.title).tag($0) }
+          }
         }
         .settingsAnchor(.translatePronunciation)
         // 四档横排单选（3–5 项，mac-whisker-settings）；导入、同步来的怪值显示成最近的一档（Speaker.speed）
@@ -238,10 +250,6 @@ struct TranslateTab: View {
         .settingsAnchor(.translateSpeechSpeed)
       } header: {
         Text("朗读")
-      } footer: {
-        SectionFootnote(
-          "真人发音来自有道词典，会把要读的单词发给有道；取不到时用系统声音。句子用系统声音，可以在 系统设置 › 辅助功能 › 朗读内容 里下载音质更好的声音。"
-        )
       }
       .gated(by: .translate)
     }
@@ -257,13 +265,15 @@ struct TranslateTab: View {
         Toggle("记录翻译历史", isOn: $historyEnabled)
           .gated(by: .translate)
           .settingsAnchor(.translateHistory)
-        Picker("历史最多保留", selection: $historyLimit) {
-          // 档位和 Prefs.migrate 读同一张表：旧档位迁过来，不会显示成空白
-          ForEach(Prefs.translateHistoryLimitChoices, id: \.self) {
-            Text($0 == 0 ? "不限" : "\($0) 条").tag($0)
+        SettingRow(title: "历史最多保留", info: "收藏的记录不算在保留条数里、永不清理。") {
+          Picker("历史最多保留", selection: $historyLimit) {
+            // 档位和 Prefs.migrate 读同一张表：旧档位迁过来，不会显示成空白
+            ForEach(Prefs.translateHistoryLimitChoices, id: \.self) {
+              Text($0 == 0 ? "不限" : "\($0) 条").tag($0)
+            }
           }
+          .pickerStyle(.segmented)
         }
-        .pickerStyle(.segmented)
         .disabled(!historyEnabled)
         .settingsAnchor(.translateHistoryLimit)
         LabeledContent("导出和清空") {
@@ -275,8 +285,6 @@ struct TranslateTab: View {
           }
         }
         .settingsAnchor(.translateHistoryExport)
-      } footer: {
-        SectionFootnote("收藏的记录不算在保留条数里、永不清理。")
       }
     }
   }
@@ -310,7 +318,8 @@ struct TranslateTab: View {
     .gated(by: .translate)
     Section {
       PanelSizeRow(
-        detail: "拖左右两边改宽度，拖下边改最高多高（内容少时照样变矮）", widthKey: Prefs.translatePanelWidth,
+        detail: "拖浮窗的边改大小", info: "拖左右两边改宽度，拖下边改最高多高（内容少时照样变矮）。",
+        widthKey: Prefs.translatePanelWidth,
         heightKey: Prefs.translatePanelMaxHeight, defaultWidth: TranslatePanelView.defaultWidth
       )
       .settingsAnchor(.translatePanelSize)
@@ -319,27 +328,34 @@ struct TranslateTab: View {
     }
     .gated(by: .translate)
     Section("截图翻译") {
-      Toggle(isOn: $screenshotOverlay) {
-        NewTitle("截图翻译时把译文直接盖回截图上", page: .translate, fresh: navigation.fresh)
-        Text(
-          "截图翻译和截图工具栏里的「翻译」都留在截图页里，译文按原来的位置盖回图上，可以接着标注、复制、保存；关着时在翻译浮窗里看，能对比几个服务、复制译文"
-        )
+      SettingRow(
+        title: "截图翻译时把译文直接盖回截图上", subtitle: "译文盖回原处，能接着标注",
+        info: "截图翻译和截图工具栏里的「翻译」都留在截图页里，译文按原来的位置盖回图上，可以接着标注、复制、保存；关着时在翻译浮窗里看，能对比几个服务、复制译文。",
+        isNew: WhatsNew.marks(section: "截图翻译时把译文直接盖回截图上", of: .translate, in: navigation.fresh)
+      ) {
+        Toggle("截图翻译时把译文直接盖回截图上", isOn: $screenshotOverlay)
+          .toggleStyle(.switch)
       }
       // 拨过这一行，「新」就算看过了（光点进这一页不算；WhatsNew）
       .onChange(of: screenshotOverlay) {
         WhatsNew.touch(section: "截图翻译时把译文直接盖回截图上", of: .translate)
       }
       .settingsAnchor(.translateOverlay)
-      Toggle(isOn: $copyRecognized) {
-        Text("截图翻译时复制识别出的原文")
-        Text(
-          autoCopy
-            ? "识别出来就放进剪贴板；译文出来后，剪贴板换成译文（外面开着自动复制译文）"
-            : "识别出来就放进剪贴板，⌘V 能直接粘贴；关着时只记进剪贴板历史")
+      SettingRow(
+        title: "截图翻译时复制识别出的原文", subtitle: "识别出的原文放进剪贴板", info: copyRecognizedInfo
+      ) {
+        Toggle("截图翻译时复制识别出的原文", isOn: $copyRecognized)
+          .toggleStyle(.switch)
       }
       .settingsAnchor(.translateCopyRecognized)
     }
     .gated(by: .translate)
+  }
+
+  /// 「截图翻译时复制识别出的原文」的 ⓘ：跟着「自动复制译文」（别写成三元式：抽字会漏）
+  private var copyRecognizedInfo: LocalizedStringResource {
+    if autoCopy { return "识别出来就放进剪贴板；译文出来后，剪贴板换成译文（外面开着自动复制译文）。" }
+    return "识别出来就放进剪贴板，⌘V 能直接粘贴；关着时只记进剪贴板历史。"
   }
 
   /// 「查词与朗读 ›」行尾：系统词典开着「词典 · 真人美音」，关着只写发音

@@ -67,10 +67,10 @@ struct AppShortcutsTab: View {
         .disabled(!hold)
         .settingsAnchor(.appShortcutsDelay)
       } header: {
-        Text("App 快捷键")
-      } footer: {
-        SectionFootnote(
-          "弹出前台 App 菜单栏里的全部快捷键，按菜单分组。按着那个键再按别的键，这一下照常给 App、面板收起；松开就收起。只列 App 菜单里的快捷键，网页和编辑器里自己定义的看不到。"
+        InfoHeader(
+          "App 快捷键",
+          info:
+            "弹出前台 App 菜单栏里的全部快捷键，按菜单分组。按着那个键再按别的键，这一下照常给 App、面板收起；松开就收起。只列 App 菜单里的快捷键，网页和编辑器里自己定义的看不到。"
         )
       }
       permissions(at: .bottom)

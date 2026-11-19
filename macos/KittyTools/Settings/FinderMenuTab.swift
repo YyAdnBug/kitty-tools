@@ -89,15 +89,20 @@ struct FinderMenuTab: View {
         }
         .gated(by: .finderMenu)
       } header: {
-        Text("访达右键")
-          .settingsAnchor(.finderMenu)
-      } footer: {
-        VStack(alignment: .leading, spacing: 6) {
-          SectionFootnote(
+        InfoHeader(
+          "访达右键",
+          info:
             "在访达里右键文件、文件夹，或者文件夹窗口的空白处，就有下面开着的这几项；也能把「Kitty Tools」按钮放到访达的工具栏上（访达 › 显示 › 自定工具栏…，把它拖上去），点它是同样的几项。iCloud 云盘（包括同步到 iCloud 的桌面、文稿）和网盘的文件夹里，系统不在右键里显示这些项，用工具栏按钮。"
-          )
-          if desktopInICloud ?? Self.desktopInICloud { iCloudHint }
-          if !Self.settingsHaveEntry { oldSystemHint }
+        )
+        .settingsAnchor(.finderMenu)
+      } footer: {
+        // 橙字是状态（桌面在 iCloud 里、旧系统没有那一项），照旧写在页脚
+        let inICloud = desktopInICloud ?? Self.desktopInICloud
+        if inICloud || !Self.settingsHaveEntry {
+          VStack(alignment: .leading, spacing: 6) {
+            if inICloud { iCloudHint }
+            if !Self.settingsHaveEntry { oldSystemHint }
+          }
         }
       }
       Section {
@@ -109,12 +114,14 @@ struct FinderMenuTab: View {
           Text("放进去的任何文件，右键「新建文件」里就多一项")
         }
       } header: {
-        Text("新建文件")
-          .settingsAnchor(.finderNewFile)
-      } footer: {
-        SectionFootnote(
-          "「新建文件」里有文本文件、Markdown、Word 文档、Excel 表格、PPT 演示文稿，和模板文件夹里放的文件；「从剪贴板新建」把剪贴板里的图存成 PNG、文字存成文本文件；「自定义后缀…」建一个任意后缀的空文件，可以顺手记进菜单。建好后在访达里选中它、直接改名（要「辅助功能」授权，没有就只选中）；重名的自动加「 2」。"
+        InfoHeader(
+          "新建文件",
+          info:
+            "「新建文件」里有文本文件、Markdown、Word 文档、Excel 表格、PPT 演示文稿，和模板文件夹里放的文件；「从剪贴板新建」把剪贴板里的图存成 PNG、文字存成文本文件；「自定义后缀…」建一个任意后缀的空文件，可以顺手记进菜单。建好后在访达里选中它、直接改名；重名的自动加「 2」。"
         )
+        .settingsAnchor(.finderNewFile)
+      } footer: {
+        SectionFootnote("建好后直接改名要「辅助功能」授权，没有就只选中。")
       }
       .gated(by: .finderMenu)
       Section {
@@ -122,10 +129,8 @@ struct FinderMenuTab: View {
         ItemToggle(.copyName)
         ItemToggle(.copyText)
       } header: {
-        Text("拷贝")
+        InfoHeader("拷贝", info: "路径是完整路径、不加引号，选了几个就一行一个，空白处是这个文件夹的路径；拷好后刘海岛说一声，剪贴板历史里也有。")
           .settingsAnchor(.finderCopy)
-      } footer: {
-        SectionFootnote("路径是完整路径、不加引号，选了几个就一行一个，空白处是这个文件夹的路径；拷好后刘海岛说一声，剪贴板历史里也有。")
       }
       .gated(by: .finderMenu)
       Section {
@@ -149,12 +154,12 @@ struct FinderMenuTab: View {
         }
         ItemToggle(.deskAlias)
       } header: {
-        Text("整理文件")
-          .settingsAnchor(.finderOrganize)
-      } footer: {
-        SectionFootnote(
-          "不会覆盖：重名的自动加「 2」。搬得久时刘海岛显示进度、能停下，做完带「在访达中显示」。剪切之后又拷了别的东西，剪切就作废。⌘X、⌘V 只管按给访达的：改名、搜索时照常剪切粘贴，别的 App 不受影响；⌘V 的移动是访达自己做的（同 ⌥⌘V），重名时访达会问，撤销按 ⌘Z。要「辅助功能」授权。"
+        InfoHeader(
+          "整理文件",
+          info:
+            "不会覆盖：重名的自动加「 2」。搬得久时刘海岛显示进度、能停下，做完带「在访达中显示」。剪切之后又拷了别的东西，剪切就作废。⌘X、⌘V 只管按给访达的：改名、搜索时照常剪切粘贴，别的 App 不受影响；⌘V 的移动是访达自己做的（同 ⌥⌘V），重名时访达会问，撤销按 ⌘Z。要「辅助功能」授权。"
         )
+        .settingsAnchor(.finderOrganize)
       }
       .gated(by: .finderMenu)
       Section {
@@ -171,12 +176,12 @@ struct FinderMenuTab: View {
         }
         ItemToggle(.fixNames)
       } header: {
-        Text("压缩和解压")
-          .settingsAnchor(.finderArchive)
-      } footer: {
-        SectionFootnote(
-          "压缩包放在旁边，重名的自动加「 2」；zip 里的中文名到别的系统上解开也不乱码，也不夹带 Mac 的隐藏文件（.DS_Store、._*、__MACOSX）。解压时只有一样东西就直接放在包旁边，几样就放进和包同名的文件夹；按住 ⌥ 右键是「解压到…」，自己选放在哪；别的系统打的 zip，中文名也解得对。修复乱码文件名之后，刘海岛上能撤销。包里不带访达的标签、替身和自定义图标，要在 Mac 之间原样传，用访达自带的「压缩」。"
+        InfoHeader(
+          "压缩和解压",
+          info:
+            "压缩包放在旁边，重名的自动加「 2」；zip 里的中文名到别的系统上解开也不乱码，也不夹带 Mac 的隐藏文件（.DS_Store、._*、__MACOSX）。解压时只有一样东西就直接放在包旁边，几样就放进和包同名的文件夹；按住 ⌥ 右键是「解压到…」，自己选放在哪；别的系统打的 zip，中文名也解得对。修复乱码文件名之后，刘海岛上能撤销。包里不带访达的标签、替身和自定义图标，要在 Mac 之间原样传，用访达自带的「压缩」。"
         )
+        .settingsAnchor(.finderArchive)
       }
       .gated(by: .finderMenu)
       Section {
@@ -185,12 +190,14 @@ struct FinderMenuTab: View {
         ItemToggle(.hash)
         ItemToggle(.erase)
       } header: {
-        Text("隐藏、哈希、删除")
-          .settingsAnchor(.finderHidden)
-      } footer: {
-        SectionFootnote(
-          "这几项默认关着。点开头的文件本来就是隐藏的，不出现「取消隐藏」；隐藏了的东西，在访达里按 ⇧⌘. 就能看到。拷贝哈希只给文件算，算完也记进剪贴板历史。彻底删除每次都先问，删了不进废纸篓，找不回来。"
+        InfoHeader(
+          "隐藏、哈希、删除",
+          info:
+            "这几项默认关着。点开头的文件本来就是隐藏的，不出现「取消隐藏」；隐藏了的东西，在访达里按 ⇧⌘. 就能看到。拷贝哈希只给文件算，算完也记进剪贴板历史。"
         )
+        .settingsAnchor(.finderHidden)
+      } footer: {
+        SectionFootnote("彻底删除每次都先问，删了不进废纸篓，找不回来。")
       }
       .gated(by: .finderMenu)
       Section {
@@ -207,11 +214,8 @@ struct FinderMenuTab: View {
           .help("添加文件夹")
         }
       } header: {
-        Text("「移动到」「复制到」的常用文件夹")
+        InfoHeader("「移动到」「复制到」的常用文件夹", info: "子菜单里按这个顺序列（拖动调整），后面接最近用「选择文件夹…」选过的 3 个；这次用不上的会变灰。")
           .settingsAnchor(.finderFolders)
-      } footer: {
-        SectionFootnote(
-          "子菜单里按这个顺序列（拖动调整），后面接最近用「选择文件夹…」选过的 3 个；这次用不上的会变灰。")
       }
       .gated(by: .finderMenu)
       Section {
@@ -241,12 +245,12 @@ struct FinderMenuTab: View {
           .help("添加 App")
         }
       } header: {
-        Text("在 App 中打开")
-          .settingsAnchor(.finderOpenWith)
-      } footer: {
-        SectionFootnote(
-          "文件夹原样交给 App；文件交给认得它的 App，不认得的改成打开它所在的文件夹。脚本和可执行文件只交给编辑器，交给终端的是它所在的文件夹，不会运行它。选了几样时编辑器全打开，终端只开第一个。"
+        InfoHeader(
+          "在 App 中打开",
+          info:
+            "文件夹原样交给 App；文件交给认得它的 App，不认得的改成打开它所在的文件夹。脚本和可执行文件只交给编辑器，交给终端的是它所在的文件夹，不会运行它。选了几样时编辑器全打开，终端只开第一个。"
         )
+        .settingsAnchor(.finderOpenWith)
       }
       .gated(by: .finderMenu)
       PluginAboutSection(plugin: .finderMenu)

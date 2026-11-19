@@ -91,6 +91,7 @@ struct GeneralTab: View {
   private var languageRow: some View {
     LabeledContent {
       HStack(spacing: 10) {
+        InfoButton("也可以在 系统设置 › 通用 › 语言与地区 › 应用程序 里选。", about: Self.languageLabel)
         if languageNeedsRelaunch {
           Button("现在重新打开") {
             // 起不了「等退出后重新打开」的那个 sh 就不退：用户自己退出再打开也一样
@@ -107,10 +108,7 @@ struct GeneralTab: View {
       }
     } label: {
       NewTitle(Self.languageLabel, page: .general, fresh: navigation?.fresh ?? [])
-      Text(
-        languageNeedsRelaunch
-          ? "重新打开 Kitty Tools 后换成新的语言"
-          : "也可以在 系统设置 › 通用 › 语言与地区 › 应用程序 里选")
+      if languageNeedsRelaunch { Text("重新打开 Kitty Tools 后换成新的语言") }
     }
     .onChange(of: language) {
       // 拨过这一行，「新」就算看过了（光点进这一页不算；WhatsNew）
@@ -153,12 +151,19 @@ struct GeneralTab: View {
           .onChange(of: appearance) { AppAppearance.apply() }
           .settingsAnchor(.generalAppearance)
         LabeledContent {
-          AccentPicker()
+          HStack(spacing: 10) {
+            if Accent.shared.choice != .system {
+              InfoButton("菜单高亮和焦点环由系统绘制，仍使用系统强调色。", about: "强调色")
+            }
+            AccentPicker()
+          }
         } label: {
           Text("强调色")
-          Text(
-            Accent.shared.choice == .system
-              ? "系统强调色选「多色」时使用品牌粉" : "菜单高亮和焦点环由系统绘制，仍使用系统强调色")
+          if Accent.shared.choice == .system {
+            Text("系统强调色选「多色」时使用品牌粉")
+          } else {
+            Text("菜单高亮和焦点环仍跟系统")
+          }
         }
         .settingsAnchor(.generalAccent)
         Toggle(isOn: launchAtLogin) {
@@ -240,16 +245,22 @@ struct GeneralTab: View {
   /// 「高级…」表单：动效、菜单栏和程序坞的图标、数据目录
   @ViewBuilder private var advanced: some View {
     Section {
-      Toggle(isOn: $squeezeEntrance) {
-        Text("呼出面板时挤压弹开")
-        Text("剪贴板、启动器和翻译浮窗从窄一点、矮一点弹开到原尺寸；减弱动态效果时不弹")
+      SettingRow(
+        title: "呼出面板时挤压弹开", subtitle: "面板从小一点弹到原尺寸",
+        info: "剪贴板、启动器和翻译浮窗都这样；减弱动态效果时不弹。"
+      ) {
+        Toggle("呼出面板时挤压弹开", isOn: $squeezeEntrance)
+          .toggleStyle(.switch)
       }
       .settingsAnchor(.generalSqueeze)
     }
     Section {
-      Toggle(isOn: $statusItemVisible) {
-        Text("在菜单栏显示图标")
-        Text("隐藏后，再打开一次 Kitty Tools（在启动器或访达里）会打开主界面；快捷键照常能用")
+      SettingRow(
+        title: "在菜单栏显示图标", subtitle: "隐藏后快捷键照常能用",
+        info: "隐藏后，再打开一次 Kitty Tools（在启动器或访达里）会打开主界面。"
+      ) {
+        Toggle("在菜单栏显示图标", isOn: $statusItemVisible)
+          .toggleStyle(.switch)
       }
       .settingsAnchor(.generalMenuBarIcon)
       // 分段左边是菜单栏上现在那张图（1:1 实时预览）：分段控件只显示文字，塞不进图。
@@ -275,9 +286,12 @@ struct GeneralTab: View {
       .settingsAnchor(.generalIconStyle)
       // 只在 macOS 26 上有（PR #1）：别的系统没有关掉设置后面板接不到键盘的问题
       if ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 26 {
-        Toggle(isOn: $dockIconOnTahoe) {
-          Text("在程序坞显示图标")
-          Text("这一版系统上，收起程序坞图标会让之后弹出的面板接不到键盘（启动台、启动器不能直接打字），所以默认一直留着。关掉后，设置窗口关上时图标跟着收起")
+        SettingRow(
+          title: "在程序坞显示图标", subtitle: "关掉后面板可能接不到键盘",
+          info: "这一版系统上，收起程序坞图标会让之后弹出的面板接不到键盘（启动台、启动器不能直接打字），所以默认一直留着。关掉后，设置窗口关上时图标跟着收起。"
+        ) {
+          Toggle("在程序坞显示图标", isOn: $dockIconOnTahoe)
+            .toggleStyle(.switch)
         }
         .settingsAnchor(.generalDockIcon)
       }
@@ -289,7 +303,7 @@ struct GeneralTab: View {
           .accessibilityLabel("在访达中显示数据目录")
       } label: {
         Text("数据目录")
-        Text("剪贴板、便签和翻译历史的数据库、图片和每日备份都在这里")
+        Text("数据库、图片和每日备份都在这里")
       }
       .settingsAnchor(.generalDataFolder)
     }
@@ -393,9 +407,9 @@ private struct GeneralPermissionsPage: View {
       statusIsProblem: missing > 0
     ) {
       Section {
-        PermissionRow.accessibility(granted: trusted)
+        PermissionRow.accessibility(granted: trusted, short: true)
           .settingsAnchor(.generalAccessibility)
-        PermissionRow.screenRecording(granted: screenRecording)
+        PermissionRow.screenRecording(granted: screenRecording, short: true)
           .settingsAnchor(.generalScreenRecording)
         // 没问过时请求（系统弹框，回来就刷新）；拒绝过 / 受限的系统不再弹框，打开系统设置的麦克风页
         PermissionRow(
@@ -432,18 +446,22 @@ private struct GeneralPermissionsPage: View {
   private var pasteboardAccess: some View {
     let behavior = pasteboardBehavior.flatMap(NSPasteboard.AccessBehavior.init(rawValue:))
     return PermissionRow(
-      title: "剪贴板访问",
-      detail: behavior == .alwaysDeny
-        ? "已被拒绝，剪贴板历史不会再记录新内容；到「从其他 App 粘贴」里改成始终允许"
-        : "后台记录剪贴板历史；系统询问时到「从其他 App 粘贴」里改成始终允许",
+      title: "剪贴板访问", detail: Self.pasteboardDetail(denied: behavior == .alwaysDeny),
       symbol: HotKeyAction.clipboard.symbol, color: Style.Family.clipboard,
-      granted: behavior != .ask && behavior != .alwaysDeny, button: "打开设置"
+      granted: behavior != .ask && behavior != .alwaysDeny, button: "打开设置",
+      info: "到 系统设置 › \(Permissions.privacyPane) › 从其他 App 粘贴 里改成「始终允许」。"
     ) {
       // ponytail: 打开隐私那一栏的总页；「从其他 App 粘贴」的专用锚点真机查到再换
       NSWorkspace.shared.open(
         URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy")!)
     }
     .settingsAnchor(.generalClipboardAccess)
+  }
+
+  /// 剪贴板访问那一行的一句（别写成三元式：抽字会漏）
+  private static func pasteboardDetail(denied: Bool) -> LocalizedStringResource {
+    if denied { return "已被拒绝，剪贴板历史不再记新的" }
+    return "后台记录剪贴板历史要它"
   }
 
   private static var currentPasteboardBehavior: Int? {
@@ -491,6 +509,8 @@ struct PermissionRow: View {
   let granted: Bool
   /// 未授权时的按钮文字
   var button: LocalizedStringResource = "去授权"
+  /// 行尾 ⓘ（设置改版 S5；引导里不用）
+  var info: LocalizedStringResource? = nil
   let grant: () -> Void
 
   var body: some View {
@@ -502,8 +522,11 @@ struct PermissionRow: View {
         Text(plain: detail).font(.subheadline).foregroundStyle(.secondary)
       }
       Spacer(minLength: 8)
+      if let info { InfoButton(info, about: title) }
       PermissionStatus(granted: granted, button: button, grant: grant)
     }
+    // 整行合成一个元素时 ⓘ 点不开：全文挂在整行的提示上，读屏不点也听得到
+    .accessibilityHint(info.map { String(localized: $0) } ?? "")
     .accessibilityElement(children: .combine)
   }
 }
@@ -511,18 +534,27 @@ struct PermissionRow: View {
 extension PermissionRow {
   /// 辅助功能、屏幕录制这两行：通用 › 权限和欢迎引导的「授权」一屏共用，用途只写这一处。
   /// 「去授权」只弹一个窗（U10）：没请求过弹系统授权框，请求过了才打开系统设置
-  static func accessibility(granted: Bool) -> PermissionRow {
-    PermissionRow(
-      title: "辅助功能",
-      detail: "粘贴回原 App、划词翻译、截图识别窗口里的元素、长截图自动滚动、录屏显示按键、状态屏拦住键鼠、程序坞预览、平滑滚动",
-      symbol: "hand.raised.fill", color: Style.Family.command, granted: granted
+  /// short：设置 › 通用 › 权限 里的写法（一句 + 行尾 ⓘ 里的完整清单，设置改版 S5）；引导里照旧写全
+  static func accessibility(granted: Bool, short: Bool = false) -> PermissionRow {
+    let full: LocalizedStringResource =
+      "粘贴回原 App、划词翻译、截图识别窗口里的元素、长截图自动滚动、录屏显示按键、状态屏拦住键鼠、程序坞预览、平滑滚动"
+    return PermissionRow(
+      title: "辅助功能", detail: short ? "粘贴回原 App、划词翻译这些要它" : full,
+      symbol: "hand.raised.fill", color: Style.Family.command, granted: granted,
+      info: short
+        ? "粘贴回原 App、划词翻译、截图识别窗口里的元素、长截图自动滚动、录屏显示按键、状态屏拦住键鼠、程序坞预览、平滑滚动都要它。"
+        : nil
     ) { Permissions.grant(.accessibility) }
   }
 
-  static func screenRecording(granted: Bool) -> PermissionRow {
-    PermissionRow(
-      title: "屏幕录制", detail: "截图、截图翻译、识字、录屏、录系统声音、程序坞预览的缩略图；授权后可能要重新打开本 App 才生效",
-      symbol: HotKeyAction.screenRecord.symbol, color: Style.Family.screenshot, granted: granted
+  static func screenRecording(granted: Bool, short: Bool = false) -> PermissionRow {
+    let full: LocalizedStringResource = "截图、截图翻译、识字、录屏、录系统声音、程序坞预览的缩略图；授权后可能要重新打开本 App 才生效"
+    return PermissionRow(
+      title: "屏幕录制", detail: short ? "截图、录屏、识字要它" : full,
+      symbol: HotKeyAction.screenRecord.symbol, color: Style.Family.screenshot, granted: granted,
+      info: short
+        ? "截图、截图翻译、识字、录屏、录系统声音、程序坞预览的缩略图都要它；授权后可能要重新打开本 App 才生效。"
+        : nil
     ) { Permissions.grant(.screenRecording) }
   }
 }

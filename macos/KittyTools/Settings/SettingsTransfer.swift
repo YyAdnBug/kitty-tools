@@ -68,6 +68,9 @@ struct TransferSection: View {
     Section {
       LabeledContent {
         HStack(spacing: 8) {
+          InfoButton(
+            "设置、快捷键、翻译服务、网页搜索、片段和文字收藏、生词本、便签存成一个文件。普通历史、图片和文件类的收藏不在文件里；截图的存储文件夹、登录时打开和系统权限要在新电脑上重新设。",
+            about: "设置与数据")
           Button("导出…") {
             let (services, clipboard) = (transfer.services.services, transfer.clipboard)
             let retained = clipboard.items.filter(\.isRetained)
@@ -98,14 +101,12 @@ struct TransferSection: View {
         .disabled(isChoosing)
       } label: {
         Text("设置与数据")
-        Text("设置、快捷键、翻译服务、网页搜索、片段和文字收藏、生词本、便签存成一个文件，换电脑或重装后导回来")
+        Text("存成一个文件，换电脑、重装后导回来")
       }
       .settingsAnchor(.generalTransfer)
       if transfer.backupFolder != nil { backupRows }
     } header: {
       Text("导出与导入")
-    } footer: {
-      SectionFootnote("普通历史、图片和文件类的收藏不在文件里；截图的存储文件夹、登录时打开和系统权限要在新电脑上重新设。")
     }
     .onAppear(perform: reload)
     .onSettingsBecameKey(perform: reload)
@@ -114,11 +115,12 @@ struct TransferSection: View {
 
   /// 每天自动备份的三行：开关、已有的备份 +「从备份恢复」、另存一份到（关着时不显示）
   @ViewBuilder private var backupRows: some View {
-    Toggle(isOn: $backsUp) {
-      Text("每天自动备份")
-      Text(
-        "上面这些每天自动存一份在这台 Mac 上，留最近 \(SettingsBackup.keepDaily) 份；导入前也会先存一份，设置和快捷键导错了能换回去。不含密钥。"
-      )
+    SettingRow(
+      title: "每天自动备份", subtitle: "每天在这台 Mac 上存一份，留 \(SettingsBackup.keepDaily) 份",
+      info: "导入前也会先存一份，设置和快捷键导错了能换回去。不含密钥。"
+    ) {
+      Toggle("每天自动备份", isOn: $backsUp)
+        .toggleStyle(.switch)
     }
     .onChange(of: backsUp) { _, isOn in if isOn { backupNow() } }
     .settingsAnchor(.generalBackup)
@@ -643,6 +645,7 @@ private struct BackupFolderRow: View {
   var body: some View {
     LabeledContent {
       HStack(spacing: 8) {
+        InfoButton(info, about: "另存一份到")
         if let path {
           Label(name ?? (path as NSString).lastPathComponent, systemImage: "folder")
             .lineLimit(1)
@@ -659,7 +662,7 @@ private struct BackupFolderRow: View {
       }
     } label: {
       Text("另存一份到")
-      Text(detail)
+      Text(plain: subtitle)
       if let problem {
         Text("今天那份没存过去：\(problem)").foregroundStyle(Color(nsColor: .systemOrange))
       }
@@ -667,14 +670,19 @@ private struct BackupFolderRow: View {
   }
 
   /// 说明：没选时说为什么要选；选了说存过去的文件长什么样。两种都说清文件不加密（多半是云盘，会同步上去）
-  private var detail: String {
-    let plain = String(localized: "文件不加密，片段、收藏、生词和便签原样写在里面。")
+  /// 一句副标题：「文件不加密」就是那句必须先知道的（页脚只留三种的例外，写在副标题里）
+  private var subtitle: LocalizedStringResource {
+    guard path != nil else { return "再存一份到别处，文件不加密" }
+    return "每天那份也存到这里，文件不加密"
+  }
+
+  /// 行尾 ⓘ
+  private var info: LocalizedStringResource {
     guard path != nil else {
-      return String(localized: "再选一个文件夹（比如 iCloud 云盘里的），每天那份也存过去，硬盘坏了、换电脑时还在。\(plain)")
+      return "再选一个文件夹（比如 iCloud 云盘里的），每天那份也存过去，硬盘坏了、换电脑时还在。片段、收藏、生词和便签原样写在里面。"
     }
-    guard let installID else { return String(localized: "每天那份也存到这里。\(plain)") }
-    return String(
-      localized: "每天那份也存到这里。文件名末尾的 \(installID) 是这台 Mac 的编号，几台 Mac 可以共用一个文件夹。\(plain)")
+    guard let installID else { return "片段、收藏、生词和便签原样写在里面。" }
+    return "文件名末尾的 \(installID) 是这台 Mac 的编号，几台 Mac 可以共用一个文件夹。片段、收藏、生词和便签原样写在里面。"
   }
 
   /// 换文件夹（nil = 不再另存）：名字跟着换，上次没存成的原因说的是原来那个文件夹，收掉

@@ -70,20 +70,16 @@ struct RemindersTab: View {
             addMenu(list, isFull: isFull)
           }
         } header: {
-          Text("提醒")
+          InfoHeader("提醒", info: "点一行编辑，右边的开关暂停或打开那一条。一次性的提醒点了「知道了」就从列表里拿掉。")
             .settingsAnchor(.remindersList)
         } footer: {
-          SectionFootnote(
-            isFull
-              ? "点一行编辑，右边的开关暂停或打开那一条。一次性的提醒点了「知道了」就从列表里拿掉。最多 \(Reminder.maxCount) 条，已经满了，删掉一条才能再加。"
-              : "点一行编辑，右边的开关暂停或打开那一条。一次性的提醒点了「知道了」就从列表里拿掉。")
+          // 满了是状态，照旧写在页脚
+          if isFull { SectionFootnote("最多 \(Reminder.maxCount) 条，已经满了，删掉一条才能再加。") }
         }
         Section {
           EmojiPackToggle()
         } header: {
           Text("图标")
-        } footer: {
-          SectionFootnote(EmojiPackToggle.footnote)
         }
         Section {
           Picker(selection: $snooze) {
@@ -94,10 +90,10 @@ struct RemindersTab: View {
           }
           .settingsAnchor(.remindersSnooze)
         } header: {
-          Text("到点之后")
-        } footer: {
-          SectionFootnote(
-            "电脑睡着、锁着屏或者没打开 Kitty 时到点的提醒，晚 5 分钟以内的照常提醒，更晚的回来后合成一条告诉你。每隔一阵的提醒碰上锁屏、睡眠，或者 5 分钟没碰键盘鼠标，算休息过了，回来重新数。"
+          InfoHeader(
+            "到点之后",
+            info:
+              "电脑睡着、锁着屏或者没打开 Kitty 时到点的提醒，晚 5 分钟以内的照常提醒，更晚的回来后合成一条告诉你。每隔一阵的提醒碰上锁屏、睡眠，或者 5 分钟没碰键盘鼠标，算休息过了，回来重新数。"
           )
         }
         // 截图自检（fixed）不读这台 Mac 记着的专注模式，固定画「照常」、读得到日志
@@ -287,10 +283,10 @@ private struct FocusSection: View {
         Text("在某个模式的「专注模式滤镜」里添加 Kitty Tools 的「提醒」")
       }
     } header: {
-      Text("专注模式")
-    } footer: {
-      SectionFootnote(
-        "开着任何专注模式（勿扰、睡眠、工作、自己建的）都算。滤镜里另选了的模式以滤镜为准：比如这里选「照常提醒」，只给「工作」加滤镜选「只在刘海上挂图标」。挂在刘海上的提醒，专注模式结束后一起弹一次。要紧的提醒在它的详情里打开「专注模式时也照常提醒」。"
+      InfoHeader(
+        "专注模式",
+        info:
+          "开着任何专注模式（勿扰、睡眠、工作、自己建的）都算。滤镜里另选了的模式以滤镜为准：比如这里选「照常提醒」，只给「工作」加滤镜选「只在刘海上挂图标」。挂在刘海上的提醒，专注模式结束后一起弹一次。要紧的提醒在它的详情里打开「专注模式时也照常提醒」。"
       )
     }
   }

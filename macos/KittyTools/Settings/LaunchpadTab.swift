@@ -73,9 +73,7 @@ struct LaunchpadTab: View {
         }
         .settingsAnchor(.launchpadKeys)
       } header: {
-        Text("启动台")
-      } footer: {
-        SectionFootnote("现有的「启动器」是搜索框，和启动台是两个东西：名字、设置、快捷键都分开。")
+        InfoHeader("启动台", info: "现有的「启动器」是搜索框，和启动台是两个东西：名字、设置、快捷键都分开。")
       }
       Group {
         Section {
@@ -106,9 +104,7 @@ struct LaunchpadTab: View {
           }
           .settingsAnchor(.launchpadRows)
         } header: {
-          Text("排列")
-        } footer: {
-          SectionFootnote("新装的 App 自动追加到最后一页末尾；卸掉的从布局里拿掉。拖动排序、建文件夹、删 App 都在启动台里做。")
+          InfoHeader("排列", info: "新装的 App 自动追加到最后一页末尾；卸掉的从布局里拿掉。拖动排序、建文件夹、删 App 都在启动台里做。")
         }
         pinchSection
         Section {
@@ -267,23 +263,27 @@ struct LaunchpadTab: View {
         }
       }
     } header: {
-      Text("触控板")
-    } footer: {
       if pinchAvailable() {
-        let systemHelp =
-          TrackpadSystemGesture.usesDockPinchSetting
-          ? String(
-            localized:
-              "系统的应用程序捏合开着时（macOS 26 默认开着、系统设置里没有开关），捏合交给系统，启动台不响应；关掉之后马上由 Kitty 自己读触控板来认。"
-          )
-          : String(
-            localized:
-              "系统设置 › 触控板 › 更多手势 里的「应用程序」开着时，捏合交给系统，启动台不响应；关掉之后马上由 Kitty 自己读触控板来认。"
-          )
-        SectionFootnote(
-          "\(systemHelp)四指捏合四根、五根手指都认（同系统），捏的时候多碰到一根也接着认；五指只认五根，和四指的横扫（切换桌面、调度中心）完全错开，不容易误开。Mac 从睡眠中唤醒后会自动重新接上触控板，不用重启。"
-        )
+        InfoHeader("触控板", info: pinchInfo)
+      } else {
+        Text("触控板")
       }
     }
+  }
+
+  /// 「触控板」组标题的 ⓘ：系统的捏合开着时怎么回事 + 四指 / 五指怎么认（原来的页脚）
+  private var pinchInfo: LocalizedStringResource {
+    let systemHelp =
+      TrackpadSystemGesture.usesDockPinchSetting
+      ? String(
+        localized:
+          "系统的应用程序捏合开着时（macOS 26 默认开着、系统设置里没有开关），捏合交给系统，启动台不响应；关掉之后马上由 Kitty 自己读触控板来认。"
+      )
+      : String(
+        localized:
+          "系统设置 › 触控板 › 更多手势 里的「应用程序」开着时，捏合交给系统，启动台不响应；关掉之后马上由 Kitty 自己读触控板来认。"
+      )
+    return
+      "\(systemHelp)四指捏合四根、五根手指都认（同系统），捏的时候多碰到一根也接着认；五指只认五根，和四指的横扫（切换桌面、调度中心）完全错开，不容易误开。Mac 从睡眠中唤醒后会自动重新接上触控板，不用重启。"
   }
 }

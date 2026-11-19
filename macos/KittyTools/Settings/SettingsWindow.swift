@@ -964,6 +964,8 @@ extension View {
 /// 都是这台电脑自己的偏好；「恢复默认大小」把宽度写回默认（面板下次出现时按它摆）、高度上限清掉。没拖过时按钮是灰的
 struct PanelSizeRow: View {
   let detail: LocalizedStringResource
+  /// 行尾 ⓘ（设置改版 S5）
+  let info: LocalizedStringResource?
   let widthKey: String
   let heightKey: String
   let defaultWidth: CGFloat
@@ -971,9 +973,11 @@ struct PanelSizeRow: View {
   @AppStorage private var height: Double
 
   init(
-    detail: LocalizedStringResource, widthKey: String, heightKey: String, defaultWidth: CGFloat
+    detail: LocalizedStringResource, info: LocalizedStringResource? = nil, widthKey: String,
+    heightKey: String, defaultWidth: CGFloat
   ) {
     self.detail = detail
+    self.info = info
     self.widthKey = widthKey
     self.heightKey = heightKey
     self.defaultWidth = defaultWidth
@@ -983,11 +987,14 @@ struct PanelSizeRow: View {
 
   var body: some View {
     LabeledContent {
-      Button("恢复默认大小") {
-        width = Double(defaultWidth)
-        UserDefaults.standard.removeObject(forKey: heightKey)
+      HStack(spacing: 8) {
+        if let info { InfoButton(info, about: "面板大小") }
+        Button("恢复默认大小") {
+          width = Double(defaultWidth)
+          UserDefaults.standard.removeObject(forKey: heightKey)
+        }
+        .disabled((width == 0 || width == Double(defaultWidth)) && height == 0)
       }
-      .disabled((width == 0 || width == Double(defaultWidth)) && height == 0)
     } label: {
       Text("面板大小")
       Text(plain: detail)
@@ -995,10 +1002,91 @@ struct PanelSizeRow: View {
   }
 }
 
+/// 行尾、组标题旁的 ⓘ（设置改版 S5）：原理、隐私、具体规则、举例收在这里，点开一块能选字的说明（callout、宽 280）；
+/// 读屏不点开也听得到全文（hint），不另挂 help
+struct InfoButton: View {
+  let text: LocalizedStringResource
+  /// 是哪一行 / 哪一组的说明（读屏的名字）
+  let about: LocalizedStringResource
+  @State private var shows = false
+
+  init(_ text: LocalizedStringResource, about: LocalizedStringResource) {
+    self.text = text
+    self.about = about
+  }
+
+  var body: some View {
+    Button {
+      shows.toggle()
+    } label: {
+      Image(systemName: "info.circle")
+        .font(.system(size: 13))
+        .foregroundStyle(.secondary)
+    }
+    .buttonStyle(.borderless)
+    // 功能、上一级开关关着时说明照样能看（原来副标题、页脚的字淡着也能读）：外层的 .disabled 管不到它
+    .environment(\.isEnabled, true)
+    .popover(isPresented: $shows, arrowEdge: .bottom) {
+      Text(plain: text)
+        .font(.callout)
+        .multilineTextAlignment(.leading)
+        .textSelection(.enabled)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(width: 280, alignment: .leading)
+        .padding(12)
+    }
+    .accessibilityLabel(Text("「\(String(localized: about))」的说明"))
+    .accessibilityHint(Text(plain: text))
+  }
+}
+
+/// 带 ⓘ 的一行（设置改版 S5）：左边标题（可挂「新」）和一句副标题，右边 ⓘ + 控件，间距 8（同系统设置 › 通用 › 共享）。
+/// 控件的标签藏起来（读屏照旧读它的标题）；开关写 .toggleStyle(.switch)。不带 ⓘ 的行不用它
+struct SettingRow<Control: View>: View {
+  let title: LocalizedStringResource
+  var subtitle: LocalizedStringResource? = nil
+  var info: LocalizedStringResource? = nil
+  var isNew = false
+  @ViewBuilder let control: Control
+
+  var body: some View {
+    LabeledContent {
+      HStack(spacing: 8) {
+        if let info { InfoButton(info, about: title) }
+        control.labelsHidden()
+      }
+    } label: {
+      HStack(spacing: 6) {
+        Text(plain: title)
+        if isNew { NewTag() }
+      }
+      if let subtitle { Text(plain: subtitle) }
+    }
+  }
+}
+
+/// 分组标题 + 右边的 ⓘ（解释一整组的，原来写在页脚里的那段）
+struct InfoHeader: View {
+  let title: LocalizedStringResource
+  let info: LocalizedStringResource
+
+  init(_ title: LocalizedStringResource, info: LocalizedStringResource) {
+    self.title = title
+    self.info = info
+  }
+
+  var body: some View {
+    HStack(spacing: 6) {
+      Text(plain: title)
+      InfoButton(info, about: title)
+    }
+  }
+}
+
 /// 分组页脚：解释整组的说明小字，所有设置页和详情页共用（2026-10-12 视觉对齐前有五种写法，有的靠右、折行后参差）。
 /// caption secondary；一律靠左、折行也靠左（分组表单的页脚默认靠右排，折到第二行的字也是：两样都要写）；
 /// 左右各缩 10，和分组标题、卡片里的行文字同一条左边线（卡片的内边距是 10）。
-/// 解释某一行的不用它，写成那一行的副标题（Toggle / LabeledContent 标签里的第二个 Text，系统画成 11 pt）
+/// 设置改版（S5）起只留三种：要授权、会删数据 / 不能撤销、文件不加密；解释一行的写成副标题 + ⓘ，解释一组的放 InfoHeader
 struct SectionFootnote: View {
   let text: LocalizedStringResource
 

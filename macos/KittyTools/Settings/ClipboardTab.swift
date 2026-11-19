@@ -37,17 +37,21 @@ struct ClipboardTab: View {
     Form {
       Section { FeatureToggle(feature: .clipboard, inPage: true) }
       Section {
-        Picker("保留普通历史", selection: limited(.days)) {
-          ForEach(Prefs.clipboardRetentionChoices, id: \.self) {
-            Text(Self.retentionTitle($0)).tag($0)
+        SettingRow(title: "保留普通历史", info: "收藏和片段一直留着，不算在里面。") {
+          Picker("保留普通历史", selection: limited(.days)) {
+            ForEach(Prefs.clipboardRetentionChoices, id: \.self) {
+              Text(Self.retentionTitle($0)).tag($0)
+            }
           }
         }
         // 两个弹出菜单是同一节里挨着的兄弟：id 要各不相同，同一个值的话 SwiftUI 当成同一个视图、第二行画成第一行
         .id("days-\(limitPickers)")
         .settingsAnchor(.clipboardRetention)
-        Picker("图片最多占用", selection: limited(.imageMB)) {
-          ForEach(Self.imageBudgetChoices, id: \.0) {
-            Text($0.1).tag($0.0)
+        SettingRow(title: "图片最多占用", info: "只算普通历史里的图片，收藏的不算。") {
+          Picker("图片最多占用", selection: limited(.imageMB)) {
+            ForEach(Self.imageBudgetChoices, id: \.0) {
+              Text($0.1).tag($0.0)
+            }
           }
         }
         .id("imageMB-\(limitPickers)")
@@ -56,18 +60,21 @@ struct ClipboardTab: View {
           .settingsAnchor(.clipboardImageUsage)
       } header: {
         Text("历史")
-      } footer: {
-        SectionFootnote("收藏和片段一直留着，图片占用也只算普通历史里的。")
       }
       Section("粘贴") {
-        Toggle(isOn: $pasteOnClick) {
-          Text("单击条目直接粘贴")
-          Text("关着时单击选中、双击粘贴；打开后点一下就粘贴，想先看内容用 ↑↓，⌘ 单击、⇧ 单击照常多选")
+        SettingRow(
+          title: "单击条目直接粘贴", subtitle: "点一下就粘贴，不用双击",
+          info: "想先看内容用 ↑↓；⌘ 单击、⇧ 单击照常多选。"
+        ) {
+          Toggle("单击条目直接粘贴", isOn: $pasteOnClick)
+            .toggleStyle(.switch)
         }
         .settingsAnchor(.clipboardPasteOnClick)
-        Toggle(isOn: $pastePlain) {
-          Text("默认粘贴为纯文本")
-          Text("打开后 ↩ 粘贴纯文本，⌥↩ 保留格式；文字的格式总是记下来")
+        SettingRow(
+          title: "默认粘贴为纯文本", subtitle: "↩ 粘贴纯文本，⌥↩ 保留格式", info: "文字的格式总是记下来。"
+        ) {
+          Toggle("默认粘贴为纯文本", isOn: $pastePlain)
+            .toggleStyle(.switch)
         }
         .settingsAnchor(.clipboardPastePlain)
       }
@@ -106,10 +113,8 @@ struct ClipboardTab: View {
           .help("添加 App")
         }
       } header: {
-        Text("不记录这些 App 里的复制")
+        InfoHeader("不记录这些 App 里的复制", info: "密码管理器通常会自己标记「不要记录」，这里只是兜底。")
           .settingsAnchor(.clipboardExcludedApps)
-      } footer: {
-        SectionFootnote("密码管理器通常会自己标记「不要记录」，这里只是兜底。")
       }
       .gated(by: .clipboard)
       Section {
@@ -161,28 +166,34 @@ struct ClipboardTab: View {
     Section("面板") {
       ClipboardPanelSketch(showsLens: showPreview, showsLinkPreview: linkPreview)
         .frame(maxWidth: .infinity)
-      Toggle(isOn: $showPreview) {
-        Text("显示透镜")
-        Text("选中的条目在原地展开预览；关掉就是纯列表，一屏多露出几行")
+      SettingRow(
+        title: "显示透镜", subtitle: "选中的条目在原地展开预览", info: "关掉就是纯列表，一屏多露出几行。"
+      ) {
+        Toggle("显示透镜", isOn: $showPreview)
+          .toggleStyle(.switch)
       }
       .settingsAnchor(.clipboardLens)
-      Toggle(isOn: $linkPreview) {
-        Text("链接显示网页标题和图片")
-        Text("选中链接时联网读取；本机、内网和带登录令牌的网址不读")
+      SettingRow(
+        title: "链接显示网页标题和图片", subtitle: "选中链接时联网读取", info: "本机、内网和带登录令牌的网址不读。"
+      ) {
+        Toggle("链接显示网页标题和图片", isOn: $linkPreview)
+          .toggleStyle(.switch)
       }
       .settingsAnchor(.clipboardLinkPreview)
-      Picker(selection: $panelPosition) {
-        Text("屏幕上方").tag("top")
-        Text("跟随鼠标").tag("mouse")
-        Text("上次位置").tag("last")
-      } label: {
-        Text("面板位置")
-        Text("屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边，上次位置是上次拖到的地方")
+      SettingRow(
+        title: "面板位置", info: "屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边，上次位置是上次拖到的地方。"
+      ) {
+        Picker("面板位置", selection: $panelPosition) {
+          Text("屏幕上方").tag("top")
+          Text("跟随鼠标").tag("mouse")
+          Text("上次位置").tag("last")
+        }
+        .pickerStyle(.segmented)
       }
-      .pickerStyle(.segmented)
       .settingsAnchor(.clipboardPanelPosition)
       PanelSizeRow(
-        detail: "拖左右两边改宽度，拖下边改最多显示几行", widthKey: Prefs.clipboardPanelWidth,
+        detail: "拖面板的边改大小", info: "拖左右两边改宽度，拖下边改最多显示几行。",
+        widthKey: Prefs.clipboardPanelWidth,
         heightKey: Prefs.clipboardPanelRows, defaultWidth: Style.listPanelWidth
       )
       .settingsAnchor(.clipboardPanelSize)
