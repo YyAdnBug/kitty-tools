@@ -2502,6 +2502,14 @@ Alfred 的 Related Apps、BetterTouchTool 按 App 停用，调研和测开销的
 
 > 2026-10-28（第三轮体检第 7 批）：2026-10-22 及更早的进度记录、做完的「已知的小毛病」、旧的「现状」「下一步」原样挪到 `docs/archive/PLAN-batches-2026-10.md` §12；AGENTS.md「项目概述」原来的长段原样挪到本节末尾「各族进度摘要（原 AGENTS 项目概述）」。
 
+**2026-11-19：0.10.1 发布**（用户「测过了，发布」）：tag `macos-v0.10.1` = `b85f0e0b`，latest，origin/macos 快进 `ffe16444` → `b85f0e0b`。
+发布前按用户「先并进来再发」又并了 #36（输入框不弹系统「填充验证码」）、#37（平滑滚动按修饰键缩放时停滑、钉图滚轮缩放幅度）、#32（跨设备同步来的
+剪贴板不看临时标记）三个提交，更新日志补三条（共 34 条）、日期改成 11-19；这三处用户没在测试包里试过。全量 2539 过（第一遍
+`NoteImageThumbnailTests.failedDecodesAreNotRetriedAndDoNotInvalidate` 在 Spotlight 占满 CPU 时超时，单独两遍、再跑全量都过）、
+UpdaterTests 用这次的 zip 过。附 `Kitty.Tools_0.10.1_arm64.dmg/.zip`、`macos-update.json`、`_x86_64.dmg/.zip`，两条 curl 都 200。
+dSYM 在集成工作树 `macos/build/dsym-0.10.1-arm64` / `-x86_64`；发布说明 `macos/build/release-notes-0.10.1.md`（照 0.10.0：从旧版升级、更新内容、
+感谢 #31–#37、安装，中英）。issue #32–#37 还没回复、没关。
+
 **2026-11-19：0.10.1 收齐**（用户「把0.10.0之后的所有功能整合，准备发布0.10.1」）：`claude/v0101-cc84e7` 收齐了下面那一段列的分支、
 第五轮体检九批（最后 `dffe22a4`；第 7 批由体检会话先把集成分支合进去再交 `d5aa8dc2`，拆文件的冲突在那边解）和设置改版六批（最后 `c2f3bc38`，
 每批提交前先合集成分支，所以并进来都是树一致的合并）。更新日志 0.10.1 一条共 31 条（设置改版 6、体检 16、其余 9，中英）。`WhatsNew` 这一版挑了
