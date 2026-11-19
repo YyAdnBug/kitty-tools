@@ -42712,12 +42712,12 @@
         }
       }
     },
-    "读系统的「正在播放」要另起一个小进程（约 4 MB，没在放时不耗电），关掉就退出。暂停 30 秒后刘海两边收起；想接着放，点刘海再两指往下滑一次还找得到它。" : {
+    "读系统的「正在播放」要另起一个小进程（约 3 MB，没在放时不耗电），关掉就退出。暂停 30 秒后刘海两边收起；想接着放，点刘海再两指往下滑一次还找得到它。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reading the system’s Now Playing takes a small separate process (about 4 MB, no power used when nothing is playing) that quits when this is off. After 30 seconds paused it leaves the notch; to resume, click the notch and swipe down with two fingers once more to find it."
+            "value" : "Reading the system’s Now Playing takes a small separate process (about 3 MB, no power used when nothing is playing) that quits when this is off. After 30 seconds paused it leaves the notch; to resume, click the notch and swipe down with two fingers once more to find it."
           }
         }
       }

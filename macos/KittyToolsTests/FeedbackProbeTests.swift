@@ -391,7 +391,6 @@ struct FeedbackProbeTests {
   ) async throws {
     Self.target = chrome
     let scale = screen.backingScaleFactor
-    let primaryHeight = screen.frame.height
     // 回到顶上
     Self.scroll(-200_000)
     try await Task.sleep(for: .seconds(1))
