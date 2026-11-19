@@ -17,6 +17,12 @@
 // - 后台下载、退出时安装（设置 › 关于，默认开）：查到新版本（没跳过）就在后台把包下到缓存目录（prepare），退出时
 //   （AppDelegate.applicationShouldTerminate）装上——校验一条不少，走同一个 replace；装好不重新打开（用户是要退出），
 //   装不成照常退出、下次打开再查再下。下好之前点了「更新」照旧从头下；下好之后点「更新」直接用下好的那份。
+// 第五轮体检 E10（2026-11-18）：
+// - 查到新版本时就看这份 App 能不能原地换（obstacle：在 DMG 里、没拖进「应用程序」被系统挪到临时位置、只读卷、所在文件夹
+//   写不进去）；换不了时四个入口（岛、菜单「更新到 x…」、面板底栏、关于页）都改成「到发布页下载」并写明原因，不再让人点
+//   一个注定失败的「更新」。
+// - 装失败按原因分（failureKind）：网络（下载断了、服务器不是 200、校验值对不上）才给「重试」；磁盘满单独说、不给重试
+//   （腾出空间再点「更新」）；签名没过、解不开、包不对这类重试也不会好的给「打开发布页」。关于页把原因写全（多行）。
 // 只有正式版（bundle id com.yy.kitty-tools.native）更新：Debug 版的 bundle id 不同，装过去会把 Dev 换成正式版。
 
 import AppKit
@@ -51,6 +57,38 @@ import OSLog
     case schedule, menu, page
   }
 
+  /// 这份 App 为什么原地换不了（E10）：入口都改成「到发布页下载」，写上 reason
+  enum Obstacle: Equatable {
+    /// 在 DMG 里、只读卷上，或没拖进「应用程序」就打开（被系统挪到了临时位置）
+    case notInstalled
+    /// 所在的文件夹写不进去（标准账户装在「应用程序」里）
+    case noPermission
+
+    /// 一句话：岛上的详情、关于页、底栏和菜单的悬停提示
+    var reason: String {
+      switch self {
+      case .notInstalled:
+        String(localized: "Kitty Tools 不是从「应用程序」里打开的，没法原地更新：到发布页下载新版，拖进「应用程序」后从那里打开")
+      case .noPermission:
+        String(localized: "没有权限替换这个 App：到发布页下载新版，用管理员账户替换")
+      }
+    }
+
+    /// 短的，菜单那一项下面的小字
+    var summary: String {
+      switch self {
+      case .notInstalled: String(localized: "没从「应用程序」里打开，没法原地更新")
+      case .noPermission: String(localized: "没有权限替换这个 App")
+      }
+    }
+  }
+
+  /// 装没成的那一次（E10）：关于页写在「有新版本」下面；再点「更新」、查到别的版本时清掉
+  struct Failure: Equatable {
+    let message: String
+    let kind: UpdateError.Kind
+  }
+
   private(set) var state: State {
     didSet { available = Self.available(available, after: state) }
   }
@@ -73,6 +111,10 @@ import OSLog
   @ObservationIgnored private var prepareTask: Task<Void, Never>?
   /// 更新包下了多少（0…1，整百分点；下完到重新打开之前一直是 1）。nil = 没在下载，或服务器没给大小（那就还是转着等）
   private(set) var progress: Double?
+  /// 这份 App 原地换不了（E10）：查到新版本时判断；nil = 能换
+  private(set) var obstacle: Obstacle?
+  /// 上一次装没成（E10，关于页写原因）
+  private(set) var failure: Failure?
   /// 此刻不能更新的原因（录屏中「录制结束后再更新」，AppDelegate 写）：关于页的「更新并重新打开」置灰、旁边写它；
   /// 菜单里点了「更新到 x…」用刘海说
   var blocker: String?
@@ -113,7 +155,7 @@ import OSLog
   init(
     state: State = .idle, progress: Double? = nil, downloading: Bool = false,
     skipped: String? = UserDefaults.standard.string(forKey: Prefs.updateSkippedVersion),
-    ready: Release? = nil
+    ready: Release? = nil, obstacle: Obstacle? = nil, failure: Failure? = nil
   ) {
     self.state = state
     self.progress = progress
@@ -121,6 +163,8 @@ import OSLog
     available = Self.available(nil, after: state)
     self.skipped = skipped
     self.ready = ready
+    self.obstacle = obstacle
+    self.failure = failure
   }
 
   /// 正式版才更新（Debug 版 bundle id 不同）
@@ -174,6 +218,10 @@ import OSLog
       // 检查还在路上时点了「更新到 x」（入口在复查期间留着）：已经在装了，这次的结果不要
       guard case .checking = state else { return true }
       if let release = latest, Self.isNewer(release.version, than: AboutTab.version) {
+        // 上次没装上的原因只留到下一次查到（同一版也清：可能是几天前的事，磁盘早腾出来了）
+        failure = nil
+        // 能不能原地换，现在就看（E10）：换不了的话入口都改成「到发布页下载」
+        obstacle = Self.obstacle(Bundle.main.bundleURL)
         state = .available(release)
         let notified = UserDefaults.standard.string(forKey: Prefs.updateNotifiedVersion)
         let skipping = release.version == skipped
@@ -185,10 +233,14 @@ import OSLog
             ? "已跳过这个版本，到 设置 › 关于 里能取消跳过"
             : UserDefaults.standard.bool(forKey: Prefs.statusItemVisible)
               ? "点菜单栏图标，选「更新到 \(release.version)」" : "到 设置 › 关于 里点「更新并重新打开」"
+          // 换不了（E10）：详情写原因，按钮是「打开发布页」
+          var detail = hint
+          if let obstacle { detail = "\(obstacle.reason)" }
+          let update = obstacle == nil ? installAction("更新") : pageAction(release)
           island?.show(
-            "有新版本 \(release.version)", detail: hint, tone: .info,
+            "有新版本 \(release.version)", detail: detail, tone: .info,
             symbol: "arrow.down.circle.fill",
-            actions: skipping ? [installAction("更新")] : [installAction("更新"), skipAction()])
+            actions: skipping ? [update] : [update, skipAction()])
         }
         prepare(release)
       } else {
@@ -226,10 +278,13 @@ import OSLog
   /// 失败时回到「有新版本」，刘海岛说原因
   func install(_ trigger: Trigger = .menu) async {
     guard let release = available, isSupported else { return }
+    // 原地换不了（E10）：入口已经是「到发布页下载」，走到这里也只开发布页
+    if obstacle != nil { return openPage(release) }
     if let blocker {
       island?.show("\(blocker)", tone: .warning)
       return
     }
+    failure = nil
     // 后台已经下好这一版：直接装它（replace 照样全部校验）；还在下的掐掉、从头下（ponytail: 不接着它的进度，
     // 后台那次没有进度可接；要省这一截再把后台下载改成带进度的同一个任务）
     stopPreparing()
@@ -281,12 +336,29 @@ import OSLog
       isDownloading = false
       // 换不了 App 时（checkReplaceable）后台下好的包还没交给 replace：一并删掉
       if let prepared { try? FileManager.default.removeItem(at: prepared) }
+      // 装的时候才发现换不了（查到新版本之后挪了地方、改了权限）：入口跟着改成「到发布页下载」
+      if let found = Self.obstacle(Bundle.main.bundleURL) { obstacle = found }
+      let kind = Self.failureKind(error, lowOnSpace: Self.isLowOnSpace(Bundle.main.bundleURL))
+      let message = kind == .diskFull ? Self.diskFullMessage : error.localizedDescription
+      failure = Failure(message: message, kind: kind)
       state = .available(release)
       progress = nil
+      // 「重试」只给网络问题；磁盘满腾出空间后再点「更新」；别的重试也不会好，给发布页
+      let actions: [Island.Action] =
+        switch kind {
+        case .network: [installAction("重试")]
+        case .diskFull: []
+        case .unpack, .other: [pageAction(release)]
+        }
       island?.show(
-        "更新失败", detail: "\(error.localizedDescription)", tone: .error,
-        actions: [installAction("重试")])
+        kind == .diskFull ? "磁盘空间不够，没装上新版本" : "更新失败", detail: "\(message)", tone: .error,
+        actions: actions)
     }
+  }
+
+  /// 打开这一版的发布页（换不了 App、装不上时的出路，E10）
+  func openPage(_ release: Release) {
+    NSWorkspace.shared.open(release.page)
   }
 
   /// 关于页、岛上的「取消」（只在下载中有用；同转 GIF 的取消：不出结果岛）
@@ -415,6 +487,10 @@ import OSLog
     return target
   }
 
+  private func pageAction(_ release: Release) -> Island.Action {
+    .init("打开发布页") { [weak self] in self?.openPage(release) }
+  }
+
   private func skipAction() -> Island.Action {
     .init("跳过这个版本") { [weak self] in self?.skip() }
   }
@@ -459,6 +535,48 @@ import OSLog
   }
 
   // MARK: 纯逻辑（单测）
+
+  /// 磁盘满时怎么说（E10）
+  static var diskFullMessage: String {
+    String(localized: "磁盘空间不够：腾出一些空间后再点「更新并重新打开」")
+  }
+
+  /// 装没成的原因归哪一类（E10）：明说没空间的（POSIX ENOSPC、写文件时空间不够，错误链上哪一层都算）是磁盘满；下载写不了临时文件、
+  /// 解不开包时磁盘快满了（lowOnSpace）也算磁盘满；别的网络错误、下载回的不是 200、校验值对不上是网络；剩下的（签名没过、包不对、
+  /// 换不了 App）是别的
+  static func failureKind(_ error: Error, lowOnSpace: Bool) -> UpdateError.Kind {
+    var chain: [NSError] = []
+    var next: NSError? = error as NSError
+    while let current = next, chain.count < 8 {
+      chain.append(current)
+      next = current.userInfo[NSUnderlyingErrorKey] as? NSError
+    }
+    let outOfSpace = chain.contains {
+      ($0.domain == NSPOSIXErrorDomain && $0.code == Int(ENOSPC))
+        || ($0.domain == NSCocoaErrorDomain && $0.code == NSFileWriteOutOfSpaceError)
+    }
+    if outOfSpace { return .diskFull }
+    if let update = error as? UpdateError {
+      return update.kind == .unpack ? (lowOnSpace ? .diskFull : .other) : update.kind
+    }
+    if let url = error as? URLError {
+      let writing: [URLError.Code] = [.cannotCreateFile, .cannotWriteToFile]
+      return writing.contains(url.code) && lowOnSpace ? .diskFull : .network
+    }
+    return .other
+  }
+
+  /// App 所在的卷和临时目录那个卷，有一个剩得不到 300 MB（E10：解包、下载失败时拿它判断是不是磁盘满）。
+  /// ponytail: 定死 300 MB（更新包解开约 100 MB，下载、暂存、换上各一份）；包变大了再按包的大小算
+  static func isLowOnSpace(_ app: URL) -> Bool {
+    [app.deletingLastPathComponent(), FileManager.default.temporaryDirectory].contains { folder in
+      guard
+        let free = (try? folder.resourceValues(forKeys: [.volumeAvailableCapacityKey]))?
+          .volumeAvailableCapacity
+      else { return false }
+      return free < 300_000_000
+    }
+  }
 
   /// 刘海岛上更新那一条的标题（进度按标题认这一条，两处要同一句）
   static func installingTitle(_ version: String) -> LocalizedStringResource {
@@ -613,16 +731,18 @@ import OSLog
 
   /// 换得了 target 吗（下载之前先看，免得白下）
   static func checkReplaceable(_ target: URL) throws {
+    if let obstacle = obstacle(target) { throw UpdateError("\(obstacle.reason)") }
+  }
+
+  /// target 原地换不了的原因（E10；查到新版本时、装之前都看）：DMG（/Volumes 下的只读卷）、App Translocation 的临时位置
+  /// （同 LaunchAtLogin.isInstalled 的判断，另看卷是不是只读）、所在文件夹写不进去。nil = 能换
+  static func obstacle(_ target: URL) -> Obstacle? {
     let folderURL = target.deletingLastPathComponent()
     let folder = folderURL.path
     let readOnly = (try? folderURL.resourceValues(forKeys: [.volumeIsReadOnlyKey]))?
       .volumeIsReadOnly
-    if folder.contains("/AppTranslocation/") || readOnly == true {
-      throw UpdateError("请先把 Kitty Tools 拖进「应用程序」，从那里打开后再更新")
-    }
-    guard FileManager.default.isWritableFile(atPath: folder) else {
-      throw UpdateError("没有权限替换「\(folder)」里的 App：请用管理员账户更新，或到发布页下载后手动替换")
-    }
+    if folder.contains("/AppTranslocation/") || readOnly == true { return .notInstalled }
+    return FileManager.default.isWritableFile(atPath: folder) ? nil : .noPermission
   }
 
   /// 下好的更新包（zip，这里用完就删）：解到 target 所在卷的临时目录、校验、原子地换掉 target。
@@ -632,11 +752,11 @@ import OSLog
   ) async throws {
     defer { try? FileManager.default.removeItem(at: zip) }
     if let status = (response as? HTTPURLResponse)?.statusCode, status != 200 {
-      throw UpdateError("下载失败（\(status)）")
+      throw UpdateError("下载失败（\(status)）", kind: .network)
     }
     // 清单里给了校验值（#12）：下得不全、被换过的包在这里就拦下，不等解包
     if let sha256 = release.sha256, await FileHash.digest(of: zip, kind: .sha256) != sha256 {
-      throw UpdateError("更新包下载得不完整（校验值对不上），请重试")
+      throw UpdateError("更新包下载得不完整（校验值对不上），请重试", kind: .network)
     }
     let staging = try FileManager.default.url(
       for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: target, create: true)
@@ -644,7 +764,7 @@ import OSLog
     // 不要包里带的 ACL、扩展属性（签名在包内，用不着；也挡掉带进来的隔离标记）
     try await run(
       "/usr/bin/ditto", ["-x", "-k", "--noacl", "--noextattr", zip.path, staging.path],
-      failure: "更新包解不开")
+      failure: "更新包解不开", kind: .unpack)
     guard
       let app = try FileManager.default.contentsOfDirectory(
         at: staging, includingPropertiesForKeys: nil
@@ -720,10 +840,11 @@ import OSLog
   /// 跑系统命令（ditto / codesign）：在进程外，等它结束，非 0 退出就抛 failure。最多等 2 分钟（退出时装更新也走这里，
   /// 不能让退出一直卡着；到点停掉 = 非 0，当没通过）
   private static func run(
-    _ tool: String, _ arguments: [String], failure: LocalizedStringResource
+    _ tool: String, _ arguments: [String], failure: LocalizedStringResource,
+    kind: UpdateError.Kind = .other
   ) async throws {
     guard try await Subprocess.run(tool, arguments, timeout: .seconds(120)).status == 0 else {
-      throw UpdateError(failure)
+      throw UpdateError(failure, kind: kind)
     }
   }
 }
@@ -747,7 +868,17 @@ private final class DownloadWatcher: NSObject, URLSessionTaskDelegate {
 }
 
 struct UpdateError: LocalizedError {
+  /// 哪一类（E10，Updater.failureKind 按它分出口）：network 给「重试」；diskFull 单独说；unpack 是解不开包（磁盘快满了算磁盘满，
+  /// 不然同 other）；other 重试也不会好，给发布页
+  enum Kind: Equatable, Sendable {
+    case network, diskFull, unpack, other
+  }
+
   let errorDescription: String?
+  let kind: Kind
   /// 能本地化的字（调用处的字面量会被抽进目录）
-  init(_ message: LocalizedStringResource) { errorDescription = String(localized: message) }
+  init(_ message: LocalizedStringResource, kind: Kind = .other) {
+    errorDescription = String(localized: message)
+    self.kind = kind
+  }
 }

@@ -619,7 +619,7 @@ private final class PinView: NSView {
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
     guard
       let command = commands.first(where: {
-        $0.available && $0.keyCode == Int(event.keyCode) && $0.modifiers == flags
+        $0.available && $0.keyCode == event.typedKeyCode && $0.modifiers == flags
       })
     else { return false }
     if !event.isARepeat { NSApp.sendAction(command.action, to: self, from: nil) }
@@ -629,7 +629,7 @@ private final class PinView: NSView {
   /// 一条命令：按键、右键菜单和 VoiceOver 自定义动作共用（透明度只在菜单里）
   private struct Command {
     let title: String
-    /// 菜单上显示的键；keyCode 是实际认的物理键（nil = 没有按键）
+    /// 菜单上显示的键；keyCode 是实际认的键（按打出来的字认，NSEvent.typedKeyCode，E2；nil = 没有按键）
     let key: String
     let keyCode: Int?
     let modifiers: NSEvent.ModifierFlags

@@ -297,7 +297,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       content: AnyView(HomeView(model: model).environment(updater)))
     // ⌘, 设置、⌘Q 退出（主界面不激活本 App，主菜单收不到）
     panel.keyEquivalentHandler = { [unowned model] event in
-      guard let extra = Home.command(code: Int(event.keyCode), modifiers: event.modifierFlags)
+      guard let extra = Home.command(code: event.typedKeyCode, modifiers: event.modifierFlags)
       else { return false }
       model.run(extra)
       return true
@@ -917,7 +917,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AnyView(
           TranslateTab(services: serviceStore, history: historyStore, speaker: speaker)
             .environment(island))
-      case .hotkeys: AnyView(HotkeysTab(center: hotKeys))
+      // 「全部恢复默认」的撤销在刘海岛上（第五轮体检 U5）
+      case .hotkeys: AnyView(HotkeysTab(center: hotKeys).environment(island))
       case .about:
         // 开发版（bundle id 不同）不更新，不显示更新那一行
         AnyView(
@@ -986,6 +987,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if yieldToOlderInstance() { return }
     // 新装把功能开关明写进偏好（只开四个；升级上来的不碰），在注册默认值之前（功能管理拍板 M4 M5）
     Feature.seedNewInstall()
+    // 新装：会吞掉这台的布局、系统语言要用的字母的默认 ⌥ 键先不注册（第五轮体检 E9）
+    HotKeyAction.seedNewInstall()
     // 新装、系统英文在前：第一 / 第二语言明写成英语 / 简体中文（注册的默认值不动，多语言第 4 批）
     Lang.seedNewInstall()
     Prefs.registerDefaults()
@@ -1921,8 +1924,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     run(MenuExtra(rawValue: id) ?? .settings)
   }
 
-  /// 菜单栏里不对应全局热键的项：菜单栏、启动器、主界面（钉图两项、设置、退出）同一个分发
-  private func run(_ extra: MenuExtra) {
+  /// 菜单栏里不对应全局热键的项：菜单栏、启动器、主界面（钉图两项、设置、退出）、主菜单（设置…、快捷键速查表）同一个分发
+  func run(_ extra: MenuExtra) {
     // 归关着的功能的那几项（暂停记录、复制即译、钉图）：同 run(action) 的兜底
     if let feature = extra.section?.feature, !feature.isOn { return }
     switch extra {
@@ -3972,9 +3975,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     // 有新版本时最上面一项就是更新（强调色：现在该操作的东西）；跳过了的版本不挂（X11）
     if let release = updater.nudge {
-      menu.addAction(
-        "更新到 \(release.version)…", symbol: "arrow.down.circle.fill", color: NSColor(Style.brand)
-      ) { [unowned self] in Task { await updater.install() } }
+      if let obstacle = updater.obstacle {
+        // 这份 App 原地换不了（第五轮体检 E10）：改成去发布页，下面一行小字写原因
+        let item = menu.addAction(
+          "到发布页下载 \(release.version)", symbol: "arrow.down.circle.fill",
+          color: NSColor(Style.brand)
+        ) { [unowned self] in updater.openPage(release) }
+        item.subtitle = obstacle.summary
+        item.toolTip = obstacle.reason
+      } else {
+        menu.addAction(
+          "更新到 \(release.version)…", symbol: "arrow.down.circle.fill", color: NSColor(Style.brand)
+        ) { [unowned self] in Task { await updater.install() } }
+      }
       menu.addItem(.separator())
     }
     // 「打开主界面」不进菜单：菜单和主界面是同一个图标的两半（右键 / 左键）

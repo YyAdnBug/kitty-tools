@@ -195,7 +195,7 @@ import UniformTypeIdentifiers
     let editor = event.window?.firstResponder as? NSTextView
     if let editor, !editor.isFieldEditor { return false }
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
-    let code = Int(event.keyCode)
+    let code = event.typedKeyCode  // 按打出来的字认（E2）
     if flags == [.command, .shift], code == kVK_ANSI_C {
       guard let entry = selected else {
         NSSound.beep()

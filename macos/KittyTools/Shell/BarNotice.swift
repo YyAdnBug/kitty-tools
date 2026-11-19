@@ -45,17 +45,33 @@ struct UpdateBarHint: View {
 
   var body: some View {
     if let updater, let release = updater.nudge {
-      Button {
-        dismiss()
-        Task { await updater.install() }
-      } label: {
-        Label("更新到 \(release.version)", systemImage: "arrow.down.circle.fill")
-          .foregroundStyle(Style.brandInk)
-          .contentShape(.rect)
+      if let obstacle = updater.obstacle {
+        // 这份 App 原地换不了（第五轮体检 E10）：改成去发布页，悬停写原因
+        Button {
+          dismiss()
+          updater.openPage(release)
+        } label: {
+          Label("到发布页下载 \(release.version)", systemImage: "arrow.down.circle.fill")
+            .lineLimit(1)
+            .foregroundStyle(Style.brandInk)
+            .contentShape(.rect)
+        }
+        .pointerStyle(.link)
+        .help(obstacle.reason)
+        .accessibilityHint(obstacle.reason)
+      } else {
+        Button {
+          dismiss()
+          Task { await updater.install() }
+        } label: {
+          Label("更新到 \(release.version)", systemImage: "arrow.down.circle.fill")
+            .foregroundStyle(Style.brandInk)
+            .contentShape(.rect)
+        }
+        .pointerStyle(.link)
+        .help("有新版本：下载并安装 \(release.version)，装好自动重新打开")
+        .accessibilityHint("有新版本，下载安装后自动重新打开")
       }
-      .pointerStyle(.link)
-      .help("有新版本：下载并安装 \(release.version)，装好自动重新打开")
-      .accessibilityHint("有新版本，下载安装后自动重新打开")
     }
   }
 }

@@ -75,7 +75,8 @@ struct OnboardingView: View {
   /// 引导所在的窗口（sheet），只认它重新成为 key
   @State private var window: ObjectIdentifier?
 
-  /// 挂在设置窗工具栏下沿：首次安装时设置窗是默认大小（内容 600，工具栏约 52），高 520 放得下
+  /// 挂在设置窗工具栏下沿：首次安装时设置窗是默认大小（内容 600，工具栏约 52），高 520 放得下。宽是定的，高至少这么高、
+  /// 内容放不下时跟着内容长（第五轮体检 U3④：英文的第一屏原来被裁、顶上的图标贴边）
   static let size = CGSize(width: 580, height: 520)
 
   /// firstRun：首次安装，「登录时自动打开」默认勾（启动时已经注册过；没注册成的也勾着，点「开始使用」再试一次）；
@@ -128,7 +129,8 @@ struct OnboardingView: View {
       .padding(.top, 12)
       .padding(.bottom, 24)
     }
-    .frame(width: Self.size.width, height: Self.size.height)
+    .frame(width: Self.size.width)
+    .frame(minHeight: Self.size.height)
     .background(Style.brandCream)
     .background {
       // 没有可见的「跳过」（N14），Esc 靠这个看不见的按钮：macOS 上 sheet 没有 cancelAction 就不认 Esc
@@ -241,7 +243,9 @@ private struct RowCard<Item: Hashable, Row: View>: View {
 
 /// 第一屏：品牌图标 + 大标题 + 这台系统上有的全部功能和插件，两列，每格一个勾选框（名字、色块取设置页的，一句话是 Feature.blurb）。
 /// 2026-11-13 便签、提醒也成了插件（拍板 P5）：只列功能的话新装的人看不到它们，所以插件也列，分在下面一组、默认不勾，勾了就是添加。
-/// 插件那组是紧凑的三列（勾选框 + 色块 + 名字，一句话在悬停提示和读屏里）：带上说明的话这一屏放不下（引导的大小是固定的）
+/// 插件那组是紧凑的三列（勾选框 + 色块 + 名字，一句话在悬停提示和读屏里）：带上说明的话这一屏太高；名字放不下时折两行
+/// （英文，第五轮体检 U3④）。顶上留 10：引导的高跟着内容长时图标不贴边；行距收紧一点，英文（插件名折两行）也放得进默认大小的
+/// 设置窗工具栏下面（约 548）
 private struct WelcomeScreen: View {
   var body: some View {
     let plugins = Feature.allCases.filter { $0.isPlugin && $0.isAvailable }
@@ -258,7 +262,7 @@ private struct WelcomeScreen: View {
         Divider()
         Text("插件 · 用得上再勾，以后也能在 设置 › 全部插件 里添加")
           .font(.subheadline).foregroundStyle(.secondary)
-        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
+        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
           ForEach(Array(stride(from: 0, to: plugins.count, by: 3)), id: \.self) { start in
             GridRow {
               ForEach(plugins[start..<min(start + 3, plugins.count)], id: \.self) {
@@ -272,12 +276,13 @@ private struct WelcomeScreen: View {
       .background(.background, in: shape)
       .overlay(shape.hairlineBorder())
       .padding(.horizontal, 36)
-      .padding(.top, 14)
+      .padding(.top, 12)
     }
+    .padding(.top, 10)
   }
 
   private static func grid(_ features: [Feature]) -> some View {
-    Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 10) {
+    Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 8) {
       ForEach(Array(stride(from: 0, to: features.count, by: 2)), id: \.self) { start in
         GridRow {
           ForEach(features[start..<min(start + 2, features.count)], id: \.self) {
@@ -310,7 +315,7 @@ private struct FeatureChoice: View {
           KindTile(symbol: feature.page.symbol, color: feature.page.color, size: 20)
             .opacity(isOn ? 1 : Style.disabledOpacity)
             .accessibilityHidden(true)
-          Text(feature.title).lineLimit(1)
+          Text(feature.title).lineLimit(2).fixedSize(horizontal: false, vertical: true)
           Spacer(minLength: 0)
         }
         .contentShape(Rectangle())

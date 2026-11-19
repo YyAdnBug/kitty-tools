@@ -491,6 +491,9 @@ enum Prefs {
   /// 看过的版本号：没有 = 首次安装（打开欢迎引导），和当前不同 = 刚更新（刘海岛「已更新到 x」+ 本版摘要，不开设置窗，体检 A29）。
   /// 首次安装时**引导走完才记**（点「开始使用」或关掉引导；第四轮体检 E1）：中途退出（授权屏幕录制后系统要求重开）下次接着开
   nonisolated static let lastSeenVersion = "lastSeenVersion"
+  /// 新装时按这台的键盘布局替用户空着的默认快捷键（HotKeyAction 的 rawValue 列表；第五轮体检 E9，HotKeyAction.seedNewInstall）：
+  /// 没存过 `hotkey.<动作>` 的当没设。跟着这台 Mac 的布局走：不注册默认值（不导出、不同步）
+  nonisolated static let hotkeysWithheld = "hotkeysWithheld"
   /// 欢迎引导做到了第几屏（OnboardingView.Screen 的 rawValue）：没走完就退出、下次接着开时从哪一屏起（E1）；走完删掉。
   /// 这台电脑自己的状态，不注册默认值
   nonisolated static let onboardingScreen = "onboardingScreen"

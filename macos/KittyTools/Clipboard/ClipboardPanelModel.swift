@@ -459,7 +459,8 @@ import Observation
     noteActivity()
     // 不看大写锁定和 fn（⌘⌦ 带 fn），和 OverlayPanel 的 ⌘W 同一套判断
     let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
-    let key = Int(event.keyCode)
+    // 字母、标点按打出来的字认（E2：德语键盘上 ⌘Z 不再当成 ⌘Y、法语上不再当成 ⌘W）
+    let key = event.typedKeyCode
     // ⌘W 在对话框开着时先关对话框（同 Esc 逐级退），不让 OverlayPanel 连面板带没保存的字一起收掉
     if dialog != nil, key == kVK_ANSI_W, modifiers == .command {
       dialog = nil
@@ -505,7 +506,7 @@ import Observation
   private func handleCommandKey(_ event: NSEvent) -> Bool {
     let fieldEditor = event.window?.firstResponder as? NSTextView
     let fieldHasSelection = (fieldEditor?.selectedRange().length ?? 0) > 0
-    switch Int(event.keyCode) {
+    switch event.typedKeyCode {
     case kVK_Return: copySelection()
     case kVK_ANSI_C where !fieldHasSelection: copySelection()
     // 焦点在放大预览的正文里（不是搜索框）时 ⌘A 是全选那段文字

@@ -1249,7 +1249,8 @@ final class ScrollCaptureHUD: NSView {
   override func keyDown(with event: NSEvent) {
     openMenu?.dismiss()
     let flags = event.modifierFlags.intersection([.command, .control, .option])
-    switch Int(event.keyCode) {
+    // A 按打出来的字认（E2），别的是按键位的方向键 / 回车 / Esc / 空格
+    switch event.typedKeyCode {
     case kVK_Escape: onAction(.escape)
     case kVK_Return where flags.isEmpty, kVK_ANSI_KeypadEnter where flags.isEmpty:
       onAction(.output(.copy))
@@ -1263,7 +1264,7 @@ final class ScrollCaptureHUD: NSView {
   override func performKeyEquivalent(with event: NSEvent) -> Bool {
     guard window?.isKeyWindow == true else { return super.performKeyEquivalent(with: event) }
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
-    switch (Int(event.keyCode), flags) {
+    switch (event.typedKeyCode, flags) {
     case (kVK_ANSI_C, .command): onAction(.output(.copy))
     case (kVK_ANSI_S, .command): onAction(.output(.save))
     case (kVK_ANSI_S, [.command, .shift]): onAction(.output(.saveAs))

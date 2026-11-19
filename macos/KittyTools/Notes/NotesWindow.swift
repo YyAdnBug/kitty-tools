@@ -1342,17 +1342,17 @@ final class NotesWindow: NSObject, NSWindowDelegate {
     guard event.window === window else { return false }
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
     // ⌘W：便签墙上开着编辑卡时先收回它，不关窗口（开着的那条在别处没了的那一下不算开着：墙会收回它）
-    if flags == .command, event.charactersIgnoringModifiers?.lowercased() == "w",
+    if flags == .command, event.typedKeyCode == kVK_ANSI_W,
       model.isEditing
     {
       model.collapse()
       return true
     }
-    if flags == [.command, .shift], event.charactersIgnoringModifiers?.lowercased() == "z" {
+    if flags == [.command, .shift], event.typedKeyCode == kVK_ANSI_Z {
       model.redo()
       return true
     }
-    if flags == [.command, .control], event.charactersIgnoringModifiers?.lowercased() == "f",
+    if flags == [.command, .control], event.typedKeyCode == kVK_ANSI_F,
       window.collectionBehavior.contains(.fullScreenPrimary)
         || window.styleMask.contains(.fullScreen)
     {
@@ -1360,7 +1360,7 @@ final class NotesWindow: NSObject, NSWindowDelegate {
       return true
     }
     // ⌘A：焦点不在输入框里时勾上列表里的全部（X6；输入框里照常全选字）
-    if flags == .command, event.charactersIgnoringModifiers?.lowercased() == "a",
+    if flags == .command, event.typedKeyCode == kVK_ANSI_A,
       !(window.firstResponder is NSText), !model.isEditing
     {
       model.markAll()

@@ -425,7 +425,8 @@ import Observation
   /// 删整条便签走 ⌘K 和「⋯」
   func handleKeyEquivalent(_ event: NSEvent) -> Bool {
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
-    let key = Int(event.keyCode)
+    // 按打出来的字认（E2：法语键盘上 ⌘Z 不再当成 ⌘W 把便签关掉）
+    let key = event.typedKeyCode
     if flags == .command, key == kVK_ANSI_W, isShown {
       closeMenu()
       dismiss()

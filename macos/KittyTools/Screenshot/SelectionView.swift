@@ -3089,7 +3089,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   /// ⌘+ / ⌘−（⌘=、⇧⌘=、⌘-、小键盘 ⌘+ ⌘-，就是 ShotKeys.isReserved 留出来的那几个，改键改不到它们）是往大 / 往小一档；
   /// 别的 nil。长图标注遮罩也用它
   static func fontStep(_ event: NSEvent, flags: NSEvent.ModifierFlags) -> Int? {
-    switch (Int(event.keyCode), flags) {
+    switch (event.typedKeyCode, flags) {
     case (kVK_ANSI_Equal, .command), (kVK_ANSI_Equal, [.command, .shift]),
       (kVK_ANSI_KeypadPlus, .command):
       return 1
@@ -3168,14 +3168,15 @@ final class SelectionView: NSView, NSTextViewDelegate {
       return true
     }
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
-    let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+    let key = event.typedKeyCode
     // 焦点在译文卡片的字上：选中了字时 ⌘C 拷那段字（不是整张截图；没选中照常拷截图）、⌘A 全选这段；
     // ⌘ + 方向键留给字自己（不推选区的边，不然卡片跟着收掉）
     if let translationCard, translationCard.owns(window?.firstResponder),
       let text = window?.firstResponder as? NSTextView
     {
       if Self.arrowEdges[Int(event.keyCode)] != nil { return false }
-      if flags == .command, key == "a" || (key == "c" && text.selectedRange().length > 0),
+      if flags == .command,
+        key == kVK_ANSI_A || (key == kVK_ANSI_C && text.selectedRange().length > 0),
         let action = OverlayPanel.editActions[key]
       {
         return OverlayPanel.sendEditAction(action, from: self)
@@ -3192,7 +3193,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
       return true
     }
     if editor != nil || sizeField.isEditing {
-      if key == "z", flags.subtracting(.shift) == .command {
+      if key == kVK_ANSI_Z, flags.subtracting(.shift) == .command {
         if window?.undoFocusedText(redo: flags.contains(.shift)) != true { NSSound.beep() }
         return true
       }
@@ -3209,7 +3210,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     }
     // 出图 / 撤销这些（ShotKeys，默认 ⌘C ⌘S ⇧⌘S ⌘Z ⇧⌘Z，能改）；⌘D 复制标注固定
     if let key = ShotKey.matching(event), perform(key) { return true }
-    guard annotates, Int(event.keyCode) == kVK_ANSI_D, flags == .command, selectedAnnotation != nil
+    guard annotates, key == kVK_ANSI_D, flags == .command, selectedAnnotation != nil
     else { return super.performKeyEquivalent(with: event) }
     duplicateSelected()
     return true

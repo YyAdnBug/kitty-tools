@@ -174,8 +174,13 @@ struct StatusScreenTab: View {
             SecureField("再输一次", text: $confirmation, prompt: Text("再输一次"))
               .frame(width: 96)
               .onSubmit { if problem == nil { setPasscode(passcode) } }
-            Button("设置") { setPasscode(passcode) }
-              .disabled(problem != nil)
+            // 同字不同义（页名「设置」是 Settings）：显式 key，英文是 Set（第五轮体检 U3③）
+            Button(
+              LocalizedStringResource(
+                "statusScreen.setPasscode", defaultValue: "设置",
+                comment: "设置 › 状态屏：确认设定退出密码的按钮（动词：设定）")
+            ) { setPasscode(passcode) }
+            .disabled(problem != nil)
           }
         }
         .labelsHidden()
