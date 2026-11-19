@@ -191,7 +191,7 @@ struct UpdaterTests {
     let archive = try #require(URL(string: "https://github.com/x/y/K_arm64.zip"))
     let ok = try #require(
       HTTPURLResponse(url: archive, statusCode: 200, httpVersion: nil, headerFields: nil))
-    func attempt(sha256: String) async throws -> String? {
+    func attempt(sha256: String, response: URLResponse? = nil) async throws -> UpdateError? {
       let zip = work.appending(path: "\(UUID()).zip")
       try Data("not a zip".utf8).write(to: zip)
       do {
@@ -199,17 +199,29 @@ struct UpdaterTests {
           target,
           with: .init(
             version: "0.9.0", archive: archive, page: Updater.releasesPage, sha256: sha256),
-          zip: zip, response: ok)
+          zip: zip, response: response ?? ok)
       } catch let error as UpdateError {
         #expect(!FileManager.default.fileExists(atPath: zip.path), "下好的包用完就删")
-        return error.errorDescription
+        return error
       }
       return nil
     }
-    #expect(try await attempt(sha256: String(repeating: "0", count: 64))?.contains("校验值") == true)
+    // 校验值对不上：算网络问题（给「重试」，第五轮体检 E10）
+    let mismatch = try await attempt(sha256: String(repeating: "0", count: 64))
+    #expect(mismatch?.errorDescription?.contains("校验值") == true)
+    #expect(mismatch.map { Updater.failureKind($0, lowOnSpace: true) } == .network)
     // printf 'not a zip' | shasum -a 256
     let real = "a3989126344744ef800dbc88bf7e744853f3f2eac75c9ab3301f4e845ef22078"
-    #expect(try await attempt(sha256: real) == "更新包解不开")
+    let unpack = try await attempt(sha256: real)
+    #expect(unpack?.errorDescription == "更新包解不开")
+    // 解不开：空间够算别的（给发布页），磁盘快满了算磁盘满
+    #expect(unpack.map { Updater.failureKind($0, lowOnSpace: false) } == .other)
+    #expect(unpack.map { Updater.failureKind($0, lowOnSpace: true) } == .diskFull)
+    // 服务器不是 200：网络问题
+    let failed = try #require(
+      HTTPURLResponse(url: archive, statusCode: 503, httpVersion: nil, headerFields: nil))
+    let status = try await attempt(sha256: real, response: failed)
+    #expect(status.map { Updater.failureKind($0, lowOnSpace: false) } == .network)
   }
 
   /// build-dmg.sh 写的清单和 App 读的是同一个文件名、同几个键（发版后才会发现对不上，单测先比对）

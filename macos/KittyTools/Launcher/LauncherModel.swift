@@ -3307,7 +3307,8 @@ import UniformTypeIdentifiers
   func handleKeyEquivalent(_ event: NSEvent) -> Bool {
     // 不看大写锁定、fn 和数字键盘标志（方向键带着后两个），和 OverlayPanel 的 ⌘W 同一套判断
     let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
-    let key = Int(event.keyCode)
+    // 字母、标点按打出来的字认（E2）
+    let key = event.typedKeyCode
     // 看脚本全文那一页：⌘1–9、⌘Y、⌘D 这些对着藏在后面的行的键都不做，编辑搜索框的（剪切、复制、粘贴、全选、撤销）照常
     if review != nil {
       let editing = [kVK_ANSI_X, kVK_ANSI_C, kVK_ANSI_V, kVK_ANSI_A, kVK_ANSI_Z]
@@ -3358,7 +3359,7 @@ import UniformTypeIdentifiers
   }
 
   private func handleCommandKey(_ event: NSEvent) -> Bool {
-    switch Int(event.keyCode) {
+    switch event.typedKeyCode {
     case kVK_Return:
       if let item = selectedItem { commandReturn(item) }
     // 「常用」里 ⌘⌫：忘掉这一项（有查询、或 ⌘K 过滤框里有字时 ⌘⌫ 照常删到行首）；收藏上没有这个动作，响提示音

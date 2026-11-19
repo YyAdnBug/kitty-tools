@@ -964,7 +964,7 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
     case .redo?: redo()
     case let key? where key.tool != nil: choose(key.tool)
     default:
-      guard Int(event.keyCode) == kVK_ANSI_D, flags == .command else {
+      guard event.typedKeyCode == kVK_ANSI_D, flags == .command else {
         return super.performKeyEquivalent(with: event)
       }
       duplicateSelected()

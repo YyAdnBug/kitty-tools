@@ -252,7 +252,7 @@ struct HotKeyRecorder: View {
     message = nil
     // 别的行正在录（点了这一行的 ⓧ 或右键菜单）：热键先别恢复，等那一行录完 stop 时一起重新注册
     if isRecording { stop() } else if center.recording == nil { center.reload() }
-    if let key = hotKey?.doubleTap { message = key.hint }
+    if let key = hotKey?.doubleTap { message = key.hint } else { message = hotKey?.swallowHint }
   }
 
   /// 命令的快捷键：同全局动作的规矩，和全局动作、别的命令查重；存进「命令和别名」的那段 JSON
@@ -275,6 +275,7 @@ struct HotKeyRecorder: View {
     current = hotKey
     message = nil
     if isRecording { stop() } else if center.recording == nil { center.reload() }
+    message = hotKey?.swallowHint
   }
 
   /// 哪条命令用了这个组合（名字）：这台 Mac 上没有的那条不算（第 4 批评审：没有那一行、清不掉，会一直挡着）

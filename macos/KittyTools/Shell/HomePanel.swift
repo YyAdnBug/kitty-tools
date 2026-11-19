@@ -231,7 +231,7 @@ enum Home {
     return characters
   }
 
-  /// 面板里的 ⌘ 组合（纯函数）：⌘, 设置、⌘Q 退出（同菜单栏菜单的键）。按键码认，不看输入法和键盘布局；
+  /// 面板里的 ⌘ 组合（纯函数）：⌘, 设置、⌘Q 退出（同菜单栏菜单的键）。code 是 NSEvent.typedKeyCode（按打出来的字认，E2）；
   /// 修饰键只比 ⌘⌃⌥⇧、不看大写锁定（同 OverlayPanel 的 ⌘W）
   static func command(code: Int, modifiers: NSEvent.ModifierFlags) -> MenuExtra? {
     guard modifiers.intersection([.command, .control, .option, .shift]) == .command else {
@@ -512,15 +512,22 @@ private struct HomeTile: View {
       VStack(spacing: 0) {
         KindTile(symbol: tile.symbol, color: tile.color, size: 30).padding(.top, 9)
         // 新功能：名字前面一个小圆点（iOS 主屏新装 App 的那种，拍板 A1）
-        HStack(spacing: 3) {
-          if tile.isNew { NewDot() }
-          // 英文的名字长：一行放不下时整块面板的格子高一行（Home.tileHeight），名字折成两行、居中；
-          // 不折的时候（中文）照旧一行，和以前一个像素都不差
-          Text(tile.label)
-            .font(.system(size: 11))
-            .lineLimit(wraps ? 2 : 1)
-            .multilineTextAlignment(wraps ? .center : .leading)
-            .minimumScaleFactor(0.85)
+        // 英文的名字长：一行放不下时整块面板的格子高一行（Home.tileHeight），名字折成两行、居中；这时每格的名字都占两行高、
+        // 顶对齐，一行的和两行的格子里快捷键在同一高度（第五轮体检 U3②：原来两行的那格快捷键往下掉一行）。
+        // 不折的时候（中文）照旧一行，和以前一个像素都不差
+        ZStack(alignment: .top) {
+          if wraps {
+            Text(verbatim: "A\nA").font(.system(size: 11)).lineLimit(2).hidden()
+              .accessibilityHidden(true)
+          }
+          HStack(spacing: 3) {
+            if tile.isNew { NewDot() }
+            Text(tile.label)
+              .font(.system(size: 11))
+              .lineLimit(wraps ? 2 : 1)
+              .multilineTextAlignment(wraps ? .center : .leading)
+              .minimumScaleFactor(0.85)
+          }
         }
         .padding(.horizontal, 3)
         .padding(.top, 6)

@@ -121,6 +121,20 @@ enum ShotKey: String, CaseIterable {
     }
   }
 
+  /// 改过的键（偏好里存着的）原样拷一份：设置 › 快捷键「全部恢复默认」的撤销用（第五轮体检 U5）。空的 = 本来就都是默认的
+  static func snapshot(in defaults: UserDefaults = .standard) -> [ShotKey: Data] {
+    var stored: [ShotKey: Data] = [:]
+    for key in allCases { stored[key] = defaults.data(forKey: key.prefsKey) }
+    return stored
+  }
+
+  /// 换回 snapshot 拷的那几个：只放回现在还是「没存过」（恢复默认之后没再动过）的，之后又录的、同步落下的不盖
+  static func restore(_ snapshot: [ShotKey: Data], in defaults: UserDefaults = .standard) {
+    for (key, data) in snapshot where defaults.data(forKey: key.prefsKey) == nil {
+      defaults.set(data, forKey: key.prefsKey)
+    }
+  }
+
   /// 悬停提示、菜单、速查表里写的键（清除了是 nil）
   var label: String? { key()?.display }
 
@@ -149,9 +163,15 @@ enum ShotKey: String, CaseIterable {
   // MARK: 能录什么
 
   /// 截图里另有用处、固定不改的键：Esc ↩ ⌫ Tab 空格、方向键（带什么修饰键都算）、⌘D（复制标注）、标注遮罩的缩放
-  /// ⌘0 ⌘1 ⌘= ⇧⌘= ⌘- 和小键盘的 ⌘+ ⌘-。修饰键自己（连按两下那种）也不收
-  static func isReserved(_ hotKey: HotKey) -> Bool {
+  /// ⌘0 ⌘1 ⌘= ⇧⌘= ⌘- 和小键盘的 ⌘+ ⌘-。修饰键自己（连按两下那种）也不收。
+  /// typing：这个键在录的那台 Mac 上打出来的字（录制时给，problem）——固定的 ⌘D ⌘= ⌘- 在截图里按打出来的字认（E2），录到的物理键
+  /// 先换成它打出的字再比（法语键盘上 ⌘= 在美式 / 的位置）。不给（导入、同步的校验，isUsable）就按物理键位比：收不收不能看收的那台
+  /// 是什么布局。纯函数
+  static func isReserved(_ hotKey: HotKey, typing characters: String? = nil) -> Bool {
     let code = Int(hotKey.keyCode)
+    let typed = HotKey(
+      keyCode: UInt32(characters.map { HotKey.keyCode(code, typing: $0) } ?? code),
+      modifiers: hotKey.modifiers)
     let anyModifiers: Set<Int> = [
       kVK_Escape, kVK_Return, kVK_ANSI_KeypadEnter, kVK_Delete, kVK_ForwardDelete, kVK_Tab,
       kVK_Space, kVK_LeftArrow, kVK_RightArrow, kVK_UpArrow, kVK_DownArrow,
@@ -168,7 +188,7 @@ enum ShotKey: String, CaseIterable {
       HotKey(keyCode: kVK_ANSI_KeypadPlus, modifiers: cmdKey),
       HotKey(keyCode: kVK_ANSI_KeypadMinus, modifiers: cmdKey),
     ]
-    return fixed.contains(hotKey)
+    return fixed.contains(typed)
   }
 
   /// 文件、同步里读进来的能不能用：键码、修饰键位在范围里，不是固定的键
@@ -182,7 +202,9 @@ enum ShotKey: String, CaseIterable {
   static func problem(
     with hotKey: HotKey, for shotKey: ShotKey, in defaults: UserDefaults = .standard
   ) -> String? {
-    if isReserved(hotKey) {
+    let typing = HotKey.character(
+      for: UInt16(hotKey.keyCode), modifiers: hotKey.modifiers & UInt32(cmdKey | shiftKey))
+    if isReserved(hotKey, typing: typing) {
       return String(localized: "这个键在截图里另有用处（Esc、↩、⌫、Tab、空格、方向键、⌘D、缩放），换一个")
     }
     if let other = allCases.first(where: { $0 != shotKey && $0.key(in: defaults) == hotKey }) {
@@ -190,7 +212,9 @@ enum ShotKey: String, CaseIterable {
     }
     let globals = HotKeyAction.allCases.filter(\.isAvailable)
     if let action = globals.first(where: {
-      $0.resolve { defaults.data(forKey: $0.prefsKey) } == hotKey
+      $0.resolve(withheld: HotKeyAction.withheld(in: defaults)) {
+        defaults.data(forKey: $0.prefsKey)
+      } == hotKey
     }) {
       return String(localized: "和全局快捷键「\(action.title)」重复")
     }

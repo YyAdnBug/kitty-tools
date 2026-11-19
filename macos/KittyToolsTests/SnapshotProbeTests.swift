@@ -359,6 +359,13 @@ struct SnapshotProbeTests {
         size: NSSize(
           width: ClipboardPanelView.width, height: ClipboardPanelView.height(for: model)),
         dark: dark, to: "\(out)/clip-update\(dark ? "-dark" : "").png")
+      // 这份 App 原地换不了（第五轮体检 E10）：底栏是「到发布页下载 x」
+      try snapshot(
+        ClipboardPanelView(model: model).environment(
+          try Self.pendingUpdate(obstacle: .notInstalled)),
+        size: NSSize(
+          width: ClipboardPanelView.width, height: ClipboardPanelView.height(for: model)),
+        dark: dark, to: "\(out)/clip-update-page\(dark ? "-dark" : "").png")
     }
     // 一行文本的透镜：行标题已经原样显示全的不画第二遍、只剩元信息行（很短的富文本；有搜索词时标题也不摘录、
     // 照样从头显示）；标题列放不下的一行字（≤ 60 字）还是给两行高的正文（上面的 lens-short 是正文只有一行的）。
@@ -614,13 +621,32 @@ struct SnapshotProbeTests {
       ("failed", .failed("检查更新失败：网络连接已中断。"), false, nil),
       // GitHub 限流（#12）：那一行只有一行宽，看话放不放得下
       ("failed-limited", .failed("检查更新失败：\(Updater.apiFailure(403))"), false, nil),
+      // 第五轮体检 E10：没从「应用程序」里打开（只给发布页，原因写全）、没有权限；上次没装上：磁盘满、签名没过
+      ("not-installed", .available(release), false, nil),
+      ("not-installed", .available(release), true, nil),
+      ("no-permission", .available(release), false, nil),
+      ("disk-full", .available(release), false, nil),
+      ("signature", .available(release), true, nil),
     ]
     navigation.page = .about
     for (name, state, dark, progress) in updateStates {
       // 下载中有「取消」（第四轮体检 E23），下完在装的没有
+      let obstacle: Updater.Obstacle? =
+        switch name {
+        case "not-installed": .notInstalled
+        case "no-permission": .noPermission
+        default: nil
+        }
+      let failure: Updater.Failure? =
+        switch name {
+        case "disk-full": .init(message: Updater.diskFullMessage, kind: .diskFull)
+        case "signature": .init(message: String(localized: "更新包的签名校验没通过"), kind: .other)
+        default: nil
+        }
       let updater = Updater(
         state: state, progress: progress, downloading: name == "downloading",
-        skipped: name == "skipped" ? release.version : nil, ready: name == "ready" ? release : nil)
+        skipped: name == "skipped" ? release.version : nil, ready: name == "ready" ? release : nil,
+        obstacle: obstacle, failure: failure)
       try snapshot(
         SettingsRoot(navigation: navigation) { page in
           page == .about ? AnyView(AboutTab(updater: updater)) : pages(page)
@@ -952,10 +978,13 @@ struct SnapshotProbeTests {
       ("welcome", OnboardingView.Screen.welcome), ("permissions", .permissions), ("try", .tryIt),
     ] {
       for dark in [false, true] {
+        // 高至少 520、放不下时跟着内容长（第五轮体检 U3④）：按内容量
+        let view = OnboardingView(
+          center: hotKeys, firstRun: true, screen: screen, tried: [.clipboard, .screenshot])
+        let height = max(
+          OnboardingView.size.height, NSHostingView(rootView: view).fittingSize.height)
         try snapshot(
-          OnboardingView(
-            center: hotKeys, firstRun: true, screen: screen, tried: [.clipboard, .screenshot]),
-          size: OnboardingView.size, dark: dark,
+          view, size: NSSize(width: OnboardingView.size.width, height: height), dark: dark,
           to: "\(out)/onboarding-\(name)\(dark ? "-dark" : "").png")
       }
     }
@@ -2032,6 +2061,18 @@ struct SnapshotProbeTests {
     try snapshot(
       root(list), size: NSSize(width: 780, height: 1000), dark: false,
       to: "\(out)/settings-status-hotkeys.png")
+    // 新装时会吞字母、替用户空着的默认键（第五轮体检 E9）：那一行下面写为什么空着（录制框里照旧是 Dev 版现在的键）
+    let swallowed: [HotKeyAction: Character] = [.clipboard: "ç", .screenshot: "å"]
+    for dark in [false, true] {
+      try snapshot(
+        HotkeysTab(center: hotKeys) { action in
+          // 启动器那一行：新装时空着、后来换了布局不吞字母了的通用说明
+          if action == .launcher { return HotKeyAction.withheldNote }
+          guard let key = action.defaultHotKey, let letter = swallowed[action] else { return nil }
+          return HotKeyAction.withheldNote(key, letter: letter)
+        }, size: NSSize(width: 590, height: 420), dark: dark,
+        to: "\(out)/settings-hotkeys-withheld\(dark ? "-dark" : "").png")
+    }
     // 关于页拉高看全：品牌区接着更新日志
     for dark in [false, true] {
       try snapshot(
@@ -2145,6 +2186,13 @@ struct SnapshotProbeTests {
           page: Updater.releasesPage)))
     let update = model(state)
     try shot("home-update", HomeView(model: update).environment(updater), update)
+    // 这份 App 原地换不了（第五轮体检 E10）：底栏改成「到发布页下载 x」
+    let stuck = Updater(
+      state: .available(
+        .init(
+          version: "0.7.1", archive: URL(string: "https://example.com/Kitty.zip")!,
+          page: Updater.releasesPage)), obstacle: .notInstalled)
+    try shot("home-update-page", HomeView(model: update).environment(stuck), update)
   }
 
   /// 选状态的面板（PLAN §10 第 4 批，Z13a Z14a）。单独一个测试函数：改这块面板时只跑它（十来秒）——
@@ -4019,6 +4067,11 @@ struct SnapshotProbeTests {
         LauncherPanelView(model: model).environment(try Self.pendingUpdate()),
         size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
         to: "\(out)/launcher-update\(dark ? "-dark" : "").png")
+      try snapshot(
+        LauncherPanelView(model: model).environment(
+          try Self.pendingUpdate(obstacle: .notInstalled)),
+        size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
+        to: "\(out)/launcher-update-page\(dark ? "-dark" : "").png")
       // issue #2：关掉「空搜索框里列出常用」只列收藏；一个收藏都没有时只剩搜索框
       model.showsFrequent = { false }
       model.query = ""
@@ -4704,12 +4757,12 @@ struct SnapshotProbeTests {
   }
 
   /// 摆成「发现了新版本」的 Updater（面板底栏的「更新到 x」从环境里取它）
-  private static func pendingUpdate() throws -> Updater {
+  private static func pendingUpdate(obstacle: Updater.Obstacle? = nil) throws -> Updater {
     Updater(
       state: .available(
         .init(
           version: "0.4.0", archive: try #require(URL(string: "https://example.com/Kitty.zip")),
-          page: Updater.releasesPage)))
+          page: Updater.releasesPage)), obstacle: obstacle)
   }
 
   /// 设置 › 通用「导出与导入」的两张表单（2026-10-07）：导出（默认、勾了「包含密钥」露出密码框、一条片段和生词都没有时

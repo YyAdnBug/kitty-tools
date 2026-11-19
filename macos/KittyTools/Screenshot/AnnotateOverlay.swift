@@ -434,7 +434,7 @@ import Carbon.HIToolbox
       emit(action)
       return true
     }
-    switch (Int(event.keyCode), flags) {
+    switch (event.typedKeyCode, flags) {
     case (kVK_Escape, []): dismiss()
     case (kVK_Return, []), (kVK_ANSI_KeypadEnter, []): emit(.copy)
     case (kVK_ANSI_0, .command): zoomToFit()
@@ -462,8 +462,8 @@ import Carbon.HIToolbox
       restyle { $0 = $0.stepped(step, for: .text) }
       return true
     }
-    let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
-    if key == "z", flags.subtracting(.shift) == .command {
+    let key = event.typedKeyCode
+    if key == kVK_ANSI_Z, flags.subtracting(.shift) == .command {
       if !panel.undoFocusedText(redo: flags.contains(.shift)) { NSSound.beep() }
     } else if flags == .command, let action = OverlayPanel.editActions[key] {
       _ = OverlayPanel.sendEditAction(action, from: panel.contentView)

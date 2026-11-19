@@ -114,23 +114,24 @@ final class HoverKeyPanel: NSPanel {
     if onKey?(event) != true { releaseKeyboard() }
   }
 
-  /// 按键 → 卡片上的哪个动作：⌘C 拷贝、⌘S 存储、Esc 关（按字符认 C、S，换了键盘布局也对；Esc 按键位）。空格不接：
+  /// 按键 → 卡片上的哪个动作：⌘C 拷贝、⌘S 存储、Esc 关（C、S 按打出来的字认，同各面板的 HotKey.keyCode(_:typing:)：换了键盘布局
+  /// 也对、俄文这类布局退回键位；Esc 按键位）。key 是 NSEvent.shortcutCharacters。空格不接：
   /// 现有动作里没有「快速查看」，拿去「用默认 App 打开」不对。纯函数，配单测
   static func command(key: String, keyCode: Int, flags: NSEvent.ModifierFlags) -> ShelfCard.Command?
   {
     let flags = flags.intersection([.command, .control, .option, .shift])
     if keyCode == kVK_Escape { return flags.isEmpty ? .close : nil }
     guard flags == .command else { return nil }
-    return switch key.lowercased() {
-    case "c": .copy
-    case "s": .save
+    return switch HotKey.keyCode(keyCode, typing: key) {
+    case kVK_ANSI_C: .copy
+    case kVK_ANSI_S: .save
     default: nil
     }
   }
 
   static func command(for event: NSEvent) -> ShelfCard.Command? {
     command(
-      key: event.charactersIgnoringModifiers ?? "", keyCode: Int(event.keyCode),
+      key: event.shortcutCharacters ?? "", keyCode: Int(event.keyCode),
       flags: event.modifierFlags)
   }
 }
