@@ -174,6 +174,50 @@ struct SmoothScrollTests {
     #expect(S.decide(.init(dy: -1, option: true), settings: settings, excluded: true) == .pass)
   }
 
+  /// issue #37：按着 ⌘ / ⌃ / ⌥ 拨的一格原样放过（缩放交给 App 和系统），滑着的那一段停下（不然一边缩放一边往下滚）。
+  /// 修饰键从真的 CGEvent 上取（只建不发）
+  @Test func modifierWheelsPassAndHalt() throws {
+    let settings = S.Settings()
+    func wheel(_ flags: CGEventFlags) throws -> S.Wheel {
+      let event = try #require(
+        CGEvent(
+          scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: -1, wheel2: 0,
+          wheel3: 0))
+      event.flags = flags
+      return ScrollTap.wheel(event, isMagicMouse: { _ in false })
+    }
+    let zooms: [CGEventFlags] = [
+      .maskCommand, .maskControl, .maskAlternate, [.maskCommand, .maskShift],
+    ]
+    for flags in zooms {
+      let zoom = try wheel(flags)
+      #expect(!zoom.continuous && !zoom.phased && zoom.dy == -1 && zoom.dx == 0)
+      let decision = S.decide(zoom, settings: settings, excluded: false)
+      #expect(decision == .pass)
+      #expect(S.halts(zoom, decision: decision))
+    }
+    // 不按修饰键的照样平滑、不停；按着 ⇧ 的换成左右、照样平滑
+    let plain = try wheel([])
+    let smooth = S.decide(plain, settings: settings, excluded: false)
+    #expect(smooth == .smooth(dx: 0, dy: -40, flipped: false))
+    #expect(!S.halts(plain, decision: smooth))
+    #expect(
+      S.decide(try wheel(.maskShift), settings: settings, excluded: false)
+        == .smooth(dx: -40, dy: 0, flipped: false))
+    // 触控板（连续的）一碰就停；没有距离的不连续事件不停
+    #expect(S.halts(.init(continuous: true), decision: .pass))
+    #expect(!S.halts(.init(), decision: .pass))
+  }
+
+  /// issue #37：钉图滚轮缩放，开着平滑滚动（一格变成一串没有手势阶段的像素增量，默认一行 40 点）和不开时一格一样大；
+  /// 触控板、妙控鼠标（带阶段）照旧
+  @Test func pinZoomMatchesSmoothedWheel() {
+    let line = PinPanel.zoomDelta(1, precise: false, phased: false)
+    #expect(line == 8)
+    #expect(PinPanel.zoomDelta(S.Settings().pointsPerLine, precise: true, phased: false) == line)
+    #expect(PinPanel.zoomDelta(40, precise: true, phased: true) == 40)
+  }
+
   /// 平滑程度 0：不平滑，只反向
   @Test func zeroStrengthOnlyReverses() {
     var settings = S.Settings(strength: 0)

@@ -88,6 +88,13 @@ nonisolated enum ScrollSmoothing {
     return .smooth(dx: dx * points, dy: dy * points, flipped: flipY || flipX)
   }
 
+  /// 这一下不归平滑管（触控板、妙控鼠标、按着修饰键的、平滑程度 0、停用的 App 里的），又是连续的或真有距离：鼠标滑着的
+  /// 那一段先停下。触控板一碰就停；按着 ⌘ / ⌃ 缩放时剩下那截不接着滚（issue #37：不然一边缩放一边往下滚）
+  static func halts(_ wheel: Wheel, decision: Decision) -> Bool {
+    if case .smooth = decision { return false }
+    return wheel.continuous || wheel.phased || wheel.dx != 0 || wheel.dy != 0
+  }
+
   /// 一格至少按一行算：系统的加速在慢慢拨时可能给不到一行
   static func lines(_ value: Double) -> Double {
     value == 0 ? 0 : (value < 0 ? -1 : 1) * max(abs(value), 1)
