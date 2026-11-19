@@ -3537,6 +3537,9 @@
         }
       }
     },
+    "https://example.com" : {
+      "shouldTranslate" : false
+    },
     "https://example.com/search?q={query}" : {
       "shouldTranslate" : false
     },
@@ -17730,6 +17733,16 @@
         }
       }
     },
+    "周会" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Team Meeting"
+          }
+        }
+      }
+    },
     "周末" : {
       "localizations" : {
         "en" : {
@@ -22222,6 +22235,16 @@
         }
       }
     },
+    "已存储" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved"
+          }
+        }
+      }
+    },
     "已存到「%@」" : {
       "localizations" : {
         "en" : {
@@ -25713,6 +25736,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Screenshot · Selection"
+          }
+        }
+      }
+    },
+    "截图.png" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Screenshot.png"
           }
         }
       }

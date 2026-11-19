@@ -43,6 +43,8 @@ struct ScreenshotTab: View {
   @State private var limitChange: HistoryLimit?
   /// 确认框收起后让两个选项重建一次：取消时值没改，弹出菜单却可能停在点的那一项上
   @State private var limitPickers = 0
+  /// 悬停预览：「截完图放哪」那一组顶上的舞台演停着的那一行（设置改版 S10）
+  @State private var previewFocus = PreviewFocus()
 
   var body: some View {
     NavigationStack(path: Bindable(navigation).path) {
@@ -108,6 +110,7 @@ struct ScreenshotTab: View {
           .settingsAnchor(.screenshotCopyAs)
         }
         Section {
+          PreviewStage(still: .placement)
           SettingRow(
             title: "截完图放哪", subtitle: Self.placementSubtitle(placement),
             info: "角落的缩略图可以拖出、钉图、存储。晾衣绳：鼠标停到菜单栏那一条上它就滑下来，单击拷贝、双击改标注、拖出去发一份，点右上角的叉取下；取下不删历史。"
@@ -118,6 +121,7 @@ struct ScreenshotTab: View {
               }
             }
           }
+          .previews(.placement)
           .settingsAnchor(.screenshotPlacement)
           // 晾衣绳挂的是截图历史里的那几条：历史关着时说一声，旁边一个文字按钮推进去打开（设置改版起历史在子页里）
           if placement == Prefs.ShotPlacement.clothesline.rawValue, !keepsHistory {
@@ -190,6 +194,7 @@ struct ScreenshotTab: View {
     }
     .formStyle(.grouped)
     .settingsScrollTarget()
+    .environment(previewFocus)
   }
 
   /// 「截完图放哪」的副标题：跟着选的那一项（别写成三元式：抽字会漏）

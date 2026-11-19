@@ -445,7 +445,8 @@ struct AppListRow: View {
 
 /// 剪贴板面板的示意图（实时预览，Sleeve 式）：单列 + 一块透镜 + 底栏，跟着「显示透镜」「链接显示网页标题和图片」变——
 /// 关掉透镜时选中行只是一条中性高亮（纯列表，多露出几行）；透镜里的链接有没有头图。只是线框，不画真内容
-private struct ClipboardPanelSketch: View {
+/// 剪贴板面板的示意（「高级…」里跟着开关变；设置里的悬停预览也拿它演「挤压弹开」）
+struct ClipboardPanelSketch: View {
   let showsLens: Bool
   let showsLinkPreview: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion

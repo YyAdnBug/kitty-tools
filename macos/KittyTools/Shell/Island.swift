@@ -559,8 +559,8 @@ import SwiftUI
     if next.tone == .error, !quiet { shakes += 1 }
     if next.tone == .progress { collapseLater(next.source) }
     if !quiet { onToneChange?(next.tone) }
-    // VoiceOver 不会去读不当 key 的岛：主动播报（一瞥不报：一首歌念一遍太吵）
-    if announces {
+    // VoiceOver 不会去读不当 key 的岛：主动播报（一瞥不报：一首歌念一遍太吵）；摆出来的岛（设置里的悬停预览）不报
+    if announces, !isStaged {
       Self.post([next.title, next.detail].compactMap { $0 }.joined(separator: Self.comma))
     }
     // 挂着的那条不到点收起（按钮、×、上滑才收）

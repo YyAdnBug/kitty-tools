@@ -5581,6 +5581,52 @@ struct SnapshotProbeTests {
     }
   }
 
+  /// 设置里的悬停预览（设置改版 S10）：三个场景的关键几步，图以 settings-preview- 开头。截完图放哪三种（选区 / 落定），
+  /// 挤压弹开开 / 关（落定），刘海岛五个场景（有刘海、胶囊各一份），深色出几张。几秒：
+  /// -only-testing:'KittyToolsTests/SnapshotProbeTests/settingsPreview()'
+  @Test(.enabled(if: directory != nil)) func settingsPreview() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    let suite = "kitty-snapshot-preview-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: suite))
+    defer { prefs.removePersistentDomain(forName: suite) }
+    let size = NSSize(width: 480, height: PreviewStage.height)
+    for choice in Prefs.ShotPlacement.allCases {
+      prefs.set(choice.rawValue, forKey: Prefs.screenshotPlacement)
+      for step in [0, 1] {
+        try snapshot(
+          PreviewStage(still: .placement, staged: (.placement, step)).defaultAppStorage(prefs),
+          size: size, dark: false,
+          to: "\(out)/settings-preview-placement-\(choice.rawValue)-\(step).png")
+      }
+    }
+    for on in [true, false] {
+      prefs.set(on, forKey: Prefs.panelSqueezeEntrance)
+      try snapshot(
+        PreviewStage(still: .squeeze, staged: (.squeeze, 1)).defaultAppStorage(prefs), size: size,
+        dark: false, to: "\(out)/settings-preview-squeeze-\(on ? "on" : "off").png")
+    }
+    let scenes: [(String, PreviewScene, Int)] = [
+      ("click-peek", .notchClick, 1), ("click", .notchClick, 2), ("hover", .hoverExpand, 2),
+      ("media", .nowPlaying, 1), ("calendar", .calendar, 1), ("volume", .levels, 1),
+    ]
+    for notch in [true, false] {
+      for (name, scene, step) in scenes {
+        try snapshot(
+          PreviewStage(still: scene, staged: (scene, step), notch: notch).defaultAppStorage(prefs),
+          size: size, dark: false,
+          to: "\(out)/settings-preview-island-\(notch ? "notch" : "capsule")-\(name).png")
+      }
+    }
+    for (name, scene, step) in [
+      ("placement", PreviewScene.placement, 1), ("click", .notchClick, 2),
+    ] {
+      try snapshot(
+        PreviewStage(still: scene, staged: (scene, step), notch: true).defaultAppStorage(prefs),
+        size: size, dark: true, to: "\(out)/settings-preview-\(name)-dark.png")
+    }
+  }
+
   /// 新功能标记（Shell/WhatsNew.swift，2026-11-05）：设置窗停在通用页、提醒和「功能」那一节都标着（侧栏行尾的「新」、页里那一节
   /// 标题后的「新」；浅 / 深，外加窗口是 key、选中行是强调色的那一张），主界面里「新建提醒」名字前的小圆点和底栏「设置」前的小圆点
   /// （浅 / 深）。几秒，图以 whatsnew- 开头：-only-testing:'KittyToolsTests/SnapshotProbeTests/whatsNew()'。
