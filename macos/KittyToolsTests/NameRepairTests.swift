@@ -47,4 +47,20 @@ import Testing
     #expect(FileMoves.occupied(garbled))
     #expect(try String(contentsOf: garbled, encoding: .utf8) == "x")
   }
+
+  /// 撤销时原来的名字被占了：不盖掉占着的那个、也不换成「原名 2」，修好的那个留在原地（第五轮体检 H3 改走 FileMoves）
+  @Test func undoLeavesTakenNames() throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "NameRepairTests-\(UUID())")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let garbled = root.appending(path: "ÖÐÎÄ.txt")
+    try Data("x".utf8).write(to: garbled)
+    let renamed = NameRepair.rename([garbled])
+    #expect(renamed.map(\.to.lastPathComponent) == ["中文.txt"])
+    try Data("taken".utf8).write(to: garbled)
+    #expect(NameRepair.undo(renamed) == 0)
+    #expect(try String(contentsOf: garbled, encoding: .utf8) == "taken")
+    #expect(try String(contentsOf: root.appending(path: "中文.txt"), encoding: .utf8) == "x")
+    #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).count == 2)
+  }
 }

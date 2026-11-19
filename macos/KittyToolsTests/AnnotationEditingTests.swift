@@ -570,7 +570,8 @@ struct AnnotationEditingTests {
     NSAttributedString(string: "选区外 139 1234 5678", attributes: font).draw(
       at: CGPoint(x: 760, y: 400))
     NSGraphicsContext.restoreGraphicsState()
-    let h = Harness(image: try #require(context.makeImage()))
+    let image = try #require(context.makeImage())
+    let h = Harness(image: image)
     h.makeSelection()  // (300, 200)–(700, 500)
     h.key(kVK_ANSI_9, "9")  // 选打码工具（照记住的样式：第一次是模糊）
     #expect(h.view.tool == .mosaic)
@@ -613,7 +614,8 @@ struct AnnotationEditingTests {
     context.fill(CGRect(x: 0, y: 0, width: 1200, height: 400))
     context.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
     context.fill(CGRect(x: 0, y: 400, width: 1200, height: 400))
-    let h = Harness(image: try #require(context.makeImage()))
+    let image = try #require(context.makeImage())
+    let h = Harness(image: image)
     h.makeSelection()
     h.view.tool = .rectangle
     let styleBar = try #require(h.view.subviews.lazy.compactMap { $0 as? StyleBar }.first)

@@ -532,7 +532,10 @@ struct LocalizationTests {
       "KittyTools/Translate/WordLookup.swift", ["美 /rʌn/", "píngguǒ"], true,
       "系统词典词条的词性、语法标签（释义的语言跟着翻译目标，是词条内容）；给大模型的示例词条"
     ),
-    ("KittyTools/App/AppDelegate.swift", ["提醒 "], false, "启动器里提醒的关键词（ReminderPhrase.keywords）"),
+    (
+      "KittyTools/App/AppDelegate+Entry.swift", ["提醒 "], false,
+      "启动器里提醒的关键词（ReminderPhrase.keywords）"
+    ),
     ("KittyTools/App/KittyToolsApp.swift", ["用法："], false, "识字子进程的命令行用法，写标准错误"),
     ("KittyTools/Clipboard/ClipboardStore.swift", ["CREATE TABLE"], false, "建表的 SQL（中文是 SQL 注释）"),
     ("KittyTools/Screenshot/ShotHistory.swift", ["CREATE TABLE"], false, "建表的 SQL（中文是 SQL 注释）"),
@@ -610,7 +613,7 @@ struct LocalizationTests {
       ], false,
       "启动器里认插件的词（pluginWords，中英都认）"
     ),
-    ("KittyTools/Shell/Island.swift", ["系统灵动岛", "胶囊", "刘海"], false, "写进日志的屏幕类型"),
+    ("KittyTools/Shell/Island+Notch.swift", ["系统灵动岛", "胶囊", "刘海"], false, "写进日志的屏幕类型"),
     (
       "KittyTools/Translate/Providers/AIService.swift",
       ["硅基", "深度求索", "月之暗面", "通义", "千问", "百炼", "豆包", "火山方舟", "海螺", "智谱"],

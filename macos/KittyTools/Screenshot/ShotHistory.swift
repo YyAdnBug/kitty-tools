@@ -487,7 +487,8 @@ import UniformTypeIdentifiers
     provider.registerFileRepresentation(
       for: type, visibility: .all, openInPlace: false
     ) { [weak self] completion in
-      // 系统给的回调没标 sending，挪进 Task 里编译器拦；只在主 actor 上调一次，安全
+      // 系统给的回调没标 sending，挪进 Task 里编译器拦（Mutex 也装不进去：初值要 sending，第五轮体检 H3 实测；mac-native §3
+      // 写明的例外）；只在主 actor 上调一次，安全
       nonisolated(unsafe) let finish = completion
       Task { @MainActor in
         guard let url = await self?.dragFile(for: item) else {

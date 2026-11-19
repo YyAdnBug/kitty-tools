@@ -1022,7 +1022,8 @@ struct SelectionInteractionTests {
     try #require(h.toolbar).onClick(.output(.translate))
     for _ in 0..<500 where h.card == nil { try await Task.sleep(for: .milliseconds(10)) }
     let again = try #require(h.card)
-    h.window.makeFirstResponder(try #require(texts(in: again).first))
+    let field = try #require(texts(in: again).first)
+    h.window.makeFirstResponder(field)
     func buttons(in view: NSView) -> [NSButton] {
       view.subviews.flatMap { ($0 as? NSButton).map { [$0] } ?? buttons(in: $0) }
     }
