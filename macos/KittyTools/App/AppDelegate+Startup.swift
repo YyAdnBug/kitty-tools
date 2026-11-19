@@ -47,7 +47,7 @@ extension AppDelegate {
       var detail = summary.map(Island.excerpt)
       if NoteSyncer.isUpgrade(.standard) {
         toldSyncUpgrade = true
-        detail = [detail, String(localized: "现在也能同步设置、片段和收藏这些了，到 设置 › 通用「同步」里勾上")]
+        detail = [detail, String(localized: "现在也能同步设置、片段和收藏这些了，到 设置 › 通用 › 同步 里勾上")]
           .compactMap { $0 }.joined(separator: Self.semicolon)
         actions.append(openSyncSettings)
       }

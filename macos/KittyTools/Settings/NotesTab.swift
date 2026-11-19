@@ -1,10 +1,10 @@
-// 设置 › 便签（PLAN §10「便签」F②，排在「录制」后面）。三组：
+// 设置 › 便签（PLAN §10「便签」F②，排在「录制」后面；2026-11-18 设置改版 S4 改成自己的栈，屏幕边缘推进子页）：
 // 「便签」——正文的字号（四档单选）、行距（三档单选，手测反馈第 4 批）——全部便签窗口、屏幕边缘的便签、浮动便签共用——、
-// Markdown 样式的开关（默认开）；
-// 「屏幕边缘」（第 3 批）——总开关（关掉一个窗口都不建）、哪条边、放在哪块显示器（只有一块屏时不显示这一行）、样式、
-// 大小、感应范围、一直展开、不显示药丸、悬停预览、悬停即打开、盖在全屏 App 上、打开的便签多大；总开关关着时下面的行停用；
-// 「数据」——打开全部便签窗口的按钮、按键速查，页脚说便签存在哪、怎么备份、删掉的留多久、导出导入在哪。
-// 页头由 SettingsRoot 画（家族色黄）。偏好的键和默认值在 Prefs，读它们的是 NoteDeckOptions。
+// Markdown 样式的开关（默认开）、打开全部便签；「屏幕边缘 ›」（行尾写开着 · 右边 / 关）推进子页：总开关（关掉一个窗口都不建）、
+// 哪条边、放在哪块显示器（只有一块屏时不显示这一行）、样式、大小、感应范围、一直展开、不显示药丸、悬停预览、悬停即打开、
+// 盖在全屏 App 上、打开的便签多大，总开关关着时下面的行停用；「数据」——Markdown 导出导入（功能关着也能用）、按键速查，
+// 页脚说便签存在哪、怎么备份、删掉的留多久、导出导入在哪。没有「高级…」。
+// 页头画在自己的 NavigationStack 里，推进子页时一起换掉。偏好的键和默认值在 Prefs，读它们的是 NoteDeckOptions。
 
 import AppKit
 import SwiftUI
@@ -37,6 +37,8 @@ struct NotesTab: View {
   @AppStorage(Prefs.notesDeckOpensOnHover) private var opensOnHover = false
   @AppStorage(Prefs.notesDeckOverFullScreen) private var overFullScreen = false
   @AppStorage(Prefs.notesDeckNoteSize) private var noteSize = NoteDeckOptions.NoteSize.medium
+  /// 推进的子页在 navigation.path（截图自检单独画这一页时没有）
+  @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
 
   private static let fontTitles: [Int: LocalizedStringResource] = [
     13: "小", 15: "标准", 17: "大", 20: "特大",
@@ -46,6 +48,33 @@ struct NotesTab: View {
   ]
 
   var body: some View {
+    // 截图自检单独画这一页时没有导航状态：给一个自己的栈
+    if let navigation {
+      NavigationStack(path: Bindable(navigation).path) { page }
+    } else {
+      NavigationStack { page }
+    }
+  }
+
+  private var page: some View {
+    VStack(spacing: 0) {
+      PageHeader(page: .notes)
+      form
+    }
+    .navigationTitle(SettingsPage.notes.title)
+    .navigationDestination(for: String.self) { route in
+      if SettingsSubpage(route: route) == .notesDeck { deckPage }
+    }
+  }
+
+  /// 「屏幕边缘 ›」行尾：开着 · 右边 / 开着 · 左边 / 关（别写成三元式：抽字会漏）
+  static func deckValue(enabled: Bool, edge: NoteDeckOptions.Edge) -> LocalizedStringResource {
+    if !enabled { return "关" }
+    if edge == .left { return "开着 · 左边" }
+    return "开着 · 右边"
+  }
+
+  private var form: some View {
     // 关着时（Feature）变灰；Markdown 导出、导入管的是已有的便签，照常能用
     Form {
       Group {
@@ -56,9 +85,11 @@ struct NotesTab: View {
               Text(Self.fontTitles[$0] ?? "\(String($0))").tag($0)
             }
           }
+          .settingsAnchor(.notesFontSize)
           radios("行距", "全部便签窗口、屏幕边缘和浮在屏幕上的便签里正文一行一行之间隔多远", selection: $lineSpacing) {
             ForEach(NoteStyles.Spacing.allCases, id: \.self) { Text($0.title).tag($0) }
           }
+          .settingsAnchor(.notesLineSpacing)
           Toggle(isOn: $markdown) {
             Text("Markdown 样式")
             // verbatim：SwiftUI 的 Text 自己会把字面量里的 ** ` [] 当 Markdown 画掉，这里要原样写给人看
@@ -68,28 +99,30 @@ struct NotesTab: View {
                   "# 标题、**粗体**、*斜体*、`代码`、[链接](地址)、三个反引号围起来的代码块，这些写法直接显示成样式，标记只在光标所在的那一行露出来"
               ))
           }
-        } header: {
-          Text("便签")
-        }
-        deck
-      }
-      .gated(by: .notes)
-      Section {
-        Group {
+          .settingsAnchor(.notesMarkdown)
           LabeledContent {
             Button("打开全部便签…", action: openNotes)
           } label: {
             Text(HotKeyAction.noteAll.title)
             Text("看、改、搜索、归档便签，找回删掉的")
           }
-          LabeledContent {
-            ShortcutsButton()
-          } label: {
-            Text("便签的按键")
-            Text("快速记一条、屏幕边缘的便签和全部便签窗口里按什么键")
+          .settingsAnchor(.notesOpenAll)
+        } header: {
+          Text("便签")
+        }
+        Section {
+          SettingsPushRow(
+            title: SettingsSubpage.notesDeck.title,
+            isNew: navigation.map { SettingsItem.subpageIsNew(.notesDeck, fresh: $0.fresh) }
+              ?? false,
+            value: Self.deckValue(enabled: deckEnabled, edge: deckEdge)
+          ) {
+            navigation?.path = [SettingsSubpage.notesDeck.route]
           }
         }
-        .gated(by: .notes)
+      }
+      .gated(by: .notes)
+      Section {
         LabeledContent {
           Button("导出…") { exportMarkdown() }
             .disabled(notes() == nil || isTransferring)
@@ -97,6 +130,7 @@ struct NotesTab: View {
           Text("导出为 Markdown")
           Text("每条便签一个 .md 文件，正文里的图片放在旁边的 attachments 文件夹")
         }
+        .settingsAnchor(.notesExport)
         LabeledContent {
           Button("导入…") { importMarkdown() }
             .disabled(notes() == nil || isTransferring)
@@ -104,16 +138,34 @@ struct NotesTab: View {
           Text("从 Markdown 导入")
           Text("导回导出过的文件夹不会重复；别处的 .md 文件每个变成一条新便签")
         }
+        .settingsAnchor(.notesImport)
+        LabeledContent {
+          ShortcutsButton()
+        } label: {
+          Text("便签的按键")
+          Text("快速记一条、屏幕边缘的便签和全部便签窗口里按什么键")
+        }
+        .gated(by: .notes)
+        .settingsAnchor(.notesKeys)
       } header: {
         Text("数据")
       } footer: {
         SectionFootnote(
-          "便签存在这台 Mac 上，和剪贴板历史分开：清空历史、保留天数都碰不到它。每天自动备份一份，留最近 7 份（正文里的图片跟着一起备）。删掉的便签在「最近删除」里留 \(NoteStore.trashDays) 天。设置 › 通用 里的导出与导入带便签的文字、不带图片；要连图片一起带走、或者拿别的工具看，用上面的 Markdown 导出。在几台 Mac 之间同步到 设置 › 通用「同步」里选文件夹。"
+          "便签存在这台 Mac 上，和剪贴板历史分开：清空历史、保留天数都碰不到它。每天自动备份一份，留最近 7 份（正文里的图片跟着一起备）。删掉的便签在「最近删除」里留 \(NoteStore.trashDays) 天。设置 › 通用 › 备份与导出导入 带便签的文字、不带图片；要连图片一起带走、或者拿别的工具看，用上面的 Markdown 导出。在几台 Mac 之间同步到 设置 › 通用 › 同步 里选文件夹。"
         )
       }
       PluginAboutSection(plugin: .notes)
     }
     .formStyle(.grouped)
+    .settingsScrollTarget()
+  }
+
+  /// 设置 › 便签 › 屏幕边缘
+  private var deckPage: some View {
+    SubpageForm(subpage: .notesDeck, status: Self.deckValue(enabled: deckEnabled, edge: deckEdge)) {
+      deck
+        .gated(by: .notes)
+    }
   }
 
   /// 导出 / 导入的选文件面板开着、或者后台正在读写：两个按钮先停用
@@ -237,6 +289,7 @@ struct NotesTab: View {
         Text("在屏幕边缘显示便签")
         Text("有了第一条便签才出现；关掉后便签照样能从快捷键、启动器和全部便签窗口打开")
       }
+      .settingsAnchor(.notesDeck)
       Group {
         Picker("位置", selection: $deckEdge) {
           // 照屏幕上的方位：左边在前（2026-11-15 用户：原来「右边 | 左边」反着摆很别扭）；默认仍是右边
@@ -244,6 +297,7 @@ struct NotesTab: View {
           Text("右边").tag(NoteDeckOptions.Edge.right)
         }
         .pickerStyle(.segmented)
+        .settingsAnchor(.notesDeckEdge)
         if displays.count > 1 {
           Picker("显示器", selection: display) {
             Text("主显示器").tag(DisplayChoice.main)
@@ -251,55 +305,63 @@ struct NotesTab: View {
             Divider()
             ForEach(displays, id: \.self) { Text($0).tag(DisplayChoice.named($0)) }
           }
+          .settingsAnchor(.notesDeckDisplay)
         }
         Picker("样式", selection: $deckStyle) {
           Text("带标题的标签").tag(NoteDeckOptions.TabStyle.tabs)
           Text("只有色块").tag(NoteDeckOptions.TabStyle.chips)
         }
         .pickerStyle(.segmented)
+        .settingsAnchor(.notesDeckStyle)
         Picker("大小", selection: $deckSize) {
           Text("小").tag(NoteDeckOptions.Size.small)
           Text("标准").tag(NoteDeckOptions.Size.standard)
           Text("大").tag(NoteDeckOptions.Size.large)
         }
         .pickerStyle(.segmented)
+        .settingsAnchor(.notesDeckSize)
         radios("感应范围", "鼠标离屏幕边缘多近就展开", selection: $sense) {
           ForEach(NoteDeckOptions.senseChoices, id: \.self) {
             Text(Self.senseTitles[$0] ?? "\(String($0))").tag($0)
           }
         }
+        .settingsAnchor(.notesDeckSense)
         Toggle(isOn: $alwaysFanned) {
           Text("一直展开")
           Text("不缩成药丸，标签一直排在边上")
         }
+        .settingsAnchor(.notesDeckAlwaysFanned)
         Toggle(isOn: $hidesPill) {
           Text("不显示药丸")
           Text("边上什么都不画，鼠标靠过去照样展开")
         }
         .disabled(alwaysFanned)
+        .settingsAnchor(.notesDeckHidesPill)
         Toggle(isOn: $showsPreview) {
           Text("悬停预览")
           Text("鼠标停在标签上时，旁边显示这条便签的开头几行")
         }
         .disabled(opensOnHover)
+        .settingsAnchor(.notesDeckPreview)
         Toggle(isOn: $opensOnHover) {
           Text("悬停即打开")
           Text("鼠标在标签上停一下就打开，不用点")
         }
+        .settingsAnchor(.notesDeckOpensOnHover)
         Toggle(isOn: $overFullScreen) {
           Text("盖在全屏 App 上")
           Text("别的 App 全屏时边缘也有便签")
         }
+        .settingsAnchor(.notesDeckOverFullScreen)
         radios("便签大小", "从边缘打开的便签多大", selection: $noteSize) {
           Text("小").tag(NoteDeckOptions.NoteSize.small)
           Text("中").tag(NoteDeckOptions.NoteSize.medium)
           Text("大").tag(NoteDeckOptions.NoteSize.large)
           Text("特大").tag(NoteDeckOptions.NoteSize.extraLarge)
         }
+        .settingsAnchor(.notesDeckNoteSize)
       }
       .disabled(!deckEnabled)
-    } header: {
-      Text("屏幕边缘")
     } footer: {
       SectionFootnote(
         "鼠标靠到屏幕边上的药丸就展开一列标签，点一张，便签从边缘滑出来。按住 ⌥ 拖药丸可以换边、换高度。右键一张标签可以直接固定、换颜色、浮到屏幕上、归档、删除；右键「+」或标签之间的空处有新建便签、全部便签和设置。打开的便签点别处就收起，固定（⌘P）之后不收。按住打开的便签侧边那张标签往外拖，它就浮在屏幕上、可以拉大小。浮着的便签一直在别的窗口上面；固定（⌘P）之后，重启还回到原处。"

@@ -730,6 +730,9 @@ private struct LauncherRow: View {
     } else if item.contentType?.conforms(to: .volume) == true {
       // 宗卷（eject 列出来的）：磁盘色块，不读宗卷本身取图标（按类型取是个文件夹，读宗卷可能要授权）
       KindTile(symbol: item.tileSymbol, color: item.familyColor)
+    } else if item.kind == .path, item.contentType?.conforms(to: .application) != false {
+      // 路径的行里的 App、不知道类型的（收藏、常用还原出来的）：按路径取图标，在主线程外读
+      PathIcon(path: item.target, type: item.contentType)
     } else if let type = item.contentType {
       Image(nsImage: LauncherIcons.icon(for: type)).resizable().frame(width: 24, height: 24)
     } else if item.kind == .app || item.kind == .path,
@@ -947,6 +950,42 @@ enum LauncherIcons {
     let image = NSWorkspace.shared.icon(forFile: path)
     cache.setObject(image, forKey: path as NSString)
     return image
+  }
+
+  /// 按路径取图标，在主线程外读（路径可能在卡住的网络盘上，2026-11-18）；不在了是 nil
+  static func load(_ path: String) async -> NSImage? {
+    if let cached = cache.object(forKey: path as NSString) { return cached }
+    guard let picture = await render(path) else { return nil }
+    let image = NSImage(cgImage: picture, size: NSSize(width: 24, height: 24))
+    cache.setObject(image, forKey: path as NSString)
+    return image
+  }
+
+  /// 主线程外读一个文件的图标、画成 48 像素见方（24 点 × 2 倍屏）。NSWorkspace 的取图标文档写明哪个线程都能调
+  /// （启动台在后台画图标同理；mac-native §3「缩略图」一类）
+  @concurrent nonisolated static func render(_ path: String) async -> CGImage? {
+    guard FileManager.default.fileExists(atPath: path) else { return nil }
+    var rect = CGRect(x: 0, y: 0, width: 48, height: 48)
+    return NSWorkspace.shared.icon(forFile: path).cgImage(
+      forProposedRect: &rect, context: nil, hints: nil)
+  }
+}
+
+/// 按路径取的图标：先放类型图标（没有类型是普通文件的），主线程外读到了再换上
+private struct PathIcon: View {
+  let path: String
+  let type: UTType?
+  @State private var loaded: (path: String, image: NSImage)?
+
+  var body: some View {
+    let image =
+      loaded?.path == path
+      ? loaded?.image : LauncherIcons.cache.object(forKey: path as NSString)
+    Image(nsImage: image ?? LauncherIcons.icon(for: type ?? .data))
+      .resizable().frame(width: 24, height: 24)
+      .task(id: path) {
+        if let image = await LauncherIcons.load(path) { loaded = (path, image) }
+      }
   }
 }
 

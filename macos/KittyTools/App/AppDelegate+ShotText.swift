@@ -93,7 +93,7 @@ extension AppDelegate {
     guard !services.isEmpty else {
       throw TranslateError(message: String(localized: "没有启用的翻译服务，先在设置 › 翻译里开一个"))
     }
-    let plan = TranslateCoordinator.plan(for: source, wordMode: false).request
+    let plan = TranslateCoordinator.plan(for: source, inPanel: false).request
     // 纯符号段不发请求（有道这类接口会回错误码，一段失败整张图就白翻了），原样占位；覆盖那一步也会跳过它
     var results = segments.map(\.text)
     let pending = segments.indices.filter {

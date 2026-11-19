@@ -5,6 +5,8 @@
 //   （美 / 英两种，一个普通的 GET，不带任何冒充别的客户端的东西）；关着、取不到（没网、3 秒超时、不是音频）时用
 //   系统的美式 / 英式声音念。录音按「词 + 口音」记最近 32 个。
 // - 拍板的 R4（句子用微软在线神经网络语音）没做：那个接口要冒充 Edge 浏览器的扩展才肯回，违反「只如实标明自己」。
+// - 朗读速度（issue #35，设置 › 翻译「朗读速度」）：系统声音设 AVSpeechUtterance.rate（倍数和 rate 不成正比，见 utteranceRate），
+//   真人录音设 AVAudioPlayer.rate（音调不变）。
 // 卡片该读哪段字（R1：单词卡只读释义、不读音标和例句）和单词卡第一行的读音行（R2）是这里的两个纯函数。
 
 import AVFoundation
@@ -63,6 +65,11 @@ import Observation
       guard let data, let player = try? AVAudioPlayer(data: data) else { return fallback() }
       if recordings.count >= 32 { recordings.removeAll() }
       recordings[key] = data
+      let speed = Self.preferredSpeed
+      if speed != 1 {
+        player.enableRate = true
+        player.rate = Float(speed)
+      }
       player.delegate = delegate
       self.player = player
       current = ObjectIdentifier(player)
@@ -84,6 +91,7 @@ import Observation
   private func speak(_ text: String, voice: AVSpeechSynthesisVoice?, as key: String) {
     let utterance = AVSpeechUtterance(string: text)
     utterance.voice = voice
+    utterance.rate = Self.utteranceRate(speed: Self.preferredSpeed)
     speaking = key
     current = ObjectIdentifier(utterance)
     synthesizer.speak(utterance)
@@ -97,6 +105,30 @@ import Observation
   /// 设置 › 翻译「英文单词发音」：美音（默认）/ 英音
   static var preferredAccent: Accent {
     UserDefaults.standard.string(forKey: Prefs.translateWordAccent) == "uk" ? .uk : .us
+  }
+
+  /// 设置 › 翻译「朗读速度」的四档（倍数，issue #35）。系统声音最慢只到约 0.56×（rate 0），所以最慢一档是 0.6×
+  nonisolated static let speeds: [Double] = [0.6, 0.75, 1, 1.25]
+
+  /// 设置里的朗读速度：夹到最近的一档（导入、同步来的怪值不至于读成别的速度）；没有这个键当正常
+  static var preferredSpeed: Double {
+    speed(UserDefaults.standard.object(forKey: Prefs.translateSpeechSpeed) as? Double ?? 1)
+  }
+
+  /// 离 value 最近的一档
+  nonisolated static func speed(_ value: Double) -> Double {
+    speeds.min { abs($0 - value) < abs($1 - value) } ?? 1
+  }
+
+  /// 倍数对应的 AVSpeechUtterance.rate：rate 和快慢不成正比（0.5 是正常，往下放慢得很少，0.3 才 0.82×），
+  /// 四档是 2026-11-18 用 AVSpeechSynthesizer.write 屏外合成量出来的（en-US / zh-CN / ja-JP 三种声音一致）
+  nonisolated static func utteranceRate(speed value: Double) -> Float {
+    switch speed(value) {
+    case 0.6: 0.05
+    case 0.75: 0.22
+    case 1.25: 0.54
+    default: AVSpeechUtteranceDefaultSpeechRate
+    }
   }
 
   /// 有道词典的真人录音地址：只给像英文词的（字母、连字符、撇号，最多 3 个词、40 个字），别的 nil（用系统声音）
@@ -140,9 +172,18 @@ import Observation
   // MARK: 读哪段字（纯函数，配单测）
 
   /// 卡片右上角的喇叭读的字（R1）：单词卡只读第一行释义（去掉读音行、拼音行、例句和 n. v. 这类词性记号）；
-  /// 别的卡读整段，先去掉 Markdown 记号
-  nonisolated static func speechText(_ result: String, wordStyle: Bool) -> String {
+  /// 讲解卡（issue #35）只读第一行译文，不读重点词和句型（模型常不空行，按段切会念整张卡；有的模型先写一行「**译文**」，
+  /// 只有标题的行跳过）；别的卡读整段，先去掉 Markdown 记号
+  nonisolated static func speechText(_ result: String, wordStyle: Bool, explanation: Bool = false)
+    -> String
+  {
     let plain = withoutMarkdown(result)
+    if explanation {
+      let first = result.split(whereSeparator: \.isNewline).lazy
+        .map { $0.trimmingCharacters(in: .whitespaces) }
+        .first { !$0.isEmpty && $0.wholeMatch(of: /(#+\s*.*|\*\*[^*]+\*\*[:：]?)/) == nil }
+      return first.map { withoutMarkdown($0) } ?? plain
+    }
     guard wordStyle else { return plain }
     let meaning = plain.split(whereSeparator: \.isNewline)
       .map { $0.trimmingCharacters(in: .whitespaces) }

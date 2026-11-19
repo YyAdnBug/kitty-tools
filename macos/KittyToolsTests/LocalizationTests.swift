@@ -196,20 +196,30 @@ struct LocalizationTests {
   /// 放得下的（中文的常见长度）标题不限、详情照旧最宽 280
   @Test func islandRowFits() {
     let fits = Island.rowRoom(
-      title: "已复制到剪贴板", detail: "授权辅助功能后才能直接粘贴", button: "撤销", fraction: false)
+      title: "已复制到剪贴板", detail: "授权辅助功能后才能直接粘贴", buttons: ["撤销"], fraction: false)
     #expect(fits.title == nil && fits.detail == 280)
-    #expect(Island.rowRoom(title: "Copied", detail: nil, button: nil, fraction: false).title == nil)
-    let button = "Turn On"
-    let long = Island.rowRoom(
-      title: "Finder Menu needs to be turned on once in System Settings",
-      detail: "Right-click in Finder to see it once it’s on", button: button, fraction: false)
-    let buttonWidth =
+    #expect(Island.rowRoom(title: "Copied", detail: nil, buttons: [], fraction: false).title == nil)
+    func width(_ button: String) -> CGFloat {
       (button as NSString).size(withAttributes: [
         .font: NSFont.systemFont(ofSize: 12, weight: .semibold)
       ]).width + 20
+    }
+    let long = Island.rowRoom(
+      title: "Finder Menu needs to be turned on once in System Settings",
+      detail: "Right-click in Finder to see it once it’s on", buttons: ["Turn On"], fraction: false)
     #expect(long.title != nil && long.detail >= 120)
-    let row = 36 + 26 + 10 + (long.title ?? .infinity) + 10 + long.detail + 10 + buttonWidth
+    let row = 36 + 26 + 10 + (long.title ?? .infinity) + 10 + long.detail + 10 + width("Turn On")
     #expect(row <= Island.maxWidth)
+    // 挂着的提醒收着时两个按钮都露着（2026-11-18）：两个都算进去，整行照样不超过岛的最宽
+    let buttons = ["Got It", "Snooze 5 Minutes"]
+    let pinned = Island.rowRoom(
+      title: "Stand up and stretch · Drink water · Check the oven",
+      detail: "Also missed: Pay the rent, Call mom", buttons: buttons, fraction: false)
+    #expect(pinned.title != nil && pinned.detail >= 120)
+    let pinnedRow =
+      36 + 26 + 10 + (pinned.title ?? .infinity) + 10 + pinned.detail + 10 + width(buttons[0]) + 8
+      + width(buttons[1])
+    #expect(pinnedRow <= Island.maxWidth)
   }
 
   /// 访达扩展：语言列表同 App（不然繁体中文的系统落到英文、App 是中文），自带模板在菜单里的名字和 App 建出来的文件名
@@ -624,8 +634,13 @@ struct LocalizationTests {
       ["美", "英", "变形：", "美 /", "英 /", "例：%@"], false, "词典词条的内容和朗读要认的标记"
     ),
     (
-      "KittyTools/Translate/Providers/Zhipu.swift", ["<原文>", "</原文>", "你是一部简明词典", "你是翻译引擎"], false,
+      "KittyTools/Translate/Providers/Zhipu.swift",
+      ["<原文>", "</原文>", "你是一部简明词典", "你是翻译引擎", "你是外语老师", "附加要求：", "外文"], false,
       "给大模型的提示词"
+    ),
+    (
+      "KittyTools/Translate/SentenceExplain.swift", ["她刚坐下", "他一进门", "It started raining"], false,
+      "给大模型照着写的讲解示例（issue #35）"
     ),
     ("KittyTools/Translate/Speaker.swift", ["例", "英"], false, "朗读认词典词条的标记"),
   ]

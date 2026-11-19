@@ -84,6 +84,7 @@ struct StatusScreenTab: View {
           }
         } header: {
           Text("状态")
+            .settingsAnchor(.statusList)
         } footer: {
           // 整句（不拼接）：快捷键直接进入的 / 先选的，满了的多一句
           SectionFootnote(
@@ -100,6 +101,7 @@ struct StatusScreenTab: View {
             Text("按快捷键直接进入排在最前面的状态")
             Text("关着时，按快捷键先出一排预览卡片，选一个再进")
           }
+          .settingsAnchor(.statusEntersFirst)
         } header: {
           Text("进入")
         } footer: {
@@ -110,6 +112,7 @@ struct StatusScreenTab: View {
             Text("告示上的动画")
             Text("关掉后表情不动、进入时不做出场、屏幕边上不冒眼睛；标题照样晃一下")
           }
+          .settingsAnchor(.statusAnimations)
           EmojiPackToggle()
         } header: {
           Text("动画")
@@ -124,10 +127,12 @@ struct StatusScreenTab: View {
             Text("怎么退出")
             Text("按住 Esc 两秒；或者动一下鼠标，再用鼠标按住屏幕底部出现的提示两秒。到了自动结束的时间、解锁电脑回来时，也会结束。")
           }
+          .settingsAnchor(.statusExit)
           Toggle(isOn: $exitHint) {
             Text("有人碰键盘或鼠标时显示怎么退出")
             Text("关掉后屏幕上不再提示，只能按住 Esc 两秒退出；键盘上没有 Esc 键的别关")
           }
+          .settingsAnchor(.statusExitHint)
           passcodeRow
         } header: {
           Text(
@@ -146,6 +151,7 @@ struct StatusScreenTab: View {
       PluginAboutSection(plugin: .statusScreen)
     }
     .formStyle(.grouped)
+    .settingsScrollTarget()
     // 从系统设置授权回来，「权限」组重查（插件页改版 C2）
     .onSettingsBecameKey { accessChecks += 1 }
   }

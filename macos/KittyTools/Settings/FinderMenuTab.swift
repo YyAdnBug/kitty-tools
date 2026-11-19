@@ -9,6 +9,8 @@
 // 「压缩和解压」里另有一行「压缩时跳过 ›」（2026-11-13 拍板 Z1，Prefs.finderCompressSkip）：小字写跳哪几个，推进 CompressSkipPage
 //   （2026-11-15 原来的一行文本框改成推进去的一页）。页头画在自己的 NavigationStack 里，推进时一起换掉。
 // 「拷贝」「整理文件」「压缩和解压」「隐藏、哈希、删除」——每一项一个开关（FinderMenuItem，2026-11-08 右键扩充拍板 A2；同几家成熟产品每项能单独关），页脚说做法。
+//   「整理文件」里另有「在访达里用 ⌘X 剪切、⌘V 移动」（Prefs.finderMenuKeys，默认关，FinderKeys，issue #33）：开着又没有辅助功能
+//   授权时下面一行橙字 + 打开辅助功能设置的按钮（同 设置 › 刘海岛「音量和亮度」）。
 // 「「移动到」「复制到」的常用文件夹」——Prefs.finderTransferFolders（~ 开头的写法，默认桌面、文稿、下载）：加、移除。
 // 「在 App 中打开」——访达右键里列哪几个 App（菜单项照访达自己的写法「在“终端”中打开」）（Prefs.finderOpenWithApps，默认只有终端）：加（正在运行的 / 从「应用程序」里选）、移除；
 //   列表的写法同 剪贴板 › 不记录这些 App（从偏好现读再改、写回）。功能关着时这一组变灰。
@@ -23,6 +25,8 @@ struct FinderMenuTab: View {
   /// 截图自检传固定的：控制访达的授权、桌面 / 文稿是不是同步在 iCloud 里
   var finderAutomation: Permissions.AutomationState?
   var desktopInICloud: Bool?
+  /// 截图自检传固定的：辅助功能给没给（「⌘X 剪切、⌘V 移动」开着时下面那行橙字）
+  var accessibilityTrusted: Bool?
   @State private var automation = Permissions.automation(Self.finderID)
   @State private var enabled = FIFinderSyncController.isExtensionEnabled
   @State private var folders = Self.storedFolders
@@ -33,6 +37,9 @@ struct FinderMenuTab: View {
   @AppStorage(Prefs.finderMenuGrouped) private var grouped = false
   @AppStorage(Prefs.finderCompressSkip) private var compressSkip = ""
   @AppStorage(Prefs.finderTrashAfterExtract) private var trashAfterExtract = false
+  @AppStorage(Prefs.finderMenuKeys) private var keys = false
+  /// 设置窗重新当 key 时 +1：从系统设置给完辅助功能回来，「没有授权」那一行跟着重查
+  @State private var accessChecks = 0
   /// 推进「压缩时跳过」用（截图自检单独画这一页时没有）
   @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
 
@@ -52,6 +59,7 @@ struct FinderMenuTab: View {
       form.onSettingsBecameKey {
         enabled = FIFinderSyncController.isExtensionEnabled
         automation = Permissions.automation(Self.finderID)
+        accessChecks += 1
       }
     }
     .navigationTitle(SettingsPage.finderMenu.title)
@@ -82,6 +90,7 @@ struct FinderMenuTab: View {
         .gated(by: .finderMenu)
       } header: {
         Text("访达右键")
+          .settingsAnchor(.finderMenu)
       } footer: {
         VStack(alignment: .leading, spacing: 6) {
           SectionFootnote(
@@ -101,6 +110,7 @@ struct FinderMenuTab: View {
         }
       } header: {
         Text("新建文件")
+          .settingsAnchor(.finderNewFile)
       } footer: {
         SectionFootnote(
           "「新建文件」里有文本文件、Markdown、Word 文档、Excel 表格、PPT 演示文稿，和模板文件夹里放的文件；「从剪贴板新建」把剪贴板里的图存成 PNG、文字存成文本文件；「自定义后缀…」建一个任意后缀的空文件，可以顺手记进菜单。建好后在访达里选中它、直接改名（要「辅助功能」授权，没有就只选中）；重名的自动加「 2」。"
@@ -113,6 +123,7 @@ struct FinderMenuTab: View {
         ItemToggle(.copyText)
       } header: {
         Text("拷贝")
+          .settingsAnchor(.finderCopy)
       } footer: {
         SectionFootnote("路径是完整路径、不加引号，选了几个就一行一个，空白处是这个文件夹的路径；拷好后刘海岛说一声，剪贴板历史里也有。")
       }
@@ -120,12 +131,29 @@ struct FinderMenuTab: View {
       Section {
         ItemToggle(.transfer)
         ItemToggle(.cut)
+        // 访达里的 ⌘X / ⌘V（FinderKeys，issue #33，默认关）
+        Toggle(isOn: $keys) {
+          Text("在访达里用 ⌘X 剪切、⌘V 移动")
+          Text("和右键「剪切」是同一个剪切；剪切之后按 ⌘V 是移动，没剪切时照常粘贴")
+        }
+        // 开关关着时不去查授权
+        if keys, !(accessibilityTrusted ?? Permissions.isAccessibilityTrusted) {
+          LabeledContent {
+            Button(Permissions.Kind.accessibility.settingsTitle) {
+              Permissions.Kind.accessibility.openSettings()
+            }
+          } label: {
+            Text("没有「辅助功能」授权，接不住这两个键").foregroundStyle(.orange)
+          }
+          .id(accessChecks)
+        }
         ItemToggle(.deskAlias)
       } header: {
         Text("整理文件")
+          .settingsAnchor(.finderOrganize)
       } footer: {
         SectionFootnote(
-          "不会覆盖：重名的自动加「 2」。搬得久时刘海岛显示进度、能停下，做完带「在访达中显示」。剪切之后又拷了别的东西，剪切就作废。"
+          "不会覆盖：重名的自动加「 2」。搬得久时刘海岛显示进度、能停下，做完带「在访达中显示」。剪切之后又拷了别的东西，剪切就作废。⌘X、⌘V 只管按给访达的：改名、搜索时照常剪切粘贴，别的 App 不受影响；⌘V 的移动是访达自己做的（同 ⌥⌘V），重名时访达会问，撤销按 ⌘Z。要「辅助功能」授权。"
         )
       }
       .gated(by: .finderMenu)
@@ -144,6 +172,7 @@ struct FinderMenuTab: View {
         ItemToggle(.fixNames)
       } header: {
         Text("压缩和解压")
+          .settingsAnchor(.finderArchive)
       } footer: {
         SectionFootnote(
           "压缩包放在旁边，重名的自动加「 2」；zip 里的中文名到别的系统上解开也不乱码，也不夹带 Mac 的隐藏文件（.DS_Store、._*、__MACOSX）。解压时只有一样东西就直接放在包旁边，几样就放进和包同名的文件夹；按住 ⌥ 右键是「解压到…」，自己选放在哪；别的系统打的 zip，中文名也解得对。修复乱码文件名之后，刘海岛上能撤销。包里不带访达的标签、替身和自定义图标，要在 Mac 之间原样传，用访达自带的「压缩」。"
@@ -157,6 +186,7 @@ struct FinderMenuTab: View {
         ItemToggle(.erase)
       } header: {
         Text("隐藏、哈希、删除")
+          .settingsAnchor(.finderHidden)
       } footer: {
         SectionFootnote(
           "这几项默认关着。点开头的文件本来就是隐藏的，不出现「取消隐藏」；隐藏了的东西，在访达里按 ⇧⌘. 就能看到。拷贝哈希只给文件算，算完也记进剪贴板历史。彻底删除每次都先问，删了不进废纸篓，找不回来。"
@@ -178,6 +208,7 @@ struct FinderMenuTab: View {
         }
       } header: {
         Text("「移动到」「复制到」的常用文件夹")
+          .settingsAnchor(.finderFolders)
       } footer: {
         SectionFootnote(
           "子菜单里按这个顺序列（拖动调整），后面接最近用「选择文件夹…」选过的 3 个；这次用不上的会变灰。")
@@ -211,6 +242,7 @@ struct FinderMenuTab: View {
         }
       } header: {
         Text("在 App 中打开")
+          .settingsAnchor(.finderOpenWith)
       } footer: {
         SectionFootnote(
           "文件夹原样交给 App；文件交给认得它的 App，不认得的改成打开它所在的文件夹。脚本和可执行文件只交给编辑器，交给终端的是它所在的文件夹，不会运行它。选了几样时编辑器全打开，终端只开第一个。"
@@ -220,6 +252,7 @@ struct FinderMenuTab: View {
       PluginAboutSection(plugin: .finderMenu)
     }
     .formStyle(.grouped)
+    .settingsScrollTarget()
     // 同步、导入落下了新的列表：页面跟上（同剪贴板页的排除列表）
     .task {
       for await _ in NotificationCenter.default.notifications(

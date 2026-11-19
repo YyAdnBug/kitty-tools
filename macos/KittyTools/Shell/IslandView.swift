@@ -182,7 +182,10 @@ struct IslandView: View {
           .transition(appear)
       } else if let content = island.content {
         Group {
-          if island.isExpanded {
+          if content.isPinned {
+            // 收着、展开是同一个视图（不交叉淡入淡出）：第一行一直不动，展开只往下长
+            pinnedCard(content).measured { report($0) }
+          } else if island.isExpanded {
             card(content).measured { report($0) }.transition(.opacity)
           } else {
             row(content).measured { report($0) }.transition(.opacity)
@@ -314,7 +317,7 @@ struct IslandView: View {
 
   private func row(_ content: Island.Content) -> some View {
     let room = Island.rowRoom(
-      title: content.title, detail: content.detail, button: island.actions.first?.title,
+      title: content.title, detail: content.detail, buttons: island.actions.prefix(1).map(\.title),
       fraction: content.fraction != nil)
     return HStack(spacing: 10) {
       IslandLeading(content: content)
@@ -326,14 +329,7 @@ struct IslandView: View {
       }
       if let activity = island.cardActivity { IslandActivityReading(activity: activity) }
       fractionBar(content)
-      if let detail = content.detail {
-        Text(detail)
-          .font(detailFont(content))
-          .foregroundStyle(.white.opacity(0.55))
-          .lineLimit(1)
-          .truncationMode(.middle)
-          .frame(maxWidth: room.detail, alignment: .leading)
-      }
+      if let detail = content.detail { inlineDetail(detail, content, width: room.detail) }
       if let first = island.actions.first {
         IslandButton(title: first.title, prominent: false, selected: island.buttonSelection == 0) {
           island.perform(first)
@@ -361,11 +357,7 @@ struct IslandView: View {
         fractionBar(content)
         Spacer(minLength: 12)
         HStack(spacing: 8) {
-          ForEach(Array(island.actions.enumerated().reversed()), id: \.offset) { index, action in
-            IslandButton(
-              title: action.title, prominent: index == 0, selected: island.buttonSelection == index
-            ) { island.perform(action) }
-          }
+          actionButtons
           Button {
             island.close()
           } label: {
@@ -380,17 +372,67 @@ struct IslandView: View {
         }
       }
       .frame(height: Island.chin)
-      if let detail = content.detail {
-        Text(detail)
-          .font(detailFont(content))
-          .foregroundStyle(.white.opacity(0.55))
-          .lineLimit(4)
-          .fixedSize(horizontal: false, vertical: true)
-          .padding(.leading, 32)
-          .padding(.bottom, 12)
-      }
+      if let detail = content.detail { foldedDetail(detail, content) }
     }
     .padding(.horizontal, 18)
+  }
+
+  /// 挂着直到处理的那条（提醒，Island.pin）：收着和展开是同一个视图。按钮一开始就全露着（主按钮白底在最右，同卡片），
+  /// 展开只往下长出完整详情——第一行不重排（行内的详情原地淡掉、位置空着）、宽度只按第一行定，指针移上去前后按钮、
+  /// 标题在屏上一点不挪（2026-11-18 用户反馈：原来悬停才冒出来的「稍后」挤进「知道了」原来的位置、× 又插在它右边，
+  /// 好几次点错）。没有 ×：它就是主按钮「知道了」，双指上滑照旧
+  private func pinnedCard(_ content: Island.Content) -> some View {
+    let expanded = island.isExpanded
+    let room = Island.rowRoom(
+      title: content.title, detail: content.detail, buttons: island.actions.map(\.title),
+      fraction: false)
+    return CardLayout(minWidth: 0, maxWidth: Island.maxWidth - 36, firstRowOnly: true) {
+      HStack(spacing: 10) {
+        IslandLeading(content: content)
+        title(content).frame(maxWidth: room.title, alignment: .leading)
+        if let detail = content.detail {
+          inlineDetail(detail, content, width: room.detail)
+            .opacity(expanded ? 0 : 1)
+            .accessibilityHidden(expanded)
+        }
+        HStack(spacing: 8) { actionButtons }
+      }
+      .frame(height: Island.chin)
+      if expanded, let detail = content.detail { foldedDetail(detail, content) }
+    }
+    .padding(.horizontal, 18)
+  }
+
+  /// 这一条的按钮，主按钮（第一个，白底黑字）在最右
+  private var actionButtons: some View {
+    ForEach(Array(island.actions.enumerated().reversed()), id: \.offset) { index, action in
+      IslandButton(
+        title: action.title, prominent: index == 0, selected: island.buttonSelection == index
+      ) { island.perform(action) }
+    }
+  }
+
+  /// 收着那一行里的详情：一行、中间截断
+  private func inlineDetail(_ detail: String, _ content: Island.Content, width: CGFloat)
+    -> some View
+  {
+    Text(detail)
+      .font(detailFont(content))
+      .foregroundStyle(.white.opacity(0.55))
+      .lineLimit(1)
+      .truncationMode(.middle)
+      .frame(maxWidth: width, alignment: .leading)
+  }
+
+  /// 卡片里折在第一行下面的完整详情：最多 4 行，和标题左对齐
+  private func foldedDetail(_ detail: String, _ content: Island.Content) -> some View {
+    Text(detail)
+      .font(detailFont(content))
+      .foregroundStyle(.white.opacity(0.55))
+      .lineLimit(4)
+      .fixedSize(horizontal: false, vertical: true)
+      .padding(.leading, 32)
+      .padding(.bottom, 12)
   }
 
   private func title(_ content: Island.Content) -> some View {
@@ -587,6 +629,8 @@ struct IslandButtonStyle: ButtonStyle {
 nonisolated private struct CardLayout: Layout {
   var minWidth: CGFloat
   var maxWidth: CGFloat
+  /// 只按第一行定宽、详情在这个宽度里折行（挂着的那条：展开前后一样宽，按钮不挪）
+  var firstRowOnly = false
 
   func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
     let width = cardWidth(subviews)
@@ -610,7 +654,8 @@ nonisolated private struct CardLayout: Layout {
   }
 
   private func cardWidth(_ subviews: Subviews) -> CGFloat {
-    let widest = subviews.map { $0.sizeThatFits(.unspecified).width }.max() ?? 0
+    let rows = firstRowOnly ? subviews.prefix(1) : subviews
+    let widest = rows.map { $0.sizeThatFits(.unspecified).width }.max() ?? 0
     return min(max(widest.rounded(.up), minWidth), maxWidth)
   }
 }

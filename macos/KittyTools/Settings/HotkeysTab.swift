@@ -31,6 +31,7 @@ struct HotkeysTab: View {
           }
         } header: {
           Text("截图时：标注工具")
+            .settingsAnchor(.hotkeysShotTools)
           Text("只在截图框选和标注里有效，单个键也行")
         }
         Section {
@@ -39,6 +40,7 @@ struct HotkeysTab: View {
           }
         } header: {
           Text("截图时：出图和操作")
+            .settingsAnchor(.hotkeysShotOutput)
         } footer: {
           HStack(alignment: .firstTextBaseline) {
             SectionFootnote("↩ 拷贝、Esc 退出、⌫ 删除标注、方向键微调、⌘D 复制标注固定不改。")
@@ -58,6 +60,7 @@ struct HotkeysTab: View {
           Text("面板里的按键")
           Text("剪贴板、启动器、翻译浮窗和截图里按什么键，都在速查表里")
         }
+        .settingsAnchor(.hotkeysPanels)
       } footer: {
         SectionFootnote(
           "点录制框后按下新组合，或者快速连按两下 ⌘ ⌥ ⌃ ⇧ 中的一个；Esc 取消，⌫ 清除，右键可恢复默认。连按两下要「辅助功能」授权。")
@@ -65,6 +68,7 @@ struct HotkeysTab: View {
       HotKeyBlockSection(center: center)
     }
     .formStyle(.grouped)
+    .settingsScrollTarget()
   }
 
   /// 截图时的键全部换回默认（U5）：先存一份旧的，岛上「已恢复默认」带「撤销」，撤销时整份放回。本来就都是默认的不弹岛

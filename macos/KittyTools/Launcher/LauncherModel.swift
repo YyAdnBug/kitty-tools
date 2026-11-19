@@ -30,6 +30,7 @@
 
 import AppKit
 import Carbon.HIToolbox
+import OSLog
 import Observation
 import SwiftUI
 import UniformTypeIdentifiers
@@ -381,6 +382,17 @@ import UniformTypeIdentifiers
   /// 文件结果最后一行的授权提示：每次呼出后第一次进文件搜索时算一次（要读受保护目录，问过之前不读）。
   /// ponytail: 授权被重置（tccutil reset、撤掉完全磁盘访问）后，第一次进文件搜索时系统会弹框
   @ObservationIgnored var folderHint: LauncherItem?
+  /// 路径模式（以 / 或 ~/ 开头，PathBrowser）：这次的输入怎么拆；nil = 不在路径模式
+  @ObservationIgnored var pathRequest: PathBrowser.Request?
+  /// 读过的目录（收起时清掉）、正在读的（同一个目录同时只读一次）、读得慢时过 0.15 秒出「正在读取…」
+  @ObservationIgnored var pathListings: [String: PathBrowser.Listing] = [:]
+  @ObservationIgnored var pathReads: [String: Task<Void, Never>] = [:]
+  @ObservationIgnored var pathWait: Task<Void, Never>?
+  /// 要的目录还没读到、看得见的还是上一次的结果：↩、⌘1–9 只响提示音（不然会打开上一次的某一行）
+  @ObservationIgnored var pathPending = false
+  /// 收藏、常用里的文件和应用程序目录以外的 App 不在了的（呼出时在主线程外查，PathBrowser.missing）；没查完时照常列
+  @ObservationIgnored var missingPaths: Set<String> = []
+  @ObservationIgnored var presenceTask: Task<Void, Never>?
   @ObservationIgnored var checksFolderAccess = false
   /// 用户按过 ↑↓ / 点选过：文件结果后续批次到了才按 id 保持选中项，否则回到第一行（最佳匹配）
   @ObservationIgnored var userMovedSelection = false
@@ -414,7 +426,7 @@ import UniformTypeIdentifiers
   @ObservationIgnored var applications: (UTType) -> [(url: URL, isDefault: Bool)] = {
     LauncherModel.applications(toOpen: $0)
   }
-  /// 移到废纸篓（能从废纸篓放回，不二次确认），给出它在废纸篓里的位置（「撤销」挪回来用）；单测里换成记一笔，不真删
+  /// 移到废纸篓（能从废纸篓放回，不二次确认），给出它在废纸篓里的位置（岛上的「撤销」挪回来用）；单测里换成记一笔，不真删
   @ObservationIgnored var recycle: (URL) async throws -> URL? = {
     // 只移一样：按原网址查不到（文件夹的网址补了结尾的「/」这类）就取唯一那一项
     let moved = try await NSWorkspace.shared.recycle([$0])

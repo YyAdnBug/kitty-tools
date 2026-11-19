@@ -1,4 +1,4 @@
-// 朗读读哪段字（R1）、单词卡的读音行（R2）、真人录音的地址（R3）：Speaker 里的纯函数
+// 朗读读哪段字（R1）、单词卡的读音行（R2）、真人录音的地址（R3）、朗读速度的档位（issue #35）：Speaker 里的纯函数
 import Foundation
 import Testing
 
@@ -39,6 +39,17 @@ struct SpeakerTests {
     #expect(Speaker.recordingURL(word: "café", accent: .us) == nil)
     #expect(Speaker.recordingURL(word: "a b c d", accent: .us) == nil)
     #expect(Speaker.key(word: "run", accent: .us) != Speaker.key(word: "run", accent: .uk))
+  }
+
+  @Test func speechSpeedSnapsToAChoice() {
+    #expect(Speaker.speed(1) == 1)
+    #expect(Speaker.speed(0.5) == 0.6)  // 导入、同步来的怪值夹到最近的一档
+    #expect(Speaker.speed(3) == 1.25)
+    #expect(Speaker.utteranceRate(speed: 1) == 0.5)
+    // 慢的几档 rate 要压得很低（0.3 才 0.82×，屏外合成量的），越慢 rate 越小
+    let rates = Speaker.speeds.map { Speaker.utteranceRate(speed: $0) }
+    #expect(rates == rates.sorted())
+    #expect(Speaker.utteranceRate(speed: 0.6) < 0.1)
   }
 
   @Test func markdownIsStrippedBeforeReading() {

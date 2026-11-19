@@ -274,7 +274,7 @@ extension AppDelegate {
   func showShotHistory(deleting: ShotHistory.Item? = nil) {
     let model =
       shotHistoryWindow?.model ?? ShotHistoryModel(history: shotHistory, actions: shotActions)
-    model.openSettings = { [unowned self] in showSettings(page: .screenshot) }
+    model.openSettings = { [unowned self] in showSettings(.screenshotHistory) }
     if let deleting {
       model.selection = deleting.id
       model.deleting = [deleting.id]
@@ -584,7 +584,7 @@ extension AppDelegate {
   var saveFolderActions: [Island.Action] {
     [
       .settings(for: .filesAndFolders),
-      .init("更改保存位置", opens: true) { [unowned self] in showSettings(page: .screenshot) },
+      .init("更改保存位置", opens: true) { [unowned self] in showSettings(.screenshotSaveFolder) },
     ]
   }
 

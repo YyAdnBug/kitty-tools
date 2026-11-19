@@ -4,7 +4,7 @@
 // 建一个只收「系统定义事件」（媒体键走它）的事件拦截，把音量 +、音量 −、静音、亮度 +、亮度 − 这五个键吞掉，自己调
 // 音量（OutputVolume，公开的 CoreAudio）和亮度（DisplayBrightness，私有的 DisplayServices），在岛上画一行；键被吞掉后
 // 系统自己的提示不出（用户看着屏幕确认过）。
-// **这是全仓库第二处事件拦截**（另两处是状态屏的 InputBlock、平滑滚动的 SmoothScroll/ScrollTap；mac-overlay-panel §11）。它吞的是用户天天按的键，红线：
+// **这是全仓库第二处事件拦截**（另三处是状态屏的 InputBlock、平滑滚动的 SmoothScroll/ScrollTap、访达里 ⌘X / ⌘V 的 FinderMenu/FinderKeys；mac-overlay-panel §11）。它吞的是用户天天按的键，红线：
 // - 只收系统定义事件、只吞这五个键；别的事件、别的媒体键（播放、键盘背光）原样放行
 // - 拦截在**单独的线程**上，音量和亮度**就在那条线程上改**：主线程卡住时这几个键照样管用，只是岛上不画
 // - 拦截线程上**不碰 AppKit**：不转 NSEvent（中英文切换的事件转换时进 HIToolbox、断言主队列闪退，PR #22），subtype / data1

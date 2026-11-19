@@ -1,6 +1,6 @@
 // 设置 › 平滑滚动（插件，2026-11-17，issue #14；PLAN §10「平滑滚动」）。页头由 SettingsRoot 画（家族色橄榄绿）。
 // 四组（缺辅助功能时「权限」在最上面）+「关于这个插件」：
-// 「滚动」——平滑程度（轻 ↔ 重）、滚动距离（近 ↔ 远，旁边写百分比）；页脚说只管鼠标滚轮、几个修饰键、点一下停下；
+// 「滚动」——平滑程度（轻 ↔ 重）、滚动距离（近 ↔ 远，旁边写百分比）；页脚说只管滚轮鼠标（妙控鼠标只反向）、几个修饰键、点一下停下；
 // 「方向」——鼠标上下 / 左右反向（只反鼠标；副标题写系统设置里的「自然滚动」现在开没开）；页脚说不同步；
 // 「在这些 App 里停用」——同快捷键页那张停用名单的样子（AppListRow、「＋ −」、⌫ 删除）；页脚说虚拟机、远程桌面、游戏自动照原样；
 // 「权限」——辅助功能（PluginPermissionSection，按 Shell/Plugin.swift 的声明；没有它用不了）；授权有却接不住滚轮、别的改滚轮的
@@ -73,6 +73,7 @@ struct SmoothScrollTab: View {
           Text("平滑程度")
           Text(strength > 0 ? "越往右，拨一格滑得越久" : "拉到最左：不平滑，只按下面的开关反向")
         }
+        .settingsAnchor(.smoothStrength)
         LabeledContent {
           HStack(spacing: 8) {
             Slider(
@@ -97,11 +98,12 @@ struct SmoothScrollTab: View {
           Text("滚动距离")
           Text("拨一格滚多远；跟着系统设置里鼠标的「滚动速度」一起变")
         }
+        .settingsAnchor(.smoothDistance)
       } header: {
         Text("滚动")
       } footer: {
         SectionFootnote(
-          "只管鼠标滚轮，触控板和妙控鼠标照系统的。按住 ⌥ 滚动时不平滑；按住 ⇧ 改成左右滚；按着 ⌘ 或 ⌃ 时交给 App（缩放这类）。滑着的时候点一下鼠标就停下。"
+          "平滑只管滚轮鼠标；妙控鼠标本来就滑着滚，这两项不管它，它只跟着下面的反向开关；触控板都照系统的。按住 ⌥ 滚动时不平滑；按住 ⇧ 改成左右滚；按着 ⌘ 或 ⌃ 时交给 App（缩放这类）。滑着的时候点一下鼠标就停下。"
         )
       }
       .gated(by: .smoothScroll)
@@ -110,13 +112,15 @@ struct SmoothScrollTab: View {
           Text("鼠标上下反向")
           Text(
             natural ?? systemNatural
-              ? "系统设置里开着「自然滚动」（鼠标和触控板是一个开关）：打开这一项，鼠标滚轮往下拨就往下翻，触控板不变"
-              : "系统设置里关着「自然滚动」：打开这一项，鼠标滚轮反过来，触控板不变")
+              ? "系统设置里开着「自然滚动」（鼠标和触控板是一个开关）：打开这一项，鼠标往下滚就往下翻（妙控鼠标也是），触控板不变"
+              : "系统设置里关着「自然滚动」：打开这一项，鼠标滚动的方向反过来（妙控鼠标也是），触控板不变")
         }
+        .settingsAnchor(.smoothReverseVertical)
         Toggle(isOn: $reverseHorizontal) {
           Text("鼠标左右反向")
-          Text("横向的滚轮；按住 ⇧ 拨的还是上下那个滚轮，跟着上面那一项")
+          Text("横向的滚轮、妙控鼠标左右划；按住 ⇧ 拨的还是上下那个滚轮，跟着上面那一项")
         }
+        .settingsAnchor(.smoothReverseHorizontal)
       } header: {
         Text("方向")
       } footer: {
@@ -128,6 +132,7 @@ struct SmoothScrollTab: View {
       PluginAboutSection(plugin: .smoothScroll)
     }
     .formStyle(.grouped)
+    .settingsScrollTarget()
   }
 
   /// 「权限」组（辅助功能）；缺授权时画在最上面（插件页改版 C2）。页脚：接不住滚轮、别的改滚轮的工具开着时的橙字
@@ -213,6 +218,7 @@ struct SmoothScrollTab: View {
       }
     } header: {
       Text("在这些 App 里停用")
+        .settingsAnchor(.smoothExcluded)
     } footer: {
       SectionFootnote(
         "列表里的 App 在前台时，滚轮照系统原样（也不反向）。常见的虚拟机、远程桌面和标明是游戏的 App 自动照原样，不用放进来；别的游戏、自己管滚轮的 App 放进来。")

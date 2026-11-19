@@ -81,6 +81,11 @@ nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
   var region: String?
   /// DeepL 走自建的 DeepLX 而不是官方接口
   var usesDeepLX: Bool?
+  /// 浮窗里遇到一句外文时讲解（issue #35，只有大模型服务有，默认关）：译文 + 重点词 + 句型（SentenceExplain）。
+  /// 关着存 nil，空着的附加要求也存 nil：都不编码，没设过的服务编出来和以前一字不差（旧版本同步不会当成「更新版本写的」）
+  var explainsSentences: Bool?
+  /// 附加要求（issue #35）：用户写的一段话，浮窗里接在内置提示词后面（翻译、单词、讲解都接），上限 maxExtraPrompt 个字
+  var extraPrompt: String?
 
   /// 内置智谱的两档免费纯文本模型（体检 A17，查智谱开放文档 2026-09：GLM-4.7-Flash 是免费模型、纯文本、能关思考，
   /// 替代了 GLM-4.5-Flash）。以前的第二档是识图用的 glm-4.6v-flash，读到它（或别的不认识的）回落第一档
@@ -162,6 +167,34 @@ nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
   /// 流式输出（逐字显示、按行内 Markdown 渲染）的服务：大模型类
   var isStreaming: Bool { kind == .zhipu || kind == .ai }
 
+  /// 附加要求最多多少个字（设置页、导入的文件都截到它）
+  static let maxExtraPrompt = 1000
+
+  /// 设置页写进去的附加要求：去掉 NUL、截到上限，空的存 nil（首尾空白不去：正在打的字后面那个空格不能被吃掉）
+  static func storedExtraPrompt(_ text: String) -> String? {
+    let text = String(text.replacing("\0", with: "").prefix(maxExtraPrompt))
+    return text.isEmpty ? nil : text
+  }
+
+  /// 真要用的附加要求（发请求、导入文件时）：再去掉首尾空白，空的是 nil
+  static func cleanedExtraPrompt(_ text: String?) -> String? {
+    guard let text = text.flatMap(storedExtraPrompt) else { return nil }
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
+  }
+
+  /// 这次请求这个服务讲不讲解：浮窗里、一句外文（request.explainable）、不是查词、打开了讲解
+  func explains(_ request: TranslateRequest) -> Bool {
+    isStreaming && request.inPanel && request.explainable && !request.isWord
+      && explainsSentences == true
+  }
+
+  /// 这次请求要接上的附加要求：只在浮窗里（划词翻译并替换、截图盖回要干净的译文）
+  func extraPrompt(for request: TranslateRequest) -> String? {
+    guard isStreaming, request.inPanel else { return nil }
+    return Self.cleanedExtraPrompt(extraPrompt)
+  }
+
   var secretFields: [SecretField] {
     switch kind {
     case .zhipu:
@@ -201,9 +234,10 @@ nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
     }
   }
 
-  /// 翻译会话、静默替换、截图翻译和设置页「测试连接」都从这里发：大模型的原文太长时先按段切开、依次翻（X2，`LongText`）
+  /// 翻译会话、静默替换、截图翻译和设置页「测试连接」都从这里发：大模型的原文太长时先按段切开、依次翻（X2，`LongText`）。
+  /// 单词模式、讲解不切（讲解只给一句不长的原文，SentenceExplain.maxWeight）
   func translate(_ request: TranslateRequest) -> AsyncThrowingStream<String, Error> {
-    if !request.isWord, let tokens = outputTokens {
+    if !request.isWord, !explains(request), let tokens = outputTokens {
       let pieces = LongText.split(request.text, budget: LongText.budget(outputTokens: tokens))
       if pieces.count > 1 {
         return LongText.stream(request, pieces: pieces) { [self] in dispatch($0) }

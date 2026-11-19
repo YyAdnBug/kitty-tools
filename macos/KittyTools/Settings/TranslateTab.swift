@@ -1,9 +1,11 @@
-// 设置 › 翻译：语言（第一 / 第二语言；源、目标只在浮窗顶部切换）、译文字号（真卡片实时预览，和浮窗 ⌘± 是同一个值）、
-// 行为（浮窗位置、段内换行、复制即译、自动复制、历史保留条数、导出与清空），翻译服务列表（N12：行 = 图标 / 名称 /
-// 状态 / 开关，拖动排序；「+」菜单加回没加的内置服务或新建 AI 服务（厂商预设，D15），「−」/ ⌫ 删：内置的直接删、
-// 密钥留着，AI 服务先确认、连密钥一起删（体检 B21）；单击一行推进到 TranslateServiceDetail 改选项、密钥、测试连接）。
-// 页头画在自己的 NavigationStack 里，推进时一起换掉。浮窗按键不写在这里（N11，进快捷键速查表）。
-// 控件分工（Whisker §6）：2–3 项分段、3–5 项单选、> 5 项弹出菜单。
+// 设置 › 翻译（2026-11-18 设置改版 S4）：外面是语言（第一 / 第二语言；源、目标只在浮窗顶部切换）、翻译服务列表（N12：
+// 行 = 图标 / 名称 / 状态 / 开关，拖动排序；「+」菜单加回没加的内置服务或新建 AI 服务（厂商预设，D15），「−」/ ⌫ 删：
+// 内置的直接删、密钥留着，AI 服务先确认、连密钥一起删（体检 B21）；单击一行推进到 TranslateServiceDetail）、
+// 行为（复制即译、自动复制译文、浮窗位置），「查词与朗读 ›」「翻译历史 ›」两个子页，按键行。
+// 「查词与朗读」：系统词典、大模型按词典回答、打开「词典」、英文单词发音（真人 / 系统声音 × 美音 / 英音合成一个选单，S6）、
+// 朗读速度。「翻译历史」：记不记、保留条数、导出、清空（关着翻译也能导出、清空）。
+// 「高级…」：译文字号（真卡片实时预览，和浮窗 ⌘± 是同一个值）、面板大小、段内换行、截图翻译盖回截图、截图翻译复制原文。
+// 页头画在自己的 NavigationStack 里，推进时一起换掉。控件分工（Whisker §6）：2–3 项分段、3–5 项单选、> 5 项弹出菜单。
 
 import AppKit
 import SwiftUI
@@ -13,11 +15,14 @@ struct TranslateTab: View {
   @Bindable var services: TranslateServiceStore
   let history: HistoryStore
   let speaker: Speaker
+  /// 截图自检直接画「高级…」表单（sheet 画不进屏外截图）
+  var drawsAdvanced = false
   @AppStorage(Prefs.translateFontScale) private var fontScale = 1.0
   @AppStorage(Prefs.translateSystemDictionary) private var systemDictionary = true
   @AppStorage(Prefs.translateWordMode) private var wordMode = true
   @AppStorage(Prefs.translateWordRecording) private var wordRecording = true
   @AppStorage(Prefs.translateWordAccent) private var wordAccent = "us"
+  @AppStorage(Prefs.translateSpeechSpeed) private var speechSpeed = 1.0
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(Island.self) private var island: Island?
   @AppStorage(Prefs.translateFirst) private var first = Lang.zhHans.rawValue
@@ -50,8 +55,13 @@ struct TranslateTab: View {
       }
       .navigationTitle(SettingsPage.translate.title)
       .navigationDestination(for: String.self) { id in
-        TranslateServiceDetail(store: services, id: id, focusesKey: id == justAdded)
+        switch SettingsSubpage(route: id) {
+        case .translateLookup?: lookupPage
+        case .translateHistory?: historyPage
+        default: TranslateServiceDetail(store: services, id: id, focusesKey: id == justAdded)
+        }
       }
+      .advancedSheet(.translate, summary: "字号、换行和截图翻译", inline: drawsAdvanced) { advanced }
     }
     .onChange(of: navigation.path) { keysRevision += 1 }
     .confirmationDialog(
@@ -76,8 +86,8 @@ struct TranslateTab: View {
     }
   }
 
+  /// 外面：语言、翻译服务、行为、两个子页、按键、高级…
   private var form: some View {
-    // 关着时（Feature）变灰，翻译历史保留多少条、导出和清空照常能用
     Form {
       Section { FeatureToggle(feature: .translate, inPage: true) }
       Group {
@@ -85,9 +95,11 @@ struct TranslateTab: View {
           Picker("第一语言", selection: $first) {
             ForEach(Lang.allCases, id: \.self) { Text($0.title).tag($0.rawValue) }
           }
+          .settingsAnchor(.translateFirst)
           Picker("第二语言", selection: $second) {
             ForEach(Lang.allCases, id: \.self) { Text($0.title).tag($0.rawValue) }
           }
+          .settingsAnchor(.translateSecond)
         } header: {
           Text("语言")
         } footer: {
@@ -97,60 +109,29 @@ struct TranslateTab: View {
         // 两个选成同一种语言（简繁也算）就互换，免得「自动」变成中译中
         .onChange(of: first) { old, new in if sameLanguage(new, second) { second = old } }
         .onChange(of: second) { old, new in if sameLanguage(new, first) { first = old } }
-        Section("译文字号") {
-          LabeledContent {
-            HStack(spacing: 10) {
-              Slider(value: $fontScale, in: TranslateCoordinator.fontScales, step: 0.1)
-                .tint(Style.brand)  // 根视图的 .accentColor 管不到滑块（实测），单独给
-              Text(fontScale.formatted(.percent.precision(.fractionLength(0))))
-                .font(.system(size: 12, weight: .medium)).monospacedDigit()
-                .contentTransition(.numericText(value: fontScale))
-                .frame(width: 40, alignment: .trailing)
-            }
-          } label: {
-            Text("大小")
-          }
-          // 实时预览：浮窗里的同一张卡（第一个服务），字号跟着滑块变
-          ProviderCardView(
-            card: .init(service: services.services.first ?? .zhipu, state: .done(Self.sample)),
-            index: 0, language: .zhHans, speaker: speaker, fontScale: fontScale, onRetry: {}
-          )
-          // 只是预览：上面的按钮（复制、重试、收起）不接点击
-          .allowsHitTesting(false)
-          .accessibilityHidden(true)
-          .animation(reduceMotion ? nil : .smooth(duration: 0.18), value: fontScale)
-        }
         Section {
-          Toggle("查单个词时显示系统词典的释义", isOn: $systemDictionary)
-          Toggle("查单个词时大模型按词典回答（读音、词性、例句）", isOn: $wordMode)
-          LabeledContent {
-            Button("打开「词典」") { NSWorkspace.shared.open(URL(string: "dict://")!) }
-          } label: {
-            Text("系统词典的中文释义")
-            Text("默认给英文词英英释义；在「词典」App 的设置里勾上「牛津英汉汉英词典」并拖到最前面，就会显示中文释义")
+          serviceList
+          ListEditBar(
+            removeTitle: "删除所选的服务", canRemove: selection != nil, remove: removeSelected
+          ) {
+            addMenu
           }
         } header: {
-          Text("查词")
-        } footer: {
-          SectionFootnote("查单个词时不自动复制、不给「替换原文」。")
-        }
-        Section {
-          Toggle("英文单词用真人发音", isOn: $wordRecording)
-          Picker("英文单词发音", selection: $wordAccent) {
-            Text("美音").tag("us")
-            Text("英音").tag("uk")
-          }
-        } header: {
-          Text("朗读")
+          Text("翻译服务")
+            .settingsAnchor(.translateServices)
         } footer: {
           SectionFootnote(
-            "真人发音来自有道词典，会把要读的单词发给有道；取不到时用系统声音。句子用系统声音，可以在 系统设置 › 辅助功能 › 朗读内容 里下载音质更好的声音。"
-          )
+            "拖动调整顺序，结果按这个顺序显示；排在最前、翻译成功的那个服务的结果写入历史、用于自动复制和收藏。点一行进入设置。删掉的内置服务可以从「+」加回来，密钥还在。")
         }
-      }
-      .gated(by: .translate)
-      Section {
-        Group {
+        Section("行为") {
+          Toggle(isOn: $copyToTranslate) {
+            Text("复制即译")
+            Text("在别的 App 里复制文字，浮窗自动弹出翻译（网址、路径和数字不翻）")
+          }
+          .settingsAnchor(.translateCopyToTranslate)
+          Toggle("自动复制译文", isOn: $autoCopy)
+            .help("复制即译弹出的翻译不会自动复制，免得覆盖你刚复制的原文")
+            .settingsAnchor(.translateAutoCopy)
           Picker(selection: $panelPosition) {
             Text("屏幕上方").tag("top")
             Text("跟随鼠标").tag("mouse")
@@ -160,36 +141,122 @@ struct TranslateTab: View {
             Text("划词、截图翻译、复制即译时出现的位置：屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边；输入翻译总在上次拖到的位置")
           }
           .pickerStyle(.segmented)
-          PanelSizeRow(
-            detail: "拖左右两边改宽度，拖下边改最高多高（内容少时照样变矮）", widthKey: Prefs.translatePanelWidth,
-            heightKey: Prefs.translatePanelMaxHeight, defaultWidth: TranslatePanelView.defaultWidth)
-          Toggle("翻译前把同一段里的换行接起来（适合 PDF 复制的文字）", isOn: $removeNewlines)
-          Toggle(isOn: $copyToTranslate) {
-            Text("复制即译")
-            Text("在别的 App 里复制文字，浮窗自动弹出翻译（网址、路径和数字不翻）")
-          }
-          Toggle("自动复制译文", isOn: $autoCopy)
-            .help("复制即译弹出的翻译不会自动复制，免得覆盖你刚复制的原文")
-          Toggle(isOn: $screenshotOverlay) {
-            NewTitle("截图翻译时把译文直接盖回截图上", page: .translate, fresh: navigation.fresh)
-            Text(
-              "截图翻译和截图工具栏里的「翻译」都留在截图页里，译文按原来的位置盖回图上，可以接着标注、复制、保存；关着时在翻译浮窗里看，能对比几个服务、复制译文"
-            )
-          }
-          // 拨过这一行，「新」就算看过了（光点进这一页不算；WhatsNew）
-          .onChange(of: screenshotOverlay) {
-            WhatsNew.touch(section: "截图翻译时把译文直接盖回截图上", of: .translate)
-          }
-          Toggle(isOn: $copyRecognized) {
-            Text("截图翻译时复制识别出的原文")
-            Text(
-              autoCopy
-                ? "识别出来就放进剪贴板；译文出来后，剪贴板换成译文（上面开着自动复制）"
-                : "识别出来就放进剪贴板，⌘V 能直接粘贴；关着时只记进剪贴板历史")
-          }
-          Toggle("记录翻译历史", isOn: $historyEnabled)
+          .settingsAnchor(.translatePanelPosition)
         }
-        .gated(by: .translate)
+        Section {
+          SettingsPushRow(
+            title: SettingsSubpage.translateLookup.title,
+            isNew: SettingsItem.subpageIsNew(.translateLookup, fresh: navigation.fresh),
+            value: Self.lookupValue(dictionary: systemDictionary, voice: wordVoice.wrappedValue)
+          ) {
+            navigation.path = [SettingsSubpage.translateLookup.route]
+          }
+        }
+      }
+      .gated(by: .translate)
+      // 翻译历史管的是已有的数据（保留条数、导出、清空）：功能关着也能进去
+      Section {
+        SettingsPushRow(
+          title: SettingsSubpage.translateHistory.title,
+          isNew: SettingsItem.subpageIsNew(.translateHistory, fresh: navigation.fresh),
+          value: Self.historyValue(enabled: historyEnabled, limit: historyLimit)
+        ) {
+          navigation.path = [SettingsSubpage.translateHistory.route]
+        }
+      }
+      Section {
+        LabeledContent {
+          ShortcutsButton()
+        } label: {
+          Text("翻译浮窗里的按键")
+          Text("↩ 翻译，⌘R 重新翻译，⌘1–9 复制第 1–9 个结果，⌘Y 翻译历史；划词来的翻译可以「替换原文」")
+        }
+        .settingsAnchor(.translateKeys)
+      }
+      .gated(by: .translate)
+      Section {
+      } footer: {
+        AdvancedButton(page: .translate)
+      }
+    }
+    .formStyle(.grouped)
+    .settingsScrollTarget()
+  }
+
+  /// 设置 › 翻译 › 查词与朗读
+  private var lookupPage: some View {
+    SubpageForm(
+      subpage: .translateLookup,
+      status: Self.lookupValue(dictionary: systemDictionary, voice: wordVoice.wrappedValue)
+    ) {
+      Section {
+        Toggle("查单个词时显示系统词典的释义", isOn: $systemDictionary)
+          .settingsAnchor(.translateSystemDictionary)
+        Toggle("查单个词时大模型按词典回答（读音、词性、例句）", isOn: $wordMode)
+          .settingsAnchor(.translateWordMode)
+        LabeledContent {
+          Button("打开「词典」") { NSWorkspace.shared.open(URL(string: "dict://")!) }
+        } label: {
+          Text("系统词典的中文释义")
+          Text("默认给英文词英英释义；在「词典」App 的设置里勾上「牛津英汉汉英词典」并拖到最前面，就会显示中文释义")
+        }
+        .settingsAnchor(.translateDictionaryApp)
+      } header: {
+        Text("查词")
+      } footer: {
+        SectionFootnote("查单个词时不自动复制、不给「替换原文」。")
+      }
+      .gated(by: .translate)
+      Section {
+        Picker("英文单词发音", selection: wordVoice) {
+          ForEach(WordVoice.allCases, id: \.self) { Text(plain: $0.title).tag($0) }
+        }
+        .settingsAnchor(.translatePronunciation)
+        // 四档横排单选（3–5 项，mac-whisker-settings）；导入、同步来的怪值显示成最近的一档（Speaker.speed）
+        LabeledContent {
+          Picker(
+            selection: Binding {
+              Speaker.speed(speechSpeed)
+            } set: {
+              speechSpeed = $0
+            }
+          ) {
+            ForEach(Speaker.speeds, id: \.self) { speed in
+              (speed == 1 ? Text("正常") : Text(verbatim: speed.formatted() + "×")).tag(speed)
+            }
+          } label: {
+            Text("朗读速度")
+          }
+          .pickerStyle(.radioGroup)
+          .horizontalRadioGroupLayout()
+          .labelsHidden()
+          .fixedSize()
+        } label: {
+          Text("朗读速度")
+          Text("原文、译文和单词的小喇叭都按它读，练听力可以放慢")
+        }
+        .settingsAnchor(.translateSpeechSpeed)
+      } header: {
+        Text("朗读")
+      } footer: {
+        SectionFootnote(
+          "真人发音来自有道词典，会把要读的单词发给有道；取不到时用系统声音。句子用系统声音，可以在 系统设置 › 辅助功能 › 朗读内容 里下载音质更好的声音。"
+        )
+      }
+      .gated(by: .translate)
+    }
+  }
+
+  /// 设置 › 翻译 › 翻译历史（关着翻译也能导出、清空，保留条数照常能改）
+  private var historyPage: some View {
+    SubpageForm(
+      subpage: .translateHistory,
+      status: Self.historyValue(enabled: historyEnabled, limit: historyLimit)
+    ) {
+      Section {
+        Toggle("记录翻译历史", isOn: $historyEnabled)
+          .gated(by: .translate)
+          .settingsAnchor(.translateHistory)
         Picker("历史最多保留", selection: $historyLimit) {
           // 档位和 Prefs.migrate 读同一张表：旧档位迁过来，不会显示成空白
           ForEach(Prefs.translateHistoryLimitChoices, id: \.self) {
@@ -198,6 +265,7 @@ struct TranslateTab: View {
         }
         .pickerStyle(.segmented)
         .disabled(!historyEnabled)
+        .settingsAnchor(.translateHistoryLimit)
         LabeledContent("导出和清空") {
           HStack(spacing: 8) {
             Menu("导出…") { HistoryExportItems(history: history, island: island) }
@@ -206,33 +274,136 @@ struct TranslateTab: View {
             DangerButton("清空翻译历史…") { confirmsClear = true }
           }
         }
-        LabeledContent {
-          ShortcutsButton()
-        } label: {
-          Text("翻译浮窗里的按键")
-          Text("↩ 翻译，⌘R 重新翻译，⌘1–9 复制第 1–9 个结果，⌘Y 翻译历史；划词来的翻译可以「替换原文」")
-        }
-      } header: {
-        Text("行为")
+        .settingsAnchor(.translateHistoryExport)
       } footer: {
         SectionFootnote("收藏的记录不算在保留条数里、永不清理。")
       }
-      Section {
-        serviceList
-        ListEditBar(
-          removeTitle: "删除所选的服务", canRemove: selection != nil, remove: removeSelected
-        ) {
-          addMenu
-        }
-      } header: {
-        Text("翻译服务")
-      } footer: {
-        SectionFootnote(
-          "拖动调整顺序，结果按这个顺序显示；排在最前、翻译成功的那个服务的结果写入历史、用于自动复制和收藏。点一行进入设置。删掉的内置服务可以从「+」加回来，密钥还在。")
-      }
-      .gated(by: .translate)
     }
-    .formStyle(.grouped)
+  }
+
+  /// 「高级…」表单：译文字号（真卡片预览）、面板大小、段内换行、截图翻译的两项
+  @ViewBuilder private var advanced: some View {
+    Section("译文字号") {
+      LabeledContent {
+        HStack(spacing: 10) {
+          Slider(value: $fontScale, in: TranslateCoordinator.fontScales, step: 0.1)
+            .tint(Style.brand)  // 根视图的 .accentColor 管不到滑块（实测），单独给
+          Text(fontScale.formatted(.percent.precision(.fractionLength(0))))
+            .font(.system(size: 12, weight: .medium)).monospacedDigit()
+            .contentTransition(.numericText(value: fontScale))
+            .frame(width: 40, alignment: .trailing)
+        }
+      } label: {
+        Text("大小")
+      }
+      .settingsAnchor(.translateFontScale)
+      // 实时预览：浮窗里的同一张卡（第一个服务），字号跟着滑块变
+      ProviderCardView(
+        card: .init(service: services.services.first ?? .zhipu, state: .done(Self.sample)),
+        index: 0, language: .zhHans, speaker: speaker, fontScale: fontScale, onRetry: {}
+      )
+      // 只是预览：上面的按钮（复制、重试、收起）不接点击
+      .allowsHitTesting(false)
+      .accessibilityHidden(true)
+      .animation(reduceMotion ? nil : .smooth(duration: 0.18), value: fontScale)
+    }
+    .gated(by: .translate)
+    Section {
+      PanelSizeRow(
+        detail: "拖左右两边改宽度，拖下边改最高多高（内容少时照样变矮）", widthKey: Prefs.translatePanelWidth,
+        heightKey: Prefs.translatePanelMaxHeight, defaultWidth: TranslatePanelView.defaultWidth
+      )
+      .settingsAnchor(.translatePanelSize)
+      Toggle("翻译前把同一段里的换行接起来（适合 PDF 复制的文字）", isOn: $removeNewlines)
+        .settingsAnchor(.translateRemoveNewlines)
+    }
+    .gated(by: .translate)
+    Section("截图翻译") {
+      Toggle(isOn: $screenshotOverlay) {
+        NewTitle("截图翻译时把译文直接盖回截图上", page: .translate, fresh: navigation.fresh)
+        Text(
+          "截图翻译和截图工具栏里的「翻译」都留在截图页里，译文按原来的位置盖回图上，可以接着标注、复制、保存；关着时在翻译浮窗里看，能对比几个服务、复制译文"
+        )
+      }
+      // 拨过这一行，「新」就算看过了（光点进这一页不算；WhatsNew）
+      .onChange(of: screenshotOverlay) {
+        WhatsNew.touch(section: "截图翻译时把译文直接盖回截图上", of: .translate)
+      }
+      .settingsAnchor(.translateOverlay)
+      Toggle(isOn: $copyRecognized) {
+        Text("截图翻译时复制识别出的原文")
+        Text(
+          autoCopy
+            ? "识别出来就放进剪贴板；译文出来后，剪贴板换成译文（外面开着自动复制译文）"
+            : "识别出来就放进剪贴板，⌘V 能直接粘贴；关着时只记进剪贴板历史")
+      }
+      .settingsAnchor(.translateCopyRecognized)
+    }
+    .gated(by: .translate)
+  }
+
+  /// 「查词与朗读 ›」行尾：系统词典开着「词典 · 真人美音」，关着只写发音
+  static func lookupValue(dictionary: Bool, voice: WordVoice) -> LocalizedStringResource {
+    let short = String(localized: voice.short)
+    // 别写成三元式（抽字时第二个分支会漏掉）
+    if dictionary { return "词典 · \(short)" }
+    return "\(short)"
+  }
+
+  /// 「翻译历史 ›」行尾：开着「最多 5000 条」/「不限」，关着「关」
+  static func historyValue(enabled: Bool, limit: Int) -> LocalizedStringResource {
+    if !enabled { return "关" }
+    if limit == 0 { return "不限" }
+    return "最多 \(limit) 条"
+  }
+
+  /// 「英文单词发音」（设置改版 S6，用户 11-18 定四项）：真人发音开不开 × 美音 / 英音。原来的美音 / 英音也管取不到录音、
+  /// 关了真人发音时用的系统声音（Speaker.voice(for:)），所以四种组合都是一项。读写的照旧是原来两个键，只写变了的那个
+  enum WordVoice: CaseIterable {
+    case humanUS, humanUK, systemUS, systemUK
+
+    init(recording: Bool, accent: String) {
+      let uk = accent == "uk"
+      self = recording ? (uk ? .humanUK : .humanUS) : (uk ? .systemUK : .systemUS)
+    }
+
+    var recording: Bool { self == .humanUS || self == .humanUK }
+    var accent: String { self == .humanUK || self == .systemUK ? "uk" : "us" }
+
+    var title: LocalizedStringResource {
+      switch self {
+      case .humanUS: "真人 · 美音"
+      case .humanUK: "真人 · 英音"
+      case .systemUS: "系统声音 · 美音"
+      case .systemUK: "系统声音 · 英音"
+      }
+    }
+
+    /// 推进行行尾的短名
+    var short: LocalizedStringResource {
+      switch self {
+      case .humanUS: "真人美音"
+      case .humanUK: "真人英音"
+      case .systemUS: "系统美音"
+      case .systemUK: "系统英音"
+      }
+    }
+
+    /// 从 old 换成这一项要写什么（没变的是 nil，不写进持久域）
+    func writes(from old: WordVoice) -> (recording: Bool?, accent: String?) {
+      (recording == old.recording ? nil : recording, accent == old.accent ? nil : accent)
+    }
+  }
+
+  private var wordVoice: Binding<WordVoice> {
+    Binding {
+      WordVoice(recording: wordRecording, accent: wordAccent)
+    } set: { choice in
+      // 经 @AppStorage 写（截图自检给的临时偏好域也认）
+      let writes = choice.writes(from: WordVoice(recording: wordRecording, accent: wordAccent))
+      if let recording = writes.recording { wordRecording = recording }
+      if let accent = writes.accent { wordAccent = accent }
+    }
   }
 
   /// 预览卡里的译文（跟界面语言：只是摆给人看的样子）

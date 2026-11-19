@@ -678,14 +678,37 @@ struct SnapshotProbeTests {
     shotPrefs.set(false, forKey: Prefs.screenRecordShowsCursor)
     shotPrefs.set(AudioRecorder.Source.both.rawValue, forKey: Prefs.audioRecordSource)
     shotPrefs.set(true, forKey: Prefs.audioRecordStartsImmediately)
+    // 设置改版（2026-11-18）：外面、「截图历史」子页（历史关着：晾衣绳那句带「去打开」）、「高级…」表单（520 × 480 定死）
+    shotPrefs.set(false, forKey: Prefs.shotHistory)
+    shotPrefs.set(true, forKey: Prefs.screenshotFindsElements)
+    let advanced = NSSize(width: 480, height: 480)
     for dark in [false, true] {
+      let suffix = dark ? "-dark" : ""
+      navigation.path = []
       try snapshot(
         ScreenshotTab(shots: nil).defaultAppStorage(shotPrefs).environment(navigation),
-        size: NSSize(width: 640, height: 1000),
-        dark: dark, to: "\(out)/settings-screenshot-custom\(dark ? "-dark" : "").png")
+        size: NSSize(width: 640, height: 900),
+        dark: dark, to: "\(out)/settings-screenshot-custom\(suffix).png")
+      navigation.path = [SettingsSubpage.screenshotHistory.route]
       try snapshot(
-        RecordTab().defaultAppStorage(shotPrefs), size: NSSize(width: 640, height: 860),
-        dark: dark, to: "\(out)/settings-record-custom\(dark ? "-dark" : "").png")
+        ScreenshotTab(shots: nil).defaultAppStorage(shotPrefs).environment(navigation),
+        size: NSSize(width: 640, height: 600),
+        dark: dark, to: "\(out)/settings-screenshot-history\(suffix).png")
+      navigation.path = []
+      try snapshot(
+        ScreenshotTab(shots: nil, drawsAdvanced: true).defaultAppStorage(shotPrefs)
+          .environment(navigation),
+        size: advanced, dark: dark, to: "\(out)/settings-screenshot-advanced\(suffix).png")
+      try snapshot(
+        RecordTab().defaultAppStorage(shotPrefs), size: NSSize(width: 640, height: 760),
+        dark: dark, to: "\(out)/settings-record-custom\(suffix).png")
+      try snapshot(
+        RecordTab(drawsAdvanced: true).defaultAppStorage(shotPrefs), size: advanced, dark: dark,
+        to: "\(out)/settings-record-advanced\(suffix).png")
+      try snapshot(
+        ClipboardTab(store: store, drawsAdvanced: true).defaultAppStorage(shotPrefs),
+        size: advanced,
+        dark: dark, to: "\(out)/settings-clipboard-advanced\(suffix).png")
     }
     // 录制页的默认样子：没选过文件夹、30 fps、倒数 3 秒，录音来源麦克风、「按快捷键后立即开始录音」关。空的临时偏好域
     let recordSuite = "kitty-snapshot-\(UUID().uuidString)"
@@ -693,7 +716,7 @@ struct SnapshotProbeTests {
     defer { recordPrefs.removePersistentDomain(forName: recordSuite) }
     for dark in [false, true] {
       try snapshot(
-        RecordTab().defaultAppStorage(recordPrefs), size: NSSize(width: 640, height: 860),
+        RecordTab().defaultAppStorage(recordPrefs), size: NSSize(width: 640, height: 760),
         dark: dark, to: "\(out)/settings-record-default\(dark ? "-dark" : "").png")
     }
     // 设置 › 刘海岛（PR #17）排过先后、关掉一个、不列提示；临时偏好域（功能关着的那几行变灰跟着本机的功能开关）
@@ -703,24 +726,44 @@ struct SnapshotProbeTests {
     islandPrefs.set("noteCapture\nscreenshot", forKey: Prefs.islandActionOrder)
     islandPrefs.set("recognizeText", forKey: Prefs.islandActionsOff)
     islandPrefs.set(true, forKey: Prefs.islandShowsHistory)
+    // 设置改版（S3）：外面一页、六个子页、「高级…」表单
+    let islandNavigation = SettingsNavigation(defaults: nil)
     for dark in [false, true] {
+      let suffix = dark ? "-dark" : ""
+      islandNavigation.path = []
       try snapshot(
-        IslandTab().defaultAppStorage(islandPrefs), size: NSSize(width: 640, height: 2200),
-        dark: dark, to: "\(out)/settings-island-custom\(dark ? "-dark" : "").png")
+        IslandTab().defaultAppStorage(islandPrefs).environment(islandNavigation),
+        size: NSSize(width: 640, height: 900), dark: dark,
+        to: "\(out)/settings-island-custom\(suffix).png")
+      for subpage in SettingsSubpage.allCases where subpage.page == .island {
+        islandNavigation.path = [subpage.route]
+        try snapshot(
+          IslandTab().defaultAppStorage(islandPrefs).environment(islandNavigation),
+          size: NSSize(width: 640, height: 820), dark: dark,
+          to: "\(out)/settings-\(subpage.rawValue.replacing(".", with: "-"))\(suffix).png")
+      }
+      islandNavigation.path = []
+      try snapshot(
+        IslandTab(drawsAdvanced: true).defaultAppStorage(islandPrefs),
+        size: NSSize(width: 480, height: 480), dark: dark,
+        to: "\(out)/settings-island-advanced\(suffix).png")
     }
     // 「音量和亮度」打开了、拦截却接不住（第五轮体检 U6）：建不起来、这一版系统认不出那两个字段，各一行橙字。
     // 状态是摆的（keyStatus），不建真的拦截；「没有辅助功能授权」那一行跟着本机测试宿主的真实授权
     islandPrefs.set(true, forKey: Prefs.islandKeyLevels)
+    islandNavigation.path = [SettingsSubpage.islandLevels.route]
     for (name, status, dark) in [
       ("failed", MediaKeys.Status.failed, false), ("failed-dark", .failed, true),
       ("unreadable", .unreadable, false),
     ] {
       try snapshot(
-        IslandTab(keyStatus: status).defaultAppStorage(islandPrefs),
-        size: NSSize(width: 640, height: 2200), dark: dark,
+        IslandTab(keyStatus: status).defaultAppStorage(islandPrefs).environment(islandNavigation),
+        size: NSSize(width: 640, height: 640), dark: dark,
         to: "\(out)/settings-island-keys-\(name).png")
     }
-    // 设置 › 通用「菜单栏」（第 9 批 M1 M2）：显示 + 彩色、隐藏（图标样式置灰），各出深色；临时偏好域，不动用户的菜单栏图标
+    islandNavigation.path = []
+    // 设置 › 通用 › 高级…「菜单栏」（第 9 批 M1 M2；设置改版挪进「高级…」）：显示 + 彩色、隐藏（图标样式置灰），各出深色；
+    // 临时偏好域，不动用户的菜单栏图标
     let barSuite = "kitty-snapshot-\(UUID().uuidString)"
     let barPrefs = try #require(UserDefaults(suiteName: barSuite))
     defer { barPrefs.removePersistentDomain(forName: barSuite) }
@@ -729,22 +772,29 @@ struct SnapshotProbeTests {
       barPrefs.set(visible, forKey: Prefs.statusItemVisible)
       for dark in [false, true] {
         try snapshot(
-          GeneralTab().defaultAppStorage(barPrefs), size: NSSize(width: 640, height: 720),
-          dark: dark, to: "\(out)/settings-general-menubar-\(name)\(dark ? "-dark" : "").png")
+          GeneralTab(drawsAdvanced: true).defaultAppStorage(barPrefs),
+          size: NSSize(width: 480, height: 480), dark: dark,
+          to: "\(out)/settings-general-advanced-\(name)\(dark ? "-dark" : "").png")
       }
     }
-    // 设置 › 通用拉长看到底的「权限」组（录屏第 4 批加了麦克风一行，状态是本机真实的授权）和最后的「导出与导入」；临时偏好域
+    // 设置 › 通用 › 权限 / 备份与导出导入两个子页（设置改版；权限的状态是本机真实的授权）；临时偏好域
     let permissionSuite = "kitty-snapshot-\(UUID().uuidString)"
     let permissionPrefs = try #require(UserDefaults(suiteName: permissionSuite))
     defer { permissionPrefs.removePersistentDomain(forName: permissionSuite) }
+    let generalNavigation = SettingsNavigation(defaults: nil)
     for dark in [false, true] {
-      try snapshot(
-        GeneralTab(
-          transfer: SettingsTransfer(services: services, clipboard: store, history: history)
+      for subpage in [SettingsSubpage.generalPermissions, .generalBackup] {
+        generalNavigation.path = [subpage.route]
+        try snapshot(
+          GeneralTab(
+            transfer: SettingsTransfer(services: services, clipboard: store, history: history)
+          )
+          .defaultAppStorage(permissionPrefs).environment(generalNavigation),
+          size: NSSize(width: 640, height: 640), dark: dark,
+          to:
+            "\(out)/settings-\(subpage.rawValue.replacing(".", with: "-"))\(dark ? "-dark" : "").png"
         )
-        .defaultAppStorage(permissionPrefs),
-        size: NSSize(width: 640, height: 1200), dark: dark,
-        to: "\(out)/settings-general-permissions\(dark ? "-dark" : "").png")
+      }
     }
     try renderTransfer(out)
     // 菜单栏上的两种图标（浅色 / 深色菜单栏各一张，右边放大 5 倍）；彩色图的 @2x 位图另存原图
@@ -779,6 +829,24 @@ struct SnapshotProbeTests {
         size: NSSize(width: 780, height: 1500), dark: dark,
         to: "\(out)/settings-clipboard-full\(dark ? "-dark" : "").png")
     }
+    // 设置改版 S7：侧栏搜索时最上面「设置项」那一组（对上的行 + 下面一行写在哪一页）；选了一项之后那一行描一圈
+    // （highlighted 摆着，截图时不会被两秒后清掉）
+    navigation.page = .general
+    for dark in [false, true] {
+      try snapshot(
+        SettingsRoot(navigation: navigation, page: pages, query: "显示") { AnyView(EmptyView()) },
+        size: NSSize(width: 780, height: 600), dark: dark,
+        to: "\(out)/settings-search-items\(dark ? "-dark" : "").png")
+    }
+    navigation.page = .clipboard
+    navigation.highlighted = .clipboardPasteOnClick
+    for dark in [false, true] {
+      try snapshot(
+        SettingsRoot(navigation: navigation, page: pages) { AnyView(EmptyView()) },
+        size: NSSize(width: 780, height: 900), dark: dark,
+        to: "\(out)/settings-highlight\(dark ? "-dark" : "").png")
+    }
+    navigation.highlighted = nil
     // 侧栏选中是自绘的（SettingsWindow 文件头）：屏外窗口永远不是 key，上面那些都是后台的中性样子。这里用环境摆成
     // key，再把原生行强制成强调态（key 窗口里系统就这么标），看原生高亮确实没画、只剩自绘那块。
     // 跟随系统（本机「多色」= 品牌粉）和黄色（字换深色），深浅色各一张
@@ -815,19 +883,55 @@ struct SnapshotProbeTests {
         ]), forKey: Prefs.launcherWebSearchEngines)
     for dark in [false, true] {
       let suffix = dark ? "-dark" : ""
+      navigation.path = []
       try snapshot(
         TranslateTab(services: services, history: history, speaker: speaker)
           .environment(navigation),
-        size: NSSize(width: 590, height: 1720), dark: dark,
+        size: NSSize(width: 590, height: 1300), dark: dark,
         to: "\(out)/settings-translate-list\(suffix).png")
+      // 设置改版：两个子页、「高级…」表单
+      for subpage in [SettingsSubpage.translateLookup, .translateHistory] {
+        navigation.path = [subpage.route]
+        try snapshot(
+          TranslateTab(services: services, history: history, speaker: speaker)
+            .environment(navigation),
+          size: NSSize(width: 590, height: 700), dark: dark,
+          to: "\(out)/settings-\(subpage.rawValue.replacing(".", with: "-"))\(suffix).png")
+      }
+      navigation.path = []
+      try snapshot(
+        TranslateTab(services: services, history: history, speaker: speaker, drawsAdvanced: true)
+          .environment(navigation),
+        size: NSSize(width: 480, height: 480), dark: dark,
+        to: "\(out)/settings-translate-advanced\(suffix).png")
       try snapshot(
         TranslateServiceDetail(store: services, id: TranslateService.Kind.deepl.rawValue),
         size: NSSize(width: 590, height: 460), dark: dark,
         to: "\(out)/settings-translate-detail\(suffix).png")
+      // 大模型服务的「浮窗里的回答」（issue #35）：讲解打开、写了附加要求
+      var explaining = TranslateService.zhipu
+      explaining.explainsSentences = true
+      explaining.extraPrompt = "术语保留英文；每个词多给一个例句"
+      let explainStore = TranslateServiceStore(services: [explaining])
+      try snapshot(
+        TranslateServiceDetail(store: explainStore, id: explaining.id),
+        size: NSSize(width: 590, height: 720), dark: dark,
+        to: "\(out)/settings-translate-detail-explain\(suffix).png")
       try snapshot(
         LauncherTab().defaultAppStorage(engines).environment(navigation),
-        size: NSSize(width: 590, height: 2900),
+        size: NSSize(width: 590, height: 1500),
         dark: dark, to: "\(out)/settings-launcher-list\(suffix).png")
+      // 设置改版：脚本命令子页（没有脚本库：读不成的那几行不出）、「高级…」表单
+      navigation.path = [SettingsSubpage.launcherScripts.route]
+      try snapshot(
+        LauncherTab().defaultAppStorage(engines).environment(navigation),
+        size: NSSize(width: 590, height: 900), dark: dark,
+        to: "\(out)/settings-launcher-scripts-page\(suffix).png")
+      navigation.path = []
+      try snapshot(
+        LauncherTab(drawsAdvanced: true).defaultAppStorage(engines).environment(navigation),
+        size: NSSize(width: 480, height: 480), dark: dark,
+        to: "\(out)/settings-launcher-advanced\(suffix).png")
       // 推进去的那一页（2026-11-07 从启动器页挪进来）
       try snapshot(
         NavigationStack { WebSearchPage() }.defaultAppStorage(engines).environment(navigation),
@@ -1770,6 +1874,21 @@ struct SnapshotProbeTests {
         capsule, false
       ),
       (
+        "merged-expanded",
+        ReminderCenter.notice(fired: [water, Reminder.examples[2]], missed: [])!,
+        buttons, capsule, true
+      ),
+      // 刘海屏上没有说明的：展开时只是底角从 24 变成 44（离两头的按钮、前导最近）
+      (
+        "merged-notch", ReminderCenter.notice(fired: [water, Reminder.examples[2]], missed: [])!,
+        buttons, notch, false
+      ),
+      (
+        "merged-notch-expanded",
+        ReminderCenter.notice(fired: [water, Reminder.examples[2]], missed: [])!, buttons, notch,
+        true
+      ),
+      (
         "missed", ReminderCenter.notice(fired: [], missed: [rent, call, nap])!, [buttons[0]], notch,
         false
       ),
@@ -1779,15 +1898,42 @@ struct SnapshotProbeTests {
       ),
     ]
     for (name, notice, titles, geometry, expanded) in cases {
+      // 和 Island.pin 换上来的一样：挂着直到处理
+      var content = Island.Content(
+        title: Self.key(notice.0), detail: notice.1.map(Self.key), tone: .info,
+        symbol: "alarm.fill", leading: .tone)
+      content.isPinned = true
       let island = Island(
-        showing: .init(
-          title: Self.key(notice.0), detail: notice.1.map(Self.key), tone: .info,
-          symbol: "alarm.fill", leading: .tone),
-        geometry: geometry, actions: titles.map { Island.Action(Self.key($0)) {} },
-        expanded: expanded)
+        showing: content, geometry: geometry,
+        actions: titles.map { Island.Action(Self.key($0)) {} }, expanded: expanded)
       try snapshot(
         IslandView(island: island), size: geometry.windowSize, dark: false,
         to: "\(out)/reminders-island-\(name).png")
+    }
+    // 刚弹出 vs 指针移上去展开（2026-11-18 用户反馈：悬停冒出来的「稍后」把「知道了」顶走、点错）：穿过按钮上半截
+    // （胶囊的底色、还没到字）的那一行像素两张图逐个相同——前导、标题、两个按钮在屏上一点不挪。有说明的（刘海屏）、
+    // 几条合成没说明的（胶囊、刘海屏）各一对
+    for (name, geometry) in [("one", notch), ("merged", capsule), ("merged-notch", notch)] {
+      let paths = ["", "-expanded"].map { "\(out)/reminders-island-\(name)\($0).png" }
+      guard paths.allSatisfy(FileManager.default.fileExists(atPath:)) else { continue }
+      let lines = try paths.map { path in
+        let bitmap = try #require(NSBitmapImageRep(data: Data(contentsOf: URL(filePath: path))))
+        let scale = CGFloat(bitmap.pixelsWide) / geometry.windowSize.width
+        let top: CGFloat = if case .notch(_, let height) = geometry { height } else { 2 }
+        let y = Int((top + 9) * scale)
+        return (0..<bitmap.pixelsWide).map {
+          bitmap.colorAt(x: $0, y: y)?.usingColorSpace(.deviceRGB)?.brightnessComponent ?? -1
+        }
+      }
+      // 只比黑色形体里面、两边各让开 3 pt：外面的阴影跟着形体变高本来就不一样，形体的弹簧截图时也还没完全停
+      // （边上差零点几个点；内容按最终尺寸排好，不跟着动）。胶囊是 0.92 的黑、透出背后的阴影，差 1 级亮度不算
+      let edge = Int(3 * CGFloat(lines[0].count) / geometry.windowSize.width)
+      let first = try #require(lines[0].firstIndex { $0 < 0.1 })
+      let last = try #require(lines[0].lastIndex { $0 < 0.1 })
+      let inside = (first + edge)...(last - edge)
+      let moved = inside.filter { abs(lines[0][$0] - lines[1][$0]) > 0.02 }
+      #expect(moved.isEmpty, "reminders-island-\(name)：悬停展开后第一行挪了（x = \(moved.prefix(5))）")
+      #expect(lines[0][inside].contains { $0 > 0.85 }, "那一行没穿过白底的主按钮")
     }
     // 全屏（第 2 批）：带表情和说明、20 秒倒数；几条合成一条、点了才收；进不去状态屏时的橙字和「去授权」；
     // 出现后那 1 秒按钮还没出来；小屏
@@ -3215,24 +3361,37 @@ struct SnapshotProbeTests {
     }
     off.set(false, forKey: Prefs.notesDeckEnabled)
     let displays = ["内建视网膜显示器", "DELL U2720Q"]
-    let tabSize = NSSize(width: 640, height: 1320)
+    let tabSize = NSSize(width: 640, height: 1100)
+    // 设置改版：便签页外面一张（屏幕边缘是推进行），屏幕边缘的几张画子页
+    let deckNavigation = SettingsNavigation(defaults: nil)
     for dark in [false, true] {
       try snapshot(
-        NotesTab(openNotes: {}, displays: displays).defaultAppStorage(on), size: tabSize,
+        NotesTab(openNotes: {}, displays: displays).defaultAppStorage(on)
+          .environment(deckNavigation), size: NSSize(width: 640, height: 900),
+        dark: dark, to: "\(out)/notes-settings\(dark ? "-dark" : "").png")
+    }
+    deckNavigation.path = [SettingsSubpage.notesDeck.route]
+    for dark in [false, true] {
+      try snapshot(
+        NotesTab(openNotes: {}, displays: displays).defaultAppStorage(on)
+          .environment(deckNavigation), size: tabSize,
         dark: dark, to: "\(out)/notes-deck-settings\(dark ? "-dark" : "").png")
     }
     try snapshot(
-      NotesTab(openNotes: {}, displays: displays).defaultAppStorage(off), size: tabSize,
+      NotesTab(openNotes: {}, displays: displays).defaultAppStorage(off)
+        .environment(deckNavigation), size: tabSize,
       dark: false, to: "\(out)/notes-deck-settings-off.png")
     on.set(true, forKey: Prefs.notesDeckAlwaysFanned)
     on.set(true, forKey: Prefs.notesDeckOpensOnHover)
     on.set("chosen", forKey: Prefs.notesDeckDisplay)
     on.set(displays[1], forKey: Prefs.notesDeckChosenDisplay)
     try snapshot(
-      NotesTab(openNotes: {}, displays: displays).defaultAppStorage(on), size: tabSize,
+      NotesTab(openNotes: {}, displays: displays).defaultAppStorage(on)
+        .environment(deckNavigation), size: tabSize,
       dark: false, to: "\(out)/notes-deck-settings-always.png")
     try snapshot(
-      NotesTab(openNotes: {}, displays: ["内建视网膜显示器"]).defaultAppStorage(off),
+      NotesTab(openNotes: {}, displays: ["内建视网膜显示器"]).defaultAppStorage(off)
+        .environment(deckNavigation),
       size: tabSize, dark: false, to: "\(out)/notes-deck-settings-one-display.png")
 
     // 全部便签窗口：编辑区抽成了两边共用的（Notes/NoteFields.swift），样子不该变——和第 2 批的 notes-window-list.png 对
@@ -3420,9 +3579,12 @@ struct SnapshotProbeTests {
     let suite = "kitty-snapshot-notes-float-\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
+    let deckNavigation = SettingsNavigation(defaults: nil)
+    deckNavigation.path = [SettingsSubpage.notesDeck.route]
     try snapshot(
-      NotesTab(openNotes: {}, displays: ["内建视网膜显示器"]).defaultAppStorage(defaults),
-      size: NSSize(width: 640, height: 1320), dark: false, to: "\(out)/notes-float-settings.png")
+      NotesTab(openNotes: {}, displays: ["内建视网膜显示器"]).defaultAppStorage(defaults)
+        .environment(deckNavigation),
+      size: NSSize(width: 640, height: 1100), dark: false, to: "\(out)/notes-float-settings.png")
   }
 
   private func renderTranslate(_ out: String) throws {
@@ -3514,6 +3676,26 @@ struct SnapshotProbeTests {
                 "## 安装\n- 下载 **App**\n  - 打开它\n> 需要 macOS 15\n---\n```\nbrew install kitty\n```\n1. 第一步 `--help`"
               )),
             .init(service: gpt, state: .done("## 安装\n- 下载 App")),
+          ]
+        }
+      ),
+      // 讲解外文句子（issue #35）：开了讲解的服务出译文 + 重点词 + 句型（块级 Markdown），没开的照常只出译文
+      (
+        "translate-explain",
+        { c in
+          c.sourceText = "The committee has yet to decide whether the proposal is worth pursuing."
+          c.detected = .en
+          c.target = .zhHans
+          c.translatedSource = c.sourceText
+          c.cards = [
+            .init(
+              service: deepseek,
+              state: .done(
+                "委员会还没决定这项提议值不值得继续推进。\n\n**重点词汇**\n- have yet to do 还没有做（某事），比 haven't 书面\n"
+                  + "- proposal /prəˈpəʊzl/ n. 提议；方案\n- be worth doing 值得做\n"
+                  + "- pursue /pəˈsjuː/ v. 追求；继续进行——这里指把提议推进下去\n\n**句型**\n"
+                  + "whether 引导的从句作 decide 的宾语；has yet to decide 是现在完成时，表示到现在还没决定。")),
+            .init(service: zhipu, state: .done("委员会尚未决定该提案是否值得推进。")),
           ]
         }
       ),
@@ -4041,6 +4223,32 @@ struct SnapshotProbeTests {
       }
     }
     model.alternate = .none
+    // 路径模式（2026-11-18）：临时目录里一个隐藏文件夹 .local（同反馈里的例子），列出里面的、按开头筛、⌘K
+    let shotRoot = FileManager.default.temporaryDirectory.appending(path: "kitty-shot-\(UUID())")
+      .resolvingSymlinksInPath()
+    defer { try? FileManager.default.removeItem(at: shotRoot) }
+    let local = shotRoot.appending(path: ".local")
+    for folder in ["bin", "lib", "share", "state"] {
+      try FileManager.default.createDirectory(
+        at: local.appending(path: folder), withIntermediateDirectories: true)
+    }
+    for file in ["README.md", "env.sh"] { try Data().write(to: local.appending(path: file)) }
+    for dark in [false, true] {
+      for (name, query) in [
+        ("launcher-path", local.path), ("launcher-path-filter", local.path + "/s"),
+        ("launcher-path-actions", local.path + "/"),
+      ] {
+        model.query = query
+        await model.pathLookup()
+        model.showsActions = name == "launcher-path-actions"
+        try snapshot(
+          LauncherPanelView(model: model),
+          size: NSSize(width: 720, height: LauncherPanelView.height(for: model)),
+          dark: dark,
+          to: "\(out)/\(name)\(dark ? "-dark" : "").png")
+      }
+    }
+    model.showsActions = false
     try await renderLauncherBatch6(out, usage: usage, apps: apps)
     try renderLauncherFollow(out)
   }
@@ -5309,7 +5517,7 @@ struct SnapshotProbeTests {
       dark: false, to: "\(out)/app-shortcuts-settings-off.png")
   }
 
-  /// 设置 › 访达右键整页（「压缩时跳过」那一行的小字：填了一串、有一条写错了），推进去的「压缩时跳过」（空着、很多项带写错的，
+  /// 设置 › 访达右键整页（「压缩时跳过」那一行的小字：填了一串、有一条写错了；另一张「⌘X 剪切、⌘V 移动」开着、没授权），推进去的「压缩时跳过」（空着、很多项带写错的，
   /// 浅 / 深），「+」弹出的小框（空着、能加、带「/」、已经有了；屏外画不出 popover，单画里面那块）。几秒，图以 finder- 开头：
   /// -only-testing:'KittyToolsTests/SnapshotProbeTests/finderMenuSettings()'。偏好读临时偏好域
   @Test(.enabled(if: directory != nil)) func finderMenuSettings() throws {
@@ -5334,6 +5542,16 @@ struct SnapshotProbeTests {
       FinderMenuTab(extensionEnabled: true, finderAutomation: .denied, desktopInICloud: true)
         .defaultAppStorage(prefs),
       size: NSSize(width: 640, height: 560), dark: false, to: "\(out)/finder-settings-icloud.png")
+    // 「在访达里用 ⌘X 剪切、⌘V 移动」开着、没有辅助功能授权（「整理文件」里一行橙字 +「打开系统设置」）
+    prefs.set(true, forKey: Prefs.finderMenuKeys)
+    try snapshot(
+      FinderMenuTab(
+        extensionEnabled: true, finderAutomation: .granted, desktopInICloud: false,
+        accessibilityTrusted: false
+      )
+      .defaultAppStorage(prefs),
+      size: NSSize(width: 640, height: 2400), dark: false, to: "\(out)/finder-settings-keys.png")
+    prefs.removeObject(forKey: Prefs.finderMenuKeys)
     func page() -> some View { NavigationStack { CompressSkipPage() }.defaultAppStorage(prefs) }
     prefs.removeObject(forKey: Prefs.finderCompressSkip)
     for dark in [false, true] {
@@ -5588,14 +5806,16 @@ struct SnapshotProbeTests {
       }, size: size, dark: false, to: "\(out)/sync-upgraded.png")
     prefs.set([String](), forKey: Prefs.syncSkipped)
     prefs.removeObject(forKey: Prefs.syncNewKindsHint)
-    // 在通用页里的位置（导出与导入上面）、便签关着时
+    // 设置 › 通用 › 同步那一页（设置改版：从通用页里挪进子页）、便签关着时
     let general = NoteSyncer(store: store, defaults: prefs)
     general.status = .idle
     general.lastSync = now.addingTimeInterval(-120)
     general.peers = [air]
+    let generalNavigation = SettingsNavigation(defaults: nil)
+    generalNavigation.path = [SettingsSubpage.generalSync.route]
     try snapshot(
-      GeneralTab(sync: general).defaultAppStorage(prefs), size: NSSize(width: 640, height: 1500),
-      dark: false, to: "\(out)/sync-general.png")
+      GeneralTab(sync: general).defaultAppStorage(prefs).environment(generalNavigation),
+      size: NSSize(width: 640, height: 900), dark: false, to: "\(out)/sync-general.png")
     prefs.set(false, forKey: Feature.notes.prefsKey)
     try snapshot(
       section {

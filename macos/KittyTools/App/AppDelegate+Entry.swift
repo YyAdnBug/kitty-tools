@@ -95,9 +95,9 @@ extension AppDelegate {
   /// 启动器里的内置动作（id 见 LauncherItem.actions，体检 A26）；启动器已收起。和菜单栏走同一个 run
   func runLauncherAction(_ id: String) {
     // 脚本命令的两条（第二轮 D2）
-    // 新建脚本：打开 设置 › 启动器，盖上新建的小表单（第三轮 D2，和设置里的按钮同一张）
+    // 新建脚本：打开 设置 › 启动器 › 脚本命令，盖上新建的小表单（第三轮 D2，和设置里的按钮同一张）
     if id == LauncherItem.newScriptID {
-      showSettings(page: .launcher)
+      showSettings(page: .launcher, path: [SettingsSubpage.launcherScripts.route])
       // 速查表、欢迎引导盖着时不再叠一张（关了它也不会冒出来）
       guard settingsNavigation.page == .launcher, !settingsNavigation.showsShortcuts,
         !settingsNavigation.showsOnboarding
@@ -109,9 +109,9 @@ extension AppDelegate {
       Paster.write(string: ScriptAIGuide.text, record: true)
       island.show(
         "已复制脚本写法说明",
-        detail: "贴给你常用的 AI、写上想做什么；它给的脚本到 设置 › 启动器「从剪贴板新建」",
+        detail: "贴给你常用的 AI、写上想做什么；它给的脚本到 设置 › 启动器 › 脚本命令「从剪贴板新建」",
         actions: [
-          Island.Action("打开设置", opens: true) { [unowned self] in showSettings(page: .launcher) }
+          Island.Action("打开设置", opens: true) { [unowned self] in showSettings(.launcherScriptsAI) }
         ])
       return
     }
@@ -271,15 +271,10 @@ extension AppDelegate {
     .init("勾选同步", opens: true) { [unowned self] in showSyncSettings() }
   }
 
-  /// 设置 › 通用，滚到「同步」那一节（刘海岛上「打开同步设置」「勾选同步」，第五轮体检 U1）
+  /// 设置 › 通用 › 同步（刘海岛上「打开同步设置」「勾选同步」，第五轮体检 U1；设置改版起同步在通用页的子页里）。
+  /// 设置窗挂着别的表单时 show 不换页也不推（同 SettingsWindow.show 的口径）
   func showSyncSettings() {
-    showSettings(page: .general)
-    // 设置窗开着 sheet 时不换页也不退页（同 SettingsWindow.show 的口径）：没到通用页、挂着 sheet 都不动
-    guard settingsWindow.window.attachedSheet == nil, settingsNavigation.page == .general else {
-      return
-    }
-    settingsNavigation.path = []
-    settingsNavigation.revealsSync = true
+    showSettings(page: .general, path: [SettingsSubpage.generalSync.route])
   }
 
   /// 暂停记录剪贴板的三处一起设：采集、面板底栏、菜单栏图标的暂停角标（X13）
@@ -405,6 +400,16 @@ extension AppDelegate {
   func showSettings(page: SettingsPage? = nil, path: [String] = [], onboarding: Bool = false) {
     hidePanels()
     settingsWindow.show(page: page, path: path, onboarding: onboarding)
+  }
+
+  /// 打开设置窗、落到那一行（设置改版 S8：面板里的「设置…」、岛上的「打开设置」）：滚过去描一圈
+  func showSettings(_ item: SettingsItem) {
+    // 设置窗挂着表单（速查表、确认框）时不动：show 不换页，同一页上也别退掉推进着的详情页、把确认框一起拆掉
+    // （同 showSyncSettings）。挂着的是「高级…」表单照样落过去。先看再 show：换页时 advanced 已经清了，表单还没收走
+    let free = settingsWindow.window.attachedSheet == nil || settingsNavigation.advanced != nil
+    showSettings(page: item.page)
+    guard free, settingsNavigation.page == item.page else { return }
+    settingsNavigation.open(item)
   }
 
   /// 三块浮层、选状态的面板、快速记一条、主界面都收起，固定着的也收（打开设置、打开全部便签、进入状态屏）

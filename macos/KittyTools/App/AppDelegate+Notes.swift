@@ -85,8 +85,8 @@ extension AppDelegate {
     case .done: break
     case .disabled:
       island.show(
-        "屏幕边缘的便签关着", detail: "到 设置 › 便签 打开「屏幕边缘」", tone: .info,
-        actions: [.init("打开设置", opens: true) { [unowned self] in showSettings(page: .notes) }])
+        "屏幕边缘的便签关着", detail: "到 设置 › 便签 › 屏幕边缘 里打开", tone: .info,
+        actions: [.init("打开设置", opens: true) { [unowned self] in showSettings(.notesDeck) }])
     case .empty:
       island.show(
         "还没有便签", detail: "记下第一条，屏幕边缘就会出现", tone: .info,
@@ -107,7 +107,7 @@ extension AppDelegate {
     model.floats = noteEdge?.floats
     model.toggleFloat = { [unowned self] in noteEdge?.floats.toggle($0) }
     // ⌘,、工具栏的「便签设置」：落在设置的「便签」页
-    model.showSettings = { [unowned self] in showSettings(page: .notes) }
+    model.showSettings = { [unowned self] in showSettings(.notesFontSize) }
     notesModel = model
     return model
   }

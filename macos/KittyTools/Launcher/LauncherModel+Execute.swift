@@ -8,6 +8,7 @@ extension LauncherModel {
   // MARK: 执行
 
   func execute(_ item: LauncherItem) {
+    if pathPending { return NSSound.beep() }
     if let request = commandRequest, [.app, .path, .process].contains(item.kind) {
       return runTarget(item, rowVerb(item, in: request))
     }
@@ -53,6 +54,14 @@ extension LauncherModel {
       offerPlugin(plugin)
     case .prompt where item.target.hasPrefix(Self.awakePrefix):
       runKeepAwake(item)
+    case .prompt where item.target == Self.pathVolumes:
+      UserDefaults.standard.set(true, forKey: Prefs.launcherVolumesAllowed)
+      pathListings = [:]
+      search()
+    case .prompt where item.target.hasPrefix(Self.pathOpenPrefix):
+      close()
+      NSWorkspace.shared.open(
+        URL(filePath: String(item.target.dropFirst(Self.pathOpenPrefix.count))))
     case .prompt:
       if let completion = item.completion { query = completion }
     case .search:
@@ -562,11 +571,8 @@ extension LauncherModel {
     if let completion = item.completion { return completion }
     switch item.kind {
     case .app, .action, .url, .system: return item.title
-    case .path:
-      var isDirectory: ObjCBool = false
-      let exists = FileManager.default.fileExists(atPath: item.target, isDirectory: &isDirectory)
-      let path = (item.target as NSString).abbreviatingWithTildeInPath
-      return exists && isDirectory.boolValue && !path.hasSuffix("/") ? path + "/" : path
+    // 不 stat（路径可能在卡住的盘上）：补出路径本身，是文件夹的话路径模式会直接列它里面
+    case .path: return (item.target as NSString).abbreviatingWithTildeInPath
     case .script: return item.arguments == nil ? item.title : nil
     case .search, .calculation, .clip, .prompt, .translate, .process, .ip, .reminder,
       .scriptResult:
@@ -624,6 +630,9 @@ extension LauncherModel {
     case .prompt where item.target.hasPrefix(Self.awakePrefix): Self.act("开始", "cup.and.saucer")
     case .prompt where item.target.hasPrefix(Self.choicePrefix):
       Self.act("选这个", "text.cursor")
+    case .prompt where item.target == Self.pathVolumes: Self.act("允许读取", "externaldrive")
+    case .prompt where item.target.hasPrefix(Self.pathOpenPrefix):
+      Self.act("在访达中打开", "folder")
     case .prompt:
       item.target == FileSearch.accessTarget
         ? Self.act(

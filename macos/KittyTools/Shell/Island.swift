@@ -52,6 +52,8 @@ import SwiftUI
     /// 认这一条用的（多语言，2026-11-15）：进度、收起、缩进耳朵的编号按它找这一条（progress、dismiss(ifShowing:)），
     /// 不拿显示出来的字比——两句不同的中文可能译成同一句英文。key + 插进去的值都算
     var source: LocalizedStringResource
+    /// 挂着直到处理的那条（pin 换上来的，提醒）：按钮一开始就全露着，展开不重排（IslandView.pinnedCard）
+    var isPinned = false
 
     /// 标题、说明是能本地化的字（调用处的字面量会被抽进目录）；用户的数据（歌名、文件名）传 "\(x)"
     init(
@@ -68,7 +70,7 @@ import SwiftUI
     }
   }
 
-  /// 岛上的一个按钮。第一个是最主要的：平时露在行尾，展开后在 × 左边（拍板 B2）
+  /// 岛上的一个按钮。第一个是最主要的：平时露在行尾，展开后在 × 左边（拍板 B2）；挂着的那条一开始就全露着、主按钮在最右
   struct Action {
     /// 显示的字（建的时候按当前语言取好）
     let title: String
@@ -412,11 +414,12 @@ import SwiftUI
   static let chin: CGFloat = 36
   static let maxWidth: CGFloat = 460
 
-  /// 收着那一行的标题、详情最宽多少（纯函数，多语言第 9 批）：整行（左右各 18、前导 26、间距 10、进度条、第一个按钮）
-  /// 不超过 maxWidth。详情原来就最宽 280、中间截断，标题不截；英文的长标题（「Finder Menu needs to be turned on once
-  /// in System Settings」）加上详情、按钮会撑出岛被裁掉（中文的长标题、带用户起的名字的也会）。放不下时先把详情压到
-  /// 最窄 120，还不够再截标题的尾巴；放得下时标题不限（nil）、详情 280，和原来一样（中文截图逐像素不变）
-  static func rowRoom(title: String, detail: String?, button: String?, fraction: Bool) -> (
+  /// 收着那一行的标题、详情最宽多少（纯函数，多语言第 9 批）：整行（左右各 18、前导 26、间距 10、进度条、露出来的按钮——
+  /// 平时是第一个，挂着的那条是全部，间距 8）不超过 maxWidth。详情原来就最宽 280、中间截断，标题不截；英文的长标题
+  /// （「Finder Menu needs to be turned on once in System Settings」）加上详情、按钮会撑出岛被裁掉（中文的长标题、
+  /// 带用户起的名字的也会）。放不下时先把详情压到最窄 120，还不够再截标题的尾巴；放得下时标题不限（nil）、详情 280，
+  /// 和原来一样（中文截图逐像素不变）
+  static func rowRoom(title: String, detail: String?, buttons: [String], fraction: Bool) -> (
     title: CGFloat?, detail: CGFloat
   ) {
     func width(_ text: String, _ font: NSFont) -> CGFloat {
@@ -424,7 +427,11 @@ import SwiftUI
     }
     var budget = maxWidth - 36 - 26 - 10
     if fraction { budget -= 56 + 10 }
-    if let button { budget -= width(button, .systemFont(ofSize: 12, weight: .semibold)) + 20 + 10 }
+    if !buttons.isEmpty {
+      let font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+      budget -=
+        buttons.reduce(0) { $0 + width($1, font) + 20 } + CGFloat(buttons.count - 1) * 8 + 10
+    }
     let titleWidth = width(title, .systemFont(ofSize: 13, weight: .semibold))
     guard let detail else { return (titleWidth <= budget ? nil : max(budget, 60), 280) }
     budget -= 10
@@ -665,7 +672,8 @@ import SwiftUI
       // 指针移到一瞥上：展开成那个活动的卡片
       if let id = glancing { expand(id) }
       if !isExpanded, !isBoardOpen {
-        changedAt = .now
+        // 挂着的那条展开时按钮不挪（pinnedCard）：不用防「刚展开」的那一下，快点也算
+        if content?.isPinned != true { changedAt = .now }
         withAnimation(Self.bloom) { isExpanded = true }
       }
       hoverCheck?.cancel()
@@ -849,9 +857,10 @@ import SwiftUI
     _ title: String, detail: String?, symbol: String, actions: [Action],
     onClose: @escaping () -> Void
   ) {
-    let next = Content(
+    var next = Content(
       title: "\(title)", detail: detail.map { "\($0)" }, tone: .info, symbol: symbol,
       leading: .tone)
+    next.isPinned = true
     let wasShowing = isShowingPinned
     let same = pinned?.content == next
     pinned = (next, actions, onClose)
@@ -867,10 +876,11 @@ import SwiftUI
     apply(next, actions: actions)
   }
 
-  /// 催一下挂着的那条（提醒 C10）：整座岛左右抖一下（同出错时）、再播报一遍；没显示着它就不动
+  /// 催一下挂着的那条（提醒 C10）：整座岛左右抖一下（同出错时）、再播报一遍；没显示着它就不动。
+  /// 指针在岛上时不抖：人已经在看了，抖起来按钮会从指针底下跑开（2026-11-18 用户反馈点错）
   func nudge() {
     guard isShowingPinned, let content else { return }
-    shakes += 1
+    if !isHovered { shakes += 1 }
     Self.post([content.title, content.detail].compactMap { $0 }.joined(separator: Self.comma))
   }
 

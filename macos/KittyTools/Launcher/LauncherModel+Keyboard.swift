@@ -29,6 +29,9 @@ extension LauncherModel {
       }
     case #selector(NSResponder.insertTab(_:)):
       complete()  // 没得补也吞掉，不让焦点跳到别的控件
+    // ⇧Tab：路径模式里回到上一级；别处吞掉（同 Tab，不让焦点跳走）
+    case #selector(NSResponder.insertBacktab(_:)):
+      if pathRequest != nil { goUpPath() }
     // →：光标在搜索词末尾、有选中项时打开动作菜单（同剪贴板），否则照常往右移光标
     case #selector(NSResponder.moveRight(_:))
     where selectedItem != nil && Self.caretAtEnd(of: query):
@@ -159,10 +162,16 @@ extension LauncherModel {
     case [.command, .option] where key == kVK_UpArrow || key == kVK_DownArrow:
       handled = moveFavorite(by: key == kVK_UpArrow ? -1 : 1)
     case [.command, .shift] where key == kVK_ANSI_C:
-      guard let item = selectedItem, isWebLink(item), !Self.fieldHasSelection(event) else {
+      guard let item = selectedItem, isWebLink(item) || isPathRow(item),
+        !Self.fieldHasSelection(event)
+      else {
         return false
       }
-      copy(item, .markdown)
+      if isPathRow(item) { copyFile(item) } else { copy(item, .markdown) }
+      handled = true
+    case [.command, .option] where key == kVK_ANSI_C:
+      guard let item = selectedItem, isPathRow(item) else { return false }
+      copyShellPath(item)
       handled = true
     default: return false
     }
@@ -194,6 +203,9 @@ extension LauncherModel {
       toggleFavorite(item)
     case kVK_ANSI_Y:
       toggleQuickLook()
+    case kVK_ANSI_T:
+      guard let item = selectedItem, isPathRow(item) else { return false }
+      openInTerminal(item)
     case kVK_ANSI_E:
       guard let item = selectedItem, let script = script(of: item) else { return false }
       edit(script)

@@ -216,6 +216,7 @@ extension AppDelegate {
     nextEvent.apply()
     mediaKeys.apply()
     smoothScroll.apply()
+    finderKeys.apply()
     showWelcomeIfNeeded()
     // 有快捷键没注册上（15.0 / 15.1 上只带 ⌥ 的组合）：按了没反应又不知道为什么，启动时说一次
     // （放在「已更新」之后：同一座岛原地换内容，警告不能被盖掉）
@@ -260,6 +261,7 @@ extension AppDelegate {
         self.nextEvent.apply()
         self.mediaKeys.apply()
         self.smoothScroll.apply()
+        self.finderKeys.apply()
         // 命令的快捷键跟着「命令和别名」的开关和别名、脚本命令总开关、⌘K「关掉这条命令」走（第 4 批评审：只在那一页的
         // onChange 里跟，别处改的不注销）；没变不动
         self.hotKeys.reloadCommandsIfChanged()
@@ -518,7 +520,7 @@ extension AppDelegate {
       // 说了的不再说；岛上正挂着警告（快捷键没注册上）时也不弹——同一座岛原地换内容，警告不能被盖掉，只靠设置页那句
       if syncer.upgraded, !toldSyncUpgrade, island.content?.tone != .warning {
         island.show(
-          "现在也能同步设置、片段和收藏这些了", detail: "要同步哪几类，到 设置 › 通用「同步」里勾上", tone: .info,
+          "现在也能同步设置、片段和收藏这些了", detail: "要同步哪几类，到 设置 › 通用 › 同步 里勾上", tone: .info,
           symbol: "arrow.triangle.2.circlepath.circle.fill", actions: [openSyncSettings])
       }
       let settings = SettingsSync(applied: { [unowned self] in
@@ -577,7 +579,7 @@ extension AppDelegate {
     let edge = NoteEdge(store: store, island: island)
     edge.canFan = { [unowned self] in canFanNotes }
     edge.showNotes = { [unowned self] in showNotes() }
-    edge.showSettings = { [unowned self] in showSettings(page: .notes) }
+    edge.showSettings = { [unowned self] in showSettings(.notesDeck) }
     edge.showInWindow = { [unowned self] in showNotes(revealing: $0) }
     // 那叠收起、浮动便签收回：也排空闲回收（只用便签的人，看过的图也要还回去）
     edge.onHide = { [unowned self] in idleReclaim.schedule() }

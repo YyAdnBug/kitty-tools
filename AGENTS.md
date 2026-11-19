@@ -21,7 +21,7 @@
   - 保持唤醒 `KeepAwake/`（**第一个插件**，2026-11-12 做好；0.9.0 发布前拆出去，2026-11-16 回到下一版，自带的 awake 脚本随之删掉）：手动开一段（无限期 / 30 分钟–5 小时 / 到某一刻）或按时段自动开，`ProcessInfo.beginActivity`；菜单栏、主界面、启动器「awake 2小时」、全局快捷键。**以后新的大模块都做成内置插件**：新装升级都默认不添加，在 设置 › 通用 › 功能 下面的插件卡片里添加（规矩在 mac-native §1「插件」，PLAN §10「插件与保持唤醒」）
   - 全局同步（设置 › 通用「同步」）：同步文件夹，便签（0.6.0）之外设置、快捷键、片段和收藏等也能同步（0.7.0）；能直接连 WebDAV 服务器（0.9.0，issue #18：本机一份镜像、pull → 照文件夹同步合 → push，`Notes/NoteSyncServer.swift`，PLAN §10「WebDAV 同步」）
   - 刘海岛交互：提示能悬停展开、带按钮，点刘海叫出最近的提示（0.7.0）；刘海岛扩展（下一版，2026-11-12 立项照 Atoll 拍板、11-13 开工，`island-atoll-wip`，PLAN §10「刘海岛扩展」）：录制计时、长任务、提醒倒数这类「活动」收起时挂在刘海两侧的耳朵上（`Shell/IslandActivity.swift`），没刘海时挂菜单栏，设置 › 刘海岛（PR #17）能调快捷动作、关掉点刘海、开系统提示；新 MacBook Pro 的系统灵动岛上让位
-  - 访达右键 `FinderMenu/` + 扩展 target `macos/KittyToolsFinder/`：访达右键第一层的「拷贝路径」「在“X”中打开」「新建文件 ▸」，加上右键扩充的拷贝名称、移动到 / 复制到、剪切 / 粘贴、压缩 / 解压到这里、修复乱码文件名（这几项默认开）和替身到桌面、显示隐藏文件、隐藏 / 扩展名、拷贝哈希、彻底删除（默认关）；整个功能默认关（下一版，2026-11-08 立项，`finder-wip` 分批做；扩展只画菜单、开沙盒、Swift 5 语言模式，规矩在 mac-native §2 §3 §6，PLAN §10「访达右键」）
+  - 访达右键 `FinderMenu/` + 扩展 target `macos/KittyToolsFinder/`：访达右键第一层的「拷贝路径」「在“X”中打开」「新建文件 ▸」，加上右键扩充的拷贝名称、移动到 / 复制到、剪切 / 粘贴、压缩 / 解压到这里、修复乱码文件名（这几项默认开）和替身到桌面、显示隐藏文件、隐藏 / 扩展名、拷贝哈希、彻底删除（默认关）；另有「在访达里用 ⌘X 剪切、⌘V 移动」（第四处事件拦截，开关默认关，2026-11-18 issue #33，`FinderMenu/FinderKeys.swift`）；整个功能默认关（下一版，2026-11-08 立项，`finder-wip` 分批做；扩展只画菜单、开沙盒、Swift 5 语言模式，规矩在 mac-native §2 §3 §6，PLAN §10「访达右键」）
 - **版本**：已发布到 0.10.0（latest，2026-11-18：英文界面、四个新插件、刘海岛认系统的专注模式和一批新开关、翻译 30 种语言等，PLAN §12；0.9.0 是 2026-11-14、0.8.1 是 2026-11-10）。各版真机手测都没走完。
 - 现状、待手测、下一步看 PLAN §12（各族立项日期、批次进度的原文在 §12「各族进度摘要（原 AGENTS 项目概述）」）；发版前走的「真机回归清单」和正在验收的那一轮手测看 `macos/HANDTEST.md`（到 2026-10-30 的发版冒烟清单和各批手测原样归档在 `macos/docs/archive/HANDTEST-2026-10.md`，编号不变，代码注释、规则里「HANDTEST X 第 N 条」都指那里）；拍板和每族的规矩看 PLAN §10 和对应的 `mac-*` 规则。
 - Bundle ID `com.yy.kitty-tools.native`（Debug `com.yy.kitty-tools.native.dev`），不再改（改了会丢偏好、钥匙串和授权）；产品名 / .app 名 `Kitty Tools`（Debug `Kitty Tools Dev`）。和 Tauri 旧版同名：安装前先删掉 /Applications 里旧版的 `Kitty Tools.app`。
@@ -183,6 +183,13 @@ TEST_RUNNER_KITTY_LIVE_NOW_PLAYING=1 xcodebuild -project macos/KittyTools.xcodep
 TEST_RUNNER_KITTY_LIVE_MEDIA_KEYS=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/MediaKeysTests/liveSwallowsVolumeKey()'
 
+# 访达里 ⌘X / ⌘V 靠的那条系统行为的实机自检（按需，不到一秒，要测试宿主有「辅助功能」授权；测试宿主别在前台）：在会话层加了注解的
+# 那一点建拦截，发两次带记号的合成 ⌃⌥⇧⌘F19（自己吞掉，到不了任何 App），看事件上「要送去的进程」——平常是前台 App，
+# **一块屏幕外的不激活面板当 key 的约半秒里**是本进程（这半秒里真的按键会落到它上面，手离开键盘）；最后只读地问一次访达的焦点元素
+# （grep「finder-keys」）。改了 FinderMenu/FinderKeys.swift 后、每个 macOS 大版本跑一遍。别的 App 的不激活面板正当着 key 时第一步对不上
+TEST_RUNNER_KITTY_LIVE_FINDER_KEYS=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:'KittyToolsTests/FinderKeysTests/liveTargetsKeyWindowOwner()'
+
 # 平滑滚动插件的实机自检（按需，约 3 秒，要测试宿主有「辅助功能」授权；**跑之前先问用户**）：真的起滚动线程、建事件拦截（探针模式：
 # 真的滚轮原样放过），发几个带记号的合成滚轮，量第一帧多快、一共滑多远、主线程卡半秒时帧还出不出、停了线程退没退；帧也吞掉，
 # 到不了别的 App。改了 SmoothScroll/ 后跑。另有只听不改的 record()：TEST_RUNNER_KITTY_SMOOTH_SCROLL_RECORD=<秒>，这几秒里
@@ -197,11 +204,23 @@ TEST_RUNNER_KITTY_LIVE_SMOOTH_SCROLL=1 xcodebuild -project macos/KittyTools.xcod
 TEST_RUNNER_KITTY_ISLAND_FRAMES=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/IslandFrameProbeTests/measure()'
 
+# 访达右键新建文件后进入改名的是不是新文件的实机自检（按需，约 20 秒，要测试宿主有「辅助功能」授权；issue #34；**跑之前先问用户**、
+# 跑的时候手离开键鼠；开始前就开着的访达窗口收尾时不关）：访达到前台，在临时文件夹里
+# 分栏（两种位置）/ 列表 / 图标 / 画廊各新建一个，看进入改名的是新文件、别的没被改名，Esc 退出、关掉新开的窗口。改了
+# NewFile.revealForRename / finderSelects、每个 macOS 大版本跑一遍（读的是访达的辅助功能结构）
+TEST_RUNNER_KITTY_LIVE_FINDER_RENAME=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:'KittyToolsTests/NewFileTests/liveRenameLandsOnNewFile()'
+
 # 框选遮罩「鼠标动一下」的探针（按需，屏外，几秒；grep「selection-probe」：放大镜采样、待选 / 框好 / 拖框时
 # 设一次 mouse 各要多久。量的只是主线程的那一下——跟不跟手得真机看，鼠标移动事件是合并的，靠
 # SelectionView.followPointer 那条显示链每帧补读光标位置）
 TEST_RUNNER_KITTY_SELECTION_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/SelectionProbeTests/measure()'
+
+# 启动器路径模式的真机实测（按需，几秒，只读：Dev 版身份读本机真实的 ~、/、/Applications、/usr/bin、桌面 / 文稿（按开关挡住）等，
+# 每个输入列了什么、读了多久写进 <目录>/report.md）
+TEST_RUNNER_KITTY_LIVE_PATH=/tmp/kitty-path xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:'KittyToolsTests/PathBrowserTests/liveRealFolders()'
 
 # 流式翻译时每来一段字的主线程耗时探针（按需，屏外，不到一秒、不联网；grep「favorite-probe」：收藏状态那一查、浮窗更新一遍。
 # 第五轮体检 P3 量的：4 张生成中的卡、32 KB 原文时那一查 0.1 ms，浮窗更新一遍中位 4.1 ms，收藏状态记下来以后 3.6 ms；

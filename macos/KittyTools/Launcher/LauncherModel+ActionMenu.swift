@@ -39,6 +39,9 @@ extension LauncherModel {
     if isFile(item) || Self.resultFile(item) != nil {
       add("快速查看", "eye", "⌘Y", section: 0) { [unowned self] in quickLook(item) }
     }
+    if isPathRow(item) {
+      add("在终端中打开", "terminal", "⌘T", section: 0) { [unowned self] in openInTerminal(item) }
+    }
     // 1 脚本（第二轮 D1）：发现一条不对劲，就地改它、换个词、关掉；自带的复制一份成自己的。
     // 脚本没有「用别的 App 打开」，接在打开后面，不用滚就看得到
     if let script = script(of: item) {
@@ -84,6 +87,12 @@ extension LauncherModel {
         ? "link" : "doc.on.doc"
       add(title, symbol, "⌘C", section: 2) { [unowned self] in copy(item) }
     }
+    if isPathRow(item) {
+      add("拷贝文件", "doc.on.doc", "⇧⌘C", section: 2) { [unowned self] in copyFile(item) }
+      add("复制终端写法的路径", "apple.terminal", "⌥⌘C", section: 2) { [unowned self] in
+        copyShellPath(item)
+      }
+    }
     if web {
       add("复制为 Markdown 链接", "text.badge.plus", "⇧⌘C", section: 2) { [unowned self] in
         copy(item, .markdown)
@@ -125,7 +134,7 @@ extension LauncherModel {
     if isCommon(item) {
       add("从常用中移除", "clock.badge.xmark", "⌘⌫", section: 4) { [unowned self] in forget(item) }
     }
-    if isFile(item) {
+    if isFile(item), Self.canTrash(item.target) {
       add("移到废纸篓", "trash", section: 4, destructive: true) { [unowned self] in
         moveToTrash(item)
       }

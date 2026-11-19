@@ -2,7 +2,7 @@
 // 没开时一行「连接服务器…」「选择文件夹…」（WebDAV 服务器：issue #18，2026-11-13，表单在 SyncServerForm）；开着时文件夹或
 // 服务器、状态、停止 / 立即同步，「同步的内容」每类一个勾（A3，这台电脑自己的），其他电脑。第五轮体检：服务器不认密码时
 // 「更新密码…」（E1，表单 SyncPasswordForm 在 SyncServerForm.swift）、连服务器时「停止同步…」先确认、http 连着时服务器名后面
-// 一个橙色的「未加密」（U2）；刘海岛「打开同步设置」滚到这一节（anchor，U1）。
+// 一个橙色的「未加密」（U2）；刘海岛「打开同步设置」推进到 设置 › 通用 › 同步 这一页（U1，设置改版起这一节在子页里）。
 
 import AppKit
 import SwiftUI
@@ -46,8 +46,6 @@ struct SyncSection: View {
   /// 「更新密码…」的表单开着
   @State private var updatingPassword = false
 
-  /// 刘海岛「打开同步设置」滚到这一节（GeneralTab 认这个 id）
-  static let anchor = "sync"
   /// 连服务器时「停止同步…」的确认框（截图自检照同样的字画一个系统确认框）
   static let stopTitle: LocalizedStringResource = "停止和服务器同步？"
   static let stopMessage: LocalizedStringResource =
@@ -111,18 +109,18 @@ struct SyncSection: View {
           Text("其他电脑")
           Text(peersLine)
         }
+        .settingsAnchor(.generalSyncPeers)
       } else {
         offRow
       }
     } header: {
       NewTitle("同步", page: .general, fresh: navigation?.fresh ?? [])
+        .settingsAnchor(.generalSync)
     } footer: {
       SectionFootnote(
         "勾上的几类在几台电脑之间保持一样，取消一类只是不再同步它。同步文件夹（连服务器时是服务器上那个文件夹）里放的是不加密的文本文件和图片，能打开这个文件夹的人都看得到。每台电脑只往自己的那份里写、读所有电脑的，改动一般几十秒到几分钟传过去（看同步盘多快；连服务器时大约一分钟一轮）。两台都改了同一条时，后改的留下（便签的另一版放进「最近删除」）；别处删掉的片段、收藏和生词，这台 Mac 上只是不再收藏；一轮要删的太多会先停下来问。停止同步后，文件夹里的东西留着，这台 Mac 上的也不动。"
       )
     }
-    // 挂在整节上：滚过去时「同步」节标题也看得见
-    .id(Self.anchor)
   }
 
   // MARK: 没开
@@ -403,8 +401,8 @@ struct SyncSection: View {
       return syncer.lastSync == nil
         ? String(localized: "同步一轮之后列在这里")
         : syncer.server == nil
-          ? String(localized: "还没有——在另一台电脑的 设置 › 通用 里选同一个文件夹")
-          : String(localized: "还没有——在另一台电脑的 设置 › 通用 里连同一个服务器上的同一个文件夹")
+          ? String(localized: "还没有——在另一台电脑的 设置 › 通用 › 同步 里选同一个文件夹")
+          : String(localized: "还没有——在另一台电脑的 设置 › 通用 › 同步 里连同一个服务器上的同一个文件夹")
     }
     return syncer.peers.map { peer in
       let name = peer.name ?? String(localized: "没写名字的一台")

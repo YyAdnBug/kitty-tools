@@ -62,7 +62,11 @@ extension Feature {
         PluginPermission(kind: .screenRecording, reason: "截窗口的缩略图；没有它只列窗口的名字"),
       ]
     case .finderMenu:
-      [PluginPermission(kind: .finderExtension, reason: "系统要你自己打开一次访达扩展，右键里才会出现这几项")]
+      [
+        PluginPermission(kind: .finderExtension, reason: "系统要你自己打开一次访达扩展，右键里才会出现这几项"),
+        PluginPermission(
+          kind: .accessibility, reason: "打开「⌘X 剪切、⌘V 移动」时接住访达里的这两个键", option: Prefs.finderMenuKeys),
+      ]
     case .bluetoothSnooze:
       [PluginPermission(kind: .bluetooth, reason: "开关蓝牙；没有它这个插件什么都不做")]
     case .smoothScroll:
@@ -119,14 +123,16 @@ extension Feature {
     case .dockPreview:
       Self.points("鼠标停在程序坞的 App 图标上，弹出它所有窗口的缩略图", "点一张切过去，悬停点 ✕ 关掉；按 ⌘Tab 时也能显示")
     case .finderMenu:
-      Self.points("在访达里右键：新建文件、拷贝路径、用指定的 App 打开", "移动、复制到常用的位置，压缩和解压")
+      Self.points(
+        "在访达里右键：新建文件、拷贝路径、用指定的 App 打开", "移动、复制到常用的位置，压缩和解压",
+        "能在访达里用 ⌘X 剪切、⌘V 移动")
     case .keepAwake:
       Self.points("手动开一段：无限期、几小时，或到某一刻", "按时段自动开，比如工作日 9:00–18:00", "可以只防系统睡眠、让屏幕照常熄")
     case .bluetoothSnooze:
       Self.points("合上盖子睡下去时关掉蓝牙，放进包里不会被蓝牙鼠标、键盘弄醒", "醒来时只打开睡前自己关掉的蓝牙；接着外接显示器时不关")
     case .smoothScroll:
       Self.points(
-        "普通鼠标的滚轮像触控板那样滑着滚；滑多久、一格滚多远都能调", "鼠标单独反向，触控板不变",
+        "普通鼠标的滚轮像触控板那样滑着滚；滑多久、一格滚多远都能调", "鼠标单独反向（妙控鼠标也行），触控板不变",
         "在游戏、虚拟机这类自己管滚轮的 App 里自动照原样，也能自己加")
     case .appShortcuts:
       Self.points(
@@ -166,7 +172,7 @@ extension Feature {
     case .statusScreen: "没进入时什么都不跑"
     case .launchpad: "看着触控板捏合和触发角，装卸 App 时重扫一遍"
     case .dockPreview: "看着程序坞；鼠标停在图标上才截缩略图"
-    case .finderMenu: "只在你右键时动"
+    case .finderMenu: "只在你右键时动；打开了「⌘X 剪切、⌘V 移动」才看着按给访达的这两个键，别的键不看、不记"
     case .keepAwake: "开着时让系统别睡；没开时什么都不跑"
     case .bluetoothSnooze: "等着电脑睡下去；醒来时只打开睡前自己关掉的蓝牙"
     case .smoothScroll: "接住鼠标滚轮，在单独一条线程上滑出去；不碰触控板，没在滚时什么都不做"

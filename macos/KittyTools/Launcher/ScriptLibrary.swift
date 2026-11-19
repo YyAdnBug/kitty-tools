@@ -240,7 +240,7 @@ extension ScriptLibrary {
         mode == .list
           ? "\(c) If the results don’t depend on what you type, add “\(c) @kitty.filter”: it runs once and the Launcher filters what you type"
           : "\(c) To confirm before running, add “\(c) @kitty.confirm Press ↩ again to run”",
-        "\(c) For other fields, see Settings › Launcher › “How to Write Scripts”",
+        "\(c) For other fields, see Settings › Launcher › Script Commands › “How to Write Scripts”",
       ]
       if language == .python {
         lines.append("\(c) Needs python3 (run python3 --version in Terminal to check)")
@@ -259,7 +259,7 @@ extension ScriptLibrary {
         mode == .list
           ? "\(c) 结果不随输入变的，加一行「\(c) @kitty.filter」：只跑一次，打的字由启动器过滤"
           : "\(c) 要先确认再跑就加一行「\(c) @kitty.confirm 再按 ↩ 运行」",
-        "\(c) 别的字段看 设置 › 启动器「怎么写脚本」",
+        "\(c) 别的字段看 设置 › 启动器 › 脚本命令「怎么写脚本」",
       ]
       if language == .python { lines.append("\(c) 要先装好 python3（终端里输 python3 --version 看看）") }
       if mode == .list { lines.append("\(c) 每行一条结果：标题、一个 Tab、说明；↩ 粘贴选中那条的标题") }

@@ -1,6 +1,7 @@
-// 启动器的快速查看、打开方式、废纸篓（体检 C7；第五轮体检 H1 从 LauncherModel.swift 拆出）。
+// 启动器的快速查看、打开方式（路径行的在终端中打开、拷贝文件、终端写法的路径）、废纸篓（体检 C7；第五轮体检 H1 从 LauncherModel.swift 拆出）。
 
 import AppKit
+import OSLog
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -61,11 +62,14 @@ extension LauncherModel {
         island?.show("没能移到废纸篓", detail: "\(error.localizedDescription)", tone: .error)
         return
       }
+      // 整个丢掉：删的可能是正在列的文件夹本身
+      pathListings = [:]
       island?.show(
         "已移到废纸篓「\(item.title)」", symbol: "trash.circle.fill",
         actions: trashed.map { trashed in
           [
             Self.putBack(trashed, to: original, island: island) { [self] in
+              pathListings = [:]
               // 收起着就不搜（同「关掉这条命令」的撤销）；下次呼出自己会搜
               if isShown { search() }
             }
@@ -106,6 +110,73 @@ extension LauncherModel {
         }
       island?.show("没能放回「\(name)」", detail: detail, tone: .warning)
     }
+  }
+
+  /// 能不能移到废纸篓：只在主文件夹里面给；主文件夹本身、它下面的系统文件夹（桌面、文稿、下载、资源库、图片…）和资源库里的
+  /// 第一层不给（2026-11-18 拍板第 11 项：路径模式能选中整个文件夹）。盘不分大小写，按小写比（~/library/preferences 也挡住）。
+  /// ponytail: 按输入的路径判断、不解开链接（在主线程，不 stat）；主文件夹里链到外面的，系统不让删的照样删不掉
+  static func canTrash(_ path: String, home: String = NSHomeDirectory()) -> Bool {
+    let standard = (path as NSString).standardizingPath.lowercased()
+    let home = home.lowercased()
+    guard standard.hasPrefix(home + "/") else { return false }
+    let parts = standard.dropFirst(home.count + 1).split(separator: "/")
+    let system: Set<Substring> = [
+      "desktop", "documents", "downloads", "library", "pictures", "movies", "music", "public",
+      "applications",
+    ]
+    return !(parts.count == 1 && system.contains(parts[0]))
+      && !(parts.count == 2 && parts[0] == "library")
+  }
+
+  /// 路径的行（文件、文件夹，不是宗卷）：才有在终端中打开、拷贝文件、复制终端写法的路径
+  func isPathRow(_ item: LauncherItem) -> Bool {
+    item.kind == .path && commandRequest == nil && item.contentType?.conforms(to: .volume) != true
+  }
+
+  /// 「在终端中打开」用哪个：设置 › 访达右键「用 App 打开」里排第一的终端（打不开纯文本的那种，编辑器跳过），
+  /// 没设过、都没装就是系统「终端」（同访达右键）
+  static func terminalApp(ids: [String]) -> URL? {
+    let workspace = NSWorkspace.shared
+    let editors = Set(workspace.urlsForApplications(toOpen: .plainText).map(\.standardizedFileURL))
+    for id in ids {
+      if let app = workspace.urlForApplication(withBundleIdentifier: id),
+        !editors.contains(app.standardizedFileURL)
+      {
+        return app
+      }
+    }
+    return workspace.urlForApplication(withBundleIdentifier: "com.apple.Terminal")
+  }
+
+  /// ⌘T：在终端里打开这个文件夹（选中的是文件时开它所在的文件夹：脚本不会被运行，同访达右键交给终端）
+  func openInTerminal(_ item: LauncherItem) {
+    guard let app = Self.terminalApp(ids: FinderLink.openWithApps) else { return NSSound.beep() }
+    let file = URL(filePath: item.target)
+    let isFolder =
+      item.contentType.map { $0.conforms(to: .folder) }
+      ?? ((try? file.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true)
+    let folder = isFolder ? file : file.deletingLastPathComponent()
+    close()
+    NSWorkspace.shared.open([folder], withApplicationAt: app, configuration: .init()) {
+      _, error in
+      // 只记错误码：错误说明里带着路径
+      if let error { Log.finder.error("启动器在终端中打开失败：\((error as NSError).code)") }
+    }
+  }
+
+  /// ⇧⌘C：把文件本身放进剪贴板（能粘进访达、聊天窗口；同录屏卡的「拷贝」）
+  func copyFile(_ item: LauncherItem) {
+    Paster.write(files: [URL(filePath: item.target)])
+    close()
+    island?.show("已拷贝文件", detail: "\(item.title)")
+  }
+
+  /// ⌥⌘C：终端写法的路径（有空格、括号的整段加单引号，同访达右键 FinderLink.shellText）
+  func copyShellPath(_ item: LauncherItem) {
+    let url = URL(filePath: item.target)
+    Paster.write(string: FinderLink.shellText([url]), record: true)
+    close()
+    island?.show("已拷贝终端写法的路径", detail: "\(FinderLink.copiedDetail([url]))")
   }
 
   /// 默认浏览器以外能开网页的 App（按 https 问 LaunchServices，不读网页）。

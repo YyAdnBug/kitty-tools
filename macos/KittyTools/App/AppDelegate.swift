@@ -132,6 +132,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     keys.isHeldBack = { [unowned self] in statusScreen.isActive }
     return keys
   }()
+  /// 访达里的 ⌘X 剪切、⌘V 移动（访达右键插件里的开关，issue #33）
+  lazy var finderKeys = FinderKeys(island: island)
   /// 平滑滚动（插件，SmoothScroll/）：起停跟着插件添没添加和辅助功能授权（apply），滚动那条线程由它管
   private(set) lazy var smoothScroll = SmoothScroll()
   /// 应用内更新（读本仓库的 GitHub release）
@@ -546,7 +548,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     model.runAction = { [unowned self] in runLauncherAction($0) }
     model.actionState = { [unowned self] in menuState }
-    model.openSettings = { [unowned self] in showSettings(page: .launcher) }
+    // ⌘, 和内置「设置」：设置 › 启动器，停在「空搜索框里列出常用」（设置改版 S8）
+    model.openSettings = { [unowned self] in showSettings(.launcherFrequent) }
     // cb、fy 两行只在剪贴板 / 翻译开着（Feature）时列出来，这里再挡一道
     model.openClipboard = { [unowned self] in
       if Feature.clipboard.isOn { searchClipboard($0) }
@@ -691,7 +694,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       presentTranslate()
     }
     // ⌘, 和底栏齿轮直达 设置 › 剪贴板（同翻译浮窗直达 设置 › 翻译）
-    model.openSettings = { [unowned self] in showSettings(page: .clipboard) }
+    model.openSettings = { [unowned self] in showSettings(.clipboardPasteOnClick) }
     model.openQuickLook = { [unowned self] in showQuickLook() }
     // 图片条目「钉到屏幕」（体检 D1）：和截图的钉图同一块板
     model.pinImage = { [unowned self] in pins.pin($0, frame: $1) }
@@ -771,9 +774,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     panel.keyEquivalentHandler = { [unowned self] in coordinator.handleKeyEquivalent($0) }
     // ⌘,、「⋯」菜单和空状态到设置 › 翻译；错误卡带服务 id，直达那个服务的详情页（体检 C5）
     coordinator.openSettings = { [unowned self] service in
+      // 没带服务的落到「翻译服务」那一组（设置改版 S8）
+      guard let service else { return showSettings(.translateServices) }
       showSettings(page: .translate)
       // 设置窗开着速查表 / 确认框时不换页（SettingsWindow.show）：没到翻译页就不推，别把服务 id 推进别的页的 NavigationStack
-      if let service, settingsNavigation.page == .translate { settingsNavigation.path = [service] }
+      if settingsNavigation.page == .translate { settingsNavigation.path = [service] }
     }
     coordinator.focusSource = { [unowned panel] in
       panel.makeFirstResponder(panel.initialFirstResponder)
@@ -845,7 +850,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       let shown = WhatsNew.shown(visiting: page, fresh: fresh, showing: settingsNavigation.fresh)
       if shown != settingsNavigation.fresh { settingsNavigation.fresh = shown }
     }
-    let window = SettingsWindow(navigation: settingsNavigation) { [unowned self] page in
+    // 每一页都给刘海岛（子页、「高级…」里的「恢复默认」要在岛上给「撤销」）
+    let pages: (SettingsPage) -> AnyView = { [unowned self] page in
       switch page {
       case .general:
         AnyView(
@@ -924,6 +930,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             created?.navigation.showsOnboarding = true
           })
       }
+    }
+    let window = SettingsWindow(navigation: settingsNavigation) { [unowned self] in
+      AnyView(pages($0).environment(island))
     } onboarding: { [unowned self] in
       AnyView(
         OnboardingView(center: hotKeys, firstRun: firstInstall, screen: onboardingStart) {

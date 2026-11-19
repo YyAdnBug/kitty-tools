@@ -1,7 +1,8 @@
-// 启动器的搜索（第五轮体检 H1 从 LauncherModel.swift 拆出）：呼出 / 收起时的准备（扫 App、浏览历史），按查询排结果（search），文件 / 系统命令 / 计算 / 汇率 / ip / 提醒 / 保持唤醒 / 插件这些候选行，空查询的收藏和常用，重搜后保住选中。
+// 启动器的搜索（第五轮体检 H1 从 LauncherModel.swift 拆出）：呼出 / 收起时的准备（扫 App、浏览历史），按查询排结果（search），文件 / 系统命令 / 计算 / 汇率 / ip / 提醒 / 保持唤醒 / 插件这些候选行，路径模式（以 / 或 ~/ 开头，PathBrowser）列目录，空查询的收藏和常用，重搜后保住选中。
 
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 extension LauncherModel {
   /// 空查询：「收藏」+「常用」（一个空格是文件搜索，不算）
@@ -100,6 +101,7 @@ extension LauncherModel {
     browserCache = nil
     applicationCache = [:]
     checksFolderAccess = !isFixture
+    if !isFixture { checkPresence() }
     let keeps = keptAt.map { now.timeIntervalSince($0) <= Self.keepQueryInterval } ?? false
     keptAt = nil
     let kept = keeps ? selectedItem?.id : nil
@@ -133,6 +135,12 @@ extension LauncherModel {
   func didHide(now: Date = .now) {
     isShown = false
     files.forgetItems()
+    // 路径模式读过的目录不留（再呼出重读：这期间可能有变化）；还在读的不要了
+    for read in pathReads.values { read.cancel() }
+    pathReads = [:]
+    pathListings = [:]
+    pathWait?.cancel()
+    pathWait = nil
     showsActions = false
     error = nil
     armed = nil
@@ -182,6 +190,11 @@ extension LauncherModel {
 
   func search() {
     error = nil
+    // 路径模式在下面认；先清掉，别让上一次的读完、0.15 秒到点时动到别的模式的结果
+    pathRequest = nil
+    pathPending = false
+    pathWait?.cancel()
+    pathWait = nil
     armed = nil
     listTask?.cancel()
     listTask = nil
@@ -220,6 +233,12 @@ extension LauncherModel {
     files.stop()
     if let commandRequest {
       showTargets(commandRequest)
+      return
+    }
+    // 以 / 或 ~/ 开头：路径模式，只出路径的行（2026-11-18，PathBrowser）
+    pathRequest = PathBrowser.request(for: query)
+    if let pathRequest {
+      showPath(pathRequest)
       return
     }
     emptyText = String(localized: "没有匹配的结果")
@@ -458,6 +477,197 @@ extension LauncherModel {
 
   /// 等 kill / port 的进程列完（单测、截图自检用）
   func processLookup() async { await processTask?.task.value }
+
+  // MARK: 路径模式（PathBrowser）
+
+  /// 路径模式的行：输入正好是一个文件夹就列它里面（第一行是它本身），不然在上一级里按最后一段筛。
+  /// 要的目录还没读到：先留着上一次的结果，过 0.15 秒还没到才清空、写「正在读取…」
+  private func showPath(_ request: PathBrowser.Request) {
+    guard let parent = pathListing(request.directory) else { return waitForPath() }
+    var directory = request.directory
+    var typed = request.typedDirectory
+    var filter = request.name
+    var listing = parent
+    if let folder = PathBrowser.folder(named: request.name, in: parent.entries) {
+      directory = PathBrowser.child(folder.name, of: request.directory)
+      typed += folder.name + "/"
+      filter = ""
+      guard let inside = pathListing(directory) else { return waitForPath() }
+      listing = inside
+    }
+    pathWait?.cancel()
+    pathWait = nil
+    pathPending = false
+    // 不在了的文件夹不出「这个文件夹」那一行
+    var rows: [LauncherItem] =
+      filter.isEmpty && listing.problem != .missing ? [pathFolderRow(directory, typed: typed)] : []
+    if let problem = listing.problem {
+      rows += pathProblemRows(problem, directory: directory)
+      emptyText =
+        problem == .missing
+        ? String(localized: "找不到「\((typed as NSString).abbreviatingWithTildeInPath)」")
+        : String(localized: "没有匹配的结果")
+    } else {
+      let picked = PathBrowser.pick(listing.entries, filter: filter, in: directory)
+      rows += picked.entries.map { pathRow($0, in: directory, typed: typed) }
+      let more = picked.total - picked.entries.count
+      if more > 0 {
+        rows.append(
+          LauncherItem(
+            kind: .prompt, target: Self.pathOpenPrefix + directory,
+            title: String(localized: "还有 \(more) 项"),
+            subtitle: String(localized: "接着输入名字筛选；↩ 在访达中打开")))
+      }
+      emptyText = String(localized: "没有名字里有「\(filter)」的项")
+    }
+    results = rows
+  }
+
+  /// 这个目录读到的东西；没读过就在主线程外读（读到了重搜），先交回 nil
+  private func pathListing(_ directory: String) -> PathBrowser.Listing? {
+    if let cached = pathListings[directory] { return cached }
+    guard pathReads[directory] == nil else { return nil }
+    let access = UserDefaults.standard.bool(forKey: Prefs.folderAccessRequested)
+    let volumes = UserDefaults.standard.bool(forKey: Prefs.launcherVolumesAllowed)
+    pathReads[directory] = Task {
+      let listing = await PathBrowser.read(directory, folderAccess: access, volumes: volumes)
+      guard !Task.isCancelled else { return }
+      pathReads[directory] = nil
+      pathListings[directory] = listing
+      if pathRequest != nil { search() }
+    }
+    return nil
+  }
+
+  private func waitForPath() {
+    pathPending = true
+    guard pathWait == nil else { return }
+    pathWait = Task {
+      try? await Task.sleep(for: .milliseconds(150))
+      guard !Task.isCancelled, pathRequest != nil else { return }
+      results = []
+      emptyText = String(localized: "正在读取…")
+    }
+  }
+
+  /// 等路径模式要的目录都读完（单测用）
+  func pathLookup() async {
+    while let task = pathReads.values.first { await task.value }
+  }
+
+  /// 第一行：输入的这个文件夹本身（↩ 打开它，和以前输完路径直接 ↩ 一样）
+  private func pathFolderRow(_ directory: String, typed: String) -> LauncherItem {
+    let root = directory == "/"
+    let location =
+      root ? "" : FileSearch.location(of: (directory as NSString).deletingLastPathComponent)
+    return LauncherItem(
+      kind: .path, target: directory,
+      title: root
+        ? FileManager.default.displayName(atPath: "/") : (directory as NSString).lastPathComponent,
+      subtitle: location.isEmpty
+        ? String(localized: "这个文件夹") : String(localized: "\(location) · 这个文件夹"),
+      completion: typed, contentType: .folder)
+  }
+
+  /// 目录里的一项：类型按扩展名（不读文件），Tab 补成「输入的目录 + 名字」（文件夹再加 /）
+  private func pathRow(_ entry: PathBrowser.Entry, in directory: String, typed: String)
+    -> LauncherItem
+  {
+    LauncherItem(
+      kind: .path, target: PathBrowser.child(entry.name, of: directory), title: entry.name,
+      subtitle: FileSearch.location(of: directory), names: [entry.key],
+      completion: typed + entry.name + (entry.isFolder ? "/" : ""),
+      contentType: PathBrowser.contentType(of: entry))
+  }
+
+  /// 没读的原因那一行
+  private func pathProblemRows(_ problem: PathBrowser.Problem, directory: String) -> [LauncherItem]
+  {
+    // 不读磁盘取名字（受保护的位置读一下属性也会弹框）
+    let name = directory == "/" ? "/" : (directory as NSString).lastPathComponent
+    let finder = String(localized: "↩ 在访达中打开")
+    switch problem {
+    case .needsFolderAccess(let folder):
+      return [
+        LauncherItem(
+          kind: .prompt, target: FileSearch.accessTarget,
+          title: String(localized: "要先允许访问「\(folder)」才能列出里面的东西"),
+          subtitle: String(localized: "↩ 允许访问（系统会逐个询问，只要一次）"))
+      ]
+    case .needsVolumeConsent(let volume):
+      return [
+        LauncherItem(
+          kind: .prompt, target: Self.pathVolumes,
+          title: String(localized: "读取「\(volume)」上的内容前先确认一次"),
+          subtitle: String(localized: "↩ 允许读取外接盘和网络盘（系统可能会再问一次）"))
+      ]
+    case .otherAppsData:
+      return [
+        LauncherItem(
+          kind: .prompt, target: Self.pathOpenPrefix + directory,
+          title: String(localized: "「\(name)」是别的 App 的数据，这里不列"), subtitle: finder)
+      ]
+    case .denied:
+      // 桌面、文稿这类问过授权被拒的：去系统设置改；别的（系统保护的）在访达里看
+      if case .needsFolderAccess = PathBrowser.problem(
+        at: directory, folderAccess: false, volumes: true)
+      {
+        return [
+          LauncherItem(
+            kind: .prompt, target: FileSearch.accessTarget,
+            title: String(localized: "没有权限查看「\(name)」里的东西"),
+            subtitle: String(localized: "↩ 打开系统设置 › \(Permissions.privacyPane) › 文件和文件夹"))
+        ]
+      }
+      return [
+        LauncherItem(
+          kind: .prompt, target: Self.pathOpenPrefix + directory,
+          title: String(localized: "没有权限查看「\(name)」里的东西"), subtitle: finder)
+      ]
+    case .missing: return []
+    }
+  }
+
+  /// 路径模式里「在访达中打开」的行（目标是这个前缀 + 目录）、「允许读取外接盘」那一行
+  static let pathOpenPrefix = "path-open:"
+  static let pathVolumes = "path-volumes"
+
+  /// ⇧Tab：路径模式里回到上一级
+  func goUpPath() {
+    guard pathRequest != nil, let up = PathBrowser.parentQuery(of: query) else {
+      return NSSound.beep()
+    }
+    query = up
+  }
+
+  /// 收藏、常用里的文件、应用程序目录以外的 App 还在不在：在主线程外查（卡住的盘不能冻住 App），查完有变化就重列
+  private func checkPresence() {
+    guard presenceTask == nil else { return }
+    let catalog = Set(apps.map(\.target))
+    var candidates: [(kind: LauncherItem.Kind, target: String)] = usage.favorites.map {
+      ($0.kind, $0.target)
+    }
+    for entry in usage.entries.values where entry.query.isEmpty {
+      candidates.append((entry.kind, entry.target))
+    }
+    let paths = Set(
+      candidates.filter { $0.kind == .path || ($0.kind == .app && !catalog.contains($0.target)) }
+        .map(\.target))
+    guard !paths.isEmpty else { return }
+    presenceTask = Task {
+      let missing = await PathBrowser.missing(Array(paths))
+      presenceTask = nil
+      guard missing != missingPaths else { return }
+      missingPaths = missing
+      if isShown, query.isEmpty, !userMovedSelection { search() }
+    }
+  }
+
+  /// 查一遍在不在、等它查完（单测用：截图自检、单测里的面板不呼出，checkPresence 不会自己跑）
+  func presenceCheck() async {
+    checkPresence()
+    await presenceTask?.value
+  }
 
   /// 文件搜索：查询还在跑时留着上一次的结果（约 40 ms 后换掉，免得列表先空再长）；1 个字母不查
   private func searchFiles(_ request: FileSearch.Request) {
@@ -835,6 +1045,7 @@ extension LauncherModel {
       .filter {
         $0.query.isEmpty && ($0.kind == .url || $0.kind == .path) && !$0.listed
           && !bookmarked.contains($0.target.lowercased()) && !AppCatalog.isSettingsPane($0.target)
+          && !missingPaths.contains($0.target)
       }
       .map(Self.item(for:))
   }
@@ -887,8 +1098,8 @@ extension LauncherModel {
     switch kind {
     case .app:
       if let app = apps.first(where: { $0.target == target }) { return app }
-      // 应用程序目录以外的 App
-      return FileManager.default.fileExists(atPath: target) ? AppCatalog.item(path: target) : nil
+      // 应用程序目录以外的 App（在不在由 checkPresence 在主线程外查）
+      return missingPaths.contains(target) ? nil : AppCatalog.item(path: target)
     case .action:
       return actions.first { $0.target == target }
         ?? (scriptsOn() ? LauncherItem.scriptActions.first { $0.target == target } : nil)
@@ -901,8 +1112,8 @@ extension LauncherModel {
       return apps.first { $0.target == target }
         ?? Self.item(kind: .url, target: target, title: title)
     case .path:
-      return FileManager.default.fileExists(atPath: target)
-        ? Self.item(kind: .path, target: target, title: title) : nil
+      return missingPaths.contains(target)
+        ? nil : Self.item(kind: .path, target: target, title: title)
     // 不记使用，不会出现
     case .search, .calculation, .clip, .prompt, .translate, .process, .ip, .reminder,
       .scriptResult:

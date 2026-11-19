@@ -29,6 +29,7 @@ struct AppShortcutsTab: View {
           Text("只按着这一个键、不按别的键；按着时按了别的键、点了鼠标就不弹")
         }
         .gated(by: .appShortcuts)
+        .settingsAnchor(.appShortcutsHold)
         // 导入的文件写了别的值时选择器显示成 ⌘（同读的地方）
         Picker(
           selection: Binding {
@@ -48,6 +49,7 @@ struct AppShortcutsTab: View {
         }
         .gated(by: .appShortcuts)
         .disabled(!hold)
+        .settingsAnchor(.appShortcutsKey)
         // 导入的文件写了别的数时选择器显示成 1 秒（同读的地方）
         Picker(
           "按住多久",
@@ -63,6 +65,7 @@ struct AppShortcutsTab: View {
         }
         .gated(by: .appShortcuts)
         .disabled(!hold)
+        .settingsAnchor(.appShortcutsDelay)
       } header: {
         Text("App 快捷键")
       } footer: {
@@ -74,6 +77,7 @@ struct AppShortcutsTab: View {
       PluginAboutSection(plugin: .appShortcuts)
     }
     .formStyle(.grouped)
+    .settingsScrollTarget()
   }
 
   /// 键的名字（键盘上印的那个，中英一样，不翻）

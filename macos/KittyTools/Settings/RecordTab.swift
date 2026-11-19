@@ -5,10 +5,13 @@
 // 按快捷键后立即开始录音（手测反馈第 3 批，默认关：先出控制条，点 ● 或再按一次才开始）。
 // 录屏用哪个麦克风（第四轮体检 X18）：跟随系统输入（默认）或某一个接着的设备，选的那个不在了开录时说一声、跟随系统。
 // 按键不写进页里（N11）：一句话 +「查看全部快捷键…」；菜单栏、快捷键页、速查表里录屏录音仍和截图同在「截图与录制」一节。
+// 2026-11-18 设置改版 S4：帧率、编码、显示按键时、按快捷键后立即开始录音收进「高级…」（文件嫌大、录音怎么开始，一年改一次）。
 
 import SwiftUI
 
 struct RecordTab: View {
+  /// 截图自检直接画「高级…」表单（sheet 画不进屏外截图）
+  var drawsAdvanced = false
   @AppStorage(Prefs.screenRecordFrameRate) private var frameRate = 30
   @AppStorage(Prefs.screenRecordCountdown) private var countdown = 3
   @AppStorage(Prefs.screenRecordShowsCursor) private var showsCursor = true
@@ -27,32 +30,26 @@ struct RecordTab: View {
       Section { FeatureToggle(feature: .record, inPage: true) }
       Section {
         SaveDirectoryRow(title: "保存到")
+          .settingsAnchor(.recordSaveFolder)
       } footer: {
         SectionFootnote("和 设置 › 截图 的「快速保存到」是同一个文件夹，文件名是「录屏 日期 时间.mp4」「录音 日期 时间.m4a」。")
       }
       Group {
         Section {
-          Picker("帧率", selection: $frameRate) {
-            Text("30 fps").tag(30)
-            Text("60 fps").tag(60)
-          }
-          .pickerStyle(.segmented)
           Picker("清晰度", selection: $sharpness) {
             Text("原始").tag(ScreenRecorder.Sharpness.original)
             Text("标准").tag(ScreenRecorder.Sharpness.standard)
           }
           .pickerStyle(.segmented)
-          Picker("编码", selection: $codec) {
-            Text("H.264").tag(ScreenRecorder.Codec.h264)
-            Text("HEVC").tag(ScreenRecorder.Codec.hevc)
-          }
-          .pickerStyle(.segmented)
+          .settingsAnchor(.recordSharpness)
           Picker("开始前倒数", selection: $countdown) {
             Text("不倒数").tag(0)
             Text("3 秒").tag(3)
             Text("5 秒").tag(5)
           }
+          .settingsAnchor(.recordCountdown)
           Toggle("显示光标", isOn: $showsCursor)
+            .settingsAnchor(.recordCursor)
           Picker("麦克风", selection: $microphoneDevice) {
             Text("跟随系统输入").tag(String?.none)
             ForEach(microphones, id: \.id) { Text(verbatim: $0.name).tag(String?.some($0.id)) }
@@ -61,16 +58,12 @@ struct RecordTab: View {
               Text("选过的麦克风（没接着）").tag(String?.some(microphoneDevice))
             }
           }
-          Picker("显示按键时", selection: $shortcutsOnly) {
-            Text("全部按键").tag(false)
-            Text("只显示快捷键").tag(true)
-          }
-          .pickerStyle(.segmented)
+          .settingsAnchor(.recordMicrophone)
         } header: {
           Text(ScreenRecorder.Medium.screen.nounResource)
         } footer: {
           SectionFootnote(
-            "60 fps 更顺，文件大约大一半；大屏上可能录不满 60。文件嫌大：标准清晰度在高分屏上宽高各减半，文件小一半多，小字会糊一些；HEVC 同样的画面小三分之一左右，部分 App 和旧设备可能放不了。录好的也可以在角落的缩略图上点「压缩」另存一份小的。麦克风：录制条上的麦克风开着时录哪一个，选的那个没接着时这次用系统默认的；录音照旧用系统默认的输入。只显示快捷键：带 ⌘ ⌃ ⌥ 的组合键、Esc 和 F 键才进画面，打字不显示。"
+            "文件嫌大：标准清晰度在高分屏上宽高各减半，文件小一半多，小字会糊一些。录好的也可以在角落的缩略图上点「压缩」另存一份小的。麦克风：录制条上的麦克风开着时录哪一个，选的那个没接着时这次用系统默认的；录音照旧用系统默认的输入。"
           )
         }
         Section {
@@ -80,13 +73,11 @@ struct RecordTab: View {
             Text("两者").tag(AudioRecorder.Source.both)
           }
           .pickerStyle(.segmented)
-          Toggle("按快捷键后立即开始录音", isOn: $startsImmediately)
+          .settingsAnchor(.recordAudioSource)
         } header: {
           Text(ScreenRecorder.Medium.audio.nounResource)
         } footer: {
-          SectionFootnote(
-            "录系统声音时菜单栏会出现屏幕录制指示；锁屏会停止；不能暂停。立即开始关着时，按快捷键（或点菜单栏、启动器里的「录音」）先在屏幕底部打开录音控制条，点 ● 或再按一次才开始录。"
-          )
+          SectionFootnote("录系统声音时菜单栏会出现屏幕录制指示；锁屏会停止；不能暂停。")
         }
         Section {
           LabeledContent {
@@ -95,11 +86,60 @@ struct RecordTab: View {
             Text("录屏和录音的按键")
             Text("框选和截图一样，↩ 或双击选区开始，Esc 取消；录着时再按一次快捷键停止并保存")
           }
+          .settingsAnchor(.recordKeys)
         }
       }
       .gated(by: .record)
+      Section {
+      } footer: {
+        AdvancedButton(page: .record)
+      }
     }
     .formStyle(.grouped)
+    .settingsScrollTarget()
     .onAppear { microphones = ScreenRecorder.microphones() }
+    .advancedSheet(.record, summary: "文件大小和录音怎么开始", inline: drawsAdvanced) { advanced }
+  }
+
+  /// 「高级…」表单：帧率、编码、显示按键时；录音的立即开始
+  @ViewBuilder private var advanced: some View {
+    Section {
+      Picker("帧率", selection: $frameRate) {
+        Text("30 fps").tag(30)
+        Text("60 fps").tag(60)
+      }
+      .pickerStyle(.segmented)
+      .settingsAnchor(.recordFrameRate)
+      Picker("编码", selection: $codec) {
+        Text("H.264").tag(ScreenRecorder.Codec.h264)
+        Text("HEVC").tag(ScreenRecorder.Codec.hevc)
+      }
+      .pickerStyle(.segmented)
+      .settingsAnchor(.recordCodec)
+      Picker("显示按键时", selection: $shortcutsOnly) {
+        Text("全部按键").tag(false)
+        Text("只显示快捷键").tag(true)
+      }
+      .pickerStyle(.segmented)
+      .settingsAnchor(.recordKeysShown)
+    } header: {
+      Text(ScreenRecorder.Medium.screen.nounResource)
+    } footer: {
+      SectionFootnote(
+        "60 fps 更顺，文件大约大一半；大屏上可能录不满 60。HEVC 同样的画面小三分之一左右，部分 App 和旧设备可能放不了。只显示快捷键：带 ⌘ ⌃ ⌥ 的组合键、Esc 和 F 键才进画面，打字不显示。"
+      )
+    }
+    .gated(by: .record)
+    Section {
+      Toggle("按快捷键后立即开始录音", isOn: $startsImmediately)
+        .settingsAnchor(.recordStartsImmediately)
+    } header: {
+      Text(ScreenRecorder.Medium.audio.nounResource)
+    } footer: {
+      SectionFootnote(
+        "关着时，按快捷键（或点菜单栏、启动器里的「录音」）先在屏幕底部打开录音控制条，点 ● 或再按一次才开始录。"
+      )
+    }
+    .gated(by: .record)
   }
 }
