@@ -726,23 +726,42 @@ struct SnapshotProbeTests {
     islandPrefs.set("noteCapture\nscreenshot", forKey: Prefs.islandActionOrder)
     islandPrefs.set("recognizeText", forKey: Prefs.islandActionsOff)
     islandPrefs.set(true, forKey: Prefs.islandShowsHistory)
+    // 设置改版（S3）：外面一页、六个子页、「高级…」表单
+    let islandNavigation = SettingsNavigation(defaults: nil)
     for dark in [false, true] {
+      let suffix = dark ? "-dark" : ""
+      islandNavigation.path = []
       try snapshot(
-        IslandTab().defaultAppStorage(islandPrefs), size: NSSize(width: 640, height: 2200),
-        dark: dark, to: "\(out)/settings-island-custom\(dark ? "-dark" : "").png")
+        IslandTab().defaultAppStorage(islandPrefs).environment(islandNavigation),
+        size: NSSize(width: 640, height: 900), dark: dark,
+        to: "\(out)/settings-island-custom\(suffix).png")
+      for subpage in SettingsSubpage.allCases where subpage.page == .island {
+        islandNavigation.path = [subpage.route]
+        try snapshot(
+          IslandTab().defaultAppStorage(islandPrefs).environment(islandNavigation),
+          size: NSSize(width: 640, height: 820), dark: dark,
+          to: "\(out)/settings-\(subpage.rawValue.replacing(".", with: "-"))\(suffix).png")
+      }
+      islandNavigation.path = []
+      try snapshot(
+        IslandTab(drawsAdvanced: true).defaultAppStorage(islandPrefs),
+        size: NSSize(width: 480, height: 480), dark: dark,
+        to: "\(out)/settings-island-advanced\(suffix).png")
     }
     // 「音量和亮度」打开了、拦截却接不住（第五轮体检 U6）：建不起来、这一版系统认不出那两个字段，各一行橙字。
     // 状态是摆的（keyStatus），不建真的拦截；「没有辅助功能授权」那一行跟着本机测试宿主的真实授权
     islandPrefs.set(true, forKey: Prefs.islandKeyLevels)
+    islandNavigation.path = [SettingsSubpage.islandLevels.route]
     for (name, status, dark) in [
       ("failed", MediaKeys.Status.failed, false), ("failed-dark", .failed, true),
       ("unreadable", .unreadable, false),
     ] {
       try snapshot(
-        IslandTab(keyStatus: status).defaultAppStorage(islandPrefs),
-        size: NSSize(width: 640, height: 2200), dark: dark,
+        IslandTab(keyStatus: status).defaultAppStorage(islandPrefs).environment(islandNavigation),
+        size: NSSize(width: 640, height: 640), dark: dark,
         to: "\(out)/settings-island-keys-\(name).png")
     }
+    islandNavigation.path = []
     // 设置 › 通用 › 高级…「菜单栏」（第 9 批 M1 M2；设置改版挪进「高级…」）：显示 + 彩色、隐藏（图标样式置灰），各出深色；
     // 临时偏好域，不动用户的菜单栏图标
     let barSuite = "kitty-snapshot-\(UUID().uuidString)"
@@ -864,11 +883,27 @@ struct SnapshotProbeTests {
         ]), forKey: Prefs.launcherWebSearchEngines)
     for dark in [false, true] {
       let suffix = dark ? "-dark" : ""
+      navigation.path = []
       try snapshot(
         TranslateTab(services: services, history: history, speaker: speaker)
           .environment(navigation),
-        size: NSSize(width: 590, height: 1780), dark: dark,
+        size: NSSize(width: 590, height: 1300), dark: dark,
         to: "\(out)/settings-translate-list\(suffix).png")
+      // 设置改版：两个子页、「高级…」表单
+      for subpage in [SettingsSubpage.translateLookup, .translateHistory] {
+        navigation.path = [subpage.route]
+        try snapshot(
+          TranslateTab(services: services, history: history, speaker: speaker)
+            .environment(navigation),
+          size: NSSize(width: 590, height: 700), dark: dark,
+          to: "\(out)/settings-\(subpage.rawValue.replacing(".", with: "-"))\(suffix).png")
+      }
+      navigation.path = []
+      try snapshot(
+        TranslateTab(services: services, history: history, speaker: speaker, drawsAdvanced: true)
+          .environment(navigation),
+        size: NSSize(width: 480, height: 480), dark: dark,
+        to: "\(out)/settings-translate-advanced\(suffix).png")
       try snapshot(
         TranslateServiceDetail(store: services, id: TranslateService.Kind.deepl.rawValue),
         size: NSSize(width: 590, height: 460), dark: dark,
@@ -884,8 +919,19 @@ struct SnapshotProbeTests {
         to: "\(out)/settings-translate-detail-explain\(suffix).png")
       try snapshot(
         LauncherTab().defaultAppStorage(engines).environment(navigation),
-        size: NSSize(width: 590, height: 2900),
+        size: NSSize(width: 590, height: 1500),
         dark: dark, to: "\(out)/settings-launcher-list\(suffix).png")
+      // 设置改版：脚本命令子页（没有脚本库：读不成的那几行不出）、「高级…」表单
+      navigation.path = [SettingsSubpage.launcherScripts.route]
+      try snapshot(
+        LauncherTab().defaultAppStorage(engines).environment(navigation),
+        size: NSSize(width: 590, height: 900), dark: dark,
+        to: "\(out)/settings-launcher-scripts-page\(suffix).png")
+      navigation.path = []
+      try snapshot(
+        LauncherTab(drawsAdvanced: true).defaultAppStorage(engines).environment(navigation),
+        size: NSSize(width: 480, height: 480), dark: dark,
+        to: "\(out)/settings-launcher-advanced\(suffix).png")
       // 推进去的那一页（2026-11-07 从启动器页挪进来）
       try snapshot(
         NavigationStack { WebSearchPage() }.defaultAppStorage(engines).environment(navigation),
@@ -3315,24 +3361,37 @@ struct SnapshotProbeTests {
     }
     off.set(false, forKey: Prefs.notesDeckEnabled)
     let displays = ["内建视网膜显示器", "DELL U2720Q"]
-    let tabSize = NSSize(width: 640, height: 1320)
+    let tabSize = NSSize(width: 640, height: 1100)
+    // 设置改版：便签页外面一张（屏幕边缘是推进行），屏幕边缘的几张画子页
+    let deckNavigation = SettingsNavigation(defaults: nil)
     for dark in [false, true] {
       try snapshot(
-        NotesTab(openNotes: {}, displays: displays).defaultAppStorage(on), size: tabSize,
+        NotesTab(openNotes: {}, displays: displays).defaultAppStorage(on)
+          .environment(deckNavigation), size: NSSize(width: 640, height: 900),
+        dark: dark, to: "\(out)/notes-settings\(dark ? "-dark" : "").png")
+    }
+    deckNavigation.path = [SettingsSubpage.notesDeck.route]
+    for dark in [false, true] {
+      try snapshot(
+        NotesTab(openNotes: {}, displays: displays).defaultAppStorage(on)
+          .environment(deckNavigation), size: tabSize,
         dark: dark, to: "\(out)/notes-deck-settings\(dark ? "-dark" : "").png")
     }
     try snapshot(
-      NotesTab(openNotes: {}, displays: displays).defaultAppStorage(off), size: tabSize,
+      NotesTab(openNotes: {}, displays: displays).defaultAppStorage(off)
+        .environment(deckNavigation), size: tabSize,
       dark: false, to: "\(out)/notes-deck-settings-off.png")
     on.set(true, forKey: Prefs.notesDeckAlwaysFanned)
     on.set(true, forKey: Prefs.notesDeckOpensOnHover)
     on.set("chosen", forKey: Prefs.notesDeckDisplay)
     on.set(displays[1], forKey: Prefs.notesDeckChosenDisplay)
     try snapshot(
-      NotesTab(openNotes: {}, displays: displays).defaultAppStorage(on), size: tabSize,
+      NotesTab(openNotes: {}, displays: displays).defaultAppStorage(on)
+        .environment(deckNavigation), size: tabSize,
       dark: false, to: "\(out)/notes-deck-settings-always.png")
     try snapshot(
-      NotesTab(openNotes: {}, displays: ["内建视网膜显示器"]).defaultAppStorage(off),
+      NotesTab(openNotes: {}, displays: ["内建视网膜显示器"]).defaultAppStorage(off)
+        .environment(deckNavigation),
       size: tabSize, dark: false, to: "\(out)/notes-deck-settings-one-display.png")
 
     // 全部便签窗口：编辑区抽成了两边共用的（Notes/NoteFields.swift），样子不该变——和第 2 批的 notes-window-list.png 对
@@ -3520,9 +3579,12 @@ struct SnapshotProbeTests {
     let suite = "kitty-snapshot-notes-float-\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
+    let deckNavigation = SettingsNavigation(defaults: nil)
+    deckNavigation.path = [SettingsSubpage.notesDeck.route]
     try snapshot(
-      NotesTab(openNotes: {}, displays: ["内建视网膜显示器"]).defaultAppStorage(defaults),
-      size: NSSize(width: 640, height: 1320), dark: false, to: "\(out)/notes-float-settings.png")
+      NotesTab(openNotes: {}, displays: ["内建视网膜显示器"]).defaultAppStorage(defaults)
+        .environment(deckNavigation),
+      size: NSSize(width: 640, height: 1100), dark: false, to: "\(out)/notes-float-settings.png")
   }
 
   private func renderTranslate(_ out: String) throws {

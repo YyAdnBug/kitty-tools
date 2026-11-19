@@ -1,11 +1,10 @@
-// 设置 › 启动器：呼出时切英文输入法、面板位置（屏幕上方 / 跟随鼠标 / 上次位置，同翻译浮窗）、文件搜索的文件夹授权、浏览器书签与历史（第 12 批：只列本机装了的，每家一行
-// 16 pt App 图标 + 名字 + 书签开关，写读到了几条 / 没找到书签文件 / 需要完全磁盘访问权限（体检 B39）；开着时下面缩进
-// 一行「也搜浏览历史」，默认关，体检 D8）、网页搜索与快捷链接、使用记录（「空搜索框里列出常用」开关，issue #2；清空使用记录）
-// （2026-11-07 起这一页只留一行「网页搜索与快捷链接 ›」写几个搜索、几个快捷链接、谁兜底，那张列表推进 WebSearchPage，
-// 同「命令和别名」）、清空使用记录。页头画在自己的 NavigationStack 里，推进时一起换掉。
+// 设置 › 启动器（2026-11-18 设置改版 S4）：外面是搜索（空搜索框里列出常用，issue #2；搜索快捷指令，X10）、浏览器书签与历史
+// （第 12 批：只列本机装了的，每家一行 16 pt App 图标 + 名字 + 书签开关，写读到了几条 / 没找到书签文件 / 需要完全磁盘访问权限
+// （体检 B39）；开着时下面缩进一行「也搜浏览历史」，默认关，体检 D8）、文件搜索的文件夹授权，四个推进行：「应用别名 ›」
+// 「网页搜索与快捷链接 ›」（WebSearchPage）「脚本命令 ›」（子页，里面是 ScriptsSection；「怎么写脚本」再推一层 ScriptGuidePage）
+// 「命令和别名 ›」（LauncherCommandsPage），按键行。「高级…」：呼出时切英文输入法、面板位置（屏幕上方 / 跟随鼠标 / 上次位置，
+// 同翻译浮窗）、面板大小、清空使用记录（管数据，功能关着也能点）。页头画在自己的 NavigationStack 里，推进时一起换掉。
 // 按键说明不写在这里（N11，进快捷键速查表）；启动器没有固定，失焦就收起（N8）。
-// 2026-11-07 脚本命令：网页搜索后面是「脚本命令」「命令」两节（ScriptsSection），「怎么写脚本」（ScriptGuidePage）和
-// 「命令和别名」那张表（LauncherCommandsPage）推进去看，同网页搜索的详情页。
 
 import SwiftUI
 
@@ -14,6 +13,8 @@ struct LauncherTab: View {
   var scripts: ScriptLibrary? = nil
   /// 清空使用记录（LauncherUsage.clearAll）
   var clearUsage: () -> Void = {}
+  /// 截图自检直接画「高级…」表单（sheet 画不进屏外截图）
+  var drawsAdvanced = false
   @AppStorage(Prefs.launcherRomanInput) private var romanInput = false
   @AppStorage(Prefs.launcherShortcuts) private var searchesShortcuts = true
   @AppStorage(Prefs.launcherPanelPosition) private var panelPosition = "top"
@@ -24,6 +25,7 @@ struct LauncherTab: View {
   @AppStorage(Prefs.launcherBrowserHistory) private var historyIDs = ""
   /// 网页搜索列表（只读：那一行的小字；改在 WebSearchPage）
   @AppStorage(Prefs.launcherWebSearchEngines) private var enginesData: Data?
+  @AppStorage(Prefs.launcherScripts) private var scriptsOn = true
   /// 推进的详情页在 navigation.path（主菜单「返回」也要读写它）
   @Environment(SettingsNavigation.self) private var navigation
   @State private var confirmsClear = false
@@ -50,6 +52,7 @@ struct LauncherTab: View {
       .navigationTitle(SettingsPage.launcher.title)
       .navigationDestination(for: String.self) { id in
         switch id {
+        case SettingsSubpage.launcherScripts.route: scriptsPage
         case LauncherCommandsPage.route: LauncherCommandsPage(library: scripts)
         case AppAliasesPage.route: AppAliasesPage()
         case ScriptGuidePage.route: ScriptGuidePage(library: scripts)
@@ -57,62 +60,46 @@ struct LauncherTab: View {
         default: SearchEngineDetail(id: id)
         }
       }
+      .advancedSheet(.launcher, summary: "输入法、面板和使用记录", inline: drawsAdvanced) { advanced }
     }
     .onAppear(perform: recheck)
     .onSettingsBecameKey(perform: recheck)
     // 开关变了、设置窗重新变 key：该读的浏览历史 / Firefox 书签在进程外读，关掉的扔掉
     .task(id: "\(bookmarkIDs)|\(historyIDs)|\(checks)") { await BrowserHistory.shared.refresh() }
-    .confirmationDialog("清空启动器的使用记录？", isPresented: $confirmsClear) {
-      Button("清空", role: .destructive, action: clearUsage)
-    } message: {
-      Text("「常用」和按使用习惯的排序会从头开始学，收藏不动。")
-    }
   }
 
+  /// 外面：搜索、浏览器、文件搜索、四个推进行、按键、高级…
   private var form: some View {
-    // 关着时（Feature）变灰，只有「清空使用记录」照常能点
     Form {
       Section { FeatureToggle(feature: .launcher, inPage: true) }
       Group {
         Section {
-          Toggle(isOn: $romanInput) {
-            Text("呼出时切到英文输入法")
-            Text("只在搜索框里生效，离开后恢复；要搜中文时先关掉")
+          Toggle(isOn: $showsFrequent) {
+            NewTitle("空搜索框里列出常用", page: .launcher, fresh: navigation.fresh)
+            Text("关掉后打开启动器只有搜索框，有收藏时只列收藏；排序照样按用过的学")
           }
-          .settingsAnchor(.launcherRomanInput)
-          Picker(selection: $panelPosition) {
-            Text("屏幕上方").tag("top")
-            Text("跟随鼠标").tag("mouse")
-            Text("上次位置").tag("last")
-          } label: {
-            Text("面板位置")
-            Text("屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边，上次位置是上次拖到的地方")
+          // 拨过这一行，「新」就算看过了（光点进这一页不算；WhatsNew）
+          .onChange(of: showsFrequent) { WhatsNew.touch(section: "空搜索框里列出常用", of: .launcher) }
+          .settingsAnchor(.launcherFrequent)
+          // 快捷指令（X10）
+          Toggle(isOn: $searchesShortcuts) {
+            Text("搜索快捷指令")
+            Text("在启动器里打快捷指令的名字就能运行（不带输入）；改了快捷指令，下次打开启动器时跟上")
           }
-          .pickerStyle(.segmented)
-          .settingsAnchor(.launcherPanelPosition)
-          PanelSizeRow(
-            detail: "拖左右两边改宽度，拖下边改最多显示几行", widthKey: Prefs.launcherPanelWidth,
-            heightKey: Prefs.launcherPanelRows, defaultWidth: Style.listPanelWidth
-          )
-          .settingsAnchor(.launcherPanelSize)
-          LabeledContent {
-            ShortcutsButton()
-          } label: {
-            Text("启动器里的按键")
-            Text(
-              "搜 App、系统设置、文件、书签、网址、路径、算式（也能换算单位和进制）和系统命令（lock、quit、kill 这些），↩ 打开，⌘K 看这一项的全部操作")
-          }
-          .settingsAnchor(.launcherKeys)
+          .settingsAnchor(.launcherShortcuts)
+        } header: {
+          Text("搜索")
+        } footer: {
+          SectionFootnote(
+            "启动器按用过的次数和时间排序，空搜索框里先列收藏（⌘D 加入），再列「常用」。在「常用」里选中一项按 ⌘⌫ 可以单独移除，⌘Z 撤销。")
         }
         Section {
-          SettingsPushRow(
-            title: "应用别名",
-            detail: aliasesDetail,
-            isNew: WhatsNew.marks(section: "应用别名", of: .launcher, in: navigation.fresh)
-          ) {
-            navigation.path = [AppAliasesPage.route]
-          }
-          .settingsAnchor(.launcherAppAliases)
+          ForEach(browsers, id: \.browser.id) { browserRows($0.browser, app: $0.app) }
+        } header: {
+          Text("浏览器书签与历史")
+            .settingsAnchor(.launcherBrowsers)
+        } footer: {
+          SectionFootnote("只列本机装了的浏览器。")
         }
         Section {
           PermissionRow(
@@ -133,14 +120,14 @@ struct LauncherTab: View {
             "「open 文件名」搜文件并打开，「find 文件名」在访达中显示；不想被搜到的文件夹加到 系统设置 › Spotlight › 搜索隐私。")
         }
         Section {
-          ForEach(browsers, id: \.browser.id) { browserRows($0.browser, app: $0.app) }
-        } header: {
-          Text("浏览器书签与历史")
-            .settingsAnchor(.launcherBrowsers)
-        } footer: {
-          SectionFootnote("只列本机装了的浏览器。")
-        }
-        Section {
+          SettingsPushRow(
+            title: "应用别名",
+            detail: aliasesDetail,
+            isNew: WhatsNew.marks(section: "应用别名", of: .launcher, in: navigation.fresh)
+          ) {
+            navigation.path = [AppAliasesPage.route]
+          }
+          .settingsAnchor(.launcherAppAliases)
           SettingsPushRow(
             title: "网页搜索与快捷链接",
             detail: "\(WebSearchPage.summary(SearchEngineDetail.decode(enginesData)))"
@@ -148,45 +135,100 @@ struct LauncherTab: View {
             navigation.path = [WebSearchPage.route]
           }
           .settingsAnchor(.launcherWebSearch)
-        } header: {
-          Text("网页搜索")
-        } footer: {
-          SectionFootnote("「关键词 空格 内容」直接用那个网站搜；没有本地结果时用开了兜底的几个搜。")
+          let scriptsState = Self.scriptsValue(
+            on: scriptsOn, scripts: scripts?.scripts.count ?? 0,
+            problems: scripts?.problems.count ?? 0)
+          SettingsPushRow(
+            title: SettingsSubpage.launcherScripts.title,
+            isNew: SettingsItem.subpageIsNew(.launcherScripts, fresh: navigation.fresh),
+            value: scriptsState.text, valueIsProblem: scriptsState.isProblem
+          ) {
+            navigation.path = [SettingsSubpage.launcherScripts.route]
+          }
+          .settingsAnchor(.launcherScripts)
+          LauncherCommandsRow(library: scripts)
+        }
+        Section {
+          LabeledContent {
+            ShortcutsButton()
+          } label: {
+            Text("启动器里的按键")
+            Text(
+              "搜 App、系统设置、文件、书签、网址、路径、算式（也能换算单位和进制）和系统命令（lock、quit、kill 这些），↩ 打开，⌘K 看这一项的全部操作")
+          }
+          .settingsAnchor(.launcherKeys)
         }
       }
       .gated(by: .launcher)
-      ScriptsSection(library: scripts)
-        .gated(by: .launcher)
-      // 快捷指令（X10）
       Section {
-        Toggle(isOn: $searchesShortcuts) {
-          Text("搜索快捷指令")
-          Text("在启动器里打快捷指令的名字就能运行（不带输入）；改了快捷指令，下次打开启动器时跟上")
-        }
-        .settingsAnchor(.launcherShortcuts)
-      }
-      .gated(by: .launcher)
-      Section {
-        // 显示的开关跟着功能开关变灰；清空使用记录是管数据的，关着也能点（mac-native §1）
-        Toggle(isOn: $showsFrequent) {
-          NewTitle("空搜索框里列出常用", page: .launcher, fresh: navigation.fresh)
-          Text("关掉后打开启动器只有搜索框，有收藏时只列收藏；排序照样按用过的学")
-        }
-        .gated(by: .launcher)
-        // 拨过这一行，「新」就算看过了（光点进这一页不算；WhatsNew）
-        .onChange(of: showsFrequent) { WhatsNew.touch(section: "空搜索框里列出常用", of: .launcher) }
-        .settingsAnchor(.launcherFrequent)
-        DangerButton("清空使用记录…") { confirmsClear = true }
-          .settingsAnchor(.launcherClearUsage)
-      } header: {
-        Text("使用记录")
       } footer: {
-        SectionFootnote(
-          "启动器按用过的次数和时间排序，空搜索框里先列收藏（⌘D 加入），再列「常用」。在「常用」里选中一项按 ⌘⌫ 可以单独移除，⌘Z 撤销。")
+        AdvancedButton(page: .launcher)
       }
     }
     .formStyle(.grouped)
     .settingsScrollTarget()
+  }
+
+  /// 设置 › 启动器 › 脚本命令（ScriptsSection 整段；「怎么写脚本」再推一层）
+  private var scriptsPage: some View {
+    let state = Self.scriptsValue(
+      on: scriptsOn, scripts: scripts?.scripts.count ?? 0, problems: scripts?.problems.count ?? 0)
+    return SubpageForm(
+      subpage: .launcherScripts, status: state.text, statusIsProblem: state.isProblem
+    ) {
+      ScriptsSection(library: scripts)
+        .gated(by: .launcher)
+    }
+  }
+
+  /// 「高级…」表单：输入法、面板位置和大小、清空使用记录（管数据，功能关着也能点；确认框挂在表单里）
+  @ViewBuilder private var advanced: some View {
+    Section {
+      Toggle(isOn: $romanInput) {
+        Text("呼出时切到英文输入法")
+        Text("只在搜索框里生效，离开后恢复；要搜中文时先关掉")
+      }
+      .settingsAnchor(.launcherRomanInput)
+      Picker(selection: $panelPosition) {
+        Text("屏幕上方").tag("top")
+        Text("跟随鼠标").tag("mouse")
+        Text("上次位置").tag("last")
+      } label: {
+        Text("面板位置")
+        Text("屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边，上次位置是上次拖到的地方")
+      }
+      .pickerStyle(.segmented)
+      .settingsAnchor(.launcherPanelPosition)
+      PanelSizeRow(
+        detail: "拖左右两边改宽度，拖下边改最多显示几行", widthKey: Prefs.launcherPanelWidth,
+        heightKey: Prefs.launcherPanelRows, defaultWidth: Style.listPanelWidth
+      )
+      .settingsAnchor(.launcherPanelSize)
+    }
+    .gated(by: .launcher)
+    Section {
+      // 确认框挂在按钮上（挂在 Section 上会分到每一行）
+      DangerButton("清空使用记录…") { confirmsClear = true }
+        .confirmationDialog("清空启动器的使用记录？", isPresented: $confirmsClear) {
+          Button("清空", role: .destructive, action: clearUsage)
+        } message: {
+          Text("「常用」和按使用习惯的排序会从头开始学，收藏不动。")
+        }
+        .settingsAnchor(.launcherClearUsage)
+    } header: {
+      Text("使用记录")
+    } footer: {
+      SectionFootnote("「常用」和按使用习惯的排序会从头开始学，收藏不动。")
+    }
+  }
+
+  /// 「脚本命令 ›」行尾：开着「n 个脚本」，有读不成的橙「n 个有问题」；关着「关」（别写成三元式：抽字会漏）
+  static func scriptsValue(on: Bool, scripts: Int, problems: Int) -> (
+    text: LocalizedStringResource, isProblem: Bool
+  ) {
+    if !on { return ("关", false) }
+    if problems > 0 { return ("\(problems) 个有问题", true) }
+    return ("\(scripts) 个脚本", false)
   }
 
   private func recheck() {

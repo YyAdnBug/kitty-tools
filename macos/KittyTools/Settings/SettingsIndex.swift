@@ -55,6 +55,12 @@ enum SettingsItem: String, CaseIterable, Identifiable {
   case launcherBrowsers = "launcher.browsers"
   case launcherWebSearch = "launcher.webSearch"
   case launcherScripts = "launcher.scripts"
+  case launcherScriptsEnabled = "launcher.scriptsEnabled"
+  case launcherScriptsGuide = "launcher.scriptsGuide"
+  case launcherScriptsAI = "launcher.scriptsAI"
+  case launcherScriptsFolder = "launcher.scriptsFolder"
+  case launcherScriptsOtherFolders = "launcher.scriptsOtherFolders"
+  case launcherScriptsImport = "launcher.scriptsImport"
   case launcherCommands = "launcher.commands"
   case launcherShortcuts = "launcher.shortcuts"
   case launcherFrequent = "launcher.frequent"
@@ -66,8 +72,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
   case translateSystemDictionary = "translate.systemDictionary"
   case translateWordMode = "translate.wordMode"
   case translateDictionaryApp = "translate.dictionaryApp"
-  case translateWordRecording = "translate.wordRecording"
-  case translateWordAccent = "translate.wordAccent"
+  case translatePronunciation = "translate.pronunciation"
   case translateSpeechSpeed = "translate.speechSpeed"
   case translatePanelPosition = "translate.panelPosition"
   case translatePanelSize = "translate.panelSize"
@@ -434,16 +439,17 @@ enum SettingsItem: String, CaseIterable, Identifiable {
       Self.row(
         .launcher, "呼出时切到英文输入法",
         LocalizedStringResource("search.launcher.romanInput", defaultValue: "英文,输入法"),
-        keys: [Prefs.launcherRomanInput])
+        keys: [Prefs.launcherRomanInput], place: .advanced)
     case .launcherPanelPosition:
       Self.row(
         .launcher, "面板位置",
         LocalizedStringResource("search.launcher.panelPosition", defaultValue: "位置,跟随鼠标,上次位置,屏幕上方"),
-        keys: [Prefs.launcherPanelPosition])
+        keys: [Prefs.launcherPanelPosition], place: .advanced)
     case .launcherPanelSize:
       Self.row(
         .launcher, "面板大小",
-        LocalizedStringResource("search.launcher.panelSize", defaultValue: "宽度,行数"))
+        LocalizedStringResource("search.launcher.panelSize", defaultValue: "宽度,行数"),
+        place: .advanced)
     case .launcherKeys:
       Self.row(
         .launcher, "启动器里的按键", LocalizedStringResource("search.launcher.keys", defaultValue: "按键,速查")
@@ -471,8 +477,38 @@ enum SettingsItem: String, CaseIterable, Identifiable {
     case .launcherScripts:
       Self.row(
         .launcher, "脚本命令",
-        LocalizedStringResource("search.launcher.scripts", defaultValue: "脚本,AI,新建脚本"),
-        keys: [Prefs.launcherScripts])
+        LocalizedStringResource("search.launcher.scripts", defaultValue: "脚本,AI,新建脚本"))
+    case .launcherScriptsEnabled:
+      Self.row(
+        .launcher, "启用脚本命令",
+        LocalizedStringResource("search.launcher.scriptsEnabled", defaultValue: "脚本,脚本命令"),
+        keys: [Prefs.launcherScripts], place: .subpage(.launcherScripts))
+    case .launcherScriptsGuide:
+      Self.row(
+        .launcher, "怎么写脚本",
+        LocalizedStringResource("search.launcher.scriptsGuide", defaultValue: "脚本,写法,例子"),
+        place: .subpage(.launcherScripts))
+    case .launcherScriptsAI:
+      Self.row(
+        .launcher, "让 AI 来写",
+        LocalizedStringResource("search.launcher.scriptsAI", defaultValue: "AI,脚本,剪贴板"),
+        place: .subpage(.launcherScripts))
+    case .launcherScriptsFolder:
+      Self.row(
+        .launcher, "脚本文件夹",
+        LocalizedStringResource("search.launcher.scriptsFolder", defaultValue: "脚本,新建脚本,文件夹"),
+        place: .subpage(.launcherScripts))
+    case .launcherScriptsOtherFolders:
+      Self.row(
+        .launcher, "其他文件夹",
+        LocalizedStringResource(
+          "search.launcher.scriptsOtherFolders", defaultValue: "脚本,iCloud,文件夹"),
+        place: .subpage(.launcherScripts))
+    case .launcherScriptsImport:
+      Self.row(
+        .launcher, "把脚本文件拖到这里导入",
+        LocalizedStringResource("search.launcher.scriptsImport", defaultValue: "脚本,导入,拖"),
+        place: .subpage(.launcherScripts))
     case .launcherCommands:
       Self.row(
         .launcher, "命令和别名",
@@ -490,43 +526,42 @@ enum SettingsItem: String, CaseIterable, Identifiable {
     case .launcherClearUsage:
       Self.row(
         .launcher, "清空使用记录…",
-        LocalizedStringResource("search.launcher.clearUsage", defaultValue: "使用记录,清空"))
+        LocalizedStringResource("search.launcher.clearUsage", defaultValue: "使用记录,清空"),
+        place: .advanced)
     case .translateFirst: Self.row(.translate, "第一语言", keys: [Prefs.translateFirst])
     case .translateSecond: Self.row(.translate, "第二语言", keys: [Prefs.translateSecond])
     case .translateFontScale:
       Self.row(
         .translate, "译文字号",
         LocalizedStringResource("search.translate.fontScale", defaultValue: "字号,大小"),
-        keys: [Prefs.translateFontScale])
+        keys: [Prefs.translateFontScale], place: .advanced)
     case .translateSystemDictionary:
       Self.row(
         .translate, "查单个词时显示系统词典的释义",
         LocalizedStringResource("search.translate.systemDictionary", defaultValue: "词典,释义,查词"),
-        keys: [Prefs.translateSystemDictionary])
+        keys: [Prefs.translateSystemDictionary], place: .subpage(.translateLookup))
     case .translateWordMode:
       Self.row(
         .translate, "查单个词时大模型按词典回答（读音、词性、例句）",
         LocalizedStringResource("search.translate.wordMode", defaultValue: "查词,音标,例句"),
-        keys: [Prefs.translateWordMode])
+        keys: [Prefs.translateWordMode], place: .subpage(.translateLookup))
     case .translateDictionaryApp:
       Self.row(
         .translate, "系统词典的中文释义",
-        LocalizedStringResource("search.translate.dictionaryApp", defaultValue: "词典,牛津"))
-    case .translateWordRecording:
-      Self.row(
-        .translate, "英文单词用真人发音",
-        LocalizedStringResource("search.translate.wordRecording", defaultValue: "发音,真人,有道"),
-        keys: [Prefs.translateWordRecording])
-    case .translateWordAccent:
+        LocalizedStringResource("search.translate.dictionaryApp", defaultValue: "词典,牛津"),
+        place: .subpage(.translateLookup))
+    case .translatePronunciation:
       Self.row(
         .translate, "英文单词发音",
-        LocalizedStringResource("search.translate.wordAccent", defaultValue: "美音,英音"),
-        keys: [Prefs.translateWordAccent])
+        LocalizedStringResource(
+          "search.translate.pronunciation", defaultValue: "发音,真人,有道,美音,英音,系统声音"),
+        keys: [Prefs.translateWordRecording, Prefs.translateWordAccent],
+        place: .subpage(.translateLookup))
     case .translateSpeechSpeed:
       Self.row(
         .translate, "朗读速度",
         LocalizedStringResource("search.translate.speechSpeed", defaultValue: "朗读,语速,慢速"),
-        keys: [Prefs.translateSpeechSpeed])
+        keys: [Prefs.translateSpeechSpeed], place: .subpage(.translateLookup))
     case .translatePanelPosition:
       Self.row(
         .translate, "浮窗位置",
@@ -535,12 +570,13 @@ enum SettingsItem: String, CaseIterable, Identifiable {
     case .translatePanelSize:
       Self.row(
         .translate, "面板大小",
-        LocalizedStringResource("search.translate.panelSize", defaultValue: "宽度,高度"))
+        LocalizedStringResource("search.translate.panelSize", defaultValue: "宽度,高度"),
+        place: .advanced)
     case .translateRemoveNewlines:
       Self.row(
         .translate, "翻译前把同一段里的换行接起来（适合 PDF 复制的文字）",
         LocalizedStringResource("search.translate.removeNewlines", defaultValue: "换行,PDF"),
-        keys: [Prefs.translateRemoveNewlines])
+        keys: [Prefs.translateRemoveNewlines], place: .advanced)
     case .translateCopyToTranslate:
       Self.row(.translate, "复制即译", keys: [Prefs.translateCopyToTranslate])
     case .translateAutoCopy: Self.row(.translate, "自动复制译文", keys: [Prefs.translateAutoCopy])
@@ -548,27 +584,28 @@ enum SettingsItem: String, CaseIterable, Identifiable {
       Self.row(
         .translate, "截图翻译时把译文直接盖回截图上",
         LocalizedStringResource("search.translate.overlay", defaultValue: "截图翻译,盖回"),
-        keys: [Prefs.translateScreenshotOverlay])
+        keys: [Prefs.translateScreenshotOverlay], place: .advanced)
     case .translateCopyRecognized:
       Self.row(
         .translate, "截图翻译时复制识别出的原文",
         LocalizedStringResource("search.translate.copyRecognized", defaultValue: "截图翻译,原文"),
-        keys: [Prefs.translateCopyRecognized])
+        keys: [Prefs.translateCopyRecognized], place: .advanced)
     case .translateHistory:
       Self.row(
         .translate, "记录翻译历史",
         LocalizedStringResource("search.translate.history", defaultValue: "历史"),
-        keys: [Prefs.translateHistoryEnabled])
+        keys: [Prefs.translateHistoryEnabled], place: .subpage(.translateHistory))
     case .translateHistoryLimit:
       Self.row(
         .translate, "历史最多保留",
         LocalizedStringResource("search.translate.historyLimit", defaultValue: "历史,条数"),
-        keys: [Prefs.translateHistoryLimit])
+        keys: [Prefs.translateHistoryLimit], place: .subpage(.translateHistory))
     case .translateHistoryExport:
       Self.row(
         .translate, "导出和清空",
-        LocalizedStringResource("search.translate.historyExport", defaultValue: "导出,CSV,Anki,清空,历史")
-      )
+        LocalizedStringResource(
+          "search.translate.historyExport", defaultValue: "导出,CSV,Anki,清空,历史"),
+        place: .subpage(.translateHistory))
     case .translateKeys:
       Self.row(
         .translate, "翻译浮窗里的按键",
@@ -739,38 +776,43 @@ enum SettingsItem: String, CaseIterable, Identifiable {
       Self.row(
         .notes, "在屏幕边缘显示便签",
         LocalizedStringResource("search.notes.deck", defaultValue: "屏幕边缘,边缘,药丸,标签"),
-        keys: [Prefs.notesDeckEnabled])
+        keys: [Prefs.notesDeckEnabled], place: .subpage(.notesDeck))
     case .notesDeckEdge:
       Self.row(
         .notes, "位置", LocalizedStringResource("search.notes.deckEdge", defaultValue: "屏幕边缘,左边,右边"),
-        keys: [Prefs.notesDeckEdge])
+        keys: [Prefs.notesDeckEdge], place: .subpage(.notesDeck))
     case .notesDeckDisplay:
       Self.row(
         .notes, "显示器",
         LocalizedStringResource("search.notes.deckDisplay", defaultValue: "屏幕边缘,主显示器"),
-        keys: [Prefs.notesDeckDisplay])
+        keys: [Prefs.notesDeckDisplay], place: .subpage(.notesDeck))
     case .notesDeckStyle:
       Self.row(
         .notes, "样式", LocalizedStringResource("search.notes.deckStyle", defaultValue: "标签,色块"),
-        keys: [Prefs.notesDeckStyle])
+        keys: [Prefs.notesDeckStyle], place: .subpage(.notesDeck))
     case .notesDeckSize:
       Self.row(
         .notes, "大小", LocalizedStringResource("search.notes.deckSize", defaultValue: "屏幕边缘,标签"),
-        keys: [Prefs.notesDeckSize])
-    case .notesDeckSense: Self.row(.notes, "感应范围", keys: [Prefs.notesDeckSense])
-    case .notesDeckAlwaysFanned: Self.row(.notes, "一直展开", keys: [Prefs.notesDeckAlwaysFanned])
+        keys: [Prefs.notesDeckSize], place: .subpage(.notesDeck))
+    case .notesDeckSense:
+      Self.row(.notes, "感应范围", keys: [Prefs.notesDeckSense], place: .subpage(.notesDeck))
+    case .notesDeckAlwaysFanned:
+      Self.row(.notes, "一直展开", keys: [Prefs.notesDeckAlwaysFanned], place: .subpage(.notesDeck))
     case .notesDeckHidesPill:
       Self.row(
         .notes, "不显示药丸", LocalizedStringResource("search.notes.deckHidesPill", defaultValue: "药丸"),
-        keys: [Prefs.notesDeckHidesPill])
-    case .notesDeckPreview: Self.row(.notes, "悬停预览", keys: [Prefs.notesDeckPreview])
-    case .notesDeckOpensOnHover: Self.row(.notes, "悬停即打开", keys: [Prefs.notesDeckOpensOnHover])
+        keys: [Prefs.notesDeckHidesPill], place: .subpage(.notesDeck))
+    case .notesDeckPreview:
+      Self.row(.notes, "悬停预览", keys: [Prefs.notesDeckPreview], place: .subpage(.notesDeck))
+    case .notesDeckOpensOnHover:
+      Self.row(.notes, "悬停即打开", keys: [Prefs.notesDeckOpensOnHover], place: .subpage(.notesDeck))
     case .notesDeckOverFullScreen:
       Self.row(
         .notes, "盖在全屏 App 上",
         LocalizedStringResource("search.notes.deckOverFullScreen", defaultValue: "全屏"),
-        keys: [Prefs.notesDeckOverFullScreen])
-    case .notesDeckNoteSize: Self.row(.notes, "便签大小", keys: [Prefs.notesDeckNoteSize])
+        keys: [Prefs.notesDeckOverFullScreen], place: .subpage(.notesDeck))
+    case .notesDeckNoteSize:
+      Self.row(.notes, "便签大小", keys: [Prefs.notesDeckNoteSize], place: .subpage(.notesDeck))
     case .notesOpenAll:
       Self.row(
         .notes, HotKeyAction.noteAll.titleResource,
@@ -961,103 +1003,107 @@ enum SettingsItem: String, CaseIterable, Identifiable {
       Self.row(
         .island, "在刘海上显示正在播放",
         LocalizedStringResource("search.island.nowPlaying", defaultValue: "正在播放,音乐,封面,切歌"),
-        keys: [Prefs.islandNowPlaying])
+        keys: [Prefs.islandNowPlaying], place: .subpage(.islandMedia))
     case .islandTrackPeek:
       Self.row(
         .island, "换歌时显示歌名", LocalizedStringResource("search.island.trackPeek", defaultValue: "歌名"),
-        keys: [Prefs.islandTrackPeek])
+        keys: [Prefs.islandTrackPeek], place: .subpage(.islandMedia))
     case .islandMediaColor:
       Self.row(
         .island, "跳动条和进度条的颜色",
         LocalizedStringResource("search.island.mediaColor", defaultValue: "封面,颜色"),
-        keys: [Prefs.islandMediaColor])
+        keys: [Prefs.islandMediaColor], place: .subpage(.islandMedia))
     case .islandMusicFavorite:
       Self.row(
         .island, "播放卡片上显示收藏按钮",
         LocalizedStringResource("search.island.musicFavorite", defaultValue: "收藏,音乐"),
-        keys: [Prefs.islandMusicFavorite])
+        keys: [Prefs.islandMusicFavorite], place: .subpage(.islandMedia))
     case .islandHidesWhenActive:
-      Self.row(.island, "正在用放歌的 App 时不显示", keys: [Prefs.islandNowPlayingHidesWhenActive])
+      Self.row(
+        .island, "正在用放歌的 App 时不显示", keys: [Prefs.islandNowPlayingHidesWhenActive],
+        place: .subpage(.islandMedia))
     case .islandNextEvent:
       Self.row(
         .island, "在刘海上显示下一个日程",
-        LocalizedStringResource("search.island.nextEvent", defaultValue: "日程,日历,会议"))
+        LocalizedStringResource("search.island.nextEvent", defaultValue: "日程,日历,会议"),
+        place: .subpage(.islandCalendar))
     case .islandEventChime:
       Self.row(
         .island, "日程开始时响一声",
         LocalizedStringResource("search.island.eventChime", defaultValue: "日程"),
-        keys: [Prefs.islandEventChime])
+        keys: [Prefs.islandEventChime], place: .subpage(.islandCalendar))
     case .islandHourlyChime:
       Self.row(
         .island, "整点报时", LocalizedStringResource("search.island.hourlyChime", defaultValue: "报时"),
-        keys: [Prefs.islandHourlyChime])
+        keys: [Prefs.islandHourlyChime], place: .subpage(.islandCalendar))
     case .islandCalendar:
       Self.row(
         .island, "点刘海打开时显示月历",
         LocalizedStringResource("search.island.calendar", defaultValue: "月历,日历"),
-        keys: [Prefs.islandCalendar])
+        keys: [Prefs.islandCalendar], place: .subpage(.islandCalendar))
     case .islandCalendarDots:
       Self.row(
         .island, "月历上标出有日程的日子",
         LocalizedStringResource("search.island.calendarDots", defaultValue: "月历"),
-        keys: [Prefs.islandCalendarDots])
+        keys: [Prefs.islandCalendarDots], place: .subpage(.islandCalendar))
     case .islandCalendarColors:
       Self.row(
         .island, "用日历的颜色",
         LocalizedStringResource("search.island.calendarColors", defaultValue: "日历,颜色"),
-        keys: [Prefs.islandCalendarColors])
+        keys: [Prefs.islandCalendarColors], place: .subpage(.islandCalendar))
     case .islandShowDeclined:
       Self.row(
         .island, "显示已拒绝的日程",
         LocalizedStringResource("search.island.showDeclined", defaultValue: "日程,拒绝"),
-        keys: [Prefs.islandShowDeclined])
+        keys: [Prefs.islandShowDeclined], place: .subpage(.islandCalendar))
     case .islandKeyLevels:
       Self.row(
         .island, "按音量键、亮度键时显示在刘海上",
-        LocalizedStringResource("search.island.keyLevels", defaultValue: "音量,亮度,静音"))
+        LocalizedStringResource("search.island.keyLevels", defaultValue: "音量,亮度,静音"),
+        place: .subpage(.islandLevels))
     case .islandLevelStay:
       Self.row(
         .island, "停多久", LocalizedStringResource("search.island.levelStay", defaultValue: "音量,亮度"),
-        keys: [Prefs.islandLevelStay])
+        keys: [Prefs.islandLevelStay], place: .subpage(.islandLevels))
     case .islandLevelAccent:
       Self.row(
         .island, "细条用强调色",
         LocalizedStringResource("search.island.levelAccent", defaultValue: "音量,亮度"),
-        keys: [Prefs.islandLevelAccent])
+        keys: [Prefs.islandLevelAccent], place: .subpage(.islandLevels))
     case .islandLevelPercent:
       Self.row(
         .island, "细条旁边显示百分比",
         LocalizedStringResource("search.island.levelPercent", defaultValue: "音量,亮度,百分比"),
-        keys: [Prefs.islandLevelPercent])
+        keys: [Prefs.islandLevelPercent], place: .subpage(.islandLevels))
     case .islandFocus:
       Self.row(
         .island, "在刘海上显示专注模式",
         LocalizedStringResource("search.island.focus", defaultValue: "专注模式,勿扰,睡眠"),
-        keys: [Prefs.islandFocus])
+        keys: [Prefs.islandFocus], place: .subpage(.islandFocus))
     case .islandFocusPinned:
       Self.row(
         .island, "开着时一直挂在刘海上",
         LocalizedStringResource("search.island.focusPinned", defaultValue: "专注模式"),
-        keys: [Prefs.islandFocusPinned])
+        keys: [Prefs.islandFocusPinned], place: .subpage(.islandFocus))
     case .islandFocusSleepSound:
       Self.row(
         .island, "睡眠模式打开时响一声",
         LocalizedStringResource("search.island.focusSleepSound", defaultValue: "专注模式,睡眠"),
-        keys: [Prefs.islandFocusSleepSound])
+        keys: [Prefs.islandFocusSleepSound], place: .subpage(.islandFocus))
     case .islandFocusWaveform:
       Self.row(
         .island, "跳动条换成专注模式的图标",
         LocalizedStringResource("search.island.focusWaveform", defaultValue: "专注模式"),
-        keys: [Prefs.islandFocusWaveform])
+        keys: [Prefs.islandFocusWaveform], place: .subpage(.islandFocus))
     case .islandFocusQuiet:
       Self.row(
         .island, "专注模式时不弹系统提示",
         LocalizedStringResource("search.island.focusQuiet", defaultValue: "专注模式"),
-        keys: [Prefs.islandFocusQuiet])
+        keys: [Prefs.islandFocusQuiet], place: .subpage(.islandFocus))
     case .islandActions:
       Self.row(
         .island, "快捷动作", LocalizedStringResource("search.island.actions", defaultValue: "那一张,排序"),
-        keys: [Prefs.islandActionOrder, Prefs.islandActionsOff])
+        keys: [Prefs.islandActionOrder, Prefs.islandActionsOff], place: .subpage(.islandActions))
     case .islandShowsHistory:
       Self.row(
         .island, "列出最近的提示",
@@ -1077,53 +1123,53 @@ enum SettingsItem: String, CaseIterable, Identifiable {
     case .islandNoticeLength:
       Self.row(
         .island, "提示停多久", LocalizedStringResource("search.island.noticeLength", defaultValue: "提示"),
-        keys: [Prefs.islandNoticeLength])
+        keys: [Prefs.islandNoticeLength], place: .advanced)
     case .islandHaptics:
       Self.row(
         .island, "触感反馈", LocalizedStringResource("search.island.haptics", defaultValue: "触感,震动"),
-        keys: [Prefs.islandHaptics])
+        keys: [Prefs.islandHaptics], place: .advanced)
     case .islandBlur:
       Self.row(
         .island, "展开时模糊四周", LocalizedStringResource("search.island.blur", defaultValue: "模糊"),
-        keys: [Prefs.islandBlur])
+        keys: [Prefs.islandBlur], place: .advanced)
     case .islandOutlined:
       Self.row(
         .island, "描一圈细边", LocalizedStringResource("search.island.outlined", defaultValue: "细边,轮廓"),
-        keys: [Prefs.islandOutlined])
+        keys: [Prefs.islandOutlined], place: .advanced)
     case .islandHidesInFullScreen:
       Self.row(
         .island, "全屏时藏起来",
         LocalizedStringResource("search.island.hidesInFullScreen", defaultValue: "全屏"),
-        keys: [Prefs.islandHidesInFullScreen])
+        keys: [Prefs.islandHidesInFullScreen], place: .advanced)
     case .islandHidesFromCapture:
       Self.row(
         .island, "截图、录屏时不显示刘海岛",
         LocalizedStringResource("search.island.hidesFromCapture", defaultValue: "截图,录屏"),
-        keys: [Prefs.islandHidesFromCapture])
+        keys: [Prefs.islandHidesFromCapture], place: .advanced)
     case .islandNoticePower:
       Self.row(
         .island, "接上、拔掉电源",
         LocalizedStringResource("search.island.noticePower", defaultValue: "电源,充电"),
-        keys: [Prefs.islandNoticePower])
+        keys: [Prefs.islandNoticePower], place: .subpage(.islandNotices))
     case .islandNoticeBattery:
       Self.row(
         .island, "电量低", LocalizedStringResource("search.island.noticeBattery", defaultValue: "电池"),
-        keys: [Prefs.islandNoticeBattery])
+        keys: [Prefs.islandNoticeBattery], place: .subpage(.islandNotices))
     case .islandNoticeHeadphones:
       Self.row(
         .island, "耳机连上",
         LocalizedStringResource("search.island.noticeHeadphones", defaultValue: "耳机,AirPods"),
-        keys: [Prefs.islandNoticeHeadphones])
+        keys: [Prefs.islandNoticeHeadphones], place: .subpage(.islandNotices))
     case .islandNoticeNetwork:
       Self.row(
         .island, "断网、网络恢复",
         LocalizedStringResource("search.island.noticeNetwork", defaultValue: "网络,Wi-Fi"),
-        keys: [Prefs.islandNoticeNetwork])
+        keys: [Prefs.islandNoticeNetwork], place: .subpage(.islandNotices))
     case .islandNoticeLowPower:
       Self.row(
         .island, "低电量模式打开、关掉",
         LocalizedStringResource("search.island.noticeLowPower", defaultValue: "低电量模式"),
-        keys: [Prefs.islandNoticeLowPower])
+        keys: [Prefs.islandNoticeLowPower], place: .subpage(.islandNotices))
     case .hotkeysShotTools:
       Self.row(
         .hotkeys, "截图时：标注工具",
@@ -1172,15 +1218,15 @@ enum SettingsItem: String, CaseIterable, Identifiable {
     }
   }
 
-  /// 这个子页里有没有新功能：推进行标题后挂「新」
+  /// 这个子页里有没有新功能：推进行标题后挂「新」（新功能标在子页名上的也算，如 0.9.0 的「正在播放」）
   static func subpageIsNew(_ subpage: SettingsSubpage, fresh: Set<String>) -> Bool {
-    allCases.contains {
-      $0.place == .subpage(subpage)
-        && WhatsNew.marks(section: $0.info.title, of: subpage.page, in: fresh)
-    }
+    WhatsNew.marks(section: subpage.title, of: subpage.page, in: fresh)
+      || allCases.contains {
+        $0.place == .subpage(subpage)
+          && WhatsNew.marks(section: $0.info.title, of: subpage.page, in: fresh)
+      }
   }
 
-  /// 这台 Mac 上有没有这一行（只在 macOS 26 上的、15.4 起才有的）
   /// 这台 Mac 上、这会儿页面上有没有这一行（只在 macOS 26 上的、15.4 起才有的、多块屏才有的、截图功能开着才有的）：
   /// 没有的不列进搜索结果——点了只会换到一页、找不到那一行。跟着一个开关才露出来的另见 landing
   var isShown: Bool {
@@ -1216,8 +1262,14 @@ enum SettingsItem: String, CaseIterable, Identifiable {
       uniqueKeysWithValues: allCases.map { item in
         let info = item.info
         let lists = info.keywords.map { [String(localized: $0), $0.chinese] } ?? []
-        let keywords = lists.flatMap {
+        var keywords = lists.flatMap {
           $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+        }
+        // 子页的名字（「音量与亮度」「查词与朗读」）算在这个子页第一行的搜索词里：搜它落进那个子页
+        if case .subpage(let subpage) = info.place,
+          allCases.first(where: { $0.place == .subpage(subpage) }) == item
+        {
+          keywords += [String(localized: subpage.title), subpage.title.chinese]
         }
         return (item, ([String(localized: info.title), info.title.chinese], keywords))
       })

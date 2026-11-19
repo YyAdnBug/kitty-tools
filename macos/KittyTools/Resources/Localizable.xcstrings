@@ -1371,6 +1371,28 @@
         }
       }
     },
+    "%lld 个有问题" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld has a problem"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld have problems"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld 个服务的名称、地址、模型和开关" : {
       "localizations" : {
         "en" : {
@@ -1399,6 +1421,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "System commands: %lld"
+          }
+        }
+      }
+    },
+    "%lld 个脚本" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld script"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld scripts"
+                }
+              }
+            }
           }
         }
       }
@@ -5721,16 +5765,16 @@
     "search.general.syncPeers" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "同步,另一台,Mac,电脑"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sync,Another Mac,Mac,Computer"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "同步,另一台,Mac,电脑"
           }
         }
       }
@@ -6653,6 +6697,108 @@
         }
       }
     },
+    "search.launcher.scriptsAI" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "AI,脚本,剪贴板"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI,Script,Clipboard"
+          }
+        }
+      }
+    },
+    "search.launcher.scriptsEnabled" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "脚本,脚本命令"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scripts,Script Commands"
+          }
+        }
+      }
+    },
+    "search.launcher.scriptsFolder" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "脚本,新建脚本,文件夹"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scripts,New Script,Folder"
+          }
+        }
+      }
+    },
+    "search.launcher.scriptsGuide" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "脚本,写法,例子"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scripts,How To,Example"
+          }
+        }
+      }
+    },
+    "search.launcher.scriptsImport" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "脚本,导入,拖"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scripts,Import,Drag"
+          }
+        }
+      }
+    },
+    "search.launcher.scriptsOtherFolders" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "脚本,iCloud,文件夹"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scripts,iCloud,Folder"
+          }
+        }
+      }
+    },
     "search.launcher.shortcuts" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -7422,16 +7568,16 @@
     "search.screenshot.historyClear" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "清空,删除,截图历史"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Clear,Delete,Screenshot History"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "清空,删除,截图历史"
           }
         }
       }
@@ -7456,16 +7602,16 @@
     "search.screenshot.historyOpen" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "截图历史,窗口"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Screenshot History,Window"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "截图历史,窗口"
           }
         }
       }
@@ -7980,6 +8126,23 @@
         }
       }
     },
+    "search.translate.pronunciation" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "发音,真人,有道,美音,英音,系统声音"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pronunciation,Human Voice,Youdao,American,British,System Voice"
+          }
+        }
+      }
+    },
     "search.translate.removeNewlines" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -8048,23 +8211,6 @@
         }
       }
     },
-    "search.translate.wordAccent" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "US English,UK English,Accent"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "美音,英音"
-          }
-        }
-      }
-    },
     "search.translate.wordMode" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -8082,36 +8228,19 @@
         }
       }
     },
-    "search.translate.wordRecording" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pronunciation,Human Voice,Youdao"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "发音,真人,有道"
-          }
-        }
-      }
-    },
     "settings.restoreDefaults" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "恢复默认"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Restore Defaults"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "恢复默认"
           }
         }
       }
@@ -9544,16 +9673,6 @@
         }
       }
     },
-    "「关键词 空格 内容」直接用那个网站搜；没有本地结果时用开了兜底的几个搜。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "“keyword <text>” searches that site directly; when there are no local results, the ones with fallback on are used."
-          }
-        }
-      }
-    },
     "「已复制」这类提示在刘海上停多久；带按钮的、出错的跟着变长变短，进行中的不算" : {
       "localizations" : {
         "en" : {
@@ -10222,7 +10341,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Rarely changed looks and icons"
+            "value" : "Appearance and icons you rarely change"
           }
         }
       }
@@ -11613,7 +11732,7 @@
         }
       }
     },
-    "便签存在这台 Mac 上，和剪贴板历史分开：清空历史、保留天数都碰不到它。每天自动备份一份，留最近 7 份（正文里的图片跟着一起备）。删掉的便签在「最近删除」里留 %lld 天。设置 › 通用 里的导出与导入带便签的文字、不带图片；要连图片一起带走、或者拿别的工具看，用上面的 Markdown 导出。在几台 Mac 之间同步到 设置 › 通用「同步」里选文件夹。" : {
+    "便签存在这台 Mac 上，和剪贴板历史分开：清空历史、保留天数都碰不到它。每天自动备份一份，留最近 7 份（正文里的图片跟着一起备）。删掉的便签在「最近删除」里留 %lld 天。设置 › 通用 › 备份与导出导入 带便签的文字、不带图片；要连图片一起带走、或者拿别的工具看，用上面的 Markdown 导出。在几台 Mac 之间同步到 设置 › 通用 › 同步 里选文件夹。" : {
       "localizations" : {
         "en" : {
           "variations" : {
@@ -11621,13 +11740,13 @@
               "one" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "Notes are stored on this Mac, separately from Clipboard History: clearing history and the retention setting don’t affect them. They’re backed up automatically every day, and the latest 7 backups are kept (images in notes included). Deleted notes stay in Recently Deleted for %lld day. Export and Import in Settings › General include note text but not images; to take images along, or to open notes in other apps, use Markdown export above. To sync between Macs, choose a folder under Sync in Settings › General."
+                  "value" : "Notes are stored on this Mac, separately from Clipboard History: clearing history and the retention setting don’t affect them. They’re backed up automatically every day, and the latest 7 backups are kept (images in notes included). Deleted notes stay in Recently Deleted for %lld day. Settings › General › Backup, Export & Import includes note text but not images; to take images along, or to open notes in other apps, use Markdown export above. To sync between Macs, choose a folder in Settings › General › Sync."
                 }
               },
               "other" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "Notes are stored on this Mac, separately from Clipboard History: clearing history and the retention setting don’t affect them. They’re backed up automatically every day, and the latest 7 backups are kept (images in notes included). Deleted notes stay in Recently Deleted for %lld days. Export and Import in Settings › General include note text but not images; to take images along, or to open notes in other apps, use Markdown export above. To sync between Macs, choose a folder under Sync in Settings › General."
+                  "value" : "Notes are stored on this Mac, separately from Clipboard History: clearing history and the retention setting don’t affect them. They’re backed up automatically every day, and the latest 7 backups are kept (images in notes included). Deleted notes stay in Recently Deleted for %lld days. Settings › General › Backup, Export & Import includes note text but not images; to take images along, or to open notes in other apps, use Markdown export above. To sync between Macs, choose a folder in Settings › General › Sync."
                 }
               }
             }
@@ -13891,6 +14010,16 @@
         }
       }
     },
+    "刘海岛的手感和样子" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How the Notch feels and looks"
+          }
+        }
+      }
+    },
     "刘海那块屏上的 App 全屏时（看视频、玩游戏），刘海岛和它的提示都不出现" : {
       "localizations" : {
         "en" : {
@@ -14345,12 +14474,12 @@
         }
       }
     },
-    "到 设置 › 便签 打开「屏幕边缘」" : {
+    "到 设置 › 便签 › 屏幕边缘 里打开" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Turn on “Screen Edge” in Settings › Notes"
+            "value" : "Turn it on in Settings › Notes › Screen Edge"
           }
         }
       }
@@ -17433,16 +17562,6 @@
         }
       }
     },
-    "命令" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Commands"
-          }
-        }
-      }
-    },
     "命令和别名" : {
       "localizations" : {
         "en" : {
@@ -19620,6 +19739,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Font size"
+          }
+        }
+      }
+    },
+    "字号、换行和截图翻译" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Text size, line breaks, and screenshot translation"
           }
         }
       }
@@ -23805,6 +23934,16 @@
         }
       }
     },
+    "开着 %lld 个" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld on"
+          }
+        }
+      }
+    },
     "开着 %lld 个；关着：%@" : {
       "localizations" : {
         "en" : {
@@ -23817,6 +23956,36 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "开着 %1$lld 个；关着：%2$@"
+          }
+        }
+      }
+    },
+    "开着 %lld 样" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld on"
+          }
+        }
+      }
+    },
+    "开着 · 右边" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On · Right"
+          }
+        }
+      }
+    },
+    "开着 · 左边" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On · Left"
           }
         }
       }
@@ -27760,6 +27929,16 @@
         }
       }
     },
+    "接不住按键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t catch the keys"
+          }
+        }
+      }
+    },
     "接住鼠标滚轮再滑出去；没有它用不了" : {
       "localizations" : {
         "en" : {
@@ -30260,12 +30439,12 @@
         }
       }
     },
-    "日程" : {
+    "日程与月历" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Events"
+            "value" : "Events & Calendar"
           }
         }
       }
@@ -31114,6 +31293,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "最多 %lld 条" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Up to %lld"
           }
         }
       }
@@ -32427,6 +32616,16 @@
         }
       }
     },
+    "查词与朗读" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lookup & Read Aloud"
+          }
+        }
+      }
+    },
     "查询「%@」" : {
       "localizations" : {
         "en" : {
@@ -32641,7 +32840,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Details of selecting and detecting"
+            "value" : "Details for selecting and detecting"
           }
         }
       }
@@ -36437,6 +36636,16 @@
         }
       }
     },
+    "点刘海" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clicking the Notch"
+          }
+        }
+      }
+    },
     "点刘海、两指往下滑或者按「打开刘海岛」的快捷键（到 设置 › 快捷键 里设）叫出来的就是这一排。刘海两边挂着东西（在放歌、在录制）时，点刘海先展开它，再往下滑一次才是这一排。拖动调整先后。" : {
       "localizations" : {
         "en" : {
@@ -38035,12 +38244,52 @@
         }
       }
     },
+    "真人 · 美音" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Human · US"
+          }
+        }
+      }
+    },
+    "真人 · 英音" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Human · UK"
+          }
+        }
+      }
+    },
     "真人发音来自有道词典，会把要读的单词发给有道；取不到时用系统声音。句子用系统声音，可以在 系统设置 › 辅助功能 › 朗读内容 里下载音质更好的声音。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Human pronunciations come from Youdao Dictionary, so the word is sent to Youdao; when one isn’t available, a system voice is used. Sentences use system voices; you can download better voices in System Settings › Accessibility › Spoken Content."
+          }
+        }
+      }
+    },
+    "真人美音" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Human US"
+          }
+        }
+      }
+    },
+    "真人英音" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Human UK"
           }
         }
       }
@@ -39186,6 +39435,26 @@
         }
       }
     },
+    "系统声音 · 美音" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System · US"
+          }
+        }
+      }
+    },
+    "系统声音 · 英音" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System · UK"
+          }
+        }
+      }
+    },
     "系统声音：%@，麦克风：%@" : {
       "localizations" : {
         "en" : {
@@ -39282,6 +39551,16 @@
         }
       }
     },
+    "系统美音" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System US"
+          }
+        }
+      }
+    },
     "系统翻译" : {
       "localizations" : {
         "en" : {
@@ -39350,6 +39629,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The system’s own volume and brightness indicators no longer appear; holding ⌥ still opens System Settings"
+          }
+        }
+      }
+    },
+    "系统英音" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System UK"
           }
         }
       }
@@ -39620,16 +39909,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Output"
-          }
-        }
-      }
-    },
-    "给内置命令和脚本改在启动器里要打的词，关掉用不上的。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Change the words you type in the Launcher for built-in commands and scripts, and turn off what you don’t use."
           }
         }
       }
@@ -40001,16 +40280,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Format JSON"
-          }
-        }
-      }
-    },
-    "美音" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "American"
           }
         }
       }
@@ -40836,32 +41105,12 @@
         }
       }
     },
-    "英文单词用真人发音" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Use human pronunciation for English words"
-          }
-        }
-      }
-    },
     "英语" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "English"
-          }
-        }
-      }
-    },
-    "英音" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "British"
           }
         }
       }
@@ -41961,12 +42210,12 @@
         }
       }
     },
-    "识别出来就放进剪贴板；译文出来后，剪贴板换成译文（上面开着自动复制）" : {
+    "识别出来就放进剪贴板；译文出来后，剪贴板换成译文（外面开着自动复制译文）" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Recognized text goes on the clipboard, then the translation replaces it on the clipboard (auto-copy is on above)"
+            "value" : "Recognized text goes on the clipboard, then the translation replaces it on the clipboard (Auto-copy translations is on)"
           }
         }
       }
@@ -42057,6 +42306,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Capture text and copy (translation is in the right-click menu)"
+          }
+        }
+      }
+    },
+    "词典 · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dictionary · %@"
           }
         }
       }
@@ -42543,12 +42802,12 @@
         }
       }
     },
-    "贴给你常用的 AI、写上想做什么；它给的脚本到 设置 › 启动器「从剪贴板新建」" : {
+    "贴给你常用的 AI、写上想做什么；它给的脚本到 设置 › 启动器 › 脚本命令「从剪贴板新建」" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Paste it into your AI assistant and describe what you want. Add the script it gives you in Settings › Launcher › “New from Clipboard”."
+            "value" : "Paste it into your AI assistant and describe what you want. Add the script it gives you in Settings › Launcher › Script Commands › “New from Clipboard”."
           }
         }
       }
@@ -43001,6 +43260,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Type or paste text. ↩ translates, ⇧↩ adds a line."
+          }
+        }
+      }
+    },
+    "输入法、面板和使用记录" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Input source, panel, and usage history"
           }
         }
       }
@@ -46449,12 +46718,12 @@
         }
       }
     },
-    "音量和亮度" : {
+    "音量与亮度" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Volume and Brightness"
+            "value" : "Volume & Brightness"
           }
         }
       }
