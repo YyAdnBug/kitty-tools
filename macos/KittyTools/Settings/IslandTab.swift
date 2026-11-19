@@ -44,6 +44,8 @@ struct IslandTab: View {
   @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
   /// 本 App 回到前台时加一：「音量与亮度」行尾照现在的辅助功能授权重算（从系统设置授权回来）
   @State private var accessChecks = 0
+  /// 悬停预览：页面最上面那一组顶上的舞台演停着的那一行（设置改版 S10）
+  @State private var previewFocus = PreviewFocus()
 
   init(
     mediaKeys: MediaKeys? = nil, keyStatus: MediaKeys.Status? = nil, drawsAdvanced: Bool = false
@@ -89,6 +91,7 @@ struct IslandTab: View {
   private var form: some View {
     Form {
       Section {
+        PreviewStage(still: .notchClick)
         SettingRow(
           title: "点刘海打开", subtitle: "停上去鼓起一点，点一下打开",
           info: "两指往下滑也行；刘海两边挂着东西时打开它的卡片，没有时是快捷动作。装了别的刘海 App 时可以关掉：提示和挂在刘海两边的录制计时这些照常，快捷键照样能叫出快捷动作。"
@@ -96,6 +99,7 @@ struct IslandTab: View {
           Toggle("点刘海打开", isOn: $notchClicks)
             .toggleStyle(.switch)
         }
+        .previews(.notchClick)
         .settingsAnchor(.islandNotchClicks)
         SettingRow(
           title: "停在刘海上自动展开", subtitle: "停一下就展开，不用点",
@@ -104,6 +108,7 @@ struct IslandTab: View {
           Toggle("停在刘海上自动展开", isOn: $hoverExpands)
             .toggleStyle(.switch)
         }
+        .previews(.hoverExpand)
         .settingsAnchor(.islandHoverExpands)
         Picker("停多久展开", selection: $hoverDelay) {
           Text("0.3 秒").tag(0.3)
@@ -126,15 +131,19 @@ struct IslandTab: View {
       }
       Section("活动") {
         pushRow(.islandMedia, value: IslandMediaPage.value(on: nowPlaying))
+          .previews(.nowPlaying)
         pushRow(
           .islandCalendar,
           value: IslandCalendarPage.value(
-            nextEvent: nextEvent, calendar: monthCalendar, hourly: hourlyChime))
+            nextEvent: nextEvent, calendar: monthCalendar, hourly: hourlyChime)
+        )
+        .previews(.calendar)
         let _ = accessChecks  // 授权回来重画
         let levels = IslandLevelsPage.value(
           on: keyLevels,
           catches: !keyLevels || IslandLevelsPage.catches(keyStatus ?? mediaKeys?.status))
         pushRow(.islandLevels, value: levels.text, isProblem: levels.isProblem)
+          .previews(.levels)
         pushRow(.islandFocus, value: IslandMediaPage.value(on: focus))
         pushRow(
           .islandNotices,
@@ -150,6 +159,7 @@ struct IslandTab: View {
     }
     .formStyle(.grouped)
     .settingsScrollTarget()
+    .environment(previewFocus)
   }
 
   /// 一个子页的推进行（新功能标记看子页里的行和子页名，如 0.9.0 的「正在播放」）

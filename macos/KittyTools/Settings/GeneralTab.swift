@@ -27,6 +27,8 @@ struct GeneralTab: View {
   @AppStorage(Prefs.dockIconOnTahoe) private var dockIconOnTahoe = true
   @AppStorage(Prefs.statusItemStyle) private var statusItemStyle = StatusItem.IconStyle.template
   @AppStorage(Prefs.panelSqueezeEntrance) private var squeezeEntrance = false
+  /// 悬停预览：「高级…」里「挤压弹开」那一组顶上的舞台（设置改版 S10）
+  @State private var previewFocus = PreviewFocus()
   /// 界面语言（InterfaceLanguage：本 App 自己偏好域里的 AppleLanguages，不注册默认值，@AppStorage 读不到「没存过」）
   @State private var language = InterfaceLanguage.stored
   @State private var languageNeedsRelaunch = InterfaceLanguage.needsRelaunch
@@ -245,6 +247,7 @@ struct GeneralTab: View {
   /// 「高级…」表单：动效、菜单栏和程序坞的图标、数据目录
   @ViewBuilder private var advanced: some View {
     Section {
+      PreviewStage(still: .squeeze)
       SettingRow(
         title: "呼出面板时挤压弹开", subtitle: "面板从小一点弹到原尺寸",
         info: "剪贴板、启动器和翻译浮窗都这样；减弱动态效果时不弹。"
@@ -252,8 +255,10 @@ struct GeneralTab: View {
         Toggle("呼出面板时挤压弹开", isOn: $squeezeEntrance)
           .toggleStyle(.switch)
       }
+      .previews(.squeeze)
       .settingsAnchor(.generalSqueeze)
     }
+    .environment(previewFocus)
     Section {
       SettingRow(
         title: "在菜单栏显示图标", subtitle: "隐藏后快捷键照常能用",
@@ -626,7 +631,7 @@ private struct AppearancePicker: View {
 
 /// 一张外观缩略图：桌面渐变 + 一扇从左上角露出来的小窗口（标题栏、两条内容、一个强调色小点）；
 /// 跟随系统 = 浅色、深色沿斜线各取一半。颜色是示意用的定值，不跟当前外观走（强调色点按缩略图自己的深浅取）
-private struct AppearanceThumbnail: View {
+struct AppearanceThumbnail: View {
   let appearance: AppAppearance
   static let size = CGSize(width: 58, height: 38)
 
@@ -653,14 +658,17 @@ private struct AppearanceThumbnail: View {
     .overlay(shape.hairlineBorder())
   }
 
+  /// 缩略图的桌面壁纸（设置里悬停预览的小桌面也用它）
+  static func wallpaper(dark: Bool) -> [Color] {
+    dark
+      ? [Color(red: 0.11, green: 0.16, blue: 0.29), Color(red: 0.20, green: 0.15, blue: 0.31)]
+      : [Color(red: 0.62, green: 0.74, blue: 0.92), Color(red: 0.84, green: 0.80, blue: 0.94)]
+  }
+
   private static func desktop(dark: Bool) -> some View {
     let window = RoundedRectangle(cornerRadius: Style.Radius.mini, style: .continuous)
     let bar = Color(white: dark ? 1 : 0, opacity: dark ? 0.22 : 0.13)
-    let wallpaper: [Color] =
-      dark
-      ? [Color(red: 0.11, green: 0.16, blue: 0.29), Color(red: 0.20, green: 0.15, blue: 0.31)]
-      : [Color(red: 0.62, green: 0.74, blue: 0.92), Color(red: 0.84, green: 0.80, blue: 0.94)]
-    return LinearGradient(colors: wallpaper, startPoint: .top, endPoint: .bottom)
+    return LinearGradient(colors: wallpaper(dark: dark), startPoint: .top, endPoint: .bottom)
       .overlay(alignment: .topLeading) {
         VStack(alignment: .leading, spacing: 4) {
           Color(white: dark ? 0.24 : 0.91).frame(height: 7)  // 标题栏
