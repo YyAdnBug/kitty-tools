@@ -35,6 +35,8 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     /// 列表脚本给出的一条结果（目标是「脚本路径⏎第几条」）：↩ 粘贴 payload、⌘↩ / ⌘C 只复制；payload 是 nil 的（脚本标了不能选、
     /// 出错的那一行）按了只响提示音。写了 url / path 的（opens）↩ 打开，文件另有 ⌘↩ 在访达中显示、⌘Y 快速查看
     case scriptResult
+    /// 前台 App 的一个菜单项（第五轮体检 N3，MenuSearch；目标是「pid⏎位置」，菜单项本身在 menuItem 里）：↩ 执行它（不记使用）
+    case menuItem
 
     /// 只有这些记使用、能出现在「常用」里、能收藏
     var isRecorded: Bool { [.app, .action, .url, .path, .system, .script].contains(self) }
@@ -83,6 +85,8 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
   /// App：系统记的最近使用（Spotlight 的 kMDItemUsedDates 按天衰减求和，AppCatalog.systemUse）。只在启动器 / 启动台的
   /// 分数相同时用来排先后：刚装上本 App、还没在这里用过时，常用的 App 也排在前面（同 Alfred 没记录时看系统的使用日期）
   var systemUse = 0.0
+  /// 菜单项（.menuItem）：哪个 App 的哪一项、路径的搜索名；别的结果是 nil
+  var menuItem: MenuSearch.Entry?
 
   var id: String { kind.rawValue + "\n" + target }
 
@@ -202,7 +206,9 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     .clipboard: "Clipboard History", .selectionTranslate: "Selection Translate",
     .inputTranslate: "Translate Input", .translateReplace: "Translate Replace",
     .screenshotTranslate: "Screenshot Translate", .screenshot: "Screenshot Capture",
-    .screenshotLastRegion: "Capture Last Region", .recognizeText: "OCR Recognize Text QR",
+    .screenshotLastRegion: "Capture Last Region",
+    .delayedScreenshot: "Delayed Screenshot Timer Self-timer 延时 定时 倒计时",
+    .recognizeText: "OCR Recognize Text QR",
     .screenRecord: "Screen Recording Record Video",
     .audioRecord: "Audio Recording Record Voice Microphone",
     // 「钉图」：标题是「钉住剪贴板内容」，不放进来搜「钉图」找不到它（菜单里的另两项都叫「…钉图」）；剪贴板里的文字也能钉（issue #4），

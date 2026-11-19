@@ -34,6 +34,11 @@ enum RegionSelector {
     var original: CGImage?
     /// 画了哪些标注，坐标已经挪成「相对这张图的左下角」（历史和标注窗口按它摆）
     var annotations: [Annotation] = []
+    /// 单击选中的整扇窗口（第五轮体检 N1，设置开着「窗口截图带阴影」、选区没再动过、按的是拷贝 / 存储 / 另存为 / 钉图）：
+    /// 交出时已经开始单独截它，出图前 WindowShot.dress 换成透明圆角带阴影的那一张；nil = 照旧是上面这张矩形裁切
+    var window: WindowShot.Pending?
+    /// 已经换成了透明圆角带阴影的窗口截图（钉图不套圆角和描边、记进历史时带上这个标记）
+    var isWindow = false
 
     /// 像素 / 点
     var scale: CGFloat { frame.width > 0 ? CGFloat(image.width) / frame.width : 1 }
@@ -390,6 +395,8 @@ final class SelectionSession {
   lazy var findElements: (pid_t, CGPoint) -> ElementFinder.Answer = { [hits] pid, point in
     ElementFinder.query(pid: pid, at: point, cache: hits)
   }
+  /// 单击窗口出图时单独截那扇窗口（N1，WindowShot.snapshot）；单测、截图自检换成假的——真的会去问 ScreenCaptureKit
+  var snapshotWindow: (CGWindowID) async -> CGImage? = { await WindowShot.snapshot($0) }
   /// 这次框选问元素的缓存（单测直接设 woken）
   let hits = ElementFinder.Cache()
   /// 问过超时的 App：这次框选不再问它，只认窗口（卡住的 App 每动一下鼠标都等一次就卡成幻灯片了）
@@ -525,7 +532,8 @@ final class SelectionOverlay: NSPanel {
 
   init(shot: ScreenCapture.Shot, session: SelectionSession) {
     selectionView = SelectionView(
-      image: shot.image, windows: shot.windows, owners: shot.owners, session: session)
+      image: shot.image, windows: shot.windows, owners: shot.owners, windowIDs: shot.windowIDs,
+      session: session)
     // styleMask 必须在 init 里一次写全：.nonactivatingPanel 初始化后再加不生效
     super.init(
       contentRect: shot.screen.frame, styleMask: [.borderless, .nonactivatingPanel],

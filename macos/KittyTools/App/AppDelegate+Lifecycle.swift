@@ -145,7 +145,7 @@ extension AppDelegate {
     }
     shelf.island = island
     shelf.save = { [unowned self] in await savePNG($0, asking: false) }
-    shelf.pin = { [unowned self] in pins.pin($0, frame: $1) }
+    shelf.pin = { [unowned self] in pins.pin($0, frame: $1, window: $2) }
     // 录屏 / 录音卡的「拷贝」：拷的是文件，同截图的图片自己记进剪贴板历史（C8-a：点了才进；暂停记录、剪贴板关着时不记）
     // 转出来的 GIF、压缩版也进历史；右键「在历史里看」打开历史窗口（2026-10-26 拍板 B1、D1）
     shelf.remember = { [unowned self] file, poster, kind in
@@ -454,6 +454,7 @@ extension AppDelegate {
       replaceTask = nil
     }
     if turnedOff.contains(.screenshot) {
+      shotCountdown?.cancel()  // 延时截图的倒数（N2）
       if !pins.panels.isEmpty { pins.closeAll() }
       clothesline.stop()
       // 截图历史窗口、长图标注也收（R10：原来关掉截图它们还开着、还能出图）；历史窗口走自己的 onClose 清缓存

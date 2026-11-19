@@ -102,6 +102,11 @@ extension LauncherModel {
       }
       open(url, item)
     case .process: break  // 只在 kill / port 模式里出现，上面已经处理
+    case .menuItem:
+      // 前台 App 的菜单项（N3）：收起启动器、切回那个 App 再按它（不记使用：菜单每次现读）
+      guard let entry = item.menuItem else { return NSSound.beep() }
+      close()
+      pressMenu(entry)
     case .script:
       guard let script = activeScripts.first(where: { $0.path == item.target }) else {
         return NSSound.beep()
@@ -575,7 +580,7 @@ extension LauncherModel {
     case .path: return (item.target as NSString).abbreviatingWithTildeInPath
     case .script: return item.arguments == nil ? item.title : nil
     case .search, .calculation, .clip, .prompt, .translate, .process, .ip, .reminder,
-      .scriptResult:
+      .scriptResult, .menuItem:
       return nil
     }
   }
@@ -668,6 +673,11 @@ extension LauncherModel {
       case .file: Self.act("打开", "arrow.up.forward.app")
       case nil: Self.act("粘贴", "arrow.turn.down.left")
       }
+    case .menuItem:
+      Self.act(
+        LocalizedStringResource(
+          "launcher.menuItem.press", defaultValue: "执行", comment: "动作：执行前台 App 的一个菜单项"),
+        "filemenu.and.selection")
     }
   }
 
@@ -729,7 +739,7 @@ extension LauncherModel {
     case .scriptResult where item.copyText == nil && item.opens != nil:
       if case .url = item.opens { "复制网址" } else { "复制路径" }
     case .scriptResult: "复制结果"
-    case .action, .system, .prompt, .clip, .translate, .process, .reminder: nil
+    case .action, .system, .prompt, .clip, .translate, .process, .reminder, .menuItem: nil
     }
   }
 

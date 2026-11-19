@@ -27,7 +27,7 @@ struct SelectionInteractionTests {
     let session: SelectionSession
     /// 托盘改样式会记住样式（Prefs.screenshotToolStyles）：记在临时偏好域里，不碰用户的真实偏好，用完删掉
     private let styleSuite = "kitty-test-styles-\(UUID().uuidString)"
-    private let styles: UserDefaults
+    let styles: UserDefaults
     /// 按下时接住事件的视图（不是 SelectionView / 尺寸胶囊就不发 mouseDown，免得进 NSButton 的跟踪循环）
     private var target: NSView?
     private(set) var intercepted: NSView?
@@ -36,7 +36,8 @@ struct SelectionInteractionTests {
     /// session / origin：多屏时几块「屏幕」共用一个会话，窗口摆在各自的位置（见 screens）；size：这块「屏幕」多大
     init(
       mode: SelectionView.Mode = .capture, windows: [CGRect] = [], owners: [[pid_t]] = [],
-      findsElements: Bool = false, image: CGImage? = nil, hint: String = "",
+      windowIDs: [CGWindowID?] = [], findsElements: Bool = false, image: CGImage? = nil,
+      hint: String = "",
       session: SelectionSession? = nil,
       origin: CGPoint = CGPoint(x: -20000, y: -20000), keepsColors: Bool = false,
       showsHint: Bool = true, loupe: Prefs.Loupe = .full,
@@ -50,9 +51,12 @@ struct SelectionInteractionTests {
       context.fill(CGRect(origin: .zero, size: size))
       self.session = session ?? SelectionSession(mode: mode, hint: hint)
       if findsElements { self.session.findsElements = true }
+      // 单击窗口出图时的单独截图（N1）：不问真的 ScreenCaptureKit
+      self.session.snapshotWindow = { _ in nil }
       view = SelectionView(
         image: image ?? context.makeImage()!, windows: windows, owners: owners,
-        session: self.session, keepsColors: keepsColors, showsHint: showsHint, loupe: loupe)
+        windowIDs: windowIDs, session: self.session, keepsColors: keepsColors, showsHint: showsHint,
+        loupe: loupe)
       styles = UserDefaults(suiteName: styleSuite)!
       view.styleDefaults = styles
       window = KeyWindow(
@@ -1366,6 +1370,39 @@ struct SelectionInteractionTests {
     h.key(kVK_ANSI_R, "r")
     #expect(h.recordBar != nil)
     #expect(h.view.magnifierHeight == SelectionView.loupeSide && !h.view.showsMagnifier)
+  }
+
+  // 第五轮体检 N1：单击选中整扇窗口、开着「窗口截图带阴影」时出图带上窗口号（WindowShot 换成单独截的那张）；
+  // 选区动过、设置关着、识字、单击的是窗口里的元素 / 没有窗口号的（菜单栏那条）都不带
+  @Test func clickedWindowGoesToWindowShot() async throws {
+    let frame = CGRect(x: 200, y: 150, width: 500, height: 400)
+    let h = Harness(
+      windows: [frame, CGRect(x: 0, y: 770, width: 1200, height: 30)], windowIDs: [42, nil])
+    h.styles.set(true, forKey: Prefs.screenshotWindowShadow)
+    h.click(CGPoint(x: 400, y: 300))
+    #expect(h.view.selection == frame)
+    func shot(_ action: RegionSelector.Action) async -> Bool? {
+      guard case .capture(let capture)? = await h.outcome(of: { h.view.output(action) }) else {
+        return nil
+      }
+      return capture.window != nil
+    }
+    #expect(await shot(.copy) == true)
+    #expect(await shot(.pin) == true)
+    #expect(await shot(.recognize) == false)
+    h.styles.set(false, forKey: Prefs.screenshotWindowShadow)
+    #expect(await shot(.copy) == false)
+    h.styles.set(true, forKey: Prefs.screenshotWindowShadow)
+    // 方向键挪了一点：选区和单击时的窗口对不上了，照旧按矩形裁
+    h.arrow(kVK_RightArrow)
+    #expect(h.view.selection != frame)
+    #expect(await shot(.copy) == false)
+    // 菜单栏那一条没有窗口号
+    let bar = Harness(
+      windows: [CGRect(x: 0, y: 770, width: 1200, height: 30)], windowIDs: [nil])
+    bar.styles.set(true, forKey: Prefs.screenshotWindowShadow)
+    bar.click(CGPoint(x: 600, y: 785))
+    #expect(bar.view.clickedWindow == nil)
   }
 
   // 截图翻译 / 识字：待选和框选时有放大镜、尺寸只读，⇧ 照样正方形，松手即确认（交回裁好的图）

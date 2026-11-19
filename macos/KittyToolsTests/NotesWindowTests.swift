@@ -674,13 +674,13 @@ struct NotesWindowTests {
 
   // MARK: 入口
 
-  /// 三个全局动作追加在末尾（注册 id 是下标；启动台、截图历史、刘海岛、晾衣绳、主界面又接在它们后面）；
+  /// 三个全局动作追加在末尾（注册 id 是下标；启动台、截图历史、刘海岛、晾衣绳、主界面……延时截图又接在它们后面）；
   /// 只有「快速记一条」有默认键 ⌥N；「便签」一节在「截图与录制」之后、「提醒」之前（功能管理拍板 M3），三项按这个顺序
   @Test func hotKeyActions() throws {
     #expect(
-      Array(HotKeyAction.allCases.suffix(12)) == [
+      Array(HotKeyAction.allCases.suffix(13)) == [
         .noteCapture, .noteNew, .noteAll, .launchpad, .shotHistory, .island, .clothesline, .home,
-        .reminderNew, .keepAwake, .appShortcuts, .noteDeck,
+        .reminderNew, .keepAwake, .appShortcuts, .noteDeck, .delayedScreenshot,
       ])
     #expect(
       HotKeyAction.noteCapture.defaultHotKey == HotKey(keyCode: kVK_ANSI_N, modifiers: optionKey))

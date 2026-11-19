@@ -31,6 +31,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 截图家族的框选进行中（截屏 → 框选遮罩 → 长截图面板）：这时再按截图家族、划词翻译的热键只响一声。出图（编码、另存为、
   /// 识字、快速保存）不算（第五轮体检 E3，beginCapture）；录屏只占框选阶段（C9）
   var isCapturing = false
+  /// 延时截图正在倒数（第五轮体检 N2）：再按一次延时截图 = 取消。倒数不算 isCapturing（这几秒里别的浮层照常弹，才截得到）
+  var shotCountdown: ShotCountdown?
   /// 录屏会话（框选之后、开录到文件挪好）：在录时录屏的入口都是停止；录制中照样能截图、识字、截图翻译（C9）
   var recorder: ScreenRecorder?
   /// 录音会话（录音第 5 批，开录到文件挪好）：在录时录音的入口都是停止；和录屏互斥（C9-a）。手测反馈第 3 批起它可能还在
@@ -584,6 +586,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       Self.closeQuickLook(
         launcherQuickLook.panel, owner: launcherPanel, animated: animated, to: launcherRowFrame)
     }
+    // 搜前台 App 的菜单项（第五轮体检 N3）：归 App 快捷键插件、要辅助功能授权；前台是本 App 时不读（主线程问自己会卡到超时）
+    model.menuApp = {
+      guard Feature.appShortcuts.isOn, Permissions.isAccessibilityTrusted,
+        let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != getpid()
+      else { return nil }
+      return app
+    }
+    model.pressMenu = { [unowned self] entry in
+      guard Feature.appShortcuts.isOn,
+        let app = NSRunningApplication(processIdentifier: entry.pid), !app.isTerminated
+      else { return }
+      // 启动器不激活本 App，前台一般还是它；万一换了（比如中间点过别处）先切回去，菜单项按下去的窗口在前面
+      if !app.isActive { app.activate() }
+      AppShortcuts.press(entry.item, in: app) { [unowned self] text in
+        island.show(text, tone: .warning, symbol: SettingsPage.appShortcuts.symbol)
+      }
+    }
     model.boundHotKey = { [unowned self] in hotKeys.bindings[$0] }
     model.requestFolderAccess = { [unowned self] in requestFolderAccess() }
     model.perform = { [unowned self] in SystemControl.perform($0, island: island) }
@@ -1072,7 +1091,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           source: item.frame, screens: NSScreen.screens.map { ($0.frame, $0.visibleFrame) },
           fallback: (NSScreen.main ?? NSScreen.screens[0]).visibleFrame,
           pinned: pins.panels.map(\.frame))
-        pins.pin(image, frame: frame)
+        pins.pin(image, frame: frame, window: item.isWindow)
         shotHistory.markPinned(item.id)
       }
     }

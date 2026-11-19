@@ -742,6 +742,9 @@ private struct LauncherRow: View {
     } else if let path = item.process?.app?.path, let image = LauncherIcons.icon(for: path) {
       // port 列的程序坞 App：它自己的图标（列的时候已经从 NSRunningApplication 放进缓存，不读 App 包）
       Image(nsImage: image).resizable().frame(width: 24, height: 24)
+    } else if let path = item.menuItem?.appPath, let image = LauncherIcons.icon(for: path) {
+      // 前台 App 的菜单项（N3）：那个 App 的图标
+      Image(nsImage: image).resizable().frame(width: 24, height: 24)
     } else if item.isSettingsPane,
       let image = LauncherIcons.icon(for: AppCatalog.systemSettingsPath)
     {
@@ -805,6 +808,7 @@ extension LauncherItem {
     case .prompt where target == ExchangeRates.promptTarget: "equal"
     case .prompt where target.hasPrefix(ExchangeRates.suggestionPrefix): "banknote"
     case .search, .prompt: "magnifyingglass"
+    case .menuItem: "filemenu.and.selection"
     default: symbol
     }
   }
@@ -851,6 +855,8 @@ extension LauncherItem {
     case .calculation: Style.Family.keyboard
     case .clip: Style.Family.clipboard
     case .app, .path: Style.Family.general
+    // 菜单项归 App 快捷键插件：它的家族色
+    case .menuItem: Style.Family.keyboard
     }
   }
 
@@ -916,6 +922,8 @@ extension LauncherItem {
       }
     case .script:
       String(localized: "launcher.kind.script", defaultValue: "脚本", comment: "启动器行右侧的类型")
+    case .menuItem:
+      String(localized: "launcher.kind.menuItem", defaultValue: "菜单项", comment: "启动器行右侧的类型")
     }
   }
 }

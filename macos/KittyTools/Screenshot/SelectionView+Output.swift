@@ -34,7 +34,23 @@ extension SelectionView {
       .capture(
         .init(
           image: result, frame: selection.offsetBy(dx: window.frame.minX, dy: window.frame.minY),
-          action: action, original: original, annotations: moved)))
+          action: action, original: original, annotations: moved,
+          window: windowShot(for: action))))
+  }
+
+  /// 这次出图要不要换成单独截的那扇窗口（N1）：设置开着、单击选中的整扇窗口、选区没再动过、没贴着就地翻译的译文
+  /// （译文贴在冻结帧上，窗口里没有）、出的是图（拷贝 / 存储 / 另存为 / 钉图；识字、翻译要的是字）。
+  /// 是的话现在（遮罩还在）就开始单独截，连同冻结时别的 App 的窗口盖住它的那几块一起交出去（WindowShot 文件头）
+  func windowShot(for action: RegionSelector.Action) -> WindowShot.Pending? {
+    guard let clickedWindow, clickedWindow.frame == selection, untranslated == nil,
+      [.copy, .save, .saveAs, .pin].contains(action),
+      styleDefaults.bool(forKey: Prefs.screenshotWindowShadow)
+    else { return nil }
+    let id = clickedWindow.id
+    let snapshot = session.snapshotWindow
+    return WindowShot.Pending(
+      shot: Task { await snapshot(id) },
+      covered: WindowShot.covered(clickedWindow.index, windows: windows, owners: owners))
   }
 
   /// 就地翻译（工具栏「翻译」）：不收起遮罩——选区上扫光，翻完把译文图贴回冻结帧的选区位置，

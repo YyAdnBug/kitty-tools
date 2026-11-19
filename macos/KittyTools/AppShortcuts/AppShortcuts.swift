@@ -330,11 +330,19 @@ final class AppShortcuts {
   private func perform(_ item: MenuShortcut) {
     guard let app = shownApp else { return }
     panel.panel?.hide()
+    Self.press(item, in: app) { [weak self] in self?.announce?($0) }
+  }
+
+  /// 按菜单里的一项（面板里点一行、启动器里菜单项的 ↩，第五轮体检 N3）：菜单变了按不了、这一刻用不了就说一声
+  static func press(
+    _ item: MenuShortcut, in app: NSRunningApplication,
+    announce: (LocalizedStringResource) -> Void
+  ) {
     let name = app.localizedName ?? String(localized: "这个 App")
     switch MenuShortcuts.press(item, pid: app.processIdentifier) {
     case .pressed: break
-    case .changed: announce?("没能执行「\(item.title)」：\(name)的菜单变了")
-    case .refused: announce?("「\(item.title)」现在用不了")
+    case .changed: announce("没能执行「\(item.title)」：\(name)的菜单变了")
+    case .refused: announce("「\(item.title)」现在用不了")
     }
   }
 

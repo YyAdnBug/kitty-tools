@@ -2,9 +2,10 @@
 // 录音也存这里，「录制」页的「保存到」是同一行 SaveDirectoryRow）、截图拷贝为图像还是 PNG 文件（2026-11-06）、截完图放哪、
 // 快门声（可试听）；「截图历史 ›」推进子页（开关、保留多久、最多占用、打开历史、现在清空；改短保留期 / 改小占用会删掉东西时
 // 先问，第四轮体检 E24，改了当场清一次）；按键两行（N11：速查表、「截图里的快捷键…」跳快捷键页）。
-// 「高级…」：带上鼠标指针、隐藏桌面图标（第四轮体检 X8 X9）、框选时的提示和放大镜（2026-11-17）、工具栏靠哪边（录屏的录制条
-// 同一个设置）、保持屏幕原色、悬停时识别（窗口里的元素 / 连网页里的也认，两个开关合成一个选单，S6；要辅助功能授权：没授权时
-// 下面出授权那一行）、钉图上的字可选、识字后接换行（旁边实时对照效果，体检 A32）。录屏、录音的设置在「录制」页（RecordTab）。
+// 「高级…」：带上鼠标指针、隐藏桌面图标（第四轮体检 X8 X9）、窗口截图带阴影、延时截图倒数几秒（第五轮体检 N1 N2）、
+// 框选时的提示和放大镜（2026-11-17）、工具栏靠哪边（录屏的录制条同一个设置）、保持屏幕原色、悬停时识别（窗口里的元素 /
+// 连网页里的也认，两个开关合成一个选单，S6；要辅助功能授权：没授权时下面出授权那一行）、钉图上的字可选、识字后接换行
+// （旁边实时对照效果，体检 A32）。录屏、录音的设置在「录制」页（RecordTab）。
 // 页头画在自己的 NavigationStack 里，推进子页时一起换掉。
 
 import AppKit
@@ -31,6 +32,8 @@ struct ScreenshotTab: View {
   @AppStorage(Prefs.screenshotLoupe) private var loupe = Prefs.Loupe.full.rawValue
   @AppStorage(Prefs.screenshotFindsElements) private var findsElements = false
   @AppStorage(Prefs.screenshotFindsWebElements) private var findsWebElements = false
+  @AppStorage(Prefs.screenshotWindowShadow) private var windowShadow = true
+  @AppStorage(Prefs.screenshotDelay) private var delay = 5
   /// 认元素要辅助功能授权（拍板 D2：没授权只在这里说，不弹框）；从系统设置授权回来、设置窗重新当 key 时刷新
   @State private var trusted = Permissions.isAccessibilityTrusted
   /// 「截图拷贝为」「框选时保持屏幕原色」那两行的「新」（0.7.3，WhatsNew）
@@ -270,6 +273,27 @@ struct ScreenshotTab: View {
           .toggleStyle(.switch)
       }
       .settingsAnchor(.screenshotHideDesktop)
+    }
+    .gated(by: .screenshot)
+    // 第五轮体检 N1 N2：单击窗口截下的样子、延时截图倒数多久
+    Section {
+      SettingRow(
+        title: "窗口截图带阴影", subtitle: "单击窗口截下时四角透明、四周带阴影",
+        info: "画面就是框选时看到的；别的 App 的窗口挡住的地方换成这扇窗口自己的，拷贝、存储、钉图都带透明边。选区拖动过、窗口有一部分在屏幕外时照旧按矩形裁。"
+      ) {
+        Toggle("窗口截图带阴影", isOn: $windowShadow)
+          .toggleStyle(.switch)
+      }
+      .settingsAnchor(.screenshotWindowShadow)
+      SettingRow(
+        title: "延时截图倒数", subtitle: "从菜单栏、启动器或自己设的快捷键开始",
+        info: "数完再冻结屏幕、开始框选，工具提示、菜单这类一按键就消失的也截得到。倒数时按 Esc 或点 ✕ 取消，点数字马上截；快捷键在快捷键页设。"
+      ) {
+        Picker("延时截图倒数", selection: $delay) {
+          ForEach(Prefs.screenshotDelayChoices, id: \.self) { Text("\($0) 秒").tag($0) }
+        }
+      }
+      .settingsAnchor(.screenshotDelay)
     }
     .gated(by: .screenshot)
     Section {

@@ -19,6 +19,9 @@ enum ScreenCapture {
     var windows: [CGRect] = []
     /// 和 windows 一一对应：悬停时问哪几个进程要窗口里的元素（ElementFinder；按顺序，第一个问出东西的算）
     var owners: [[pid_t]] = []
+    /// 和 windows 一一对应：窗口号（单击窗口出图时单独截它、带透明圆角和阴影，WindowShot）；菜单栏那条、程序坞、
+    /// 自家窗口里只算一块的（便签那叠）是 nil
+    var windowIDs: [CGWindowID?] = []
   }
 
   /// 悬停列表里的一扇窗口：矩形（AppKit 全局坐标）、问哪几个进程要里面的元素（一般就是窗口的主人；菜单栏那条见
@@ -27,6 +30,8 @@ enum ScreenCapture {
     var frame: CGRect
     var pids: [pid_t]
     var layer = 0
+    /// 窗口号（WindowShot 单独截它）；菜单栏那条、程序坞、只算一块的自家窗口没有
+    var id: CGWindowID? = nil
   }
 
   /// 本 App 窗口的几项特征（取自 NSApp.windows），决定它留不留在冻结帧里
@@ -111,7 +116,7 @@ enum ScreenCapture {
       return Shot(
         screen: screen, image: image,
         windows: here.map { $0.frame.offsetBy(dx: -origin.x, dy: -origin.y) },
-        owners: here.map(\.pids))
+        owners: here.map(\.pids), windowIDs: here.map(\.id))
     }
   }
 
@@ -286,11 +291,11 @@ enum ScreenCapture {
         return content.width >= 20 && content.height >= 20
           ? Window(frame: content, pids: [pid], layer: layer) : nil
       }
-      // CG 全局坐标原点在主屏左上、y 向下
+      // CG 全局坐标原点在主屏左上、y 向下。菜单栏那一条不给窗口号：它不是一扇能单独截的窗口
       return Window(
         frame: CGRect(
           x: rect.minX, y: primaryHeight - rect.maxY, width: rect.width, height: rect.height),
-        pids: [pid], layer: layer)
+        pids: [pid], layer: layer, id: layer == mainMenu ? nil : windowID(id))
     }
   }
 

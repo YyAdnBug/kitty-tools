@@ -42,11 +42,13 @@ import VisionKit
   }
 
   /// frame：截图时选区的位置（点，全局坐标）。钉图不抢键盘、VoiceOver 的焦点不在它上面：主动播报
-  func pin(_ image: CGImage, frame: CGRect) {
+  /// window：透明圆角带阴影的窗口截图（第五轮体检 N1，截图交出来、历史里记着的标记，不按透明度猜）——钉上去不套圆角和描边、
+  /// 不加系统阴影，悬停的圆钮放在窗口里、不悬在阴影的留边上
+  func pin(_ image: CGImage, frame: CGRect, window: Bool = false) {
     // 钉图归截图这个功能（Feature）：关着时哪条路过来（剪贴板、角落的缩略图…）都不钉，入口那边也藏了
     guard Feature.screenshot.isOn else { return }
     if isHidden { toggleHidden() }
-    let panel = PinPanel(image: image, frame: frame, board: self)
+    let panel = PinPanel(image: image, frame: frame, board: self, window: window)
     panels.append(panel)
     panel.popIn()
     Island.announce("已钉到屏幕")
@@ -264,7 +266,7 @@ extension PinBoard {
 
 /// 一张钉图。无边框窗口默认当不了 key（收不到 Esc / ⌘C），所以要子类化
 final class PinPanel: NSPanel {
-  init(image: CGImage, frame: CGRect, board: PinBoard) {
+  init(image: CGImage, frame: CGRect, board: PinBoard, window: Bool = false) {
     // styleMask 必须在 init 里一次写全：.nonactivatingPanel 初始化后再加不生效
     super.init(
       contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
@@ -273,12 +275,13 @@ final class PinPanel: NSPanel {
     collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
     hidesOnDeactivate = false
     isReleasedWhenClosed = false
-    // 透明窗口 + 圆角内容：系统阴影按内容形状算（改尺寸后 invalidateShadow）
+    // 透明窗口 + 圆角内容：系统阴影按内容形状算（改尺寸后 invalidateShadow）。带阴影的窗口截图（第五轮体检 N1）不再加
+    // 系统阴影：它的四周就是画好的阴影
     isOpaque = false
     backgroundColor = .clear
-    hasShadow = true
+    hasShadow = !window
     animationBehavior = .none
-    let view = PinView(image: image, size: frame.size, board: board)
+    let view = PinView(image: image, size: frame.size, board: board, window: window)
     contentView = view
     initialFirstResponder = view
     setFrame(frame, display: false)
@@ -409,6 +412,8 @@ final class PinPanel: NSPanel {
 
 private final class PinView: NSView {
   let image: CGImage
+  /// 带阴影的窗口截图（N1，PinBoard.pin 的 window）：不裁圆角、不描边，圆钮放进窗口里
+  private let shaped: Bool
   /// 钉上时的大小（点）：缩放的基准
   private let originalSize: CGSize
   private unowned let board: PinBoard
@@ -428,8 +433,9 @@ private final class PinView: NSView {
   /// 所有钉图共用一个识别器（系统建议复用）
   private static let analyzer = ImageAnalyzer()
 
-  init(image: CGImage, size: CGSize, board: PinBoard) {
+  init(image: CGImage, size: CGSize, board: PinBoard, window: Bool = false) {
     self.image = image
+    shaped = window
     originalSize = size
     self.board = board
     let buttons = NSStackView()
@@ -461,11 +467,8 @@ private final class PinView: NSView {
     // 圆钮贴右上角、各让 6，百分比在 showZoom 里居中；之后窗口改尺寸（回弹、缩放、原始大小）都靠掩码跟着走。
     // 别挪进 layout() 里摆（issue #6）：布局阶段改带 autoresizing 约束的子视图 frame 会让约束失效（layout() 的文档不许）；
     // super.layout() 又把它们吸到像素格上，居中落在半点时 1x 屏上吸到整点、再摆回半点，来回到 AppKit 抛异常闪退
-    controls.frame = CGRect(
-      origin: CGPoint(
-        x: bounds.maxX - buttons.fittingSize.width - 6,
-        y: bounds.maxY - buttons.fittingSize.height - 6),
-      size: buttons.fittingSize)
+    controls.frame.size = buttons.fittingSize
+    placeControls()
     controls.autoresizingMask = [.minXMargin, .minYMargin]
     controls.alphaValue = 0
     controls.isHidden = true  // 看不见时也不能点到（点击不看透明度）
@@ -532,10 +535,11 @@ private final class PinView: NSView {
 
   override func updateLayer() {
     layer?.contents = image
-    layer?.cornerRadius = Style.Radius.card
+    // 自带形状的图（带阴影的窗口截图）不裁圆角、不描边：四周是透明的阴影，套上框反而多一圈线
+    layer?.cornerRadius = shaped ? 0 : Style.Radius.card
     layer?.cornerCurve = .continuous
-    layer?.masksToBounds = true
-    layer?.borderWidth = Style.HUD.strokeWidth
+    layer?.masksToBounds = !shaped
+    layer?.borderWidth = shaped ? 0 : Style.HUD.strokeWidth
     layer?.borderColor = NSColor.separatorColor.cgColor
   }
 
@@ -579,8 +583,19 @@ private final class PinView: NSView {
     showZoom(scale)
   }
 
+  /// 圆钮贴右上角、各让 6；带阴影的窗口截图再往里让出阴影的留边（按现在的缩放），落在窗口本体上（N1）。
+  /// 建的时候和每次缩放完调（别挪进 layout()，见 init 里 issue #6 那段）
+  private func placeControls() {
+    let zoom = originalSize.width > 0 ? bounds.width / originalSize.width : 1
+    let inset = shaped ? WindowShot.margins : NSEdgeInsets()
+    controls.frame.origin = CGPoint(
+      x: bounds.maxX - inset.right * zoom - controls.frame.width - 6,
+      y: bounds.maxY - inset.top * zoom - controls.frame.height - 6)
+  }
+
   /// 中央 HUD 显示当前倍数，停手 0.7 s 后淡出
   private func showZoom(_ scale: CGFloat) {
+    placeControls()
     zoomLabel.stringValue = "\(Int((scale * 100).rounded()))%"
     zoomHUD.fit()
     zoomHUD.frame.origin = CGPoint(

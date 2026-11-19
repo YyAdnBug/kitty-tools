@@ -80,6 +80,8 @@ import UniformTypeIdentifiers
     var frame: CGRect?
     /// 原图 + 缩略图占多少字节（算总量上限用）
     var bytes: Int = 0
+    /// 透明圆角带阴影的窗口截图（第五轮体检 N1）：再钉出来时不套圆角和描边、圆钮放在窗口里；裁过就不算了
+    var isWindow = false
   }
 
   /// 新的在前
@@ -115,11 +117,16 @@ import UniformTypeIdentifiers
         source_name TEXT, saved_path TEXT, file_path TEXT,
         annotations TEXT, -- [Annotation] 的 JSON（拍板 A1）
         pinned_at REAL, bytes INTEGER NOT NULL DEFAULT 0,
-        frame TEXT) -- 当初框的那一块（NSStringFromRect），钉回原位用
+        frame TEXT, -- 当初框的那一块（NSStringFromRect），钉回原位用
+        window INTEGER) -- 1 = 透明圆角带阴影的窗口截图（第五轮体检 N1）
       """)
-    // 旧库补列（幂等，每次启动都跑）
-    if try !db.query("PRAGMA table_info(shots)", row: { $0.text(1) }).contains("frame") {
+    // 旧库补列（幂等，每次启动都跑；旧版本读写都写明列名，碰不到新加的列）
+    let columns = try db.query("PRAGMA table_info(shots)", row: { $0.text(1) })
+    if !columns.contains("frame") {
       try db.execute("ALTER TABLE shots ADD COLUMN frame TEXT")
+    }
+    if !columns.contains("window") {
+      try db.execute("ALTER TABLE shots ADD COLUMN window INTEGER")
     }
     try db.execute("CREATE INDEX IF NOT EXISTS shots_created_at ON shots(created_at DESC)")
     try reload()
@@ -141,7 +148,7 @@ import UniformTypeIdentifiers
   @discardableResult func record(
     _ image: CGImage, png: Data? = nil, composed: CGImage? = nil, scale: CGFloat,
     kind: Kind = .shot, annotations: [Annotation] = [], source: String? = nil, saved: URL? = nil,
-    pinned: Bool = false, frame: CGRect? = nil
+    pinned: Bool = false, frame: CGRect? = nil, window: Bool = false
   ) async -> UUID? {
     guard isOn else { return nil }
     let id = UUID()
@@ -156,7 +163,7 @@ import UniformTypeIdentifiers
         id: id, kind: kind, createdAt: .now,
         pixelSize: CGSize(width: image.width, height: image.height), scale: scale, source: source,
         savedPath: saved?.path, filePath: nil, annotations: kept,
-        pinnedAt: pinned ? .now : nil, frame: frame, bytes: bytes))
+        pinnedAt: pinned ? .now : nil, frame: frame, bytes: bytes, isWindow: window))
     return id
   }
 
@@ -284,8 +291,9 @@ import UniformTypeIdentifiers
       let size = CGSize(width: baked.image.width, height: baked.image.height)
       items[index].pixelSize = size
       items[index].frame = nil
+      items[index].isWindow = false  // 裁过：四周的阴影留边不在了
       try? db.execute(
-        "UPDATE shots SET pixel_width = ?, pixel_height = ?, frame = NULL WHERE id = ?",
+        "UPDATE shots SET pixel_width = ?, pixel_height = ?, frame = NULL, window = NULL WHERE id = ?",
         [Int(size.width), Int(size.height), id.uuidString])
       store(id, annotations: baked.annotations, bytes: png.count + (small?.count ?? 0))
       onThumbnailChanged(id)
@@ -647,15 +655,15 @@ import UniformTypeIdentifiers
     try? db.execute(
       """
       INSERT INTO shots(id, kind, created_at, pixel_width, pixel_height, scale, source_name,
-        saved_path, file_path, annotations, pinned_at, bytes, frame)
-      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        saved_path, file_path, annotations, pinned_at, bytes, frame, window)
+      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       """,
       [
         item.id.uuidString, item.kind.rawValue, item.createdAt.timeIntervalSinceReferenceDate,
         Int(item.pixelSize.width), Int(item.pixelSize.height), Double(item.scale), item.source,
         item.savedPath, item.filePath, Self.encode(item.annotations),
         item.pinnedAt?.timeIntervalSinceReferenceDate, item.bytes,
-        item.frame.map(NSStringFromRect),
+        item.frame.map(NSStringFromRect), item.isWindow ? 1 : nil,
       ])
     prune()
   }
@@ -664,7 +672,7 @@ import UniformTypeIdentifiers
     items = try db.query(
       """
       SELECT id, kind, created_at, pixel_width, pixel_height, scale, source_name, saved_path,
-        file_path, annotations, pinned_at, bytes, frame FROM shots ORDER BY created_at DESC
+        file_path, annotations, pinned_at, bytes, frame, window FROM shots ORDER BY created_at DESC
       """
     ) { row -> Item? in
       guard let id = row.text(0).flatMap(UUID.init(uuidString:)),
@@ -676,7 +684,8 @@ import UniformTypeIdentifiers
         scale: CGFloat(row.double(5) ?? 2), source: row.text(6), savedPath: row.text(7),
         filePath: row.text(8), annotations: row.text(9).flatMap(Self.decode) ?? [],
         pinnedAt: row.double(10).map(Date.init(timeIntervalSinceReferenceDate:)),
-        frame: row.text(12).map(NSRectFromString), bytes: Int(row.int(11) ?? 0))
+        frame: row.text(12).map(NSRectFromString), bytes: Int(row.int(11) ?? 0),
+        isWindow: row.int(13) == 1)
     }.compactMap { $0 }
   }
 
