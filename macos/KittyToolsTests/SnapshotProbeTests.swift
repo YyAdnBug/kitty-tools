@@ -678,14 +678,37 @@ struct SnapshotProbeTests {
     shotPrefs.set(false, forKey: Prefs.screenRecordShowsCursor)
     shotPrefs.set(AudioRecorder.Source.both.rawValue, forKey: Prefs.audioRecordSource)
     shotPrefs.set(true, forKey: Prefs.audioRecordStartsImmediately)
+    // 设置改版（2026-11-18）：外面、「截图历史」子页（历史关着：晾衣绳那句带「去打开」）、「高级…」表单（520 × 480 定死）
+    shotPrefs.set(false, forKey: Prefs.shotHistory)
+    shotPrefs.set(true, forKey: Prefs.screenshotFindsElements)
+    let advanced = NSSize(width: 480, height: 480)
     for dark in [false, true] {
+      let suffix = dark ? "-dark" : ""
+      navigation.path = []
       try snapshot(
         ScreenshotTab(shots: nil).defaultAppStorage(shotPrefs).environment(navigation),
-        size: NSSize(width: 640, height: 1000),
-        dark: dark, to: "\(out)/settings-screenshot-custom\(dark ? "-dark" : "").png")
+        size: NSSize(width: 640, height: 900),
+        dark: dark, to: "\(out)/settings-screenshot-custom\(suffix).png")
+      navigation.path = [SettingsSubpage.screenshotHistory.route]
       try snapshot(
-        RecordTab().defaultAppStorage(shotPrefs), size: NSSize(width: 640, height: 860),
-        dark: dark, to: "\(out)/settings-record-custom\(dark ? "-dark" : "").png")
+        ScreenshotTab(shots: nil).defaultAppStorage(shotPrefs).environment(navigation),
+        size: NSSize(width: 640, height: 600),
+        dark: dark, to: "\(out)/settings-screenshot-history\(suffix).png")
+      navigation.path = []
+      try snapshot(
+        ScreenshotTab(shots: nil, drawsAdvanced: true).defaultAppStorage(shotPrefs)
+          .environment(navigation),
+        size: advanced, dark: dark, to: "\(out)/settings-screenshot-advanced\(suffix).png")
+      try snapshot(
+        RecordTab().defaultAppStorage(shotPrefs), size: NSSize(width: 640, height: 760),
+        dark: dark, to: "\(out)/settings-record-custom\(suffix).png")
+      try snapshot(
+        RecordTab(drawsAdvanced: true).defaultAppStorage(shotPrefs), size: advanced, dark: dark,
+        to: "\(out)/settings-record-advanced\(suffix).png")
+      try snapshot(
+        ClipboardTab(store: store, drawsAdvanced: true).defaultAppStorage(shotPrefs),
+        size: advanced,
+        dark: dark, to: "\(out)/settings-clipboard-advanced\(suffix).png")
     }
     // 录制页的默认样子：没选过文件夹、30 fps、倒数 3 秒，录音来源麦克风、「按快捷键后立即开始录音」关。空的临时偏好域
     let recordSuite = "kitty-snapshot-\(UUID().uuidString)"
@@ -693,7 +716,7 @@ struct SnapshotProbeTests {
     defer { recordPrefs.removePersistentDomain(forName: recordSuite) }
     for dark in [false, true] {
       try snapshot(
-        RecordTab().defaultAppStorage(recordPrefs), size: NSSize(width: 640, height: 860),
+        RecordTab().defaultAppStorage(recordPrefs), size: NSSize(width: 640, height: 760),
         dark: dark, to: "\(out)/settings-record-default\(dark ? "-dark" : "").png")
     }
     // 设置 › 刘海岛（PR #17）排过先后、关掉一个、不列提示；临时偏好域（功能关着的那几行变灰跟着本机的功能开关）
@@ -720,7 +743,8 @@ struct SnapshotProbeTests {
         size: NSSize(width: 640, height: 2200), dark: dark,
         to: "\(out)/settings-island-keys-\(name).png")
     }
-    // 设置 › 通用「菜单栏」（第 9 批 M1 M2）：显示 + 彩色、隐藏（图标样式置灰），各出深色；临时偏好域，不动用户的菜单栏图标
+    // 设置 › 通用 › 高级…「菜单栏」（第 9 批 M1 M2；设置改版挪进「高级…」）：显示 + 彩色、隐藏（图标样式置灰），各出深色；
+    // 临时偏好域，不动用户的菜单栏图标
     let barSuite = "kitty-snapshot-\(UUID().uuidString)"
     let barPrefs = try #require(UserDefaults(suiteName: barSuite))
     defer { barPrefs.removePersistentDomain(forName: barSuite) }
@@ -729,22 +753,29 @@ struct SnapshotProbeTests {
       barPrefs.set(visible, forKey: Prefs.statusItemVisible)
       for dark in [false, true] {
         try snapshot(
-          GeneralTab().defaultAppStorage(barPrefs), size: NSSize(width: 640, height: 720),
-          dark: dark, to: "\(out)/settings-general-menubar-\(name)\(dark ? "-dark" : "").png")
+          GeneralTab(drawsAdvanced: true).defaultAppStorage(barPrefs),
+          size: NSSize(width: 480, height: 480), dark: dark,
+          to: "\(out)/settings-general-advanced-\(name)\(dark ? "-dark" : "").png")
       }
     }
-    // 设置 › 通用拉长看到底的「权限」组（录屏第 4 批加了麦克风一行，状态是本机真实的授权）和最后的「导出与导入」；临时偏好域
+    // 设置 › 通用 › 权限 / 备份与导出导入两个子页（设置改版；权限的状态是本机真实的授权）；临时偏好域
     let permissionSuite = "kitty-snapshot-\(UUID().uuidString)"
     let permissionPrefs = try #require(UserDefaults(suiteName: permissionSuite))
     defer { permissionPrefs.removePersistentDomain(forName: permissionSuite) }
+    let generalNavigation = SettingsNavigation(defaults: nil)
     for dark in [false, true] {
-      try snapshot(
-        GeneralTab(
-          transfer: SettingsTransfer(services: services, clipboard: store, history: history)
+      for subpage in [SettingsSubpage.generalPermissions, .generalBackup] {
+        generalNavigation.path = [subpage.route]
+        try snapshot(
+          GeneralTab(
+            transfer: SettingsTransfer(services: services, clipboard: store, history: history)
+          )
+          .defaultAppStorage(permissionPrefs).environment(generalNavigation),
+          size: NSSize(width: 640, height: 640), dark: dark,
+          to:
+            "\(out)/settings-\(subpage.rawValue.replacing(".", with: "-"))\(dark ? "-dark" : "").png"
         )
-        .defaultAppStorage(permissionPrefs),
-        size: NSSize(width: 640, height: 1200), dark: dark,
-        to: "\(out)/settings-general-permissions\(dark ? "-dark" : "").png")
+      }
     }
     try renderTransfer(out)
     // 菜单栏上的两种图标（浅色 / 深色菜单栏各一张，右边放大 5 倍）；彩色图的 @2x 位图另存原图
@@ -5713,14 +5744,16 @@ struct SnapshotProbeTests {
       }, size: size, dark: false, to: "\(out)/sync-upgraded.png")
     prefs.set([String](), forKey: Prefs.syncSkipped)
     prefs.removeObject(forKey: Prefs.syncNewKindsHint)
-    // 在通用页里的位置（导出与导入上面）、便签关着时
+    // 设置 › 通用 › 同步那一页（设置改版：从通用页里挪进子页）、便签关着时
     let general = NoteSyncer(store: store, defaults: prefs)
     general.status = .idle
     general.lastSync = now.addingTimeInterval(-120)
     general.peers = [air]
+    let generalNavigation = SettingsNavigation(defaults: nil)
+    generalNavigation.path = [SettingsSubpage.generalSync.route]
     try snapshot(
-      GeneralTab(sync: general).defaultAppStorage(prefs), size: NSSize(width: 640, height: 1500),
-      dark: false, to: "\(out)/sync-general.png")
+      GeneralTab(sync: general).defaultAppStorage(prefs).environment(generalNavigation),
+      size: NSSize(width: 640, height: 900), dark: false, to: "\(out)/sync-general.png")
     prefs.set(false, forKey: Feature.notes.prefsKey)
     try snapshot(
       section {

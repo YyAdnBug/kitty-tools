@@ -35,6 +35,12 @@ struct LauncherTab: View {
   /// 设置窗变成 key 时加一：页面重画（书签条数重读）、浏览历史重读一次（去系统设置给了完全磁盘访问权限回来就能看到）
   @State private var checks = 0
 
+  /// 「应用别名」那一行的小字（先算成不可选的：可选参数里直接写三元式，抽字时第二个分支会漏掉）
+  private var aliasesDetail: LocalizedStringResource {
+    let count = AppAliases(text: appAliasesText).count
+    return count == 0 ? "用顺手的名字搜索应用" : "已为 \(count) 个应用设置别名"
+  }
+
   var body: some View {
     NavigationStack(path: Bindable(navigation).path) {
       VStack(spacing: 0) {
@@ -101,8 +107,7 @@ struct LauncherTab: View {
         Section {
           SettingsPushRow(
             title: "应用别名",
-            detail: AppAliases(text: appAliasesText).count == 0
-              ? "用顺手的名字搜索应用" : "已为 \(AppAliases(text: appAliasesText).count) 个应用设置别名",
+            detail: aliasesDetail,
             isNew: WhatsNew.marks(section: "应用别名", of: .launcher, in: navigation.fresh)
           ) {
             navigation.path = [AppAliasesPage.route]

@@ -108,6 +108,7 @@ struct SettingsIndexTests {
     defaults.set(false, forKey: Prefs.settingsBackupEnabled)
     #expect(SettingsItem.screenshotHistoryDays.landing(defaults) == .screenshotHistory)
     #expect(SettingsItem.generalMirror.landing(defaults) == .generalBackup)
+    #expect(SettingsItem.generalSyncPeers.landing(defaults) == .generalSync)
     defaults.set(true, forKey: Prefs.shotHistory)
     defaults.set(true, forKey: Prefs.settingsBackupEnabled)
     #expect(SettingsItem.screenshotHistorySize.landing(defaults) == .screenshotHistorySize)
@@ -128,5 +129,124 @@ struct SettingsIndexTests {
     let round = navigation.highlightRound
     navigation.open(.clipboardLens)
     #expect(navigation.highlightRound == round + 1)
+  }
+}
+
+/// 第 2 批：子页、「高级…」、恢复默认、合起来的两个选单、推进行行尾
+struct SettingsPlacesTests {
+  /// 选了子页里、「高级…」里的一项：推进那个子页 / 打开那页的表单
+  @MainActor @Test func openGoesIntoSubpagesAndAdvanced() {
+    let navigation = SettingsNavigation(defaults: nil)
+    navigation.open(.screenshotHistoryDays)
+    #expect(navigation.page == .screenshot)
+    #expect(navigation.path == [SettingsSubpage.screenshotHistory.route])
+    #expect(navigation.advanced == nil)
+    navigation.open(.clipboardLens)
+    #expect(navigation.page == .clipboard)
+    #expect(navigation.path.isEmpty)
+    #expect(navigation.advanced == .clipboard)
+    // 换页收起表单、退回子页
+    navigation.page = .general
+    #expect(navigation.advanced == nil)
+  }
+
+  /// 每个子页都有登记的行；子页的路由认得回来，不和服务 id 这类路由撞
+  @Test func subpagesHaveRowsAndRoutes() {
+    for subpage in SettingsSubpage.allCases {
+      #expect(SettingsItem.allCases.contains { $0.place == .subpage(subpage) }, "\(subpage) 没有行")
+      #expect(SettingsSubpage(route: subpage.route) == subpage)
+    }
+    #expect(SettingsSubpage(route: "google") == nil)
+  }
+
+  /// 恢复默认不碰功能开关、上限和没注册默认值的键
+  @Test func resetKeysSkipLimitsAndFeatures() {
+    let keys = Set(SettingsReset.keys(of: SettingsItem.allCases))
+    #expect(keys.isDisjoint(with: SettingsReset.limits))
+    #expect(keys.isDisjoint(with: Feature.allCases.map(\.prefsKey)))
+    #expect(keys.isSubset(of: Prefs.defaults.keys))
+  }
+
+  /// 只删改过的；撤销原样写回
+  @Test func resetRemovesOnlyChangedAndRestores() throws {
+    let suite = "kitty-test-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.set(true, forKey: Prefs.screenshotCursor)
+    defaults.set("center", forKey: Prefs.screenshotToolbarAlign)
+    defaults.set(9, forKey: Prefs.shotHistoryDays)  // 不在这次的键里：不动
+    let keys = [Prefs.screenshotCursor, Prefs.screenshotToolbarAlign, Prefs.screenshotLoupe]
+    let before = SettingsReset.reset(keys, in: defaults, domain: suite)
+    #expect(Set(before.keys) == [Prefs.screenshotCursor, Prefs.screenshotToolbarAlign])
+    let stored = defaults.persistentDomain(forName: suite) ?? [:]
+    #expect(stored.keys.sorted() == [Prefs.shotHistoryDays])
+    #expect(!SettingsReset.differs(keys, in: defaults))
+    SettingsReset.restore(before, in: defaults)
+    #expect(SettingsReset.differs(keys, in: defaults))
+    #expect(defaults.bool(forKey: Prefs.screenshotCursor))
+    #expect(defaults.string(forKey: Prefs.screenshotToolbarAlign) == "center")
+    #expect(SettingsReset.changed(keys, in: defaults, domain: suite).count == 2)
+    // 存着、但和默认值一样：按钮不亮
+    defaults.set(Prefs.defaults[Prefs.screenshotLoupe], forKey: Prefs.screenshotLoupe)
+    #expect(!SettingsReset.differs([Prefs.screenshotLoupe], in: defaults))
+  }
+
+  /// 「自动清空普通历史」：两个键的四种组合读得回来，换一项只写变了的键
+  @Test func autoClearWritesOnlyChangedKeys() {
+    typealias Choice = ClipboardTab.AutoClear
+    for quit in [false, true] {
+      for lock in [false, true] {
+        let old = Choice(quit: quit, lock: lock)
+        #expect(old.quit == quit && old.lock == lock)
+        for new in Choice.allCases {
+          let writes = new.writes(from: old)
+          #expect(writes.count == [new.quit != quit, new.lock != lock].filter { $0 }.count)
+          for write in writes {
+            #expect(write.value == (write.key == Prefs.clipboardClearOnQuit ? new.quit : new.lock))
+          }
+        }
+      }
+    }
+  }
+
+  /// 「悬停时识别」：选「关」不动网页那个键；只写变了的
+  @Test func elementDetectionWritesOnlyChangedKeys() {
+    typealias Choice = ScreenshotTab.ElementDetection
+    #expect(Choice(finds: false, web: true) == .off)
+    #expect(Choice(finds: true, web: false) == .windows)
+    #expect(Choice(finds: true, web: true) == .web)
+    #expect(Choice.off.writes(finds: true, web: true).map(\.key) == [Prefs.screenshotFindsElements])
+    #expect(Choice.web.writes(finds: true, web: true).isEmpty)
+    let fromOff = Choice.web.writes(finds: false, web: false)
+    #expect(
+      fromOff.map(\.key) == [Prefs.screenshotFindsElements, Prefs.screenshotFindsWebElements])
+    #expect(fromOff.allSatisfy { $0.value })
+    #expect(
+      Choice.windows.writes(finds: false, web: false).map(\.key) == [Prefs.screenshotFindsElements])
+  }
+
+  /// 推进行行尾那一句
+  @Test func pushRowValues() {
+    func text(_ value: LocalizedStringResource) -> String { String(localized: value) }
+    #expect(text(GeneralTab.permissionsValue(missing: 0)) == "都已允许")
+    #expect(text(GeneralTab.permissionsValue(missing: 2)) == "缺 2 项")
+    #expect(
+      GeneralTab.missingPermissions(
+        needs: [.accessibility, .screenRecording], granted: { $0 == .accessibility },
+        clipboardBlocked: true) == 2)
+    #expect(text(GeneralTab.syncValue(status: .off, lastSync: nil).text) == "关")
+    #expect(GeneralTab.syncValue(status: .stopped(.missingFolder), lastSync: nil).isProblem)
+    #expect(text(GeneralTab.syncValue(status: .idle, lastSync: nil).text) == "开着")
+    #expect(GeneralTab.backupValue(isOn: true, failed: true, latest: nil).isProblem)
+    #expect(text(GeneralTab.backupValue(isOn: false, failed: true, latest: nil).text) == "自动备份关着")
+    #expect(text(GeneralTab.backupValue(isOn: true, failed: false, latest: nil).text) == "还没有备份")
+    let now = Date.now
+    #expect(
+      text(GeneralTab.backupValue(isOn: true, failed: false, latest: now).text)
+        == SettingsBackup.when(now))
+    #expect(text(ScreenshotTab.historyValue(keeps: false, days: 30, megabytes: 2048)) == "关")
+    #expect(
+      text(ScreenshotTab.historyValue(keeps: true, days: 30, megabytes: 2048))
+        == "30 天 · 2 GB")
   }
 }

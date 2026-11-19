@@ -849,7 +849,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       let shown = WhatsNew.shown(visiting: page, fresh: fresh, showing: settingsNavigation.fresh)
       if shown != settingsNavigation.fresh { settingsNavigation.fresh = shown }
     }
-    let window = SettingsWindow(navigation: settingsNavigation) { [unowned self] page in
+    // 每一页都给刘海岛（子页、「高级…」里的「恢复默认」要在岛上给「撤销」）
+    let pages: (SettingsPage) -> AnyView = { [unowned self] page in
       switch page {
       case .general:
         AnyView(
@@ -928,6 +929,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             created?.navigation.showsOnboarding = true
           })
       }
+    }
+    let window = SettingsWindow(navigation: settingsNavigation) { [unowned self] in
+      AnyView(pages($0).environment(island))
     } onboarding: { [unowned self] in
       AnyView(
         OnboardingView(center: hotKeys, firstRun: firstInstall, screen: onboardingStart) {
@@ -1492,7 +1496,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       // 说了的不再说；岛上正挂着警告（快捷键没注册上）时也不弹——同一座岛原地换内容，警告不能被盖掉，只靠设置页那句
       if syncer.upgraded, !toldSyncUpgrade, island.content?.tone != .warning {
         island.show(
-          "现在也能同步设置、片段和收藏这些了", detail: "要同步哪几类，到 设置 › 通用「同步」里勾上", tone: .info,
+          "现在也能同步设置、片段和收藏这些了", detail: "要同步哪几类，到 设置 › 通用 › 同步 里勾上", tone: .info,
           symbol: "arrow.triangle.2.circlepath.circle.fill", actions: [openSyncSettings])
       }
       let settings = SettingsSync(applied: { [unowned self] in
@@ -2200,15 +2204,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     .init("勾选同步", opens: true) { [unowned self] in showSyncSettings() }
   }
 
-  /// 设置 › 通用，滚到「同步」那一节（刘海岛上「打开同步设置」「勾选同步」，第五轮体检 U1）
+  /// 设置 › 通用 › 同步（刘海岛上「打开同步设置」「勾选同步」，第五轮体检 U1；设置改版起同步在通用页的子页里）。
+  /// 设置窗挂着别的表单时 show 不换页也不推（同 SettingsWindow.show 的口径）
   private func showSyncSettings() {
-    showSettings(page: .general)
-    // 设置窗开着 sheet 时不换页也不退页（同 SettingsWindow.show 的口径）：没到通用页、挂着 sheet 都不动
-    guard settingsWindow.window.attachedSheet == nil, settingsNavigation.page == .general else {
-      return
-    }
-    settingsNavigation.path = []
-    settingsNavigation.revealsSync = true
+    showSettings(page: .general, path: [SettingsSubpage.generalSync.route])
   }
 
   /// 暂停记录剪贴板的三处一起设：采集、面板底栏、菜单栏图标的暂停角标（X13）
@@ -3930,12 +3929,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 打开设置窗、落到那一行（设置改版 S8：面板里的「设置…」、岛上的「打开设置」）：滚过去描一圈
   func showSettings(_ item: SettingsItem) {
-    showSettings(page: item.page)
     // 设置窗挂着表单（速查表、确认框）时不动：show 不换页，同一页上也别退掉推进着的详情页、把确认框一起拆掉
-    // （同 showSyncSettings）
-    guard settingsWindow.window.attachedSheet == nil, settingsNavigation.page == item.page else {
-      return
-    }
+    // （同 showSyncSettings）。挂着的是「高级…」表单照样落过去。先看再 show：换页时 advanced 已经清了，表单还没收走
+    let free = settingsWindow.window.attachedSheet == nil || settingsNavigation.advanced != nil
+    showSettings(page: item.page)
+    guard free, settingsNavigation.page == item.page else { return }
     settingsNavigation.open(item)
   }
 
@@ -4125,7 +4123,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       var detail = summary.map(Island.excerpt)
       if NoteSyncer.isUpgrade(.standard) {
         toldSyncUpgrade = true
-        detail = [detail, String(localized: "现在也能同步设置、片段和收藏这些了，到 设置 › 通用「同步」里勾上")]
+        detail = [detail, String(localized: "现在也能同步设置、片段和收藏这些了，到 设置 › 通用 › 同步 里勾上")]
           .compactMap { $0 }.joined(separator: Self.semicolon)
         actions.append(openSyncSettings)
       }

@@ -393,11 +393,15 @@ nonisolated enum SettingsBackup {
   static func summary(of copies: [Copy], now: Date = .now, calendar: Calendar = .current) -> String
   {
     guard let latest = copies.first else { return String(localized: "还没有备份") }
-    let written =
-      (try? latest.url.resourceValues(forKeys: [.contentModificationDateKey]))?
-      .contentModificationDate ?? latest.date
     return String(
-      localized: "最近一份：\(when(written, now: now, calendar: calendar))，共 \(copies.count) 份")
+      localized:
+        "最近一份：\(when(written(latest), now: now, calendar: calendar))，共 \(copies.count) 份")
+  }
+
+  /// 这份是什么时候写的：文件的修改时间（每天那份的名字里只有日期）
+  static func written(_ copy: Copy) -> Date {
+    (try? copy.url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+      ?? copy.date
   }
 
   /// 「今天 09:12」「昨天 22:40」，更早「10 月 3 日（5 天前）」
