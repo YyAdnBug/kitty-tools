@@ -11,7 +11,8 @@
 //   变成缩放，NonCoalesced 那一位照新建时的留着），发在光标下的窗口；按屏幕刷新一帧帧发，滑完就停掉定时器，没在滑时这条线程
 //   只是在等事件。帧上照抄原滚轮「方向已经按自然滚动翻过」的标记（没公开的字段 137，NSEvent.isDirectionInvertedFromDevice；
 //   反向开关反过的再翻一次）：按物理方向算的地方（截图框选里滚轮换层）才不会反
-// - 鼠标按下、触控板来了（连续的滚动）时把正在滑的那一段停掉（同触控板上手指一碰，惯性就停）
+// - 鼠标按下、触控板来了（连续的滚动）、按着修饰键拨了一格（缩放，issue #37）时把正在滑的那一段停掉（同触控板上手指一碰，
+//   惯性就停；ScrollSmoothing.halts）
 // - 妙控鼠标和触控板发的滚动一模一样（连续、带开始 / 变化 / 结束和惯性阶段，2026-11-18 只听的探针实测）：按发送设备分——没公开的
 //   字段 87 是 IORegistry 里那台设备（AppleMultitouchDevice）的编号，惯性阶段的也带着；它挂在妙控鼠标的驱动
 //   （AppleMultitouchMouseHIDEventDriver）下就是妙控鼠标（触控板挂 …TrackpadHIDEventDriver）。查一次 IOKit、按编号记下
@@ -159,23 +160,10 @@ nonisolated final class ScrollTap: NSObject {
     }
     // 探针开着时只认探针的：真的滚轮原样放过
     if probe, marker != Self.probeMarker { return false }
-    let flags = event.flags
-    let continuous = event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0
-    let phased =
-      event.getIntegerValueField(.scrollWheelEventScrollPhase) != 0
-      || event.getIntegerValueField(.scrollWheelEventMomentumPhase) != 0
-    let wheel = ScrollSmoothing.Wheel(
-      continuous: continuous, phased: phased,
-      magicMouse: (continuous || phased) && isMagicMouse(event),
-      dy: Self.lines(
-        event, fixed: .scrollWheelEventFixedPtDeltaAxis1, whole: .scrollWheelEventDeltaAxis1),
-      dx: Self.lines(
-        event, fixed: .scrollWheelEventFixedPtDeltaAxis2, whole: .scrollWheelEventDeltaAxis2),
-      option: flags.contains(.maskAlternate), shift: flags.contains(.maskShift),
-      command: !flags.isDisjoint(with: [.maskCommand, .maskControl]))
-    // 触控板一碰：鼠标滑着的那一段停下
-    if wheel.continuous || wheel.phased { halt() }
-    switch ScrollSmoothing.decide(wheel, settings: settings, excluded: excluded && !probe) {
+    let wheel = Self.wheel(event, isMagicMouse: isMagicMouse(_:))
+    let decision = ScrollSmoothing.decide(wheel, settings: settings, excluded: excluded && !probe)
+    if ScrollSmoothing.halts(wheel, decision: decision) { halt() }
+    switch decision {
     case .pass:
       return false
     case .flip(let vertical, let horizontal):
@@ -193,6 +181,25 @@ nonisolated final class ScrollTap: NSObject {
       if timer == nil { begin() }
       return true
     }
+  }
+
+  /// 从滚轮事件里取出 decide 要看的几样（单测锁住修饰键：⌘、⌃ 都算交给 App 缩放的那一类，issue #37）；
+  /// isMagicMouse 只在连续 / 带阶段的事件上问
+  static func wheel(_ event: CGEvent, isMagicMouse: (CGEvent) -> Bool) -> ScrollSmoothing.Wheel {
+    let flags = event.flags
+    let continuous = event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0
+    let phased =
+      event.getIntegerValueField(.scrollWheelEventScrollPhase) != 0
+      || event.getIntegerValueField(.scrollWheelEventMomentumPhase) != 0
+    return ScrollSmoothing.Wheel(
+      continuous: continuous, phased: phased,
+      magicMouse: (continuous || phased) && isMagicMouse(event),
+      dy: lines(
+        event, fixed: .scrollWheelEventFixedPtDeltaAxis1, whole: .scrollWheelEventDeltaAxis1),
+      dx: lines(
+        event, fixed: .scrollWheelEventFixedPtDeltaAxis2, whole: .scrollWheelEventDeltaAxis2),
+      option: flags.contains(.maskAlternate), shift: flags.contains(.maskShift),
+      command: !flags.isDisjoint(with: [.maskCommand, .maskControl]))
   }
 
   /// 这个连续的滚动是不是妙控鼠标发的（按发送设备的编号记下，同一台只查一次 IOKit）

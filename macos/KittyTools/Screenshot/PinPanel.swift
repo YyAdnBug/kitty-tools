@@ -266,6 +266,14 @@ extension PinBoard {
 
 /// 一张钉图。无边框窗口默认当不了 key（收不到 Esc / ⌘C），所以要子类化
 final class PinPanel: NSPanel {
+  /// 滚轮缩放用的增量（点，乘 0.01 再取 e 的幂）：触控板、妙控鼠标给的像素增量照用；滚轮给的是行，一行算 8 点。平滑滚动
+  /// （Kitty 的插件或别的工具）把一格滚轮换成一串像素增量、一行约 40 点（ScrollSmoothing.Settings.pointsPerLine 的 100%），
+  /// 这种没有手势阶段（触控板、妙控鼠标的总带着开始 / 变化 / 结束或惯性）：按一行 8 点折回来，不然一格放大约 50%（不开时约 8%，issue #37）
+  static func zoomDelta(_ deltaY: CGFloat, precise: Bool, phased: Bool) -> CGFloat {
+    guard precise else { return deltaY * 8 }
+    return phased ? deltaY : deltaY * 8 / 40
+  }
+
   init(image: CGImage, frame: CGRect, board: PinBoard, window: Bool = false) {
     // styleMask 必须在 init 里一次写全：.nonactivatingPanel 初始化后再加不生效
     super.init(
@@ -557,8 +565,9 @@ private final class PinView: NSView {
   }
 
   override func scrollWheel(with event: NSEvent) {
-    // 触控板给的是像素级增量，滚轮给的是行
-    let delta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.scrollingDeltaY * 8
+    let delta = PinPanel.zoomDelta(
+      event.scrollingDeltaY, precise: event.hasPreciseScrollingDeltas,
+      phased: !event.phase.isEmpty || !event.momentumPhase.isEmpty)
     zoom(by: exp(delta * 0.01))
   }
 

@@ -3,7 +3,10 @@
 <!-- 局部 Info.plist：构建时与 GENERATE_INFOPLIST_FILE 生成的内容合并，只放 INFOPLIST_KEY_* 表达不了的键（PLAN §8.1）。
      CFBundleLocalizations：简体中文、英文；zh-Hant 不建 lproj，只为让繁体中文的系统落回简体（不列它会落到英文，2026-11-15 实测）。
      下面几条权限说明的英文在 KittyTools/Resources/InfoPlist.xcstrings，改这里要一起改
-     CFBundleURLTypes：App 自己的网址（scheme 就是 bundle id，Debug、Release 各认各的），访达扩展把右键的动作交过来（FinderLink） -->
+     CFBundleURLTypes：App 自己的网址（scheme 就是 bundle id，Debug、Release 各认各的），访达扩展把右键的动作交过来（FinderLink）
+     NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac（issue #36）：macOS 26 起系统给所有 App 的所有输入框弹「填充验证码」
+     菜单（信息 / 邮件里三分钟内收到的验证码），挂在启动器、剪贴板搜索这类不激活本 App 的面板上会占着回车、Esc；设成 true 只给
+     contentType = .oneTimeCode 的框弹，Kitty 没有这种框（读它的是 SafariPlatformSupport，macOS 27 反汇编核对过） -->
 <plist version="1.0">
 <dict>
 	<key>CFBundleURLTypes</key>
@@ -23,6 +26,8 @@
 		<string>en</string>
 		<string>zh-Hant</string>
 	</array>
+	<key>NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac</key>
+	<true/>
 	<key>KittyBuiltinZhipuKey</key>
 	<string>$(ZHIPU_BUILTIN_KEY)</string>
 	<key>NSAppTransportSecurity</key>

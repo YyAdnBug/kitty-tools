@@ -9,6 +9,13 @@ import Testing
 @testable import KittyTools
 
 struct LauncherComposingTests {
+  /// issue #36：macOS 26 起系统的「填充验证码」菜单默认挂在所有输入框上（启动器的搜索框打不进字、回车确认不了）。
+  /// 靠 Info.plist 退出：只给标了 .oneTimeCode 的框弹，Kitty 没有这种框。测试宿主就是 Dev 版，读的是打进包里的那份
+  @Test func oneTimeCodeAutoFillOnlyForMarkedFields() {
+    let key = "NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac"
+    #expect(Bundle.main.object(forInfoDictionaryKey: key) as? Bool == true)
+  }
+
   private func find<T: NSView>(_ type: T.Type, in view: NSView?) -> T? {
     guard let view else { return nil }
     return (view as? T) ?? view.subviews.lazy.compactMap { find(type, in: $0) }.first
