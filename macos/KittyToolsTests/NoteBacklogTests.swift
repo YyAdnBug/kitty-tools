@@ -287,7 +287,8 @@ struct NoteBacklogTests {
   }
 
   @Test func deckActionIsLastAndNotes() {
-    #expect(HotKeyAction.allCases.last == .noteDeck)
+    // 第五轮体检 N2 的延时截图又追加在它后面
+    #expect(HotKeyAction.allCases.suffix(2) == [.noteDeck, .delayedScreenshot])
     #expect(HotKeyAction.noteDeck.feature == .notes && HotKeyAction.noteDeck.defaultHotKey == nil)
   }
 

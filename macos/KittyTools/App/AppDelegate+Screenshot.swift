@@ -44,6 +44,23 @@ extension AppDelegate {
       feature: "截图", hidingPanels: false, repeatingLastRegion: repeatingLastRegion)
   }
 
+  /// 延时截图（第五轮体检 N2）：倒数 5 / 10 秒（ShotCountdown，录屏倒数的那一套）再走截图；倒数中再按一次 = 取消。
+  /// 授权先查（不然数完才说没授权）。临时 Esc 全 App 只有一个：录屏倒数、录音待录条正挂着它时不开始（响一声），
+  /// 不然倒数一结束把它们的 Esc 也注销了。倒数中开始了别的框选（beginCapture）、截图功能被关掉都会取消倒数
+  func delayedScreenshot() {
+    if let shotCountdown { return shotCountdown.cancel() }
+    guard !isCapturing, !hotKeys.holdsEscape else { return NSSound.beep() }
+    guard screenRecordingAllowed(for: "截图") else { return }
+    let countdown = ShotCountdown(
+      seconds: Prefs.screenshotDelaySeconds(), hotKeys: hotKeys)
+    shotCountdown = countdown
+    Task {
+      let shoots = await countdown.run()
+      shotCountdown = nil
+      if shoots, !isCapturing, Feature.screenshot.isOn { screenshot() }
+    }
+  }
+
   /// 截图家族共用的后半段（截图、截图翻译）：冻结各屏 → 框选 → 按交回的动作出图。
   /// autoTranslate = 框完松手、单击选中就自动翻译（⌥S）
   private func captureShots(
@@ -108,21 +125,33 @@ extension AppDelegate {
 
   /// 截图框选交回的图出成什么（E3：在「正在截图」的标记外面做）
   private func deliver(_ capture: RegionSelector.Capture) async {
+    // 拷成 PNG 文件时按下 ⌘C 的那一刻就得占好剪贴板（mac-native §5）：单窗口截图还要等它截完、合成，先取号、承诺文件
+    // （有人赶在合成完之前来读，就当场用矩形裁切那张写给它），合成完再用带阴影的那张写盘
+    let early: (ticket: Int, offer: ScreenshotOutput.FileOffer?)? =
+      capture.window != nil && capture.action == .copy
+      ? (nextCopy(), offerShotFile(.image(capture.image, scale: capture.scale))) : nil
+    // 单击选中的整扇窗口：换成透明圆角带阴影的那一张（N1，截不到就照旧是矩形裁切）
+    let capture = capture.window == nil ? capture : await WindowShot.dress(capture)
     // 先出图、历史在后面并行记（第三轮体检 R6：原来先等历史写完盘才拷贝 / 存储 / 钉图）；
     // 拷贝 / 存储编好的那份 PNG 历史直接拿去当原图，不再编一遍
     let record = { [self] (png: Data) in remember(capture, png: png) }
     switch capture.action {
     case .copy:
-      await output(.copy, capture.image, scale: capture.scale, frame: capture.frame, record: record)
+      await output(
+        .copy, capture.image, scale: capture.scale, frame: capture.frame, window: capture.isWindow,
+        early: early, record: record)
     case .pin:
       FlyCard.playShutter()
-      pins.pin(capture.image, frame: capture.frame)
+      pins.pin(capture.image, frame: capture.frame, window: capture.isWindow)
       remember(capture, pinned: true)
     case .save:
-      await output(.save, capture.image, scale: capture.scale, frame: capture.frame, record: record)
+      await output(
+        .save, capture.image, scale: capture.scale, frame: capture.frame, window: capture.isWindow,
+        record: record)
     case .saveAs:
       await output(
-        .saveAs, capture.image, scale: capture.scale, frame: capture.frame, record: record)
+        .saveAs, capture.image, scale: capture.scale, frame: capture.frame,
+        window: capture.isWindow, record: record)
     case .recognize: await copyRecognizedText(in: capture.image)
     // 「把译文直接盖回截图上」关着时：工具栏的翻译交出来，走翻译浮窗（开着时在截图页里就地翻，不交回这个动作）
     case .translate: await translateInPanel(capture.image)
@@ -133,23 +162,25 @@ extension AppDelegate {
   private enum ShotOutput { case copy, save, saveAs }
 
   /// 拷贝 / 存储 / 另存为：框选和长截图共用（第五轮体检 H1，原来两边各写一遍）。先出图、历史在后面并行记（R6）：
-  /// record 拿编好的那份 PNG 记进历史（框选是 remember、长截图是 rememberScroll），交回历史那一条的任务
+  /// record 拿编好的那份 PNG 记进历史（框选是 remember、长截图是 rememberScroll），交回历史那一条的任务。
+  /// window：透明圆角带阴影的窗口截图（N1，角落的缩略图钉图时不套框）；early：拷贝时已经取好的号和承诺的文件（N1 deliver）
   private func output(
-    _ kind: ShotOutput, _ image: CGImage, scale: CGFloat, frame: CGRect,
+    _ kind: ShotOutput, _ image: CGImage, scale: CGFloat, frame: CGRect, window: Bool = false,
+    early: (ticket: Int, offer: ScreenshotOutput.FileOffer?)? = nil,
     record: (Data) -> Task<UUID?, Never>
   ) async {
     switch kind {
     case .copy:
       // 拷成文件时先占好剪贴板，再飞卡片、编码（按 ⌘C 的那一刻就得写好，见 offerShotFile）
-      let ticket = nextCopy()
-      let offer = offerShotFile(.image(image, scale: scale))
-      let land = captured(image, scale: scale, frame: frame)
+      let ticket = early?.ticket ?? nextCopy()
+      let offer = early.map { $0.offer } ?? offerShotFile(.image(image, scale: scale))
+      let land = captured(image, scale: scale, frame: frame, window: window)
       guard let png = await encodePNG(image, scale: scale) else { return }
       let remembered = record(png)
       await copyPNG(png, offer: offer, ticket: ticket)
       land(.copied, png, remembered)
     case .save:
-      let land = captured(image, scale: scale, frame: frame)
+      let land = captured(image, scale: scale, frame: frame, window: window)
       guard let png = await encodePNG(image, scale: scale) else { return }
       let remembered = record(png)
       if let saved = await savePNG(png, asking: false) {
@@ -245,7 +276,8 @@ extension AppDelegate {
     return Task {
       await shotHistory.record(
         original, png: shared, composed: capture.image, scale: capture.scale, kind: .shot,
-        annotations: capture.annotations, source: source, pinned: pinned, frame: capture.frame)
+        annotations: capture.annotations, source: source, pinned: pinned, frame: capture.frame,
+        window: capture.isWindow)
     }
   }
 
@@ -392,6 +424,8 @@ extension AppDelegate {
       return
     }
     isCapturing = true
+    // 延时截图还在倒数（N2）：手动开始了截图 / 录屏框选，那一次不要了
+    shotCountdown?.cancel()
     // 启动台是全屏面板，截图 / 录屏的冻结帧里不能有它：先收掉（不留动画，别让它出现在冻结帧里）
     launchpad.close(animated: false)
     // 便签屏幕边缘扇着的那一列当场收起（先落盘），冻结帧里不留半截；打开着的便签是内容，照样截进去
@@ -592,9 +626,11 @@ extension AppDelegate {
   /// PNG 和记历史的那个任务，角标弹完后交给常驻缩略图（ShotShelf：拷贝、存储、拖出都用这份 PNG，不留整张解码的图）
   /// 或者挂到晾衣绳上（要历史的编号，记好了才挂，pegger）；减弱动态效果时不飞，land 时缩略图直接在角落淡入。
   /// 失败不调（另有提示）
-  private func captured(_ image: CGImage, scale: CGFloat, frame: CGRect) -> (
-    FlyCard.Badge, Data, Task<UUID?, Never>
-  ) -> Void {
+  private func captured(_ image: CGImage, scale: CGFloat, frame: CGRect, window: Bool = false)
+    -> (
+      FlyCard.Badge, Data, Task<UUID?, Never>
+    ) -> Void
+  {
     FlyCard.playShutter()
     var png = Data()
     // 挂到晾衣绳上的那一下（land 时才有记历史的任务，闭包按引用拿着它）
@@ -608,7 +644,8 @@ extension AppDelegate {
       switch landing.placement {
       case .corner:
         shelf.add(
-          image, png: png, scale: scale, source: frame, at: rect, badge: badge, history: history)
+          image, png: png, scale: scale, source: frame, at: rect, badge: badge, history: history,
+          window: window)
       case .clothesline: peg()
       case .none: break
       }

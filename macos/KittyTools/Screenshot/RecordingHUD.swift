@@ -616,7 +616,8 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     button.addSubview(host)
     // 宿主的宽取到整点：SwiftUI 排出来的读数不是整点宽，栏宽往上取整后多出来的零点几点会落在栏的右端——✕ 离右边线
     // 就比录制条、录制态的远一点（右边线对齐后三态的 ✕ 要在同一个位置）。
-    // ponytail: 宽度按建的时候的读数定：倒数最多 5 秒、数字等宽，位数不会变；要支持两位数的倒数就在位数变了时重量
+    // ponytail: 宽度按建的时候的读数定：录屏倒数最多 5 秒、数字等宽，位数不会变；延时截图的 10 秒（ShotCountdown）按「10」
+    // 量，数到个位时数字两边各空出半个字宽。要贴着读数就在位数变了时重量
     let width = host.fittingSize.width.rounded(.up)
     NSLayoutConstraint.activate([
       host.widthAnchor.constraint(equalToConstant: width),

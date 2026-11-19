@@ -360,7 +360,7 @@ enum HotKeyAction: String, CaseIterable {
   case clipboard, selectionTranslate, inputTranslate, screenshotTranslate, launcher, screenshot,
     screenshotLastRegion, recognizeText, translateReplace, screenRecord, audioRecord, pinClipboard,
     statusScreen, noteCapture, noteNew, noteAll, launchpad, shotHistory, island, clothesline, home,
-    reminderNew, keepAwake, appShortcuts, noteDeck
+    reminderNew, keepAwake, appShortcuts, noteDeck, delayedScreenshot
 
   var title: String { String(localized: titleResource) }
 
@@ -376,6 +376,7 @@ enum HotKeyAction: String, CaseIterable {
     case .screenshot:
       LocalizedStringResource("action.screenshot", defaultValue: "截图", comment: "动作：框选截图")
     case .screenshotLastRegion: "截取上次区域"
+    case .delayedScreenshot: "延时截图"
     case .recognizeText: "识字"
     case .translateReplace: "划词翻译并替换"
     case .screenRecord: "录屏"
@@ -477,6 +478,8 @@ enum HotKeyAction: String, CaseIterable {
     case .home: nil
     // App 快捷键（2026-11-17 拍板 B4）：主入口是按住 ⌘，键给不喜欢长按的人自己设
     case .appShortcuts: nil
+    // 延时截图（第五轮体检 N2）不设默认键：要的人到 设置 › 快捷键 里自己设
+    case .delayedScreenshot: nil
     }
   }
 
@@ -582,8 +585,8 @@ enum HotKeyAction: String, CaseIterable {
     case .clipboard: .clipboard
     case .launcher: .launcher
     case .selectionTranslate, .inputTranslate, .translateReplace, .screenshotTranslate: .translate
-    case .screenshot, .screenshotLastRegion, .recognizeText, .pinClipboard, .shotHistory,
-      .clothesline:
+    case .screenshot, .screenshotLastRegion, .delayedScreenshot, .recognizeText, .pinClipboard,
+      .shotHistory, .clothesline:
       .screenshot
     case .screenRecord, .audioRecord: .record
     case .noteCapture, .noteNew, .noteAll, .noteDeck: .notes
@@ -612,8 +615,8 @@ enum HotKeyAction: String, CaseIterable {
     (
       "截图与录制",
       [
-        .screenshot, .screenshotLastRegion, .recognizeText, .screenRecord, .audioRecord,
-        .pinClipboard, .shotHistory, .clothesline,
+        .screenshot, .screenshotLastRegion, .delayedScreenshot, .recognizeText, .screenRecord,
+        .audioRecord, .pinClipboard, .shotHistory, .clothesline,
       ]
     ),
     // 便签（PLAN §10「便签」F②）：菜单栏、启动器、快捷键页、速查表各一节，三项同名同序
@@ -674,6 +677,8 @@ enum HotKeyAction: String, CaseIterable {
     case .screenshotTranslate: "kitty.translate.screenshot"
     case .screenshot: "kitty.screenshot"
     case .screenshotLastRegion: "kitty.screenshot.last"
+    // 自画的那套里没有计时器：用 SF 的（同屏幕边缘的便签）
+    case .delayedScreenshot: "timer"
     case .recognizeText: "kitty.screenshot.text"
     case .screenRecord: "kitty.record"
     case .audioRecord: "kitty.record.audio"
@@ -705,8 +710,8 @@ enum HotKeyAction: String, CaseIterable {
     case .launcher: Style.Family.command
     case .selectionTranslate, .inputTranslate, .translateReplace, .screenshotTranslate:
       Style.Family.translate
-    case .screenshot, .screenshotLastRegion, .recognizeText, .screenRecord, .audioRecord,
-      .pinClipboard, .shotHistory, .clothesline:
+    case .screenshot, .screenshotLastRegion, .delayedScreenshot, .recognizeText, .screenRecord,
+      .audioRecord, .pinClipboard, .shotHistory, .clothesline:
       Style.Family.screenshot
     case .statusScreen: Style.Family.statusScreen
     case .noteCapture, .noteNew, .noteAll, .noteDeck: Style.Family.notes
@@ -1037,6 +1042,9 @@ enum HotKeyAction: String, CaseIterable {
     escapeToWindows = toWindows
     return true
   }
+
+  /// 临时 Esc 这会儿有人挂着（录屏倒数、录音待录条、延时截图倒数；全 App 只有一个，后挂的会把先挂的顶掉）
+  var holdsEscape: Bool { escapeRef != nil }
 
   func unregisterEscape() {
     if let escapeRef { UnregisterEventHotKey(escapeRef) }

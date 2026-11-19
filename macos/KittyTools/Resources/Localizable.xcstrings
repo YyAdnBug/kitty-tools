@@ -2153,6 +2153,50 @@
         }
       }
     },
+    "%lld 秒后截图" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Screenshot in %lld second"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Screenshot in %lld seconds"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld 秒后截图，按 Esc 取消" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Screenshot in %lld second. Press Esc to cancel."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Screenshot in %lld seconds. Press Esc to cancel."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld 秒后自己收起" : {
       "localizations" : {
         "en" : {
@@ -4084,6 +4128,24 @@
         }
       }
     },
+    "launcher.kind.menuItem" : {
+      "comment" : "启动器行右侧的类型",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Menu Item"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "菜单项"
+          }
+        }
+      }
+    },
     "launcher.kind.network" : {
       "comment" : "启动器行右侧的类型",
       "extractionState" : "extracted_with_value",
@@ -4314,6 +4376,24 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "宗卷"
+          }
+        }
+      }
+    },
+    "launcher.menuItem.press" : {
+      "comment" : "动作：执行前台 App 的一个菜单项",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Run"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "执行"
           }
         }
       }
@@ -7503,6 +7583,23 @@
         }
       }
     },
+    "search.screenshot.delay" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delay,Timer,Countdown,Self-timer"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "延时,定时,倒数,计时器"
+          }
+        }
+      }
+    },
     "search.screenshot.editKeys" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -7805,6 +7902,23 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "工具栏,靠右,居中,录制条"
+          }
+        }
+      }
+    },
+    "search.screenshot.windowShadow" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shadow,Window,Rounded Corners,Transparent"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "阴影,窗口,圆角,透明"
           }
         }
       }
@@ -11259,6 +11373,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Start it from the menu bar, Home, or the Launcher"
+          }
+        }
+      }
+    },
+    "从菜单栏、启动器或自己设的快捷键开始" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start it from the menu bar, the Launcher, or your shortcut"
           }
         }
       }
@@ -15421,6 +15545,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Click the desktop to record the whole screen"
+          }
+        }
+      }
+    },
+    "单击窗口截下时四角透明、四周带阴影" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A clicked window gets transparent corners and a shadow"
           }
         }
       }
@@ -23979,6 +24113,26 @@
         }
       }
     },
+    "延时截图" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Timed Screenshot"
+          }
+        }
+      }
+    },
+    "延时截图倒数" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Timed screenshot countdown"
+          }
+        }
+      }
+    },
     "建好后用编辑器打开，里面有一段能直接跑的示例；改好保存，%@%@" : {
       "localizations" : {
         "en" : {
@@ -30024,6 +30178,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Number keys 1 to 0 choose an annotation tool, ⌫ deletes the selected one, ⌘Z undoes, ↩ copies"
+          }
+        }
+      }
+    },
+    "数完再冻结屏幕、开始框选，工具提示、菜单这类一按键就消失的也截得到。倒数时按 Esc 或点 ✕ 取消，点数字马上截；快捷键在快捷键页设。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The screen freezes and selection starts when the countdown ends, so tooltips and menus that vanish on a keypress can be captured. Press Esc or click ✕ to cancel, or click the number to capture now. Set its shortcut on the Shortcuts page."
           }
         }
       }
@@ -37211,12 +37375,12 @@
         }
       }
     },
-    "点一下搜索框能留住，打字搜菜单里的名字" : {
+    "点一下搜索框能留住，打字搜菜单里的名字；启动器里打字也搜得到当前 App 的菜单项，没有快捷键的也算" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Click the search field to keep it open and type to search menu items"
+            "value" : "Click the search field to keep it open and type to search menu items; the Launcher finds the current app’s menu items too, even ones without shortcuts"
           }
         }
       }
@@ -38476,6 +38640,16 @@
         }
       }
     },
+    "画面就是框选时看到的；别的 App 的窗口挡住的地方换成这扇窗口自己的，拷贝、存储、钉图都带透明边。选区拖动过、窗口有一部分在屏幕外时照旧按矩形裁。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The picture is what you saw while selecting; parts covered by other apps’ windows show this window’s own content, and copies, saves, and pins keep the transparent edge. If you moved the selection or part of the window is off screen, it’s cropped as a rectangle as before."
+          }
+        }
+      }
+    },
     "界面" : {
       "comment" : "更新日志一条改动的种类：界面、样子",
       "localizations" : {
@@ -38889,12 +39063,12 @@
         }
       }
     },
-    "看着设的那个键有没有单独按住；按够了才读一次前台 App 的菜单，不存" : {
+    "看着设的那个键有没有单独按住；按够了、或者在启动器里打字时才读一次前台 App 的菜单，启动器收起半分钟后丢掉" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Watches for the chosen key held by itself; reads the frontmost app’s menus once it’s held long enough and keeps nothing"
+            "value" : "Watches for the chosen key held by itself; reads the frontmost app’s menus once it’s held long enough or when you type in the Launcher, and drops them half a minute after the Launcher closes"
           }
         }
       }
@@ -39646,6 +39820,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Window"
+          }
+        }
+      }
+    },
+    "窗口截图带阴影" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add a shadow to window screenshots"
           }
         }
       }

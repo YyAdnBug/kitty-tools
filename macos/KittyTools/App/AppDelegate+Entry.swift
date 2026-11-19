@@ -187,6 +187,7 @@ extension AppDelegate {
     case .screenshotTranslate: screenshotTranslate()
     case .screenshot: screenshot()
     case .screenshotLastRegion: screenshot(repeatingLastRegion: true)
+    case .delayedScreenshot: delayedScreenshot()
     case .recognizeText: recognizeText()
     case .screenRecord: screenRecord()
     case .audioRecord: audioRecord()

@@ -242,6 +242,22 @@ import UniformTypeIdentifiers
   @ObservationIgnored var keepAwakeStatus: () -> String? = { nil }
   @ObservationIgnored var keepAwakeBegin: (Date?, String) -> Void = { _, _ in }
   @ObservationIgnored var keepAwakeEnd: () -> Void = {}
+  /// 搜菜单项的那个 App（第五轮体检 N3，MenuSearch）：呼出时的前台 App；App 快捷键插件没添加、没辅助功能授权、前台是本 App
+  /// 时 nil（AppDelegate 给；单测、截图自检是 nil，不读真的菜单）
+  @ObservationIgnored var menuApp: () -> NSRunningApplication? = { nil }
+  /// 读那个 App 的菜单、建好行（pid、App 名、包路径；主线程外、整次 1 秒；单测、截图自检换成假的）
+  @ObservationIgnored var readMenu: (pid_t, String, String?) async -> [LauncherItem] = {
+    await MenuSearch.read(pid: $0, appName: $1, appPath: $2)
+  }
+  /// 菜单项的 ↩（启动器已收起）：切回那个 App、按位置找回去按它（AppDelegate 接 AppShortcuts.press）
+  @ObservationIgnored var pressMenu: (MenuSearch.Entry) -> Void = { _ in }
+  /// 这次呼出时的前台 App（prepareForShow 记下，收起时清掉）
+  @ObservationIgnored var menuTarget: NSRunningApplication?
+  /// 读到的菜单（哪个 App、什么时候读的、建好的行；收起后留着，staleAfter 以内再呼出同一个 App 不重读）和正在读的那一次
+  @ObservationIgnored var menuRows: (pid: pid_t, readAt: Date, items: [LauncherItem])?
+  @ObservationIgnored var menuTask: Task<Void, Never>?
+  /// 收起后过 MenuSearch.staleAfter 丢掉读到的菜单（再呼出时取消）
+  @ObservationIgnored var menuExpiry: Task<Void, Never>?
   /// 全局热键动作当前生效的组合（选中的内置动作右侧显示键帽）；AppDelegate 接 HotKeyCenter 注册上的那份
   @ObservationIgnored var boundHotKey: (HotKeyAction) -> HotKey? = { $0.hotKey }
   /// 文件搜索的授权提示 ↩：没问过就逐个弹系统框，问过就打开系统设置

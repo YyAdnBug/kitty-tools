@@ -15,14 +15,14 @@ import AppKit
 import ApplicationServices
 import Carbon.HIToolbox
 
-/// 菜单里有快捷键的一项
+/// 菜单里有快捷键的一项（启动器搜菜单项时也收没有快捷键的，keys 是空的，read 的 includesPlain）
 nonisolated struct MenuShortcut: Sendable, Hashable, Identifiable {
   /// 顶层菜单（文件、编辑……）
   let menu: String
   /// 顶层菜单和这一项之间的子菜单（「排序方式」）
   let path: [String]
   let title: String
-  /// 「⌘S」「🌐⌃F」；两段式的「⌘K ⌘S」中间一个空格
+  /// 「⌘S」「🌐⌃F」；两段式的「⌘K ⌘S」中间一个空格；没有快捷键的是空的（只有 includesPlain 才收）
   let keys: String
   /// 怎么找回它：菜单栏第几个，再一级级是菜单里第几项（执行时按它重新找、标题对得上才按）
   let location: [Int]
@@ -56,9 +56,10 @@ nonisolated enum MenuShortcuts {
   ]
 
   /// 读 pid 那个 App 菜单栏里所有带快捷键的项（苹果菜单不读：每个 App 都一样，拍板 C3）。checksFocus：先问键盘在不在
-  /// 它身上（单测读不在前台的访达时关掉）
+  /// 它身上（单测读不在前台的访达时关掉）。includesPlain：没有快捷键的项也收（启动器搜菜单项，第五轮体检 N3；
+  /// App 快捷键的面板只要有快捷键的）
   @concurrent static func read(
-    pid: pid_t, budget: Duration = budget, checksFocus: Bool = true
+    pid: pid_t, budget: Duration = budget, checksFocus: Bool = true, includesPlain: Bool = false
   ) async -> MenuReading {
     let clock = ContinuousClock()
     let deadline = clock.now + budget
@@ -109,6 +110,7 @@ nonisolated enum MenuShortcuts {
             virtualKey: (Self.value(list[5]) as? NSNumber)?.intValue,
             modifiers: (Self.value(list[4]) as? NSNumber)?.intValue
           ).map { (cleaned(title), $0) } ?? bracketed(title)
+          ?? (includesPlain ? (cleaned(title), "") : nil)
         guard let found, !found.title.isEmpty else { continue }
         // ⌥ 替换项照列；同一处同名同组合的只留一条
         let key = ([top] + path + [found.title, found.keys]).joined(separator: "\u{1F}")

@@ -6355,6 +6355,75 @@ struct SnapshotProbeTests {
     }
   }
 
+  /// 第五轮体检第 8 批：设置 › 截图 › 高级里新加的两行（窗口截图带阴影、延时截图倒数，图以 settings-screenshot-batch8 开头）；
+  /// 启动器里搜到前台 App 的菜单项（假的「预览」菜单，不读真的菜单；图以 launcher-menu-items 开头）。英文截图里假菜单也是英文
+  /// （别的 App 的菜单跟系统语言）
+  @Test(.enabled(if: directory != nil)) func batch8() async throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    Prefs.registerDefaults()
+    let suite = "kitty-snapshot-batch8-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: suite))
+    defer { prefs.removePersistentDomain(forName: suite) }
+    prefs.set(10, forKey: Prefs.screenshotDelay)
+    let navigation = SettingsNavigation(defaults: nil)
+    let english = InterfaceLanguage.isEnglish
+    let preview = "/System/Applications/Preview.app"
+    func item(_ menu: String, _ path: [String], _ title: String, _ keys: String = "", _ at: [Int])
+      -> MenuShortcut
+    {
+      MenuShortcut(menu: menu, path: path, title: title, keys: keys, location: at)
+    }
+    let reading = MenuReading(
+      shortcuts: english
+        ? [
+          item("File", [], "Export", "", [1, 9]), item("File", [], "Export as PDF", "", [1, 10]),
+          item("File", ["Share"], "Mail", "", [1, 12, 0]),
+          item("File", [], "Print", "⌘P", [1, 14]),
+          item("View", [], "Hide Toolbar", "⌥⌘T", [3, 2]),
+        ]
+        : [
+          item("文件", [], "导出", "", [1, 9]), item("文件", [], "导出为 PDF", "", [1, 10]),
+          item("文件", ["共享"], "邮件", "", [1, 12, 0]), item("文件", [], "打印", "⌘P", [1, 14]),
+          item("显示", [], "隐藏工具栏", "⌥⌘T", [3, 2]),
+        ])
+    let model = LauncherModel(
+      usage: try LauncherUsage(db: Database(path: ":memory:")),
+      apps: [AppCatalog.item(path: preview, languages: [english ? "en" : "zh-Hans"])])
+    model.boundHotKey = { $0.defaultHotKey }
+    model.engines = { [] }
+    // 「前台 App」是测试宿主自己（只拿它的 pid 当缓存的键），读到的是上面那份假菜单
+    let pid = NSRunningApplication.current.processIdentifier
+    model.menuApp = { NSRunningApplication.current }
+    model.readMenu = { pid, name, path in
+      MenuSearch.rows(reading, pid: pid, appName: name, appPath: path)
+    }
+    model.prepareForShow()
+    model.menuRows = (
+      pid, .now,
+      MenuSearch.rows(reading, pid: pid, appName: english ? "Preview" : "预览", appPath: preview)
+    )
+    for dark in [false, true] {
+      let suffix = dark ? "-dark" : ""
+      navigation.path = []
+      try snapshot(
+        ScreenshotTab(shots: nil, drawsAdvanced: true).defaultAppStorage(prefs)
+          .environment(navigation),
+        size: NSSize(width: 480, height: 560), dark: dark,
+        to: "\(out)/settings-screenshot-batch8\(suffix).png")
+      for (name, query) in [
+        ("", english ? "export" : "导出"), ("-path", english ? "share mail" : "共享 邮件"),
+        ("-keys", english ? "toolbar" : "隐藏工具"),
+      ] {
+        model.query = query
+        try snapshot(
+          LauncherPanelView(model: model),
+          size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
+          to: "\(out)/launcher-menu-items\(name)\(suffix).png")
+      }
+    }
+  }
+
   private func snapshot(
     _ view: some View, size: NSSize, dark: Bool, to path: String,
     prepare: ((NSView) -> Void)? = nil

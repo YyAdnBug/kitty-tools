@@ -436,7 +436,7 @@ struct ShortcutsSheet: View {
       Group(
         title: "截图 · 框选", symbol: HotKeyAction.screenshot.symbol, color: Style.Family.screenshot,
         features: [.screenshot, .translate, .record],
-        globals: [.screenshot, .screenshotLastRegion, .recognizeText],
+        globals: [.screenshot, .screenshotLastRegion, .delayedScreenshot, .recognizeText],
         entries: [
           Entry("⇧", text: "锁定比例（新框是正方形）"),
           Entry("⌥", text: "从中心拉框"),

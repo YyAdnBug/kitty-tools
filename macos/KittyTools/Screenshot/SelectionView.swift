@@ -38,6 +38,12 @@ final class SelectionView: NSView, NSTextViewDelegate {
   /// 和 windows 一一对应：悬停时问哪几个进程要窗口里的元素（按顺序，第一个问出东西的算：菜单栏那条先问前台 App、
   /// 再问控制中心）；空的 = 不认元素（单测、截图自检的默认）
   let owners: [[pid_t]]
+  /// 和 windows 一一对应：窗口号（单击选中整扇窗口、出图时单独截它带透明圆角和阴影，WindowShot）；没有的 nil。
+  /// 空的 = 都没有（单测、截图自检的默认）
+  let windowIDs: [CGWindowID?]
+  /// 单击选中的那扇窗口（第五轮体检 N1）：窗口号和当时的选区。选区之后再动过（拖边、挪、方向键）就和它对不上，
+  /// 出图照旧按矩形裁
+  var clickedWindow: (id: CGWindowID, frame: CGRect, index: Int)?
   let session: SelectionSession
   /// 截图工具栏「翻译」就地翻：给选区的图和它每点几个像素，返回覆盖了译文的图、放不下的段（失败带一句原因）。
   /// 由 AppDelegate 经 SelectionSession 注入；nil = 现在不能就地翻（退回原来的「退出截图页再翻」）
@@ -252,7 +258,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
   var bendPressed: UUID?
   /// 每次显示提示加一：旧的淡出计时作废
   var hintGeneration = 0
-  /// 每个工具记住的样式（Prefs.screenshotToolStyles）和录制条的四个开关（录屏第 4 批、手测反馈第 2 批）存在哪：交互测试换成临时偏好域，
+  /// 每个工具记住的样式（Prefs.screenshotToolStyles）、录制条的四个开关（录屏第 4 批、手测反馈第 2 批）和「窗口截图带阴影」
+  /// （第五轮体检 N1，只读）存在哪：交互测试换成临时偏好域，
   /// 不写用户的真实偏好（录制条在 init 里就建了，换了域要跟着换）
   var styleDefaults = UserDefaults.standard {
     didSet { recordBar?.defaults = styleDefaults }
@@ -264,12 +271,14 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private static let infoHeight: CGFloat = 40
 
   init(
-    image: CGImage, windows: [CGRect] = [], owners: [[pid_t]] = [], session: SelectionSession,
+    image: CGImage, windows: [CGRect] = [], owners: [[pid_t]] = [],
+    windowIDs: [CGWindowID?] = [], session: SelectionSession,
     keepsColors keeps: Bool? = nil, showsHint shows: Bool? = nil, loupe: Prefs.Loupe? = nil
   ) {
     self.image = image
     self.windows = windows
     self.owners = owners
+    self.windowIDs = windowIDs
     self.session = session
     keepsColors = keeps ?? UserDefaults.standard.bool(forKey: Prefs.screenshotKeepsColors)
     showsHint = shows ?? UserDefaults.standard.bool(forKey: Prefs.screenshotShowsHint)
@@ -631,6 +640,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     drag = nil
     draft = nil
     selection = nil
+    clickedWindow = nil
     isAdjusting = false
     mouse = nil
     stack = nil

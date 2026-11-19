@@ -29,7 +29,8 @@ final class ShotShelf {
   /// copy 回答放进剪贴板的是图像还是文件（nil = 没接上）
   var copy: (Data) async -> ScreenshotOutput.Copied? = { _ in nil }
   var save: (Data) async -> URL? = { _ in nil }
-  var pin: (CGImage, CGRect) -> Void = { _, _ in }
+  /// 钉图（图、位置、是不是透明圆角带阴影的窗口截图：是的话钉上去不套圆角和描边，N1）
+  var pin: (CGImage, CGRect, Bool) -> Void = { _, _, _ in }
   var copyFile: (URL) -> Void = { _ in }
   /// 「改标注」（X7，AppDelegate 给）：这张图、像素 / 点、记历史的那个任务（等它给出编号就接着改历史里那一条；没记成是 nil）
   var annotate: (CGImage, CGFloat, Task<UUID?, Never>?) -> Void = { _, _, _ in }
@@ -77,12 +78,12 @@ final class ShotShelf {
   /// 接手一张截图：png 是复制 / 保存时编码好的，rect 是落地位置（屏幕坐标），source 是选区（钉图钉回那里）
   func add(
     _ image: CGImage, png: Data, scale: CGFloat, source: CGRect, at rect: CGRect,
-    badge: FlyCard.Badge, history: Task<UUID?, Never>? = nil
+    badge: FlyCard.Badge, history: Task<UUID?, Never>? = nil, window: Bool = false
   ) {
     insert(at: rect) { screen, panel in
       ShelfCard(
         image: image, png: png, scale: scale, source: source, rect: rect, badge: badge,
-        screen: screen, panel: panel, shelf: self, history: history)
+        screen: screen, panel: panel, shelf: self, history: history, window: window)
     }
   }
 
@@ -297,6 +298,8 @@ final class ShotShelf {
   @ObservationIgnored var popsIn = false
   /// 截图记进历史的那个任务（X7「改标注」等它的编号）；录屏、GIF 卡和没记的截图是 nil
   @ObservationIgnored private var history: Task<UUID?, Never>?
+  /// 透明圆角带阴影的窗口截图（N1）：钉图时不套圆角和描边
+  @ObservationIgnored private var isWindow = false
   /// 触控板横扫时跟手的偏移，和最近一次非零位移与它的时间（松手前还在快速往右 = 甩出去；停住再松手不算）
   @ObservationIgnored private var swipe: CGFloat = 0
   @ObservationIgnored private var lastSwipe: (delta: CGFloat, time: CFTimeInterval) = (0, 0)
@@ -304,10 +307,11 @@ final class ShotShelf {
   init(
     image: CGImage, png: Data? = nil, scale: CGFloat, source: CGRect, rect: CGRect,
     badge: FlyCard.Badge, screen: NSScreen?, panel: NSPanel, shelf: ShotShelf,
-    history: Task<UUID?, Never>? = nil
+    history: Task<UUID?, Never>? = nil, window: Bool = false
   ) {
     kind = .image
     self.history = history
+    isWindow = window
     self.png = png
     self.image = png == nil ? image : nil
     pixels = CGSize(width: image.width, height: image.height)
@@ -546,7 +550,7 @@ final class ShotShelf {
     guard let full = fullImage else { return }
     let frame = PinBoard.restoredFrame(
       pixels: pixels, source: source, visible: screen?.visibleFrame ?? source)
-    shelf?.pin(full, frame)
+    shelf?.pin(full, frame, isWindow)
     close()
   }
 

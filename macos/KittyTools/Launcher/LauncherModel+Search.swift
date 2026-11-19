@@ -91,6 +91,10 @@ extension LauncherModel {
   /// 呼出前：应用程序目录变了就重扫（后台扫，扫完刚装的 App 就搜得到）；60 秒内没执行就收起的，接着上次的查询和选中项
   func prepareForShow(now: Date = .now) {
     isShown = true
+    // 搜菜单项的那个 App（N3）：这一刻的前台（启动器不激活本 App，前台还是底下那个）
+    menuTarget = menuApp()
+    menuExpiry?.cancel()
+    menuExpiry = nil
     refreshShortcuts(now: now)
     if !isFixture,
       Self.needsRescan(
@@ -134,6 +138,13 @@ extension LauncherModel {
   /// 60 秒内再呼出接着用（体检 A27）。App 目录超过 5 分钟就趁没人看时重扫（接住子文件夹里的升级、改名）
   func didHide(now: Date = .now) {
     isShown = false
+    menuTarget = nil
+    // 读到的菜单只留半分钟（插件说明里这么写的）：这期间再呼出同一个 App 不用重读
+    menuExpiry = Task { [weak self] in
+      try? await Task.sleep(for: .seconds(MenuSearch.staleAfter))
+      guard !Task.isCancelled, let self, !isShown else { return }
+      menuRows = nil
+    }
     files.forgetItems()
     // 路径模式读过的目录不留（再呼出重读：这期间可能有变化）；还在读的不要了
     for read in pathReads.values { read.cancel() }
@@ -349,6 +360,8 @@ extension LauncherModel {
     // 用户给 App 设的完整别名优先于普通结果和无参数脚本；同别名的 App 保留使用排序，最后统一按 id 去重。
     let aliasedApps = local.filter { searchable.aliases.exactlyMatches($0, query: query) }
     let history = longEnough ? visited(query, excluding: bookmarks + used) : []
+    // 前台 App 的菜单项（N3）：同书签至少 2 个字才搜，排在本地结果后面、浏览历史前面
+    let menus = longEnough ? menuMatches(query) : []
     // 兜底默认只在没有本地结果时出现（和 Alfred 一样；以前带空格的查询把兜底排到匹配的 App 前面），
     // 设置里可改成总是附在最后。已经有网址 / 路径直达项、或明写了 http(s):// 的就不再兜底（体检 B35：
     // 以前只看开头是不是 http，「http 缓存」「https 证书」没有本地结果时什么都不剩）
@@ -367,12 +380,51 @@ extension LauncherModel {
     {
       leading = []
     }
+    // 菜单项不当默认选中的第一行（↩ 不会误按下菜单里的命令）：前面一条本地结果都没有时排到兜底搜索后面
+    let head = leading + aliasedApps + aliased + ordered + trailing
+    let tail = tx + history + partialPrompts + offers + fallback
     results =
-      (leading + aliasedApps + aliased + ordered + trailing + tx + history + partialPrompts
-      + offers + fallback)
-      .filter { seen.insert($0.id).inserted }
+      (head.isEmpty ? tail + menus : head + menus + tail).filter { seen.insert($0.id).inserted }
     if let invocation { startList(invocation) }
   }
+
+  /// 前台 App 的菜单项里对上 query 的（N3，MenuSearch）：读过、没过期的直接过滤；没读过、过期了在后台读一次（读完开着就
+  /// 重搜），这期间先用同一个 App 上一回读到的
+  private func menuMatches(_ query: String) -> [LauncherItem] {
+    guard let app = menuTarget, !app.isTerminated else { return [] }
+    let cached = menuRows?.pid == app.processIdentifier ? menuRows : nil
+    if cached.map({ Date.now.timeIntervalSince($0.readAt) > MenuSearch.staleAfter }) ?? true {
+      loadMenu(app)
+    }
+    return cached.map { MenuSearch.matched($0.items, query: query) } ?? []
+  }
+
+  /// 在后台读 app 的菜单、建好行（同一时刻只读一次）。读到的（没读完、一项都没有也记下，staleAfter 以内不重读：不然没有
+  /// 菜单栏的 App 每打一个字都读一遍）换上；还开着、还是这个 App 就按新的重搜，**选中留在原来那一项**（没动过选中时也
+  /// 不让它从第一行跳走）
+  private func loadMenu(_ app: NSRunningApplication) {
+    guard menuTask == nil else { return }
+    let pid = app.processIdentifier
+    let name = app.localizedName ?? ""
+    let path = app.bundleURL?.path
+    menuTask = Task {
+      let rows = await readMenu(pid, name, path)
+      menuTask = nil
+      menuRows = (pid, .now, rows)
+      guard isShown, menuTarget?.processIdentifier == pid, armed == nil, fileRequest == nil,
+        commandRequest == nil, pathRequest == nil, review == nil, output == nil,
+        LauncherMatch.isLongEnough(query)
+      else { return }
+      let kept = selectedItem?.id
+      let moved = userMovedSelection
+      search()
+      if let kept { reselect(kept) }
+      userMovedSelection = moved
+    }
+  }
+
+  /// 测试等读菜单那一次读完
+  func menuLookup() async { await menuTask?.value }
 
   /// 别名（关键词）和输入一字不差的脚本行（不分大小写、去掉两头空白）。纯函数，配单测
   static func aliased(
@@ -1116,7 +1168,7 @@ extension LauncherModel {
         ? nil : Self.item(kind: .path, target: target, title: title)
     // 不记使用，不会出现
     case .search, .calculation, .clip, .prompt, .translate, .process, .ip, .reminder,
-      .scriptResult:
+      .scriptResult, .menuItem:
       return nil
     }
   }

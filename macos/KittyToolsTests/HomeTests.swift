@@ -119,10 +119,10 @@ struct HomeTests {
     var state = LauncherItem.ActionState()
     state.features = all
     let sections = Home.sections(state: state, keys: [:])
-    // 2 / 4 / 7 / 9（截图与录制 7 格折成 5 + 2；插件 9 格折成 5 + 4：便签三格、新建提醒、状态屏、启动台、保持唤醒、
-    // 显示 App 快捷键、刘海岛）
-    #expect(Home.rows(sections).map(\.count) == [2, 4, 5, 2, 5, 5])
-    #expect(Home.rows(sections).flatMap { $0 } == Array(0..<23))
+    // 2 / 4 / 8 / 9（截图与录制 8 格折成 5 + 3，第五轮体检 N2 加了延时截图；插件 9 格折成 5 + 4：便签三格、新建提醒、
+    // 状态屏、启动台、保持唤醒、显示 App 快捷键、刘海岛）
+    #expect(Home.rows(sections).map(\.count) == [2, 4, 5, 3, 5, 5])
+    #expect(Home.rows(sections).flatMap { $0 } == Array(0..<24))
     let rows: CGFloat = 6
     let expected =
       Home.top + Home.bottom + 4 * Home.titleHeight + rows * Home.tile.height

@@ -236,7 +236,8 @@ struct LauncherBatch5Tests {
     #expect(
       plain.map(\.target) == [
         "clipboard", "pause-clipboard", "selectionTranslate", "translate-input", "translateReplace",
-        "translate-screenshot", "copyToTranslate", "screenshot", "screenshotLastRegion", "ocr",
+        "translate-screenshot", "copyToTranslate", "screenshot", "screenshotLastRegion",
+        "delayedScreenshot", "ocr",
         "screenRecord", "audioRecord", "pinClipboard", "shotHistory", "clothesline", "noteCapture",
         "noteNew",
         "noteAll", "noteDeck", "reminderNew", "launchpad", "keepAwake", "appShortcuts", "island",
@@ -260,7 +261,7 @@ struct LauncherBatch5Tests {
     #expect(busy.map(\.title).contains("显示全部钉图") && busy.last?.target == "quit")
     // 钉住剪贴板里的图（第二轮体检 F1）和截图历史（2026-10-26）在截图节末尾，有钉图时紧接着是钉图的两项
     #expect(
-      Array(busy.map(\.target)[9...16])
+      Array(busy.map(\.target)[10...17])
         == [
           "ocr", "screenRecord", "audioRecord", "pinClipboard", "shotHistory", "clothesline",
           "pins-toggle", "pins-close",

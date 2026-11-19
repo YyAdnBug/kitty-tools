@@ -290,6 +290,12 @@ extension SelectionView {
       // 免得误点丢掉选区
       if !isAdjusting, !session.hasSelection(besides: self) {
         select(pressedHover ?? hoverRect(at: point) ?? bounds)
+        // 选中的正好是一整扇窗口（全在这块屏里、不是窗口里的元素）：记下它，出图时能单独截（N1）
+        if let selection, let index = windows.firstIndex(of: selection),
+          let id = windowIDs.indices.contains(index) ? windowIDs[index] : nil
+        {
+          clickedWindow = (id, selection, index)
+        }
         if isOverBars(point) { clickSelected = (event.timestamp, point) }
         // ⌥S：单击选中的那一块（元素、窗口、整屏）同框完松手，直接翻
         if autoTranslates { translateInPlace() }

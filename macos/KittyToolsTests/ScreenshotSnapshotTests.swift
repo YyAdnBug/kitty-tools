@@ -572,6 +572,73 @@ struct ScreenshotSnapshotTests {
     for dark in [false, true] { try shoot(window, "annotate-toolbar-done", dark: dark) }
   }
 
+  /// 第五轮体检第 8 批：延时截图的倒数（录制 HUD 的倒数态，整屏的摆法：可见区底部居中，10 秒、Esc 注册上了）；
+  /// 单击窗口截下的样子（WindowShot，图以 shot-window-shadow 开头）：左边是原来的矩形裁切（四角是壁纸），右边是透明圆角 +
+  /// 阴影，垫在浅 / 深两种底上看阴影；后面那扇表格窗口被备忘录（另一个 App）挡着一角，那一角换成了窗口自己的画面（-occluded）；
+  /// 另存一张原样的透明 PNG（-raw）
+  @Test(.enabled(if: directory != nil)) func renderBatch8() throws {
+    let out = try #require(Self.directory)
+    let desktop = try Self.desktop()
+    let bounds = CGRect(x: 0, y: 0, width: 1200, height: 800)
+    let visible = bounds.insetBy(dx: 0, dy: 24).offsetBy(dx: 0, dy: -12)
+    for dark in [false, true] {
+      let root = NSView(frame: bounds)
+      root.wantsLayer = true
+      root.layer?.contents = desktop
+      let hud = RecordingHUD(state: .countdown(10), stopKey: nil, escapes: true)
+      hud.removeFromSuperview()
+      hud.frame.origin = RecordingHUD.origin(
+        size: hud.frame.size, region: bounds, screen: bounds, visible: visible, isFullScreen: true,
+        dragged: nil)
+      root.addSubview(hud)
+      try shoot(
+        offscreen(root), "delay-countdown", dark: dark, crop: hud.frame.insetBy(dx: -40, dy: -24)
+      ) {
+        hud.update(.countdown(7))
+      }
+      // 26 起 HUD 的玻璃在屏外画成一块白：另存一张只画内容、垫深底的（同工具栏）
+      if !dark { try shootContent(hud, "delay-countdown") }
+    }
+    for (index, name) in [(0, "window-shadow"), (1, "window-shadow-occluded")] {
+      let frame = Self.windows[index]
+      let pixels = CGRect(
+        x: frame.minX * 2, y: (800 - frame.maxY) * 2, width: frame.width * 2,
+        height: frame.height * 2)
+      let frozen = try #require(desktop.cropping(to: pixels))
+      let live = try #require(try Self.desktop(only: index).cropping(to: pixels))
+      let capture = RegionSelector.Capture(
+        image: frozen, frame: frame, action: .copy, original: frozen)
+      // 两扇窗口算两个 App：后面那扇被备忘录挡住的一角换成它自己的画面
+      let covered = WindowShot.covered(index, windows: Self.windows, owners: [[1], [2]])
+      let shot = try #require(WindowShot.compose(capture, window: live, covered: covered))
+      if index == 0 { try write(shot.image, to: "\(out)/shot-\(name)-raw.png") }
+      for dark in [false, true] {
+        let gap = 60
+        let width = frozen.width + shot.image.width + gap * 3
+        let height = shot.image.height + gap * 2
+        let context = try #require(
+          CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(gray: dark ? 0.16 : 0.93, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.draw(
+          frozen,
+          in: CGRect(
+            x: gap, y: (height - frozen.height) / 2, width: frozen.width, height: frozen.height))
+        context.draw(
+          shot.image,
+          in: CGRect(
+            x: gap * 2 + frozen.width, y: gap, width: shot.image.width,
+            height: shot.image.height))
+        try write(
+          try #require(context.makeImage()),
+          to: "\(out)/shot-\(name)\(dark ? "-dark" : "").png")
+      }
+    }
+  }
+
   @Test(.enabled(if: directory != nil)) func renderRecordingHUD() throws {
     let desktop = try Self.desktop()
     let region = CGRect(x: 160, y: 260, width: 640, height: 400)
@@ -1026,8 +1093,9 @@ struct ScreenshotSnapshotTests {
     return bars.map(\.frame).reduce(CGRect.null) { $0.union($1) }.insetBy(dx: -24, dy: -24)
   }
 
-  /// 假桌面（1200 × 800 点 @2x）：渐变壁纸、菜单栏，后面一个表格窗口（行、色块），前面一个备忘录窗口（多语种文字）
-  static func desktop() throws -> CGImage {
+  /// 假桌面（1200 × 800 点 @2x）：渐变壁纸、菜单栏，后面一个表格窗口（行、色块），前面一个备忘录窗口（多语种文字）。
+  /// only：只画这一扇窗口（透明底、不带阴影，当「单独截的那扇窗口」用，第五轮体检 N1）
+  static func desktop(only: Int? = nil) throws -> CGImage {
     let bitmap = try #require(
       NSBitmapImageRep(
         bitmapDataPlanes: nil, pixelsWide: 2400, pixelsHigh: 1600, bitsPerSample: 8,
@@ -1044,16 +1112,21 @@ struct ScreenshotSnapshotTests {
         attributes: [.font: NSFont.systemFont(ofSize: size), .foregroundColor: color]
       ).draw(at: NSPoint(x: x, y: y))
     }
-    NSGradient(
-      starting: NSColor(srgbRed: 0.24, green: 0.19, blue: 0.50, alpha: 1),
-      ending: NSColor(srgbRed: 0.10, green: 0.56, blue: 0.58, alpha: 1))?
-      .draw(in: NSRect(x: 0, y: 0, width: 1200, height: 800), angle: -30)
-    NSColor.white.withAlphaComponent(0.8).setFill()
-    NSRect(x: 0, y: 776, width: 1200, height: 24).fill()
-    text("Finder    文件    编辑    显示    前往    窗口", 16, 780, size: 13)
-    for (index, frame) in windows.enumerated().reversed() {
+    if only != nil {
+      NSColor.clear.set()
+      NSRect(x: 0, y: 0, width: 1200, height: 800).fill(using: .copy)
+    } else {
+      NSGradient(
+        starting: NSColor(srgbRed: 0.24, green: 0.19, blue: 0.50, alpha: 1),
+        ending: NSColor(srgbRed: 0.10, green: 0.56, blue: 0.58, alpha: 1))?
+        .draw(in: NSRect(x: 0, y: 0, width: 1200, height: 800), angle: -30)
+      NSColor.white.withAlphaComponent(0.8).setFill()
+      NSRect(x: 0, y: 776, width: 1200, height: 24).fill()
+      text("Finder    文件    编辑    显示    前往    窗口", 16, 780, size: 13)
+    }
+    for (index, frame) in windows.enumerated().reversed() where only == nil || only == index {
       let shadow = NSShadow()
-      shadow.shadowColor = .black.withAlphaComponent(0.35)
+      shadow.shadowColor = .black.withAlphaComponent(only == nil ? 0.35 : 0)
       shadow.shadowBlurRadius = 20
       shadow.shadowOffset = NSSize(width: 0, height: -8)
       NSGraphicsContext.saveGraphicsState()
@@ -1081,12 +1154,12 @@ struct ScreenshotSnapshotTests {
       "The quick brown fox jumps over", "敏捷的棕色狐狸跳过了懒狗", "Hello World  #FF4D7E", "日本語のテキスト",
       "Привет мир", "한국어 텍스트", "第七行：截图自检",
     ]
-    for (index, line) in notes.enumerated() {
+    for (index, line) in notes.enumerated() where only == nil || only == 0 {
       text(line, 160, 610 - CGFloat(index) * 34, size: 18)
     }
     // 后面的表格：斑马纹行（前面的窗口盖住左上角）+ 一组色块
     let table = windows[1]
-    for row in 0..<9 {
+    for row in 0..<9 where only == nil || only == 1 {
       let y = table.maxY - 60 - CGFloat(row) * 38
       if row % 2 == 0 {
         NSColor(white: 0.92, alpha: 1).setFill()
@@ -1095,7 +1168,7 @@ struct ScreenshotSnapshotTests {
       text("Q\(row % 4 + 1)   ¥\(1200 + row * 317)   +\(row * 3)%", table.minX + 100, y, size: 16)
     }
     for (index, color) in [NSColor.systemPink, .systemOrange, .systemTeal, .systemIndigo]
-      .enumerated()
+      .enumerated() where only == nil || only == 1
     {
       color.setFill()
       let height = CGFloat([150, 90, 200, 120][index])
@@ -1226,7 +1299,8 @@ struct ScreenshotSnapshotTests {
     for (percent, dark) in [(60, false), (60, true), (10, false)] {
       panel.opacity = CGFloat(percent) / 100
       let row = try #require(
-        pin.menu(for: event)?.items.first { $0.title == String(localized: "透明度") }?.submenu?.items.first?.view)
+        pin.menu(for: event)?.items.first { $0.title == String(localized: "透明度") }?.submenu?.items
+          .first?.view)
       // 菜单上下各有约 5 pt 的内边距
       let size = NSSize(width: row.frame.width, height: row.frame.height + 10)
       let window = NSWindow(

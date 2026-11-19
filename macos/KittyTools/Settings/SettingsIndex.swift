@@ -92,6 +92,8 @@ enum SettingsItem: String, CaseIterable, Identifiable {
   case screenshotShutter = "screenshot.shutter"
   case screenshotCursor = "screenshot.cursor"
   case screenshotHideDesktop = "screenshot.hideDesktop"
+  case screenshotWindowShadow = "screenshot.windowShadow"
+  case screenshotDelay = "screenshot.delay"
   case screenshotHistory = "screenshot.history"
   case screenshotHistoryDays = "screenshot.historyDays"
   case screenshotHistorySize = "screenshot.historySize"
@@ -640,6 +642,16 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         .screenshot, "截图、录屏时隐藏桌面图标",
         LocalizedStringResource("search.screenshot.hideDesktop", defaultValue: "桌面图标,隐藏"),
         keys: [Prefs.captureHideDesktopIcons], place: .advanced)
+    case .screenshotWindowShadow:
+      Self.row(
+        .screenshot, "窗口截图带阴影",
+        LocalizedStringResource("search.screenshot.windowShadow", defaultValue: "阴影,窗口,圆角,透明"),
+        keys: [Prefs.screenshotWindowShadow], place: .advanced)
+    case .screenshotDelay:
+      Self.row(
+        .screenshot, "延时截图倒数",
+        LocalizedStringResource("search.screenshot.delay", defaultValue: "延时,定时,倒数,计时器"),
+        keys: [Prefs.screenshotDelay], place: .advanced)
     case .screenshotHistory:
       Self.row(
         .screenshot, "保留截图历史",

@@ -207,6 +207,13 @@ enum Prefs {
   /// 不主动交出网页里的元素，开着时第一次问一个 App 前读一次它的角色，请它打开最轻的一档辅助功能（一直开到它退出）。
   /// 总开关关着时不管它
   static let screenshotFindsWebElements = "screenshotFindsWebElements"
+  /// 窗口截图带阴影（第五轮体检 N1，默认开；设置 › 截图 › 高级）：单击窗口截下、出图时单独截那一扇窗口（四角透明）、
+  /// 四周画上窗口阴影（WindowShot）；关着时照旧按矩形从冻结帧里裁
+  static let screenshotWindowShadow = "screenshotWindowShadow"
+  /// 延时截图等几秒（第五轮体检 N2，默认 5；设置 › 截图 › 高级）：按「延时截图」后倒数这么久再冻结、进框选。
+  /// 读它用 screenshotDelaySeconds
+  static let screenshotDelay = "screenshotDelay"
+  nonisolated static let screenshotDelayChoices = [5, 10]
   /// 旧键（0.7.0 之前是「留不留常驻缩略图」一个布尔）：migrate 里升成上面那个三选一，关过它的人升级后是「都不要」
   static let screenshotShelfLegacy = "screenshotShelf"
   /// 保留截图历史（2026-10-26 拍板 B3，默认开）：关掉之后不再往历史里记，已经记下的留着（设置里另有「现在清空」）
@@ -702,6 +709,8 @@ enum Prefs {
       screenshotLoupe: Loupe.full.rawValue,
       screenshotFindsElements: false,
       screenshotFindsWebElements: false,
+      screenshotWindowShadow: true,
+      screenshotDelay: 5,
       shotHistory: true,
       shotHistoryDays: 30,
       shotHistoryMegabytes: 2 * 1024,
@@ -794,6 +803,12 @@ enum Prefs {
   /// 截图拷贝成 PNG 文件（screenshotCopyAs 是 file；没存过、认不出来按默认的图像）
   static func copiesShotAsFile(_ defaults: UserDefaults = .standard) -> Bool {
     defaults.string(forKey: screenshotCopyAs) == "file"
+  }
+
+  /// 延时截图等几秒（screenshotDelay 是导入、同步来的，不信它：不是 5 / 10 按默认 5）
+  static func screenshotDelaySeconds(_ defaults: UserDefaults = .standard) -> Int {
+    let stored = defaults.integer(forKey: screenshotDelay)
+    return screenshotDelayChoices.contains(stored) ? stored : 5
   }
 
   /// 截完图放哪（2026-10-26 晾衣绳拍板 B1）：右下角的常驻缩略图 / 挂到晾衣绳上 / 都不要（只进历史）。
