@@ -270,6 +270,8 @@ enum Prefs {
 
   /// 识字后把同一段的换行合成一行（中日文直接连、其它加空格）
   static let ocrJoinLines = "ocrJoinLines"
+  /// 面板收起两分钟后释放进程内的识字模型（默认关，下次识字不用重新加载）
+  static let ocrReleaseWhenIdle = "ocrReleaseWhenIdle"
   /// 识字模型已经为哪个系统版本编好了（OCR.prepare；存 OCR.systemVersion「27.0.1 (26A434)」，不跟界面语言变）。这台电脑自己的状态：不注册默认值、不跟着导出
   nonisolated static let ocrPreparedSystem = "ocrPreparedSystem"
 
@@ -696,6 +698,7 @@ enum Prefs {
       translateFontScale: 1.0,
       translateCollapsedServices: "",
       ocrJoinLines: false,
+      ocrReleaseWhenIdle: false,
       screenshotShutterSound: true,
       screenshotCursor: false,
       captureHideDesktopIcons: false,

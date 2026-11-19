@@ -5,7 +5,7 @@
 // 「高级…」：带上鼠标指针、隐藏桌面图标（第四轮体检 X8 X9）、窗口截图带阴影、延时截图倒数几秒（第五轮体检 N1 N2）、
 // 框选时的提示和放大镜（2026-11-17）、工具栏靠哪边（录屏的录制条同一个设置）、保持屏幕原色、悬停时识别（窗口里的元素 /
 // 连网页里的也认，两个开关合成一个选单，S6；要辅助功能授权：没授权时下面出授权那一行）、钉图上的字可选、识字后接换行
-// （旁边实时对照效果，体检 A32）。录屏、录音的设置在「录制」页（RecordTab）。
+// （旁边实时对照效果，体检 A32）、空闲时释放识字模型。录屏、录音的设置在「录制」页（RecordTab）。
 // 页头画在自己的 NavigationStack 里，推进子页时一起换掉。
 
 import AppKit
@@ -19,6 +19,7 @@ struct ScreenshotTab: View {
   /// 截图自检直接画「高级…」表单（sheet 画不进屏外截图）
   var drawsAdvanced = false
   @AppStorage(Prefs.ocrJoinLines) private var joinLines = false
+  @AppStorage(Prefs.ocrReleaseWhenIdle) private var releaseOCRWhenIdle = false
   @AppStorage(Prefs.screenshotShutterSound) private var shutterSound = true
   @AppStorage(Prefs.screenshotCursor) private var cursor = false
   @AppStorage(Prefs.captureHideDesktopIcons) private var hidesDesktopIcons = false
@@ -380,6 +381,14 @@ struct ScreenshotTab: View {
       }
       .settingsAnchor(.screenshotJoinLines)
       JoinLinesPreview(joins: joinLines)
+      SettingRow(
+        title: "空闲时释放识字模型",
+        info: "面板收起两分钟后释放模型占用的内存，下次识字时要重新加载。"
+      ) {
+        Toggle("空闲时释放识字模型", isOn: $releaseOCRWhenIdle)
+          .toggleStyle(.switch)
+      }
+      .settingsAnchor(.screenshotReleaseOCR)
     }
     .gated(by: .screenshot)
   }

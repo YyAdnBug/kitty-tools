@@ -107,6 +107,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
   case screenshotPlacement = "screenshot.placement"
   case screenshotPinText = "screenshot.pinText"
   case screenshotJoinLines = "screenshot.joinLines"
+  case screenshotReleaseOCR = "screenshot.releaseOCR"
   case screenshotKeys = "screenshot.keys"
   case screenshotEditKeys = "screenshot.editKeys"
   // 录制
@@ -717,6 +718,11 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         .screenshot, "识字后把同一段里的换行接起来",
         LocalizedStringResource("search.screenshot.joinLines", defaultValue: "识字,换行,二维码"),
         keys: [Prefs.ocrJoinLines], place: .advanced)
+    case .screenshotReleaseOCR:
+      Self.row(
+        .screenshot, "空闲时释放识字模型",
+        LocalizedStringResource("search.screenshot.releaseOCR", defaultValue: "识字,OCR,模型,空闲,释放,内存"),
+        keys: [Prefs.ocrReleaseWhenIdle], place: .advanced)
     case .screenshotKeys:
       Self.row(
         .screenshot, "框选、标注、长截图和录屏的按键",

@@ -7855,6 +7855,23 @@
         }
       }
     },
+    "search.screenshot.releaseOCR" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capture Text,OCR,Model,Idle,Release,Memory"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "识字,OCR,模型,空闲,释放,内存"
+          }
+        }
+      }
+    },
     "search.screenshot.saveFolder" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -39804,6 +39821,16 @@
         }
       }
     },
+    "空闲时释放识字模型" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Release the OCR model when idle"
+          }
+        }
+      }
+    },
     "窄" : {
       "localizations" : {
         "en" : {
@@ -47632,6 +47659,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Panel size"
+          }
+        }
+      }
+    },
+    "面板收起两分钟后释放模型占用的内存，下次识字时要重新加载。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After panels have been closed for 2 minutes, this frees the memory used by the model. The next text recognition takes longer because the model has to reload."
           }
         }
       }

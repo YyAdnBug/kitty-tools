@@ -1,7 +1,7 @@
 // 图片文字识别（Vision，设备端）：剪贴板图片（让截图里的文字能被搜索到）、截图翻译、识字、一键打码共用；识字还认二维码 / 条码。
 // 剪贴板图片的后台识字放在子进程里（第二轮体检 M2，文件末尾「子进程识字」）：识字模型一加载就常驻 45–52 MB，
 // 让它跟着子进程退掉；截图翻译、识字、钉图这些当场要结果的照旧在进程内识——连着识的时候模型留着（热的 0.2 s，
-// 重新加载 0.4–0.6 s），闲下来由空闲回收放掉（「放掉识字模型」一节，2026-10-07）。
+// 重新加载 0.4–0.6 s）；截图或翻译启用时提前加载，只有打开空闲卸载才由空闲回收放掉（「放掉识字模型」一节）。
 // 分段（体检 A32）：先把 Vision 拆开的同一行接回去，再按行框的纵向间距、句末短行和列表记号切段，段内的行按中日文 / 其它文字的规则接起来；截图翻译总是按段送去翻，
 // 识字按设置 › 截图的开关；翻译的「把同一段里的换行接起来」调这里的 joiningLines（纯文本按空行分段），段内接行和识字同一个 joinLine。
 
@@ -57,6 +57,7 @@ nonisolated enum OCR {
   /// 一键打码（2026-11-12 拍板 C5）：识字后每一行里要打码的那几段（Redaction.ranges）各自的框（归一化、原点左下，
   /// 同 Vision）；识别失败 nil、没找到 []。按候选文字里的字符范围取框，不按整行
   @concurrent static func redactionBoxes(in image: CGImage) async -> [CGRect]? {
+    await foreground.beginUse()?.value
     enter()
     defer { leave() }
     guard let observations = try? await request().perform(on: image) else { return nil }
@@ -436,6 +437,40 @@ nonisolated enum OCR {
     .joined(separator: "\n")
   }
 
+  // MARK: 本次运行的前台识字模型（不同于按系统版本编译的磁盘缓存）
+
+  @MainActor static let foreground = ForegroundSession()
+
+  @MainActor final class ForegroundSession {
+    private var claimed = false
+    private var warming: Task<Void, Never>?
+
+    /// 预热和真实请求谁先到谁加载。空闲回收不重置：放掉后等真实请求，不因偏好通知而重新加载。
+    func warmIfUnused(_ work: @escaping @MainActor () async -> Void) {
+      guard !claimed else { return }
+      claimed = true
+      warming = Task(priority: .utility) {
+        await work()
+        warming = nil
+      }
+    }
+
+    /// 如果合成图正在识，让真实请求异步等它；反之不补跑合成图。
+    func beginUse() -> Task<Void, Never>? {
+      claimed = true
+      return warming
+    }
+  }
+
+  /// 和截图识字一样，先找码再识字；只用内存里的合成图，不碰屏幕和剪贴板。
+  @concurrent static func warmForegroundModels() async -> Bool {
+    guard let sample = sampleImage() else { return false }
+    enter()
+    defer { leave() }  // 两种请求之间也不能让空闲回收放掉模型
+    _ = await barcodes(in: sample)
+    return await recognizeLines(in: sample)?.isEmpty == false
+  }
+
   // MARK: 准备识字模型（第一次识字）
 
   /// 系统第一次给本 App 识字时要先把识字模型现场编译一遍，存进 ~/Library/Caches/<bundle id>/com.apple.e5rt.e5bundlecache/
@@ -487,7 +522,7 @@ nonisolated enum OCR {
       preparing
       ?? Task {
         defer { preparing = nil }
-        guard let sample = writeSample() else { return }
+        guard let sample = await writeSample() else { return }
         defer { try? FileManager.default.removeItem(at: sample) }
         let result = try? await Subprocess.run(
           executable, [helperFlag, sample.path],
@@ -503,9 +538,8 @@ nonisolated enum OCR {
     await task.value
   }
 
-  /// 白底黑字「Kitty」的小图，写进临时目录（子进程肯识的两处之一）。得真识得出字：空白图子进程照样成功退出，
-  /// 却只编了文字检测、没编识字的模型（ScreenshotTests.preparesModelOnce 锁住）
-  static func writeSample() -> URL? {
+  /// 两种准备共用白底黑字的小图。空白图只能加载文字检测，不能加载识字的模型。
+  private static func sampleImage() -> CGImage? {
     guard
       let context = CGContext(
         data: nil, width: 240, height: 80, bitsPerComponent: 8, bytesPerRow: 0,
@@ -524,9 +558,14 @@ nonisolated enum OCR {
         ]))
     context.textPosition = CGPoint(x: 20, y: 24)
     CTLineDraw(line, context)
+    return context.makeImage()
+  }
+
+  /// 只有子进程要读文件，写进它肯读的临时目录。
+  @concurrent static func writeSample() async -> URL? {
     let url = FileManager.default.temporaryDirectory.appending(
       path: "kitty-ocr-sample-\(UUID().uuidString).png")
-    guard let image = context.makeImage(),
+    guard let image = sampleImage(),
       let destination = CGImageDestinationCreateWithURL(
         url as CFURL, UTType.png.identifier as CFString, 1, nil)
     else { return nil }
