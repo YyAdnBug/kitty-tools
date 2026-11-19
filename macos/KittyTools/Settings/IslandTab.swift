@@ -89,14 +89,20 @@ struct IslandTab: View {
   private var form: some View {
     Form {
       Section {
-        Toggle(isOn: $notchClicks) {
-          Text("点刘海打开")
-          Text("停在刘海上会鼓起一点，点一下或者两指往下滑打开：刘海两边挂着东西时是它的卡片，没有时是快捷动作")
+        SettingRow(
+          title: "点刘海打开", subtitle: "停上去鼓起一点，点一下打开",
+          info: "两指往下滑也行；刘海两边挂着东西时打开它的卡片，没有时是快捷动作。装了别的刘海 App 时可以关掉：提示和挂在刘海两边的录制计时这些照常，快捷键照样能叫出快捷动作。"
+        ) {
+          Toggle("点刘海打开", isOn: $notchClicks)
+            .toggleStyle(.switch)
         }
         .settingsAnchor(.islandNotchClicks)
-        Toggle(isOn: $hoverExpands) {
-          Text("停在刘海上自动展开")
-          Text("关着时停上去只鼓起一点、点一下才展开；打开后刘海两边挂着东西时，指针停一下就展开成卡片")
+        SettingRow(
+          title: "停在刘海上自动展开", subtitle: "停一下就展开，不用点",
+          info: "关着时停上去只鼓起一点、点一下才展开；打开后刘海两边挂着东西时，指针停一下就展开成卡片。"
+        ) {
+          Toggle("停在刘海上自动展开", isOn: $hoverExpands)
+            .toggleStyle(.switch)
         }
         .settingsAnchor(.islandHoverExpands)
         Picker("停多久展开", selection: $hoverDelay) {
@@ -106,16 +112,17 @@ struct IslandTab: View {
         }
         .disabled(!hoverExpands)
         .settingsAnchor(.islandHoverDelay)
-        Toggle(isOn: $showsHistory) {
-          Text("列出最近的提示")
-          Text("列在快捷动作下面：本次启动以来最近 10 条，新的在前；不列也不影响提示照常弹出")
+        SettingRow(
+          title: "列出最近的提示", subtitle: "快捷动作下面列最近 10 条",
+          info: "本次启动以来的，新的在前；不列也不影响提示照常弹出。"
+        ) {
+          Toggle("列出最近的提示", isOn: $showsHistory)
+            .toggleStyle(.switch)
         }
         .settingsAnchor(.islandShowsHistory)
         pushRow(.islandActions, value: IslandActionsPage.value(order: order, off: offText))
       } header: {
         Text("点刘海")
-      } footer: {
-        SectionFootnote("装了别的刘海 App 时可以关掉「点刘海打开」：提示和挂在刘海两边的录制计时这些照常，快捷键照样能叫出快捷动作。")
       }
       Section("活动") {
         pushRow(.islandMedia, value: IslandMediaPage.value(on: nowPlaying))
@@ -161,35 +168,43 @@ struct IslandTab: View {
   /// 「高级…」表单：提示停多久、触感、模糊、细边、全屏时藏起来、截图录屏时不显示
   @ViewBuilder private var advanced: some View {
     Section {
-      Picker(selection: $noticeLength) {
-        Text("短").tag(Island.DwellLength.short.rawValue)
-        Text("标准").tag(Island.DwellLength.standard.rawValue)
-        Text("长").tag(Island.DwellLength.long.rawValue)
-      } label: {
-        Text("提示停多久")
-        Text("「已复制」这类提示在刘海上停多久；带按钮的、出错的跟着变长变短，进行中的不算")
+      SettingRow(
+        title: "提示停多久", subtitle: "「已复制」这类提示停多久",
+        info: "带按钮的、出错的跟着变长变短，进行中的不算。"
+      ) {
+        Picker("提示停多久", selection: $noticeLength) {
+          Text("短").tag(Island.DwellLength.short.rawValue)
+          Text("标准").tag(Island.DwellLength.standard.rawValue)
+          Text("长").tag(Island.DwellLength.long.rawValue)
+        }
       }
       .settingsAnchor(.islandNoticeLength)
       Toggle(isOn: $haptics) {
         Text("触感反馈")
-        Text("滑动切歌、展开卡片、进度条拖到头时，触控板轻轻一下")
+        Text("切歌、展开时触控板轻轻一下")
       }
       .settingsAnchor(.islandHaptics)
     }
     Section {
-      Toggle(isOn: $blur) {
-        Text("展开时模糊四周")
-        Text("卡片背后的东西越靠近卡片越模糊；系统设置里开着「降低透明度」时不模糊")
+      SettingRow(
+        title: "展开时模糊四周", subtitle: "卡片背后越靠近越模糊",
+        info: "系统设置里开着「降低透明度」时不模糊。"
+      ) {
+        Toggle("展开时模糊四周", isOn: $blur)
+          .toggleStyle(.switch)
       }
       .settingsAnchor(.islandBlur)
       Toggle(isOn: $outlined) {
         Text("描一圈细边")
-        Text("刘海两边伸出来、展开时，形体外面一圈淡淡的边，深色桌面上也看得清轮廓")
+        Text("深色桌面上也看得清轮廓")
       }
       .settingsAnchor(.islandOutlined)
-      Toggle(isOn: $hidesInFullScreen) {
-        Text("全屏时藏起来")
-        Text("刘海那块屏上的 App 全屏时（看视频、玩游戏），刘海岛和它的提示都不出现")
+      SettingRow(
+        title: "全屏时藏起来", subtitle: "刘海那块屏全屏时不出现",
+        info: "看视频、玩游戏时，刘海岛和它的提示都不出现。"
+      ) {
+        Toggle("全屏时藏起来", isOn: $hidesInFullScreen)
+          .toggleStyle(.switch)
       }
       .settingsAnchor(.islandHidesInFullScreen)
       Toggle(isOn: $hidesFromCapture) {

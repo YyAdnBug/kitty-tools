@@ -29,18 +29,24 @@ struct RecordTab: View {
     Form {
       Section { FeatureToggle(feature: .record, inPage: true) }
       Section {
-        SaveDirectoryRow(title: "保存到")
-          .settingsAnchor(.recordSaveFolder)
-      } footer: {
-        SectionFootnote("和 设置 › 截图 的「快速保存到」是同一个文件夹，文件名是「录屏 日期 时间.mp4」「录音 日期 时间.m4a」。")
+        SaveDirectoryRow(
+          title: "保存到", subtitle: "和截图的「快速保存到」是同一个",
+          info: "文件名是「录屏 日期 时间.mp4」「录音 日期 时间.m4a」。"
+        )
+        .settingsAnchor(.recordSaveFolder)
       }
       Group {
         Section {
-          Picker("清晰度", selection: $sharpness) {
-            Text("原始").tag(ScreenRecorder.Sharpness.original)
-            Text("标准").tag(ScreenRecorder.Sharpness.standard)
+          SettingRow(
+            title: "清晰度", subtitle: "标准：文件小一半，小字糊一些",
+            info: "标准清晰度在高分屏上宽高各减半。录好的也可以在角落的缩略图上点「压缩」另存一份小的。"
+          ) {
+            Picker("清晰度", selection: $sharpness) {
+              Text("原始").tag(ScreenRecorder.Sharpness.original)
+              Text("标准").tag(ScreenRecorder.Sharpness.standard)
+            }
+            .pickerStyle(.segmented)
           }
-          .pickerStyle(.segmented)
           .settingsAnchor(.recordSharpness)
           Picker("开始前倒数", selection: $countdown) {
             Text("不倒数").tag(0)
@@ -50,41 +56,42 @@ struct RecordTab: View {
           .settingsAnchor(.recordCountdown)
           Toggle("显示光标", isOn: $showsCursor)
             .settingsAnchor(.recordCursor)
-          Picker("麦克风", selection: $microphoneDevice) {
-            Text("跟随系统输入").tag(String?.none)
-            ForEach(microphones, id: \.id) { Text(verbatim: $0.name).tag(String?.some($0.id)) }
-            // 选过的那个现在没接着：照样列出来（不然选单是空的、像被清掉了）
-            if let microphoneDevice, !microphones.contains(where: { $0.id == microphoneDevice }) {
-              Text("选过的麦克风（没接着）").tag(String?.some(microphoneDevice))
+          SettingRow(
+            title: "麦克风", subtitle: "录制条上的麦克风开着时用哪个",
+            info: "选的那个没接着时这次用系统默认的；录音照旧用系统默认的输入。"
+          ) {
+            Picker("麦克风", selection: $microphoneDevice) {
+              Text("跟随系统输入").tag(String?.none)
+              ForEach(microphones, id: \.id) { Text(verbatim: $0.name).tag(String?.some($0.id)) }
+              // 选过的那个现在没接着：照样列出来（不然选单是空的、像被清掉了）
+              if let microphoneDevice, !microphones.contains(where: { $0.id == microphoneDevice }) {
+                Text("选过的麦克风（没接着）").tag(String?.some(microphoneDevice))
+              }
             }
           }
           .settingsAnchor(.recordMicrophone)
         } header: {
           Text(ScreenRecorder.Medium.screen.nounResource)
-        } footer: {
-          SectionFootnote(
-            "文件嫌大：标准清晰度在高分屏上宽高各减半，文件小一半多，小字会糊一些。录好的也可以在角落的缩略图上点「压缩」另存一份小的。麦克风：录制条上的麦克风开着时录哪一个，选的那个没接着时这次用系统默认的；录音照旧用系统默认的输入。"
-          )
         }
         Section {
-          Picker("来源", selection: $audioSource) {
-            Text("麦克风").tag(AudioRecorder.Source.microphone)
-            Text("系统声音").tag(AudioRecorder.Source.system)
-            Text("两者").tag(AudioRecorder.Source.both)
+          SettingRow(title: "来源", info: "录系统声音时菜单栏会出现屏幕录制指示；锁屏会停止；不能暂停。") {
+            Picker("来源", selection: $audioSource) {
+              Text("麦克风").tag(AudioRecorder.Source.microphone)
+              Text("系统声音").tag(AudioRecorder.Source.system)
+              Text("两者").tag(AudioRecorder.Source.both)
+            }
+            .pickerStyle(.segmented)
           }
-          .pickerStyle(.segmented)
           .settingsAnchor(.recordAudioSource)
         } header: {
           Text(ScreenRecorder.Medium.audio.nounResource)
-        } footer: {
-          SectionFootnote("录系统声音时菜单栏会出现屏幕录制指示；锁屏会停止；不能暂停。")
         }
         Section {
-          LabeledContent {
+          SettingRow(
+            title: "录屏和录音的按键", subtitle: "↩ 开始，再按一次快捷键停止",
+            info: "框选和截图一样，双击选区也开始，Esc 取消。"
+          ) {
             ShortcutsButton()
-          } label: {
-            Text("录屏和录音的按键")
-            Text("框选和截图一样，↩ 或双击选区开始，Esc 取消；录着时再按一次快捷键停止并保存")
           }
           .settingsAnchor(.recordKeys)
         }
@@ -104,41 +111,45 @@ struct RecordTab: View {
   /// 「高级…」表单：帧率、编码、显示按键时；录音的立即开始
   @ViewBuilder private var advanced: some View {
     Section {
-      Picker("帧率", selection: $frameRate) {
-        Text("30 fps").tag(30)
-        Text("60 fps").tag(60)
+      SettingRow(title: "帧率", info: "60 fps 更顺，文件大约大一半；大屏上可能录不满 60。") {
+        Picker("帧率", selection: $frameRate) {
+          Text("30 fps").tag(30)
+          Text("60 fps").tag(60)
+        }
+        .pickerStyle(.segmented)
       }
-      .pickerStyle(.segmented)
       .settingsAnchor(.recordFrameRate)
-      Picker("编码", selection: $codec) {
-        Text("H.264").tag(ScreenRecorder.Codec.h264)
-        Text("HEVC").tag(ScreenRecorder.Codec.hevc)
+      SettingRow(title: "编码", info: "HEVC 同样的画面小三分之一左右，部分 App 和旧设备可能放不了。") {
+        Picker("编码", selection: $codec) {
+          Text("H.264").tag(ScreenRecorder.Codec.h264)
+          Text("HEVC").tag(ScreenRecorder.Codec.hevc)
+        }
+        .pickerStyle(.segmented)
       }
-      .pickerStyle(.segmented)
       .settingsAnchor(.recordCodec)
-      Picker("显示按键时", selection: $shortcutsOnly) {
-        Text("全部按键").tag(false)
-        Text("只显示快捷键").tag(true)
+      SettingRow(title: "显示按键时", info: "只显示快捷键：带 ⌘ ⌃ ⌥ 的组合键、Esc 和 F 键才进画面，打字不显示。") {
+        Picker("显示按键时", selection: $shortcutsOnly) {
+          Text("全部按键").tag(false)
+          Text("只显示快捷键").tag(true)
+        }
+        .pickerStyle(.segmented)
       }
-      .pickerStyle(.segmented)
       .settingsAnchor(.recordKeysShown)
     } header: {
       Text(ScreenRecorder.Medium.screen.nounResource)
-    } footer: {
-      SectionFootnote(
-        "60 fps 更顺，文件大约大一半；大屏上可能录不满 60。HEVC 同样的画面小三分之一左右，部分 App 和旧设备可能放不了。只显示快捷键：带 ⌘ ⌃ ⌥ 的组合键、Esc 和 F 键才进画面，打字不显示。"
-      )
     }
     .gated(by: .record)
     Section {
-      Toggle("按快捷键后立即开始录音", isOn: $startsImmediately)
-        .settingsAnchor(.recordStartsImmediately)
+      SettingRow(
+        title: "按快捷键后立即开始录音", subtitle: "关着时先出录音控制条",
+        info: "按快捷键（或点菜单栏、启动器里的「录音」）先在屏幕底部打开录音控制条，点 ● 或再按一次才开始录。"
+      ) {
+        Toggle("按快捷键后立即开始录音", isOn: $startsImmediately)
+          .toggleStyle(.switch)
+      }
+      .settingsAnchor(.recordStartsImmediately)
     } header: {
       Text(ScreenRecorder.Medium.audio.nounResource)
-    } footer: {
-      SectionFootnote(
-        "关着时，按快捷键（或点菜单栏、启动器里的「录音」）先在屏幕底部打开录音控制条，点 ● 或再按一次才开始录。"
-      )
     }
     .gated(by: .record)
   }

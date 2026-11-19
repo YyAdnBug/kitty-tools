@@ -80,24 +80,23 @@ struct NotesTab: View {
       Group {
         Section {
           // 横排单选包进 LabeledContent：贴着右边线
-          radios("正文字号", "全部便签窗口、屏幕边缘和浮在屏幕上的便签里正文的大小", selection: $fontSize) {
+          radios("正文字号", "所有便签里正文的大小", selection: $fontSize) {
             ForEach(Prefs.notesFontSizeChoices, id: \.self) {
               Text(Self.fontTitles[$0] ?? "\(String($0))").tag($0)
             }
           }
           .settingsAnchor(.notesFontSize)
-          radios("行距", "全部便签窗口、屏幕边缘和浮在屏幕上的便签里正文一行一行之间隔多远", selection: $lineSpacing) {
+          radios("行距", "所有便签里正文的行距", selection: $lineSpacing) {
             ForEach(NoteStyles.Spacing.allCases, id: \.self) { Text($0.title).tag($0) }
           }
           .settingsAnchor(.notesLineSpacing)
-          Toggle(isOn: $markdown) {
-            Text("Markdown 样式")
-            // verbatim：SwiftUI 的 Text 自己会把字面量里的 ** ` [] 当 Markdown 画掉，这里要原样写给人看
-            Text(
-              verbatim: String(
-                localized:
-                  "# 标题、**粗体**、*斜体*、`代码`、[链接](地址)、三个反引号围起来的代码块，这些写法直接显示成样式，标记只在光标所在的那一行露出来"
-              ))
+          // ⓘ 里的字照原样画（InfoButton 用 Text(plain:)，不会把 ** ` [] 当 Markdown 画掉）
+          SettingRow(
+            title: "Markdown 样式", subtitle: "写法显示成样式，光标那行露出标记",
+            info: "# 标题、**粗体**、*斜体*、`代码`、[链接](地址)、三个反引号围起来的代码块，这些写法直接显示成样式，标记只在光标所在的那一行露出来。"
+          ) {
+            Toggle("Markdown 样式", isOn: $markdown)
+              .toggleStyle(.switch)
           }
           .settingsAnchor(.notesMarkdown)
           LabeledContent {
@@ -128,30 +127,29 @@ struct NotesTab: View {
             .disabled(notes() == nil || isTransferring)
         } label: {
           Text("导出为 Markdown")
-          Text("每条便签一个 .md 文件，正文里的图片放在旁边的 attachments 文件夹")
+          Text("每条一个 .md 文件，图片放在旁边")
         }
         .settingsAnchor(.notesExport)
-        LabeledContent {
+        SettingRow(
+          title: "从 Markdown 导入", subtitle: "导回导出过的不会重复", info: "别处的 .md 文件每个变成一条新便签。"
+        ) {
           Button("导入…") { importMarkdown() }
             .disabled(notes() == nil || isTransferring)
-        } label: {
-          Text("从 Markdown 导入")
-          Text("导回导出过的文件夹不会重复；别处的 .md 文件每个变成一条新便签")
         }
         .settingsAnchor(.notesImport)
         LabeledContent {
           ShortcutsButton()
         } label: {
           Text("便签的按键")
-          Text("快速记一条、屏幕边缘的便签和全部便签窗口里按什么键")
+          Text("快速记一条和便签窗口里的按键")
         }
         .gated(by: .notes)
         .settingsAnchor(.notesKeys)
       } header: {
-        Text("数据")
-      } footer: {
-        SectionFootnote(
-          "便签存在这台 Mac 上，和剪贴板历史分开：清空历史、保留天数都碰不到它。每天自动备份一份，留最近 7 份（正文里的图片跟着一起备）。删掉的便签在「最近删除」里留 \(NoteStore.trashDays) 天。设置 › 通用 › 备份与导出导入 带便签的文字、不带图片；要连图片一起带走、或者拿别的工具看，用上面的 Markdown 导出。在几台 Mac 之间同步到 设置 › 通用 › 同步 里选文件夹。"
+        InfoHeader(
+          "数据",
+          info:
+            "便签存在这台 Mac 上，和剪贴板历史分开：清空历史、保留天数都碰不到它。每天自动备份一份，留最近 7 份（正文里的图片跟着一起备）。删掉的便签在「最近删除」里留 \(NoteStore.trashDays) 天。设置 › 通用 › 备份与导出导入 带便签的文字、不带图片；要连图片一起带走、或者拿别的工具看，用上面的 Markdown 导出。在几台 Mac 之间同步到 设置 › 通用 › 同步 里选文件夹。"
         )
       }
       PluginAboutSection(plugin: .notes)
@@ -285,9 +283,13 @@ struct NotesTab: View {
 
   private var deck: some View {
     Section {
-      Toggle(isOn: $deckEnabled) {
-        Text("在屏幕边缘显示便签")
-        Text("有了第一条便签才出现；关掉后便签照样能从快捷键、启动器和全部便签窗口打开")
+      SettingRow(
+        title: "在屏幕边缘显示便签", subtitle: "有了第一条便签才出现",
+        info:
+          "关掉后便签照样能从快捷键、启动器和全部便签窗口打开。鼠标靠到屏幕边上的药丸就展开一列标签，点一张，便签从边缘滑出来。按住 ⌥ 拖药丸可以换边、换高度。右键一张标签可以直接固定、换颜色、浮到屏幕上、归档、删除；右键「+」或标签之间的空处有新建便签、全部便签和设置。打开的便签点别处就收起，固定（⌘P）之后不收。按住打开的便签侧边那张标签往外拖，它就浮在屏幕上、可以拉大小。浮着的便签一直在别的窗口上面；固定（⌘P）之后，重启还回到原处。"
+      ) {
+        Toggle("在屏幕边缘显示便签", isOn: $deckEnabled)
+          .toggleStyle(.switch)
       }
       .settingsAnchor(.notesDeck)
       Group {
@@ -339,7 +341,7 @@ struct NotesTab: View {
         .settingsAnchor(.notesDeckHidesPill)
         Toggle(isOn: $showsPreview) {
           Text("悬停预览")
-          Text("鼠标停在标签上时，旁边显示这条便签的开头几行")
+          Text("停在标签上时显示开头几行")
         }
         .disabled(opensOnHover)
         .settingsAnchor(.notesDeckPreview)
@@ -362,10 +364,6 @@ struct NotesTab: View {
         .settingsAnchor(.notesDeckNoteSize)
       }
       .disabled(!deckEnabled)
-    } footer: {
-      SectionFootnote(
-        "鼠标靠到屏幕边上的药丸就展开一列标签，点一张，便签从边缘滑出来。按住 ⌥ 拖药丸可以换边、换高度。右键一张标签可以直接固定、换颜色、浮到屏幕上、归档、删除；右键「+」或标签之间的空处有新建便签、全部便签和设置。打开的便签点别处就收起，固定（⌘P）之后不收。按住打开的便签侧边那张标签往外拖，它就浮在屏幕上、可以拉大小。浮着的便签一直在别的窗口上面；固定（⌘P）之后，重启还回到原处。"
-      )
     }
   }
 

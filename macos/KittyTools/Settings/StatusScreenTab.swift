@@ -36,6 +36,14 @@ struct StatusScreenTab: View {
   @State private var passcode = ""
   @State private var confirmation = ""
 
+  /// 「状态」组标题的 ⓘ：快捷键直接进入的 / 先选的（别写成三元式：抽字会漏）
+  private var listInfo: LocalizedStringResource {
+    if entersFirst {
+      return "拖动调整顺序，点一行编辑。排在最前面的状态就是全局快捷键进入的那个。至少留一个；删掉的自带状态可以从「+」里恢复。"
+    }
+    return "拖动调整顺序，点一行编辑。按全局快捷键选状态时，卡片也按这个顺序排。至少留一个；删掉的自带状态可以从「+」里恢复。"
+  }
+
   var body: some View {
     NavigationStack(path: Bindable(navigation).path) {
       VStack(spacing: 0) {
@@ -83,18 +91,11 @@ struct StatusScreenTab: View {
             addMenu(list, isFull: isFull)
           }
         } header: {
-          Text("状态")
+          InfoHeader("状态", info: listInfo)
             .settingsAnchor(.statusList)
         } footer: {
-          // 整句（不拼接）：快捷键直接进入的 / 先选的，满了的多一句
-          SectionFootnote(
-            entersFirst
-              ? isFull
-                ? "拖动调整顺序，点一行编辑。排在最前面的状态就是全局快捷键进入的那个。至少留一个；删掉的自带状态可以从「+」里恢复。最多 \(StatusPreset.maxCount) 个，已经满了，删掉一个才能再加。"
-                : "拖动调整顺序，点一行编辑。排在最前面的状态就是全局快捷键进入的那个。至少留一个；删掉的自带状态可以从「+」里恢复。"
-              : isFull
-                ? "拖动调整顺序，点一行编辑。按全局快捷键选状态时，卡片也按这个顺序排。至少留一个；删掉的自带状态可以从「+」里恢复。最多 \(StatusPreset.maxCount) 个，已经满了，删掉一个才能再加。"
-                : "拖动调整顺序，点一行编辑。按全局快捷键选状态时，卡片也按这个顺序排。至少留一个；删掉的自带状态可以从「+」里恢复。")
+          // 满了是状态，照旧写在页脚
+          if isFull { SectionFootnote("最多 \(StatusPreset.maxCount) 个，已经满了，删掉一个才能再加。") }
         }
         Section {
           Toggle(isOn: $entersFirst) {
@@ -103,22 +104,20 @@ struct StatusScreenTab: View {
           }
           .settingsAnchor(.statusEntersFirst)
         } header: {
-          Text("进入")
-        } footer: {
-          SectionFootnote("快捷键在 设置 › 快捷键 里设置，默认没有。在菜单栏、启动器里选一个状态，都是直接进入。")
+          InfoHeader("进入", info: "快捷键在 设置 › 快捷键 里设置，默认没有。在菜单栏、启动器里选一个状态，都是直接进入。")
         }
         Section {
-          Toggle(isOn: $animations) {
-            Text("告示上的动画")
-            Text("关掉后表情不动、进入时不做出场、屏幕边上不冒眼睛；标题照样晃一下")
+          SettingRow(
+            title: "告示上的动画", subtitle: "关掉后表情不动、不做出场",
+            info: "屏幕边上也不冒眼睛；标题照样晃一下。系统设置里打开了「减弱动态效果」时，这些动画都不做，标题也不晃。"
+          ) {
+            Toggle("告示上的动画", isOn: $animations)
+              .toggleStyle(.switch)
           }
           .settingsAnchor(.statusAnimations)
           EmojiPackToggle()
         } header: {
           Text("动画")
-        } footer: {
-          SectionFootnote(
-            "系统设置里打开了「减弱动态效果」时，这些动画都不做，标题也不晃。\(String(localized: EmojiPackToggle.footnote))")
         }
         Section {
           LabeledContent {
@@ -135,14 +134,15 @@ struct StatusScreenTab: View {
           .settingsAnchor(.statusExitHint)
           passcodeRow
         } header: {
-          Text(
+          InfoHeader(
             LocalizedStringResource(
               "statusScreen.exitSection", defaultValue: "退出",
-              comment: "设置 › 状态屏：怎么退出状态屏那一节（不是退出 App）"))
-        } footer: {
-          SectionFootnote(
-            "状态屏是告示加防误触，不是安全措施：没设退出密码时照着提示谁都能退出，设了也拦不住电源键、触控 ID 键和合盖。要防别人动电脑，进入之后再锁定屏幕（按一下触控 ID 键）：电脑照样不睡，回来解锁就结束——忘了退出密码也这样出来。"
+              comment: "设置 › 状态屏：怎么退出状态屏那一节（不是退出 App）"),
+            info:
+              "没设退出密码时照着提示谁都能退出，设了也拦不住电源键、触控 ID 键和合盖。要防别人动电脑，进入之后再锁定屏幕（按一下触控 ID 键）：电脑照样不睡，回来解锁就结束——忘了退出密码也这样出来。"
           )
+        } footer: {
+          SectionFootnote("状态屏是告示加防误触，不是安全措施。")
         }
       }
       .gated(by: .statusScreen)

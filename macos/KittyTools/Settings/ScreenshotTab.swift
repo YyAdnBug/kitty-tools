@@ -84,31 +84,38 @@ struct ScreenshotTab: View {
     Form {
       Section { FeatureToggle(feature: .screenshot, inPage: true) }
       Section {
-        SaveDirectoryRow(title: "快速保存到")
-          .settingsAnchor(.screenshotSaveFolder)
-      } footer: {
-        SectionFootnote(
-          "按 ⌘S 或工具栏的「存储」存到这里，文件名是「截图 日期 时间.png」，重名自动加序号。没选过时跟随系统截屏的存储位置。录屏、录音也存这里。"
+        SaveDirectoryRow(
+          title: "快速保存到", subtitle: "录屏、录音也存这里",
+          info: "按 ⌘S 或工具栏的「存储」存到这里，文件名是「截图 日期 时间.png」，重名自动加序号。没选过时跟随系统截屏的存储位置。"
         )
+        .settingsAnchor(.screenshotSaveFolder)
       }
       Group {
         Section {
-          Picker(selection: $copyAs) {
-            Text("图像").tag("image")
-            Text("PNG 文件").tag("file")
-          } label: {
-            NewTitle("截图拷贝为", page: .screenshot, fresh: navigation.fresh)
-            Text("选 PNG 文件时，剪贴板里是一个图片文件，和拷贝一个文件一样：能粘进聊天窗口和文件夹，只认文件的跨电脑剪贴板工具也传得过去；只收图像的程序粘不进去")
+          SettingRow(
+            title: "截图拷贝为", subtitle: "选 PNG 文件能粘进聊天和文件夹",
+            info: "选 PNG 文件时，剪贴板里是一个图片文件，和拷贝一个文件一样：只认文件的跨电脑剪贴板工具也传得过去；只收图像的程序粘不进去。",
+            isNew: WhatsNew.marks(section: "截图拷贝为", of: .screenshot, in: navigation.fresh)
+          ) {
+            Picker("截图拷贝为", selection: $copyAs) {
+              Text("图像").tag("image")
+              Text("PNG 文件").tag("file")
+            }
+            .pickerStyle(.segmented)
           }
-          .pickerStyle(.segmented)
           // 拨过这一行，「新」就算看过了（光点进这一页不算；WhatsNew）
           .onChange(of: copyAs) { WhatsNew.touch(section: "截图拷贝为", of: .screenshot) }
           .settingsAnchor(.screenshotCopyAs)
         }
         Section {
-          Picker("截完图放哪", selection: $placement) {
-            ForEach(Prefs.ShotPlacement.allCases, id: \.rawValue) { choice in
-              Text(choice.title).tag(choice.rawValue)
+          SettingRow(
+            title: "截完图放哪", subtitle: Self.placementSubtitle(placement),
+            info: "角落的缩略图可以拖出、钉图、存储。晾衣绳：鼠标停到菜单栏那一条上它就滑下来，单击拷贝、双击改标注、拖出去发一份，点右上角的叉取下；取下不删历史。"
+          ) {
+            Picker("截完图放哪", selection: $placement) {
+              ForEach(Prefs.ShotPlacement.allCases, id: \.rawValue) { choice in
+                Text(choice.title).tag(choice.rawValue)
+              }
             }
           }
           .settingsAnchor(.screenshotPlacement)
@@ -126,27 +133,21 @@ struct ScreenshotTab: View {
                 .font(.system(size: 11))
             }
           }
-        } footer: {
-          SectionFootnote(
-            placement == Prefs.ShotPlacement.clothesline.rawValue
-              ? "截完图挂到屏幕顶上的绳子上，最多 8 张：鼠标停到菜单栏那一条上它就滑下来，单击拷贝、双击改标注、拖出去发一份，点右上角的叉取下。取下不删历史。"
-              : "角落的缩略图可以拖出、钉图、存储；选「都不要」后截图只在右下角闪一下，仍然进历史。"
-          )
         }
         Section {
-          Toggle(isOn: $shutterSound) {
-            HStack(spacing: 6) {
-              Text("截图时播放快门声")
-              Button("试听", systemImage: "speaker.wave.2.fill") { FlyCard.playShutter() }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
-                .disabled(!shutterSound)
-                .help("试听快门声")
-            }
+          SettingRow(
+            title: "截图时播放快门声",
+            info: "拷贝、存储、钉图时响；还要 系统设置 › 声音 里的「播放用户界面音效」开着。截图翻译、识字不出声。"
+          ) {
+            Button("试听", systemImage: "speaker.wave.2.fill") { FlyCard.playShutter() }
+              .labelStyle(.iconOnly)
+              .buttonStyle(.borderless)
+              .disabled(!shutterSound)
+              .help("试听快门声")
+            Toggle("截图时播放快门声", isOn: $shutterSound)
+              .toggleStyle(.switch)
           }
           .settingsAnchor(.screenshotShutter)
-        } footer: {
-          SectionFootnote("拷贝、存储、钉图时响；还要 系统设置 › 声音 里的「播放用户界面音效」开着。截图翻译、识字不出声。")
         }
       }
       .gated(by: .screenshot)
@@ -177,7 +178,7 @@ struct ScreenshotTab: View {
             .pointerStyle(.link)
         } label: {
           Text("改按键")
-          Text("标注工具、钉图、长截图、识字、出图这些键能自己改")
+          Text("截图时的按键能自己改")
         }
         .settingsAnchor(.screenshotEditKeys)
       }
@@ -189,6 +190,15 @@ struct ScreenshotTab: View {
     }
     .formStyle(.grouped)
     .settingsScrollTarget()
+  }
+
+  /// 「截完图放哪」的副标题：跟着选的那一项（别写成三元式：抽字会漏）
+  static func placementSubtitle(_ placement: String) -> LocalizedStringResource {
+    switch Prefs.ShotPlacement(rawValue: placement) ?? .corner {
+    case .corner: return "角落留一张缩略图"
+    case .clothesline: return "挂到屏幕顶上的绳子上，最多 8 张"
+    case .none: return "只在右下角闪一下，照样进历史"
+    }
   }
 
   /// 「截图历史 ›」行尾：开着「30 天 · 2 GB」（一直留着、不限照写），关着「关」
@@ -203,8 +213,14 @@ struct ScreenshotTab: View {
       status: Self.historyValue(keeps: keepsHistory, days: historyDays, megabytes: historyMegabytes)
     ) {
       Section {
-        Toggle("保留截图历史", isOn: $keepsHistory)
-          .settingsAnchor(.screenshotHistory)
+        SettingRow(
+          title: "保留截图历史", subtitle: "能回头改标注、再钉一次",
+          info: "截图、长截图、录屏录音都留在这里；打码会直接打进存下的图。历史只在这台 Mac 上，不跟着同步。"
+        ) {
+          Toggle("保留截图历史", isOn: $keepsHistory)
+            .toggleStyle(.switch)
+        }
+        .settingsAnchor(.screenshotHistory)
         if keepsHistory {
           Picker("保留", selection: limited(days: true)) {
             ForEach([7, 30, 90, 0], id: \.self) { Text(Self.daysTitle($0)).tag($0) }
@@ -228,9 +244,7 @@ struct ScreenshotTab: View {
             .settingsAnchor(.screenshotHistoryClear)
         }
       } footer: {
-        SectionFootnote(
-          "截图、长截图、录屏录音都留在这里，能回头接着改标注（打码会直接打进存下的图）、再钉一次。超过保留期或占用的先删最旧的（已经存到文件夹里的文件不动）。历史只在这台 Mac 上，不跟着同步。"
-        )
+        SectionFootnote("超过保留期或占用时先删最旧的；存到文件夹里的不动。")
       }
     }
   }
@@ -238,50 +252,70 @@ struct ScreenshotTab: View {
   /// 「高级…」表单：框选时的细节、识别、钉图、识字
   @ViewBuilder private var advanced: some View {
     Section {
-      Toggle("截图带上鼠标指针", isOn: $cursor)
-        .settingsAnchor(.screenshotCursor)
-      Toggle("截图、录屏时隐藏桌面图标", isOn: $hidesDesktopIcons)
-        .settingsAnchor(.screenshotHideDesktop)
-    } footer: {
-      SectionFootnote(
-        "带上的是按快捷键那一刻的指针；识字、截图翻译不带。隐藏桌面图标：桌面上的文件不进截图和录屏，桌面本身照常；录屏中访达新弹出的菜单、窗口最多晚 1 秒才录进去。"
-      )
+      SettingRow(title: "截图带上鼠标指针", info: "带上的是按快捷键那一刻的指针；识字、截图翻译不带。") {
+        Toggle("截图带上鼠标指针", isOn: $cursor)
+          .toggleStyle(.switch)
+      }
+      .settingsAnchor(.screenshotCursor)
+      SettingRow(
+        title: "截图、录屏时隐藏桌面图标",
+        info: "桌面上的文件不进截图和录屏，桌面本身照常；录屏中访达新弹出的菜单、窗口最多晚 1 秒才录进去。"
+      ) {
+        Toggle("截图、录屏时隐藏桌面图标", isOn: $hidesDesktopIcons)
+          .toggleStyle(.switch)
+      }
+      .settingsAnchor(.screenshotHideDesktop)
     }
     .gated(by: .screenshot)
     Section {
-      Toggle(isOn: $showsHint) {
-        Text("框选时显示操作提示")
-        Text("刚开始框选时屏幕上方那一行：拖动框选、单击选中、双击直接拷贝这些，3 秒后自己淡出")
+      SettingRow(
+        title: "框选时显示操作提示", subtitle: "开始框选时屏幕上方的一行提示",
+        info: "拖动框选、单击选中、双击直接拷贝这些，3 秒后自己淡出。"
+      ) {
+        Toggle("框选时显示操作提示", isOn: $showsHint)
+          .toggleStyle(.switch)
       }
       .settingsAnchor(.screenshotHint)
-      Picker(selection: $loupe) {
-        ForEach(Prefs.Loupe.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
-      } label: {
-        Text("框选时的放大镜")
-        Text("色值在放大镜下面，按 C 拷贝。不显示色值时 C 不取色，标注里的吸管照常能取")
+      SettingRow(
+        title: "框选时的放大镜", subtitle: "按 C 拷贝放大镜下的色值",
+        info: "不显示色值时 C 不取色，标注里的吸管照常能取。"
+      ) {
+        Picker("框选时的放大镜", selection: $loupe) {
+          ForEach(Prefs.Loupe.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
+        }
       }
       .settingsAnchor(.screenshotLoupe)
-      Picker(selection: $toolbarAlign) {
-        Text("靠右").tag("right")
-        Text("居中").tag("center")
-      } label: {
-        Text("工具栏位置")
-        Text("框选完工具栏贴在选区下方，放不下时在上方。靠右时从左上往右下拖完，✓ 就在鼠标旁边；录屏的录制条也这样摆")
+      SettingRow(
+        title: "工具栏位置", subtitle: "框选完工具栏贴在选区下方",
+        info: "放不下时在上方。靠右时从左上往右下拖完，✓ 就在鼠标旁边；录屏的录制条也这样摆。"
+      ) {
+        Picker("工具栏位置", selection: $toolbarAlign) {
+          Text("靠右").tag("right")
+          Text("居中").tag("center")
+        }
+        .pickerStyle(.segmented)
       }
-      .pickerStyle(.segmented)
       .settingsAnchor(.screenshotToolbar)
-      Toggle(isOn: $keepsColors) {
-        NewTitle("框选时保持屏幕原色", page: .screenshot, fresh: navigation.fresh)
-        Text("不压暗屏幕，悬停的窗口只描边、不染色，放大镜正中的像素也不染色。取色、对比颜色时打开")
+      SettingRow(
+        title: "框选时保持屏幕原色", subtitle: "不压暗、不染色，取色时打开",
+        info: "悬停的窗口只描边、不染色，放大镜正中的像素也不染色。",
+        isNew: WhatsNew.marks(section: "框选时保持屏幕原色", of: .screenshot, in: navigation.fresh)
+      ) {
+        Toggle("框选时保持屏幕原色", isOn: $keepsColors)
+          .toggleStyle(.switch)
       }
       // 拨过这一行，「新」就算看过了（光点进这一页不算；WhatsNew）
       .onChange(of: keepsColors) { WhatsNew.touch(section: "框选时保持屏幕原色", of: .screenshot) }
       .settingsAnchor(.screenshotKeepsColors)
-      Picker(selection: elementDetection) {
-        ForEach(ElementDetection.allCases, id: \.self) { Text(plain: $0.title).tag($0) }
-      } label: {
-        NewTitle("悬停时识别", page: .screenshot, fresh: navigation.fresh)
-        Text("鼠标停在侧栏、列表、按钮这些上面就框出那一块，单击截下；滚轮往上换大一块、往下换小一块，Tab 只认整扇窗口。游戏这类自己画界面的认不出来，照旧只认窗口")
+      SettingRow(
+        title: "悬停时识别", subtitle: "停在侧栏、按钮上就框出那一块",
+        info:
+          "单击截下；滚轮往上换大一块、往下换小一块，Tab 只认整扇窗口；游戏这类自己画界面的认不出来。选「连网页里的也认」时，第一次停到浏览器或用网页技术做的 App 上会请它打开辅助功能（只有位置和名字的那一档），一直开到它退出，可能让它稍慢一点。",
+        isNew: WhatsNew.marks(section: "悬停时识别", of: .screenshot, in: navigation.fresh)
+      ) {
+        Picker("悬停时识别", selection: elementDetection) {
+          ForEach(ElementDetection.allCases, id: \.self) { Text(plain: $0.title).tag($0) }
+        }
       }
       // 拨过这一行，「新」就算看过了（0.10.0 的「也认网页里的元素」并进了这一行）
       .onChange(of: ElementDetection(finds: findsElements, web: findsWebElements)) {
@@ -294,26 +328,29 @@ struct ScreenshotTab: View {
           symbol: "hand.raised.fill", color: Style.Family.command, granted: trusted
         ) { Permissions.grant(.accessibility) }
       }
-    } footer: {
-      SectionFootnote(
-        "选「连网页里的也认」时：浏览器和一部分用网页技术做的 App 不主动交出网页里的元素，第一次停到它上面时请它打开辅助功能（只有位置和名字的那一档），一直开到它退出，可能让它稍慢一点。"
-      )
     }
     .gated(by: .screenshot)
     Section {
-      Toggle(isOn: $pinSelectsText) {
-        Text("钉图上的字可以直接选")
-        Text("鼠标停到钉图上时认出图里的字，在字上拖动就是选字，⌘C 拷贝。空白处照旧拖着挪，按住 ⌥ 在哪都能挪")
+      SettingRow(
+        title: "钉图上的字可以直接选", subtitle: "在钉图的字上拖动就是选字",
+        info: "⌘C 拷贝。空白处照旧拖着挪，按住 ⌥ 在哪都能挪。"
+      ) {
+        Toggle("钉图上的字可以直接选", isOn: $pinSelectsText)
+          .toggleStyle(.switch)
       }
       .settingsAnchor(.screenshotPinText)
     }
     .gated(by: .screenshot)
     Section {
-      Toggle("识字后把同一段里的换行接起来", isOn: $joinLines)
-        .settingsAnchor(.screenshotJoinLines)
+      SettingRow(
+        title: "识字后把同一段里的换行接起来",
+        info: "同一段里的行接起来，段和段之间保留换行：中文、日文的行直接接上，其它文字之间加空格。截图翻译总是这样接。框选里有二维码或条码时复制它的内容。"
+      ) {
+        Toggle("识字后把同一段里的换行接起来", isOn: $joinLines)
+          .toggleStyle(.switch)
+      }
+      .settingsAnchor(.screenshotJoinLines)
       JoinLinesPreview(joins: joinLines)
-    } footer: {
-      SectionFootnote("同一段里的行接起来，段和段之间保留换行：中文、日文的行直接接上，其它文字之间加空格。截图翻译总是这样接。框选里有二维码或条码时复制它的内容。")
     }
     .gated(by: .screenshot)
   }
@@ -424,6 +461,9 @@ struct ScreenshotTab: View {
 /// 问一句名字、要一个图标就能把设置窗卡住）：名字是选的那一刻取了存下的，图标用符号
 struct SaveDirectoryRow: View {
   let title: LocalizedStringResource
+  /// 一句副标题、行尾 ⓘ（设置改版 S5）
+  var subtitle: LocalizedStringResource? = nil
+  var info: LocalizedStringResource? = nil
   /// 选过的文件夹（没选过 = nil，跟随系统截屏的存储位置）；实际位置按 ScreenshotOutput.directory 算（有兜底）
   @AppStorage(Prefs.screenshotSaveDirectory) private var savedDirectory: String?
   /// 它在访达里的名字（选的那一刻存下的）
@@ -432,6 +472,7 @@ struct SaveDirectoryRow: View {
   var body: some View {
     LabeledContent {
       HStack(spacing: 8) {
+        if let info { InfoButton(info, about: title) }
         // 没选过的是系统截屏的存储位置（多半是桌面，在本机）：现取。ponytail: 它也能在 ⌘⇧5 里设成网络盘，那时这里会卡，
         // 升级路径见 ScreenshotOutput.saveFolderName
         let path = savedDirectory ?? ScreenshotOutput.directory(saved: nil).path
@@ -456,6 +497,7 @@ struct SaveDirectoryRow: View {
       }
     } label: {
       Text(plain: title)
+      if let subtitle { Text(plain: subtitle) }
     }
   }
 

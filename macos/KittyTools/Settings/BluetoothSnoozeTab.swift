@@ -43,18 +43,23 @@ struct BluetoothSnoozeTab: View {
         LabeledContent(
           "上次", value: Self.history(held: held, reopen: reopen, offAt: offAt, onAt: onAt))
       } header: {
-        Text("睡眠关蓝牙")
-      } footer: {
-        SectionFootnote(
-          lidOnly
-            ? "电脑睡下去时关掉蓝牙：放进包里不会被蓝牙鼠标、键盘弄醒，睡着的 Mac 也不会抢走手机连着的耳机。接着外接显示器时不关；关机不管。开着盖子先睡着、之后才合上的那一次不关。"
-            : "电脑睡下去时关掉蓝牙：放进包里不会被蓝牙鼠标、键盘弄醒，睡着的 Mac 也不会抢走手机连着的耳机。接着外接显示器时不关；关机不管。")
+        InfoHeader("睡眠关蓝牙", info: snoozeInfo)
       }
       permissions(at: .bottom)
       PluginAboutSection(plugin: .bluetoothSnooze)
     }
     .formStyle(.grouped)
     .settingsScrollTarget()
+  }
+
+  /// 「睡眠关蓝牙」组标题的 ⓘ（只在合盖时关的多一句；别写成三元式：抽字会漏）
+  private var snoozeInfo: LocalizedStringResource {
+    if lidOnly {
+      return
+        "电脑睡下去时关掉蓝牙：放进包里不会被蓝牙鼠标、键盘弄醒，睡着的 Mac 也不会抢走手机连着的耳机。接着外接显示器时不关；关机不管。开着盖子先睡着、之后才合上的那一次不关。醒来后蓝牙键盘鼠标、耳机要几秒到几十秒才重新连上。"
+    }
+    return
+      "电脑睡下去时关掉蓝牙：放进包里不会被蓝牙鼠标、键盘弄醒，睡着的 Mac 也不会抢走手机连着的耳机。接着外接显示器时不关；关机不管。醒来后蓝牙键盘鼠标、耳机要几秒到几十秒才重新连上。"
   }
 
   /// 「权限」组（蓝牙）；没给时画在最上面（插件页改版 C2）。「去授权」：没问过弹系统框，问过了开系统设置
@@ -64,8 +69,7 @@ struct BluetoothSnoozeTab: View {
       granted: authorized.map { value in { (_: Permissions.Kind) -> Bool? in value } },
       grant: { _ in requestAccess() },
       footer: {
-        SectionFootnote(
-          "醒来后蓝牙键盘鼠标、耳机要几秒到几十秒才重新连上。睡着时蓝牙关着，用手表解锁这台 Mac、靠蓝牙的「查找」都用不了。")
+        SectionFootnote("睡着时蓝牙关着，用手表解锁这台 Mac、靠蓝牙的「查找」都用不了。")
       })
   }
 

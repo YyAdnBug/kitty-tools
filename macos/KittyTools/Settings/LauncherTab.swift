@@ -74,37 +74,42 @@ struct LauncherTab: View {
       Section { FeatureToggle(feature: .launcher, inPage: true) }
       Group {
         Section {
-          Toggle(isOn: $showsFrequent) {
-            NewTitle("空搜索框里列出常用", page: .launcher, fresh: navigation.fresh)
-            Text("关掉后打开启动器只有搜索框，有收藏时只列收藏；排序照样按用过的学")
+          SettingRow(
+            title: "空搜索框里列出常用", subtitle: "关掉后只有搜索框和收藏",
+            info:
+              "启动器按用过的次数和时间排序，空搜索框里先列收藏（⌘D 加入），再列「常用」。在「常用」里选中一项按 ⌘⌫ 可以单独移除，⌘Z 撤销。关掉后排序照样按用过的学。",
+            isNew: WhatsNew.marks(section: "空搜索框里列出常用", of: .launcher, in: navigation.fresh)
+          ) {
+            Toggle("空搜索框里列出常用", isOn: $showsFrequent)
+              .toggleStyle(.switch)
           }
           // 拨过这一行，「新」就算看过了（光点进这一页不算；WhatsNew）
           .onChange(of: showsFrequent) { WhatsNew.touch(section: "空搜索框里列出常用", of: .launcher) }
           .settingsAnchor(.launcherFrequent)
           // 快捷指令（X10）
-          Toggle(isOn: $searchesShortcuts) {
-            Text("搜索快捷指令")
-            Text("在启动器里打快捷指令的名字就能运行（不带输入）；改了快捷指令，下次打开启动器时跟上")
+          SettingRow(
+            title: "搜索快捷指令", subtitle: "打快捷指令的名字就能运行",
+            info: "不带输入；改了快捷指令，下次打开启动器时跟上。"
+          ) {
+            Toggle("搜索快捷指令", isOn: $searchesShortcuts)
+              .toggleStyle(.switch)
           }
           .settingsAnchor(.launcherShortcuts)
         } header: {
           Text("搜索")
-        } footer: {
-          SectionFootnote(
-            "启动器按用过的次数和时间排序，空搜索框里先列收藏（⌘D 加入），再列「常用」。在「常用」里选中一项按 ⌘⌫ 可以单独移除，⌘Z 撤销。")
         }
         Section {
           ForEach(browsers, id: \.browser.id) { browserRows($0.browser, app: $0.app) }
         } header: {
-          Text("浏览器书签与历史")
+          InfoHeader("浏览器书签与历史", info: "只列这台 Mac 上装了的浏览器。")
             .settingsAnchor(.launcherBrowsers)
-        } footer: {
-          SectionFootnote("只列本机装了的浏览器。")
         }
         Section {
           PermissionRow(
             title: "桌面、文稿、下载、iCloud 云盘", detail: "\(folderDetail)", symbol: "folder.fill",
-            color: Style.Family.general, granted: deniedFolders == []
+            color: Style.Family.general, granted: deniedFolders == [],
+            info:
+              "「open 文件名」搜文件并打开，「find 文件名」在访达中显示；不想被搜到的文件夹加到 系统设置 › Spotlight › 搜索隐私。"
           ) {
             if deniedFolders == nil {
               deniedFolders = Permissions.requestFolderAccess()
@@ -115,9 +120,6 @@ struct LauncherTab: View {
           .settingsAnchor(.launcherFileSearch)
         } header: {
           Text("文件搜索")
-        } footer: {
-          SectionFootnote(
-            "「open 文件名」搜文件并打开，「find 文件名」在访达中显示；不想被搜到的文件夹加到 系统设置 › Spotlight › 搜索隐私。")
         }
         Section {
           SettingsPushRow(
@@ -149,12 +151,11 @@ struct LauncherTab: View {
           LauncherCommandsRow(library: scripts)
         }
         Section {
-          LabeledContent {
+          SettingRow(
+            title: "启动器里的按键", subtitle: "↩ 打开，⌘K 看全部操作",
+            info: "能搜 App、系统设置、文件、书签、网址、路径、算式（也能换算单位和进制）和系统命令（lock、quit、kill 这些）。"
+          ) {
             ShortcutsButton()
-          } label: {
-            Text("启动器里的按键")
-            Text(
-              "搜 App、系统设置、文件、书签、网址、路径、算式（也能换算单位和进制）和系统命令（lock、quit、kill 这些），↩ 打开，⌘K 看这一项的全部操作")
           }
           .settingsAnchor(.launcherKeys)
         }
@@ -184,23 +185,25 @@ struct LauncherTab: View {
   /// 「高级…」表单：输入法、面板位置和大小、清空使用记录（管数据，功能关着也能点；确认框挂在表单里）
   @ViewBuilder private var advanced: some View {
     Section {
-      Toggle(isOn: $romanInput) {
-        Text("呼出时切到英文输入法")
-        Text("只在搜索框里生效，离开后恢复；要搜中文时先关掉")
+      SettingRow(title: "呼出时切到英文输入法", subtitle: "只在搜索框里，离开后恢复", info: "要搜中文时先关掉。") {
+        Toggle("呼出时切到英文输入法", isOn: $romanInput)
+          .toggleStyle(.switch)
       }
       .settingsAnchor(.launcherRomanInput)
-      Picker(selection: $panelPosition) {
-        Text("屏幕上方").tag("top")
-        Text("跟随鼠标").tag("mouse")
-        Text("上次位置").tag("last")
-      } label: {
-        Text("面板位置")
-        Text("屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边，上次位置是上次拖到的地方")
+      SettingRow(
+        title: "面板位置", info: "屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边，上次位置是上次拖到的地方。"
+      ) {
+        Picker("面板位置", selection: $panelPosition) {
+          Text("屏幕上方").tag("top")
+          Text("跟随鼠标").tag("mouse")
+          Text("上次位置").tag("last")
+        }
+        .pickerStyle(.segmented)
       }
-      .pickerStyle(.segmented)
       .settingsAnchor(.launcherPanelPosition)
       PanelSizeRow(
-        detail: "拖左右两边改宽度，拖下边改最多显示几行", widthKey: Prefs.launcherPanelWidth,
+        detail: "拖面板的边改大小", info: "拖左右两边改宽度，拖下边改最多显示几行。",
+        widthKey: Prefs.launcherPanelWidth,
         heightKey: Prefs.launcherPanelRows, defaultWidth: Style.listPanelWidth
       )
       .settingsAnchor(.launcherPanelSize)

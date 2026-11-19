@@ -39,12 +39,12 @@ struct IslandActionsPage: View {
         .scrollContentBackground(.hidden)
         .orderedListFrame(rows: actions.count)
       } header: {
-        Text("快捷动作")
-          .settingsAnchor(.islandActions)
-      } footer: {
-        SectionFootnote(
-          "点刘海、两指往下滑或者按「打开刘海岛」的快捷键（到 设置 › 快捷键 里设）叫出来的就是这一排。刘海两边挂着东西（在放歌、在录制）时，点刘海先展开它，再往下滑一次才是这一排。拖动调整先后。"
+        InfoHeader(
+          "快捷动作",
+          info:
+            "点刘海、两指往下滑或者按「打开刘海岛」的快捷键（到 设置 › 快捷键 里设）叫出来的就是这一排。刘海两边挂着东西（在放歌、在录制）时，点刘海先展开它，再往下滑一次才是这一排。拖动调整先后。"
         )
+        .settingsAnchor(.islandActions)
       }
     }
   }
@@ -137,9 +137,13 @@ struct IslandMediaPage: View {
   var body: some View {
     SubpageForm(subpage: .islandMedia, status: Self.value(on: nowPlaying)) {
       Section {
-        Toggle(isOn: $nowPlaying) {
-          Text("在刘海上显示正在播放")
-          Text("音乐、播客、浏览器里的视频：刘海两边是封面和跳动条，点开能暂停、切歌、拖进度")
+        SettingRow(
+          title: "在刘海上显示正在播放", subtitle: "刘海两边显示封面和跳动条",
+          info:
+            "音乐、播客、浏览器里的视频都认，点开能暂停、切歌、拖进度。读系统的「正在播放」要另起一个小进程（约 4 MB，没在放时不耗电），关掉就退出。暂停 30 秒后刘海两边收起；想接着放，点刘海再两指往下滑一次还找得到它。"
+        ) {
+          Toggle("在刘海上显示正在播放", isOn: $nowPlaying)
+            .toggleStyle(.switch)
         }
         // 0.9.0 的「新」挂在「正在播放」（WhatsNew 的 island-now-playing）：拨过这个开关才算看过
         .onChange(of: nowPlaying) { WhatsNew.touch(section: "正在播放", of: .island) }
@@ -159,21 +163,24 @@ struct IslandMediaPage: View {
             Text("封面的颜色：跟着每首歌的封面变")
           }
           .settingsAnchor(.islandMediaColor)
-          Toggle(isOn: $musicFavorite) {
-            Text("播放卡片上显示收藏按钮")
-            Text("放「音乐」时卡片右上角一颗心，点了收藏这首；第一次点会问能不能控制「音乐」")
+          SettingRow(
+            title: "播放卡片上显示收藏按钮", subtitle: "放「音乐」时卡片上一颗心",
+            info: "点了收藏这首；第一次点会问能不能控制「音乐」。"
+          ) {
+            Toggle("播放卡片上显示收藏按钮", isOn: $musicFavorite)
+              .toggleStyle(.switch)
           }
           .settingsAnchor(.islandMusicFavorite)
-          Toggle(isOn: $hidesWhenActive) {
-            Text("正在用放歌的 App 时不显示")
-            Text("切到正在放歌的 App（比如音乐、浏览器里放视频的那个）时，刘海两边收起；切走再出来")
+          SettingRow(
+            title: "正在用放歌的 App 时不显示", subtitle: "切到放歌的 App 时收起",
+            info: "比如音乐、浏览器里放视频的那个；切走再出来。"
+          ) {
+            Toggle("正在用放歌的 App 时不显示", isOn: $hidesWhenActive)
+              .toggleStyle(.switch)
           }
           .settingsAnchor(.islandHidesWhenActive)
         }
         .disabled(!nowPlaying)
-      } footer: {
-        SectionFootnote(
-          "读系统的「正在播放」要另起一个小进程（约 4 MB，没在放时不耗电），关掉就退出。暂停 30 秒后刘海两边收起；想接着放，点刘海再两指往下滑一次还找得到它。")
       }
     }
   }
@@ -229,7 +236,7 @@ struct IslandCalendarPage: View {
           }
         ) {
           Text("在刘海上显示下一个日程")
-          Text("开始前 10 分钟挂在刘海两边倒数，点开能加入会议、打开日历")
+          Text("开始前 10 分钟在刘海两边倒数")
         }
         .settingsAnchor(.islandNextEvent)
         // 开关关着、也没被拒绝过时不去查授权（截图自检画这一页不碰 EventKit）
@@ -259,9 +266,12 @@ struct IslandCalendarPage: View {
           Text("每到整点响一声轻的；开着专注模式、录屏或录音时不响")
         }
         .settingsAnchor(.islandHourlyChime)
-        Toggle(isOn: $monthCalendar) {
-          Text("点刘海打开时显示月历")
-          Text("快捷动作下面一块这个月的日历，点它打开「日历」；已经允许读取「日历」时，旁边还列今天的日程")
+        SettingRow(
+          title: "点刘海打开时显示月历", subtitle: "快捷动作下面一块这个月的日历",
+          info: "点它打开「日历」；已经允许读取「日历」时，旁边还列今天的日程。"
+        ) {
+          Toggle("点刘海打开时显示月历", isOn: $monthCalendar)
+            .toggleStyle(.switch)
         }
         .settingsAnchor(.islandCalendar)
         Toggle(isOn: $calendarDots) {
@@ -273,7 +283,7 @@ struct IslandCalendarPage: View {
         Group {
           Toggle(isOn: $calendarColors) {
             Text("用日历的颜色")
-            Text("刘海上的日程图标、月历旁今天的日程，用它所在日历的颜色")
+            Text("日程图标用它所在日历的颜色")
           }
           .settingsAnchor(.islandCalendarColors)
           Toggle(isOn: $showDeclined) {
@@ -296,9 +306,13 @@ struct IslandCalendarPage: View {
             }
           }
         }
+      } header: {
+        InfoHeader(
+          "日程",
+          info: "点开刘海上的日程能加入会议、打开日历。全天的、已拒绝的不算下一个日程；日程的内容只留在这台 Mac 上，不进最近的提示。月历本身不用授权。"
+        )
       } footer: {
-        SectionFootnote(
-          "读系统「日历」里的日程，打开「下一个日程」时会问一次授权。全天的、已拒绝的不算下一个日程；日程的内容只留在这台 Mac 上，不进最近的提示。月历本身不用授权。")
+        SectionFootnote("要「日历」授权，打开「下一个日程」时会问一次。")
       }
     }
     .task(id: "\(accessChecks)|\(nextEvent)|\(monthCalendar)") {
@@ -367,9 +381,12 @@ struct IslandLevelsPage: View {
     let state = Self.value(on: keyLevels, catches: !keyLevels || Self.catches(status))
     SubpageForm(subpage: .islandLevels, status: state.text, statusIsProblem: state.isProblem) {
       Section {
-        Toggle(isOn: $keyLevels) {
-          Text("按音量键、亮度键时显示在刘海上")
-          Text("系统自己的音量、亮度提示不再出现；按着 ⌥ 时照旧打开系统设置")
+        SettingRow(
+          title: "按音量键、亮度键时显示在刘海上", subtitle: "换掉系统自己的音量、亮度提示",
+          info: "按着 ⌥ 时照旧打开系统设置。只接音量 +、音量 −、静音、亮度 +、亮度 − 这五个键；锁屏时、接着调不了音量的输出设备或者外接显示器时，照旧是系统自己的提示。"
+        ) {
+          Toggle("按音量键、亮度键时显示在刘海上", isOn: $keyLevels)
+            .toggleStyle(.switch)
         }
         .settingsAnchor(.islandKeyLevels)
         Group {
@@ -401,8 +418,7 @@ struct IslandLevelsPage: View {
           Text(verbatim: warning).foregroundStyle(.orange)
         }
       } footer: {
-        SectionFootnote(
-          "只接音量 +、音量 −、静音、亮度 +、亮度 − 这五个键，要「辅助功能」授权。锁屏时、接着调不了音量的输出设备或者外接显示器时，照旧是系统自己的提示。")
+        SectionFootnote("要「辅助功能」授权。")
       }
     }
     .onReceive(
@@ -422,9 +438,13 @@ struct IslandFocusPage: View {
   var body: some View {
     SubpageForm(subpage: .islandFocus, status: IslandMediaPage.value(on: focus)) {
       Section {
-        Toggle(isOn: $focus) {
-          Text("在刘海上显示专注模式")
-          Text("打开、关掉、换模式时，刘海两边出 2 秒：模式的图标和名字")
+        SettingRow(
+          title: "在刘海上显示专注模式", subtitle: "换模式时在刘海两边显示 2 秒",
+          info:
+            "刘海两边显示模式的图标和名字；勿扰、睡眠、工作和自己建的模式都认。读的是系统日志里专注模式的切换记录，不要授权；开着时常驻一个约 4 MB 的小进程，这里和提醒都用不着时退出。"
+        ) {
+          Toggle("在刘海上显示专注模式", isOn: $focus)
+            .toggleStyle(.switch)
         }
         .settingsAnchor(.islandFocus)
         // 读不到系统日志（不是管理员账户、系统改了日志的写法）
@@ -432,9 +452,12 @@ struct IslandFocusPage: View {
           Text("读不到系统的专注模式，刘海上显示不了").foregroundStyle(.orange)
         }
         Group {
-          Toggle(isOn: $focusPinned) {
-            Text("开着时一直挂在刘海上")
-            Text("专注模式开着的这段时间，刘海左边一直有它的图标；放歌、倒数时先让给它们。点开能去专注模式设置")
+          SettingRow(
+            title: "开着时一直挂在刘海上", subtitle: "开着时刘海左边一直有它的图标",
+            info: "放歌、倒数时先让给它们；点开能去专注模式设置。"
+          ) {
+            Toggle("开着时一直挂在刘海上", isOn: $focusPinned)
+              .toggleStyle(.switch)
           }
           .settingsAnchor(.islandFocusPinned)
           Toggle(isOn: $focusSleepSound) {
@@ -447,16 +470,16 @@ struct IslandFocusPage: View {
             Text("专注模式开着、正在放歌时，刘海右边画模式的图标")
           }
           .settingsAnchor(.islandFocusWaveform)
-          Toggle(isOn: $focusQuiet) {
-            Text("专注模式时不弹系统提示")
-            Text("接上或拔掉电源、电量低到 20%、耳机连上、断网这几样不弹；10% 和音量、亮度照常")
+          SettingRow(
+            title: "专注模式时不弹系统提示", subtitle: "电源、电量、耳机、断网这几样不弹",
+            info: "10% 和音量、亮度照常。"
+          ) {
+            Toggle("专注模式时不弹系统提示", isOn: $focusQuiet)
+              .toggleStyle(.switch)
           }
           .settingsAnchor(.islandFocusQuiet)
         }
         .disabled(!focus)
-      } footer: {
-        SectionFootnote(
-          "勿扰、睡眠、工作和自己建的模式都认。读的是系统日志里专注模式的切换记录，不要授权；开着时常驻一个约 4 MB 的小进程，这里和提醒都用不着时退出。")
       }
     }
   }
@@ -508,8 +531,8 @@ struct IslandNoticesPage: View {
           Text("刘海两边出几秒：「低电量模式」和开 / 关")
         }
         .settingsAnchor(.islandNoticeLowPower)
-      } footer: {
-        SectionFootnote("有变化时在刘海岛上弹一下，同别的提示。没打开的不监听，也不要任何授权。")
+      } header: {
+        InfoHeader("提示这些变化", info: "有变化时在刘海岛上弹一下，同别的提示。没打开的不监听，也不要任何授权。")
       }
     }
   }

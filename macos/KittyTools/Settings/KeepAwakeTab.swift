@@ -42,10 +42,10 @@ struct KeepAwakeTab: View {
           }
         }
       } header: {
-        Text("现在")
-          .settingsAnchor(.keepAwakeNow)
-      } footer: {
-        SectionFootnote("也能在菜单栏、主界面里开，或者在启动器里输入「awake 2小时」「保持唤醒 到18点」。重启电脑、退出 Kitty Tools 后不再保持。")
+        InfoHeader(
+          "现在", info: "也能在菜单栏、主界面里开，或者在启动器里输入「awake 2小时」「保持唤醒 到18点」。重启电脑、退出 Kitty Tools 后不再保持。"
+        )
+        .settingsAnchor(.keepAwakeNow)
       }
       Section {
         Toggle(isOn: $display) {
@@ -78,11 +78,9 @@ struct KeepAwakeTab: View {
         .disabled(!schedule.isOn)
         .opacity(schedule.isOn ? 1 : Style.disabledOpacity)
       } header: {
-        Text("定时")
-      } footer: {
-        SectionFootnote(
-          "结束早于开始就是跨过半夜（22:00 到 2:00 管到第二天凌晨）。定时跟着这台 Mac，不同步。合上盖子时系统照样会睡（接着电源和外接显示器时除外）。"
-        )
+        InfoHeader(
+          "定时",
+          info: "结束早于开始就是跨过半夜（22:00 到 2:00 管到第二天凌晨）。定时跟着这台 Mac，不同步。合上盖子时系统照样会睡（接着电源和外接显示器时除外）。")
       }
       PluginAboutSection(plugin: .keepAwake)
     }

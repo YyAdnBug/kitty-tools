@@ -54,9 +54,12 @@ struct ScriptsSection: View {
 
   var body: some View {
     Section {
-      Toggle(isOn: $scriptsOn) {
-        Text("启用脚本命令")
-        Text("脚本文件夹里的每个脚本就是启动器里的一条命令")
+      SettingRow(
+        title: "启用脚本命令", subtitle: "每个脚本是启动器里的一条命令",
+        info: "从网上下载的脚本，第一次运行前会先给你看一眼全文。Kitty Tools 自带的大功能（便签、刘海岛这些）是插件，在 设置 › 全部插件 里添加。"
+      ) {
+        Toggle("启用脚本命令", isOn: $scriptsOn)
+          .toggleStyle(.switch)
       }
       // 拨过开关、新建过脚本，「新」就算看过了（光点进这一页不算；WhatsNew）
       .onChange(of: scriptsOn) { touchNew() }
@@ -67,14 +70,12 @@ struct ScriptsSection: View {
           navigation?.path = [SettingsSubpage.launcherScripts.route, ScriptGuidePage.route]
         }
         .settingsAnchor(.launcherScriptsGuide)
-        LabeledContent {
-          HStack {
-            Button("复制写法说明", action: copyGuide)
-            Button("从剪贴板新建", action: newFromClipboard)
-          }
-        } label: {
-          Text("让 AI 来写")
-          Text("把写法说明贴给你常用的 AI、在最后写上想做什么；它给的脚本复制下来，点「从剪贴板新建」")
+        SettingRow(
+          title: "让 AI 来写", subtitle: "把写法说明给 AI，再从剪贴板新建",
+          info: "把写法说明贴给你常用的 AI、在最后写上想做什么；它给的脚本复制下来，点「从剪贴板新建」。"
+        ) {
+          Button("复制写法说明", action: copyGuide)
+          Button("从剪贴板新建", action: newFromClipboard)
         }
         .settingsAnchor(.launcherScriptsAI)
         LabeledContent {
@@ -95,14 +96,14 @@ struct ScriptsSection: View {
         }
         .settingsAnchor(.launcherScriptsFolder)
         if library?.hasNoOwnScripts == true {
-          LabeledContent {
+          SettingRow(
+            title: "还没有自己的脚本", subtitle: "用查天气的例子新建一个",
+            info: "建好在启动器里输「tq 空格 北京」就能跑；或者点上面的「新建脚本」选好语言和结果方式。"
+          ) {
             Button("用例子新建") {
               touchNew()
               library?.newExample(island: island)
             }
-          } label: {
-            Text("还没有自己的脚本")
-            Text("用查天气的例子新建一个，在启动器里输「tq 空格 北京」就能跑；或者点上面的「新建脚本」选好语言和结果方式")
           }
         }
         ForEach(addedFolders, id: \.self) { folder in
@@ -118,11 +119,11 @@ struct ScriptsSection: View {
               .truncationMode(.middle)
           }
         }
-        LabeledContent {
+        SettingRow(
+          title: "其他文件夹", subtitle: "几台 Mac 共用的脚本文件夹，只读",
+          info: "比如放在 iCloud 云盘里的；不往里写。"
+        ) {
           Button("添加文件夹…", action: addFolder)
-        } label: {
-          Text("其他文件夹")
-          Text("比如放在 iCloud 云盘里、几台 Mac 共用的脚本文件夹（只读，不往里写）")
         }
         .settingsAnchor(.launcherScriptsOtherFolders)
         dropZone
@@ -139,9 +140,7 @@ struct ScriptsSection: View {
       }
       .disabled(!scriptsOn)
     } footer: {
-      SectionFootnote(
-        "脚本以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制等授权，只放你信得过的脚本；从网上下载的，第一次运行前会先给你看一眼全文。Kitty Tools 自带的大功能（便签、刘海岛这些）是插件，在 设置 › 全部插件 里添加。"
-      )
+      SectionFootnote("脚本以你的身份运行、能用 Kitty Tools 已有的授权，只放信得过的。")
     }
     .sheet(item: $pending) { candidate in
       ScriptImportSheet(candidate: candidate) {

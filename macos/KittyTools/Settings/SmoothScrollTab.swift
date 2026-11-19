@@ -100,10 +100,10 @@ struct SmoothScrollTab: View {
         }
         .settingsAnchor(.smoothDistance)
       } header: {
-        Text("滚动")
-      } footer: {
-        SectionFootnote(
-          "平滑只管滚轮鼠标；妙控鼠标本来就滑着滚，这两项不管它，它只跟着下面的反向开关；触控板都照系统的。按住 ⌥ 滚动时不平滑；按住 ⇧ 改成左右滚；按着 ⌘ 或 ⌃ 时交给 App（缩放这类）。滑着的时候点一下鼠标就停下。"
+        InfoHeader(
+          "滚动",
+          info:
+            "平滑只管滚轮鼠标；妙控鼠标本来就滑着滚，这两项不管它，它只跟着下面的反向开关；触控板都照系统的。按住 ⌥ 滚动时不平滑；按住 ⇧ 改成左右滚；按着 ⌘ 或 ⌃ 时交给 App（缩放这类）。滑着的时候点一下鼠标就停下。"
         )
       }
       .gated(by: .smoothScroll)
@@ -122,9 +122,7 @@ struct SmoothScrollTab: View {
         }
         .settingsAnchor(.smoothReverseHorizontal)
       } header: {
-        Text("方向")
-      } footer: {
-        SectionFootnote("反向只管这台 Mac 接的鼠标，不跟着同步；停用的 App 里也不反向。")
+        InfoHeader("方向", info: "反向只管这台 Mac 接的鼠标，不跟着同步；停用的 App 里也不反向。")
       }
       .gated(by: .smoothScroll)
       excludedSection.gated(by: .smoothScroll)
@@ -217,11 +215,11 @@ struct SmoothScrollTab: View {
         .help("添加 App")
       }
     } header: {
-      Text("在这些 App 里停用")
-        .settingsAnchor(.smoothExcluded)
-    } footer: {
-      SectionFootnote(
-        "列表里的 App 在前台时，滚轮照系统原样（也不反向）。常见的虚拟机、远程桌面和标明是游戏的 App 自动照原样，不用放进来；别的游戏、自己管滚轮的 App 放进来。")
+      InfoHeader(
+        "在这些 App 里停用",
+        info: "列表里的 App 在前台时，滚轮照系统原样（也不反向）。常见的虚拟机、远程桌面和标明是游戏的 App 自动照原样，不用放进来；别的游戏、自己管滚轮的 App 放进来。"
+      )
+      .settingsAnchor(.smoothExcluded)
     }
     // 同步、导入落下了新的名单：页面跟上（偏好里是字符串数组，@AppStorage 存不了，自己读）
     .task {

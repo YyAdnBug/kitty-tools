@@ -355,9 +355,12 @@ struct EmojiPackToggle: View {
     "除了自带的状态和示例提醒用的几个，表情的动画第一次用到时从 Kitty Tools 在 GitHub 上的发布页下载（一个约 0.2 MB，不带任何个人信息），存在这台 Mac 上、最多 50 MB；没下好、没联网时先显示缩略图。"
 
   var body: some View {
-    Toggle(isOn: $downloads) {
-      Text("自动下载动画表情")
-      Text("关掉后还没下好的动画表情先显示缩略图、不动，已经下好的照样动")
+    // 联网下载、存多少在 ⓘ 里（设置改版 S5）
+    SettingRow(
+      title: "自动下载动画表情", subtitle: "关掉后没下好的先显示缩略图", info: Self.footnote
+    ) {
+      Toggle("自动下载动画表情", isOn: $downloads)
+        .toggleStyle(.switch)
     }
   }
 }
