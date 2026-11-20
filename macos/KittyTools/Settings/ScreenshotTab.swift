@@ -19,7 +19,7 @@ struct ScreenshotTab: View {
   /// 截图自检直接画「高级…」表单（sheet 画不进屏外截图）
   var drawsAdvanced = false
   @AppStorage(Prefs.ocrJoinLines) private var joinLines = false
-  @AppStorage(Prefs.ocrReleaseWhenIdle) private var releaseOCRWhenIdle = false
+  @AppStorage(Prefs.ocrReleaseWhenIdle) private var releaseOCRWhenIdle = true
   @AppStorage(Prefs.screenshotShutterSound) private var shutterSound = true
   @AppStorage(Prefs.screenshotCursor) private var cursor = false
   @AppStorage(Prefs.captureHideDesktopIcons) private var hidesDesktopIcons = false
@@ -383,7 +383,7 @@ struct ScreenshotTab: View {
       JoinLinesPreview(joins: joinLines)
       SettingRow(
         title: "空闲时释放识字模型",
-        info: "面板收起两分钟后释放模型占用的内存，下次识字时要重新加载。"
+        info: "面板收起两分钟后释放识字模型占用的内存，下次识字时要重新加载。关掉后模型一直留着，开着截图或翻译时启动就在后台加载好，第一次识字快一点。"
       ) {
         Toggle("空闲时释放识字模型", isOn: $releaseOCRWhenIdle)
           .toggleStyle(.switch)

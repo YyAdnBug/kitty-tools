@@ -331,19 +331,13 @@ extension AppDelegate {
     let turnedOff = (before ?? []).subtracting(now)
     let launching = before == nil
 
-    // 磁盘模型仍由子进程按系统版本编译。截图、截图翻译另需本次运行的进程内模型；只开剪贴板不加载它。
-    let foregroundOCR: Set<Feature> = [.screenshot, .translate]
-    if !turnedOn.isDisjoint(with: foregroundOCR) {
-      Task(priority: .utility) {
+    // 新装、系统更新后识字模型要现场编译一回（约一分钟）：用得到识字的功能开着（启动时、刚打开）就趁早在后台子进程里
+    // 编好，第一次截图翻译 / 识字不用干等（OCR.prepare；编好了它直接返回）。编好后再看要不要把进程内的那份也预热上
+    if !turnedOn.isDisjoint(with: [.clipboard, .translate, .screenshot]) {
+      Task {
         await OCR.prepare()
-        guard OCR.isPrepared(), !Feature.enabled.isDisjoint(with: foregroundOCR) else { return }
-        OCR.foreground.warmIfUnused { [self] in
-          if !(await OCR.warmForegroundModels()) { Log.clipboard.error("前台识字预热没成") }
-          idleReclaim.schedule()
-        }
+        warmRecognitionIfKept()
       }
-    } else if launching, now.contains(.clipboard) {
-      Task { await OCR.prepare() }
     }
 
     // 新插件的「新」：添加了就算碰过（插件页改版 E1；启动时开着的也记——同步来的、旧版本里加过的）
