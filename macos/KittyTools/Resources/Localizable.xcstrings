@@ -14036,6 +14036,16 @@
         }
       }
     },
+    "切回「%@」点一下别的输入框，或者退出它" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch to “%@” and click another text field, or quit it"
+          }
+        }
+      }
+    },
     "切换 App 时，在切换器上方显示选中那个 App 的窗口" : {
       "localizations" : {
         "en" : {
@@ -14766,6 +14776,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Notes stay on the edge when another app is full screen"
+          }
+        }
+      }
+    },
+    "别的 App 在输密码时这个组合会失效；要随时能用，加上 ⌃ 或 ⌘，或改成连按两下修饰键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This shortcut won’t work while another app is taking a password. To use it anytime, add ⌃ or ⌘, or use a double-press modifier instead."
           }
         }
       }
@@ -18656,6 +18676,16 @@
         }
       }
     },
+    "在「iTerm2」菜单里关掉「Secure Keyboard Entry」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn off Secure Keyboard Entry in the iTerm2 menu"
+          }
+        }
+      }
+    },
     "在「全部便签」里打开" : {
       "localizations" : {
         "en" : {
@@ -18684,6 +18714,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "在「终端」菜单里关掉「安全键盘输入」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn off Secure Keyboard Entry in the Terminal menu"
           }
         }
       }
@@ -19984,6 +20024,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Closes after"
+          }
+        }
+      }
+    },
+    "多半是锁屏或登录时留下的：锁定屏幕再解锁，还不行就注销重新登录" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Probably left over from the lock screen or login: lock the screen and unlock it; if that doesn’t help, log out and back in"
           }
         }
       }
@@ -37526,6 +37576,16 @@
         }
       }
     },
+    "点一下网页上别的输入框或切个标签页；还不行就退出浏览器再打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click another text field on the page or switch tabs; if that doesn’t help, quit and reopen the browser"
+          }
+        }
+      }
+    },
     "点一张切过去，悬停点 ✕ 关掉；按 ⌘Tab 时也能显示" : {
       "localizations" : {
         "en" : {
@@ -39582,6 +39642,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Social Networking"
+          }
+        }
+      }
+    },
+    "离开正在输密码的输入框，或者退出开着它的 App" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leave the password field, or quit the app that’s using it"
           }
         }
       }
@@ -44344,12 +44414,12 @@
         }
       }
     },
-    "输入密码时系统会打开安全输入，这时只带 ⌥ 的快捷键收不到，按键会打进那个输入框。离开密码框或退出那个 App 后恢复；带 ⌘ 或 ⌃ 的快捷键不受影响。" : {
+    "输入密码时系统会打开安全输入，这时只带 ⌥ 的字母、数字、符号键收不到，按键会打进那个输入框。%@。带 ⌘ 或 ⌃ 的快捷键、⌥空格、F 键和连按两下修饰键不受影响。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "macOS turns on Secure Input while you type a password. Until it’s off, shortcuts that use only ⌥ don’t respond, and the keystroke goes into that field. They work again once you leave the password field or quit that app. Shortcuts with ⌘ or ⌃ aren’t affected."
+            "value" : "macOS turns on Secure Input while you type a password. Until it’s off, shortcuts that use only ⌥ with a letter, number, or symbol don’t respond, and the keystroke goes into that field. %@. Shortcuts with ⌘ or ⌃, ⌥Space, F-keys, and double-press modifiers aren’t affected."
           }
         }
       }
@@ -47310,6 +47380,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Show page titles and images for links"
+          }
+        }
+      }
+    },
+    "锁定 1Password 再解锁，或者更新到新版" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lock and unlock 1Password, or update it to the latest version"
           }
         }
       }

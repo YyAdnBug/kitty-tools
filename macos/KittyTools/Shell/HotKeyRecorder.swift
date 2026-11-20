@@ -6,6 +6,7 @@
 // 并主动发 VoiceOver 播报。
 // 录制时快速按两下同一个修饰键 = 连按两下（拍板 B7，ModifierTaps 认；显示两个键帽「⌘ ⌘」），录上后那一行下面提醒一句
 // 可能和谁撞（B6：⇧ 是输入法切中英文，别的是系统听写）。一个动作只有一个快捷键，组合和连按二选一。
+// 录上只带 ⌥ 的字母数字符号键（HotKey.secureInputHint）时同样提醒一句：别的 App 在输密码时它会失效（issue #27），不拦。
 // 也录截图时的快捷键（2026-11-06 拍板 A，KeyTarget.shot）：单个键、带不带修饰键都行，规矩在 ShotKey.problem；
 // 不认连按。录的时候全局热键同样停着（不然按 ⌥A 会开截图）。
 // 也录启动器「命令和别名」里每条命令的快捷键（脚本命令第三轮 D1，KeyTarget.command）：规矩同全局动作（要带修饰键、不收通用
@@ -252,7 +253,12 @@ struct HotKeyRecorder: View {
     message = nil
     // 别的行正在录（点了这一行的 ⓧ 或右键菜单）：热键先别恢复，等那一行录完 stop 时一起重新注册
     if isRecording { stop() } else if center.recording == nil { center.reload() }
-    if let key = hotKey?.doubleTap { message = key.hint } else { message = hotKey?.swallowHint }
+    // 提示只给一句：连按两下的撞键 > 会吞字母 > 在密码框里会失效
+    if let key = hotKey?.doubleTap {
+      message = key.hint
+    } else {
+      message = hotKey?.swallowHint ?? hotKey?.secureInputHint
+    }
   }
 
   /// 命令的快捷键：同全局动作的规矩，和全局动作、别的命令查重；存进「命令和别名」的那段 JSON
@@ -275,7 +281,7 @@ struct HotKeyRecorder: View {
     current = hotKey
     message = nil
     if isRecording { stop() } else if center.recording == nil { center.reload() }
-    message = hotKey?.swallowHint
+    message = hotKey?.swallowHint ?? hotKey?.secureInputHint
   }
 
   /// 哪条命令用了这个组合（名字）：这台 Mac 上没有的那条不算（第 4 批评审：没有那一行、清不掉，会一直挡着）

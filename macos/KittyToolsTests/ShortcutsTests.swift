@@ -60,22 +60,62 @@ struct ShortcutsTests {
   }
 
   /// ⌘C、⇧⌘Z 这类各 App 通用的键设成全局会在所有 App 里失效：录制时拒绝；⌥C、⌘⇧C 照常能录
-  /// 安全输入开着时收不到的：只带 ⌥ / ⌥⇧ 的字母数字符号键（2026-11-16 macOS 27.0.1 实测）；带 ⌘ / ⌃ 的、F 键、连按两下不算。
-  /// 默认键全是这种
+  /// 安全输入开着时收不到的：只带 ⌥ / ⌥⇧ 的出字的键（字母、数字、符号；macOS 27.0.1 实测 2026-11-16、11-20）；带 ⌘ / ⌃ 的、
+  /// 不出字的键（⌥空格、⌥↩、⌥↓、F 键）、连按两下照常。默认键除了启动器的 ⌥空格全是这种
   @Test func secureInputYields() {
     let yields = { (key: Int, modifiers: Int) in
       HotKey(keyCode: key, modifiers: modifiers).yieldsToSecureInput
     }
     #expect(yields(kVK_ANSI_A, optionKey))
     #expect(yields(kVK_ANSI_A, optionKey | shiftKey))
-    #expect(yields(kVK_Space, optionKey))
+    #expect(yields(kVK_ANSI_1, optionKey))
+    #expect(yields(kVK_ANSI_Slash, optionKey))
+    #expect(!yields(kVK_Space, optionKey))
+    #expect(!yields(kVK_Return, optionKey))
+    #expect(!yields(kVK_DownArrow, optionKey))
     #expect(!yields(kVK_ANSI_A, optionKey | controlKey))
     #expect(!yields(kVK_ANSI_A, optionKey | cmdKey))
     #expect(!yields(kVK_ANSI_A, cmdKey | shiftKey))
     #expect(!yields(kVK_F5, optionKey))
     #expect(!HotKey(doubleTap: .option).yieldsToSecureInput)
-    let defaults = HotKeyAction.allCases.compactMap(\.defaultHotKey)
-    #expect(!defaults.isEmpty && defaults.allSatisfy(\.yieldsToSecureInput))
+    let defaults = HotKeyAction.allCases.compactMap { action in
+      action.defaultHotKey.map { (action, $0) }
+    }
+    #expect(!defaults.isEmpty)
+    for (action, key) in defaults {
+      #expect(key.yieldsToSecureInput == (action != .launcher), "\(action)")
+    }
+    // 录制框的提示跟着同一个判断走
+    #expect(
+      HotKey(keyCode: UInt32(kVK_ANSI_C), modifiers: UInt32(optionKey)).secureInputHint != nil)
+    #expect(HotKey(keyCode: UInt32(kVK_Space), modifiers: UInt32(optionKey)).secureInputHint == nil)
+    #expect(
+      HotKey(keyCode: UInt32(kVK_ANSI_C), modifiers: UInt32(optionKey | controlKey)).secureInputHint
+        == nil)
+  }
+
+  /// 按开着安全输入的 App 给关法：认 bundle id（不分大小写、浏览器和 1Password 认前缀），认不出的说切回那个 App
+  @Test func secureInputAdvice() {
+    typealias Block = HotKeyCenter.SecureInputBlock
+    let holder = { (id: String?) in Block.Holder(bundleID: id) }
+    #expect(holder("com.apple.Terminal") == .terminal)
+    #expect(holder("com.googlecode.iterm2") == .iTerm)
+    #expect(holder("com.google.Chrome") == .browser)
+    #expect(holder("com.google.Chrome.canary") == .browser)
+    #expect(holder("com.microsoft.edgemac.Dev") == .browser)
+    #expect(holder("company.thebrowser.Browser") == .browser)
+    #expect(holder("com.1password.1password") == .onePassword)
+    #expect(holder("com.agilebits.onepassword7") == .onePassword)
+    #expect(holder("com.apple.loginwindow") == .loginWindow)
+    #expect(holder("com.tencent.xinWeChat") == .other)
+    #expect(holder(nil) == .other)
+    let other = Block(holder: "WeChat", bundleID: "com.tencent.xinWeChat")
+    #expect(other.advice.contains("WeChat"))
+    #expect(other.summary.contains("WeChat"))
+    #expect(other.explanation.contains(other.advice))
+    let unknown = Block(holder: nil)
+    #expect(unknown.advice != other.advice && !unknown.summary.isEmpty)
+    #expect(Block(holder: "终端", bundleID: "com.apple.Terminal").advice != other.advice)
   }
 
   @Test func reservedEditKeys() {
