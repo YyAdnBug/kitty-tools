@@ -34,6 +34,7 @@ struct ScreenshotTab: View {
   @AppStorage(Prefs.screenshotFindsElements) private var findsElements = false
   @AppStorage(Prefs.screenshotFindsWebElements) private var findsWebElements = false
   @AppStorage(Prefs.screenshotWindowShadow) private var windowShadow = true
+  @AppStorage(Prefs.screenshotCornerRadius) private var cornerRadius = 10.0
   @AppStorage(Prefs.screenshotDelay) private var delay = 5
   /// 认元素要辅助功能授权（拍板 D2：没授权只在这里说，不弹框）；从系统设置授权回来、设置窗重新当 key 时刷新
   @State private var trusted = Permissions.isAccessibilityTrusted
@@ -112,6 +113,24 @@ struct ScreenshotTab: View {
           // 拨过这一行，「新」就算看过了（光点进这一页不算；WhatsNew）
           .onChange(of: copyAs) { WhatsNew.touch(section: "截图拷贝为", of: .screenshot) }
           .settingsAnchor(.screenshotCopyAs)
+          SettingRow(
+            title: "截图圆角", subtitle: "框选的框和截出来的图都是这个圆角",
+            info:
+              "拖到最左是直角。截出来的图四角透明（PNG），粘进不认透明的程序时四角可能是黑的或白的。单击整扇窗口截下、开着「窗口截图带阴影」时按窗口自己的圆角；录屏、长截图是直角。"
+          ) {
+            HStack(spacing: 8) {
+              Slider(value: $cornerRadius, in: Prefs.screenshotCornerRadii, step: 2) {
+                Text("截图圆角")
+              }
+              .tint(Style.brand)  // 根视图的 .accentColor 管不到滑块（同译文字号）
+              .frame(width: 140)
+              Text(cornerRadius > 0 ? "\(Int(cornerRadius)) 点" : "直角")
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(width: 40, alignment: .trailing)
+            }
+          }
+          .settingsAnchor(.screenshotCorners)
         }
         Section {
           PreviewStage(still: .placement)
@@ -281,7 +300,7 @@ struct ScreenshotTab: View {
       SettingRow(
         title: "窗口截图带阴影", subtitle: "单击窗口截下时四角透明、四周带阴影",
         info:
-          "画面就是框选时看到的；别的 App 的窗口挡住的地方换成这扇窗口自己的，拷贝、存储、钉图都带透明边。选区拖动过、窗口有一部分在屏幕外时照旧按矩形裁。框选时窗口的框跟着出图的样子：开着时是窗口的圆角，选区拖动过或关掉这项就是直角。"
+          "画面就是框选时看到的；别的 App 的窗口挡住的地方换成这扇窗口自己的，拷贝、存储、钉图都带透明边。框选时这扇窗口的框照它自己的圆角画；选区拖动过、窗口有一部分在屏幕外、关掉这项时按「截图圆角」裁。"
       ) {
         Toggle("窗口截图带阴影", isOn: $windowShadow)
           .toggleStyle(.switch)

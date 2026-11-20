@@ -4584,10 +4584,11 @@ struct SnapshotProbeTests {
     }
   }
 
-  /// 框选时窗口的框跟着出图的形状（2026-11-20 用户：悬停是圆角、单击选中后变直角）：假桌面上一扇圆角 16.5 的窗口，
-  /// 悬停、单击选中、选中后悬停左上角（加粗的边和圆弧）、方向键挪过一点、悬停窗口里的元素、关着「窗口截图带阴影」时悬停，
+  /// 截图圆角（2026-11-20 用户：悬停是圆角、单击选中后变直角；要圆角、图也要圆角、设置里能调）：假桌面上一扇圆角 16.5 的
+  /// 窗口，「截图圆角」10（默认）时悬停、单击选中、选中后悬停左上角（加粗的边和圆弧）、方向键挪过一点、悬停窗口里的元素、
+  /// 关着「窗口截图带阴影」时悬停、拖出来的选区（拖动中、选中），调成直角时拖出来的选区，和拷贝出去的那张图（垫棋盘格看透明的角），
   /// 图以 corner- 开头，几秒：-only-testing:'KittyToolsTests/SnapshotProbeTests/windowCorners()'
-  @Test(.enabled(if: directory != nil)) func windowCorners() throws {
+  @Test(.enabled(if: directory != nil)) func windowCorners() async throws {
     let out = try #require(Self.directory)
     try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
     let size = NSSize(width: 600, height: 420)
@@ -4614,6 +4615,7 @@ struct SnapshotProbeTests {
     let suite = "kitty-snapshot-corners-\(UUID().uuidString)"
     let prefs = try #require(UserDefaults(suiteName: suite))
     defer { prefs.removePersistentDomain(forName: suite) }
+    let region = CGRect(x: 40, y: 40, width: 300, height: 160)
     let states: [(String, Bool, (SelectionView) -> Void)] = [
       ("corner-window-hover", true, { $0.mouse = CGPoint(x: 300, y: 160) }),
       (
@@ -4640,9 +4642,19 @@ struct SnapshotProbeTests {
       ),
       ("corner-element-hover", true, { $0.mouse = CGPoint(x: 200, y: 265) }),
       ("corner-window-hover-off", false, { $0.mouse = CGPoint(x: 300, y: 160) }),
+      (
+        "corner-region-drag", true,
+        {
+          $0.selection = region
+          $0.mouse = CGPoint(x: region.maxX, y: region.minY)
+        }
+      ),
+      ("corner-region-selected", true, { $0.select(region) }),
+      ("corner-region-square", true, { $0.select(region) }),
     ]
     for (name, shadow, configure) in states {
       prefs.set(shadow, forKey: Prefs.screenshotWindowShadow)
+      prefs.set(name.hasSuffix("square") ? 0.0 : 10.0, forKey: Prefs.screenshotCornerRadius)
       let session = SelectionSession(mode: .capture, lastRegion: .zero)
       session.measureRadius = { _ in 16.5 }
       session.findsElements = name.contains("element")
@@ -4660,8 +4672,43 @@ struct SnapshotProbeTests {
       try renderLayers(
         view, size: size, dark: false, configure: configure, to: "\(out)/\(name).png")
     }
+    // 拷贝出去的那张：拖出来的选区按 10 点裁成透明的角，垫在棋盘格上
+    prefs.set(10.0, forKey: Prefs.screenshotCornerRadius)
+    let session = SelectionSession(mode: .capture, lastRegion: .zero)
+    let view = SelectionView(
+      image: desktop, windows: [frame], session: session, keepsColors: false, showsHint: false,
+      loupe: .off)
+    view.styleDefaults = prefs
+    let window = NSWindow(
+      contentRect: NSRect(origin: NSPoint(x: -20000, y: -20000), size: size),
+      styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = view
+    view.select(region)
+    let outcome = await withCheckedContinuation { continuation in
+      session.continuation = continuation
+      view.output(.copy)
+      session.continuation?.resume(returning: nil)
+      session.continuation = nil
+    }
+    guard case .capture(let capture)? = outcome else { throw CocoaError(.featureUnsupported) }
+    let shot = capture.image
+    let board = try #require(
+      CGContext(
+        data: nil, width: shot.width, height: shot.height, bitsPerComponent: 8, bytesPerRow: 0,
+        space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    for row in 0..<(shot.height / 16 + 1) {
+      for column in 0..<(shot.width / 16 + 1) {
+        board.setFillColor(CGColor(gray: (row + column) % 2 == 0 ? 1 : 0.85, alpha: 1))
+        board.fill(CGRect(x: column * 16, y: row * 16, width: 16, height: 16))
+      }
+    }
+    board.draw(shot, in: CGRect(x: 0, y: 0, width: shot.width, height: shot.height))
+    let composed = try #require(board.makeImage())
+    let png = try #require(
+      NSBitmapImageRep(cgImage: composed).representation(using: .png, properties: [:]))
+    try png.write(to: URL(filePath: "\(out)/corner-output.png"))
   }
-
   /// 框选遮罩：截图翻译的待选（整屏轻暗 + 提示）和拖动中（选区外变暗），截图的悬停窗口 + 放大镜、拖动中（尺寸）、
   /// 调整（手柄 + 工具栏，深浅色）。图层要在窗口里显示过才有内容，所以放进屏外窗口再 render
   private func renderSelection(_ out: String) throws {

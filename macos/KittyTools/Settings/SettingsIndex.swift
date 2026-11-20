@@ -90,6 +90,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
   // 截图
   case screenshotSaveFolder = "screenshot.saveFolder"
   case screenshotCopyAs = "screenshot.copyAs"
+  case screenshotCorners = "screenshot.corners"
   case screenshotShutter = "screenshot.shutter"
   case screenshotCursor = "screenshot.cursor"
   case screenshotHideDesktop = "screenshot.hideDesktop"
@@ -634,6 +635,12 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         .screenshot, "截图拷贝为",
         LocalizedStringResource("search.screenshot.copyAs", defaultValue: "拷贝,复制,文件,PNG,对拷线"),
         keys: [Prefs.screenshotCopyAs])
+    case .screenshotCorners:
+      Self.row(
+        .screenshot, "截图圆角",
+        LocalizedStringResource(
+          "search.screenshot.corners", defaultValue: "圆角,直角,四角,透明,半径"),
+        keys: [Prefs.screenshotCornerRadius])
     case .screenshotShutter:
       Self.row(
         .screenshot, "截图时播放快门声",

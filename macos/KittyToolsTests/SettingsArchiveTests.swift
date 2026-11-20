@@ -520,7 +520,7 @@ struct SettingsArchiveTests {
     #expect(1_000_000.multipliedReportingOverflow(by: 1_048_576).overflow == false)
   }
 
-  /// 不认识的键、类型或范围不对的值都丢掉（导入时这些键回到默认）；译文字号夹进滑块的范围；
+  /// 不认识的键、类型或范围不对的值都丢掉（导入时这些键回到默认）；译文字号、截图圆角夹进滑块的范围；
   /// 截图的存储文件夹不收（别人给的文件不能改截图存到哪）
   @Test func dropsInvalidPreferences() throws {
     let archive = try archive(
@@ -531,7 +531,8 @@ struct SettingsArchiveTests {
           "clipboardHistoryRetentionDays": -1, "translateHistoryLimit": 1000, "translateFontScale": 9,
           "clipboardExcludedBundleIDs": ["a.b", "c.d"], "autoCopy": 1, "lastSeenVersion": "0.0.1",
           "NSWindow Frame Settings": "0 0 1 1", "ocrJoinLines": null, "translateWordMode": {"a": 1},
-          "screenshotSaveDirectory": "/Users/Shared", "launcherRomanInput": true
+          "screenshotSaveDirectory": "/Users/Shared", "launcherRomanInput": true,
+          "screenshotCornerRadius": 99
         }
         """))
     #expect(
@@ -540,6 +541,7 @@ struct SettingsArchiveTests {
         Prefs.translateFontScale: .double(TranslateCoordinator.fontScales.upperBound),
         Prefs.clipboardExcludedBundleIDs: .strings(["a.b", "c.d"]),
         Prefs.launcherRomanInput: .bool(true),
+        Prefs.screenshotCornerRadius: .double(Prefs.screenshotCornerRadii.upperBound),
       ])
 
     let (target, name) = try suite()

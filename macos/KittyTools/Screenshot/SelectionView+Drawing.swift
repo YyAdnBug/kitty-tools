@@ -460,23 +460,39 @@ extension SelectionView {
     rect.intersection(bounds.insetBy(dx: inset, dy: inset))
   }
 
-  /// 这一块按多大的圆角画（点；洞、悬停的粉框、选区边框同一个）：框的形状就是出图的形状——出图会换成透明圆角那张（N1）
-  /// 的整扇窗口（截图、开着「窗口截图带阴影」、整个在这块屏里、有窗口号）按它真实的圆角（session.windowRadius），别的
-  /// （窗口里的元素、程序坞 / 菜单栏、半截在屏外的窗口、录屏、截图翻译 / 识字、关着那个开关）一律直角。2026-11-20 用户：
-  /// 悬停时是圆角、单击选中后变直角（原来悬停一律圆角 10、选中时 10 → 0）
+  /// 这一块按多大的圆角画（点；洞、悬停的粉框、选区边框同一个）：框的形状就是出图的形状（截出来的图按 selectionRadius
+  /// 裁圆角，output）。出图会换成透明圆角那张（N1）的整扇窗口按它真实的圆角（windowRadius），别的按设置 › 截图「截图圆角」
+  /// （shotRadius，默认 10）；录屏录的是矩形，一律直角。2026-11-20 用户：悬停是圆角、单击选中后变直角，要圆角、图也要圆角、
+  /// 设置里能调（原来悬停一律圆角 10、选中时 10 → 0、出图是矩形）
   func cornerRadius(of rect: CGRect) -> CGFloat {
+    mode == .record ? 0 : windowRadius(of: rect) ?? shotRadius
+  }
+
+  /// 选区的圆角：单击选中的整扇窗口、选区没再动过、没贴就地翻译的译文（同 windowShot 的前几条）按窗口的；
+  /// 拖出来的、拖边 / 挪动 / 微调过的按「截图圆角」；录屏直角
+  var selectionRadius: CGFloat {
+    guard let selection, mode != .record else { return 0 }
+    if clickedWindow?.frame == selection, untranslated == nil,
+      let radius = windowRadius(of: selection)
+    {
+      return radius
+    }
+    return shotRadius
+  }
+
+  /// 设置 › 截图「截图圆角」（点，0 = 直角）
+  var shotRadius: CGFloat {
+    let radius = styleDefaults.double(forKey: Prefs.screenshotCornerRadius)
+    return CGFloat(min(max(radius, 0), Prefs.screenshotCornerRadii.upperBound))
+  }
+
+  /// 整扇窗口自己的圆角（截图模式、开着「窗口截图带阴影」、整个在这块屏里、有窗口号：出图换成单独截的那张时）；别的 nil
+  private func windowRadius(of rect: CGRect) -> CGFloat? {
     guard mode == .capture, styleDefaults.bool(forKey: Prefs.screenshotWindowShadow),
       let index = windows.firstIndex(of: rect), windowIDs.indices.contains(index),
       let id = windowIDs[index]
-    else { return 0 }
+    else { return nil }
     return session.windowRadius(id)
-  }
-
-  /// 选区的圆角：单击选中的整扇窗口、选区没再动过、没贴就地翻译的译文（出图会换成透明圆角那张，同 windowShot 的前几条）
-  /// 才按窗口的；拖边、挪动、微调过就是直角（出图也成了矩形裁切）
-  var selectionRadius: CGFloat {
-    guard let selection, clickedWindow?.frame == selection, untranslated == nil else { return 0 }
-    return cornerRadius(of: selection)
   }
 
   /// 选区边框：直角时照旧是矩形（描边的角是尖的）；圆角时按 radius + grow 画（边框在选区外 grow 点，和洞同心）

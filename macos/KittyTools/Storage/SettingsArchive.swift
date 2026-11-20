@@ -573,7 +573,7 @@ struct SettingsArchive: Codable, Equatable {
   }
 
   /// 丢掉不该进偏好的：不认识的键和动作、类型或范围不对的值、过不了录制框规则的快捷键（重复的组合留给靠前的动作）、
-  /// id 不合规或重复、字段长得离谱的服务和搜索（整条不要，不截断：截了地址就不是原来那个地址）。译文字号夹进滑块的范围，
+  /// id 不合规或重复、字段长得离谱的服务和搜索（整条不要，不截断：截了地址就不是原来那个地址）。译文字号、截图圆角夹进滑块的范围，
   /// 状态屏的状态列表换成收拾过的（StatusPreset.sanitized）
   private func sanitized() -> SettingsArchive {
     var clean = self
@@ -592,6 +592,11 @@ struct SettingsArchive: Codable, Equatable {
         let range = TranslateCoordinator.fontScales
         kept[Prefs.translateFontScale] = .double(
           min(max(scale, range.lowerBound), range.upperBound))
+      }
+      if let radius = kept[Prefs.screenshotCornerRadius].flatMap(Kind.double.plist) as? Double {
+        let range = Prefs.screenshotCornerRadii
+        kept[Prefs.screenshotCornerRadius] = .double(
+          min(max(radius, range.lowerBound), range.upperBound))
       }
       if case .statuses(let list)? = kept[Prefs.statusScreenPresets] {
         kept[Prefs.statusScreenPresets] = .statuses(StatusPreset.sanitized(list))

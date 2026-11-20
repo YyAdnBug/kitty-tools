@@ -424,6 +424,10 @@ private final class PinView: NSView {
   private let shaped: Bool
   /// 钉上时的大小（点）：缩放的基准
   private let originalSize: CGSize
+  /// 截图圆角（设置 › 截图，钉上时读；点）：截出来的图四角已经裁成透明，钉图的圆角不能比它小（不然透明的角露在描边里），
+  /// 跟着缩放。ponytail: 按现在的设置猜，历史里按更大的圆角截的图钉出来角上会露一点透明，要准就把圆角记进历史
+  private let shotRadius = CGFloat(
+    UserDefaults.standard.double(forKey: Prefs.screenshotCornerRadius))
   private unowned let board: PinBoard
 
   /// 悬停后右上角的两个圆钮（透明度、关闭）：15 就是按钮栈，macOS 26 是包着它的玻璃容器（两块相邻的玻璃共用取样）
@@ -544,8 +548,10 @@ private final class PinView: NSView {
   override func updateLayer() {
     layer?.contents = image
     // 自带形状的图（带阴影的窗口截图）不裁圆角、不描边：四周是透明的阴影，套上框反而多一圈线
-    layer?.cornerRadius = shaped ? 0 : Style.Radius.card
-    layer?.cornerCurve = .continuous
+    let zoom = originalSize.width > 0 ? bounds.width / originalSize.width : 1
+    layer?.cornerRadius = shaped ? 0 : max(Style.Radius.card, shotRadius * zoom)
+    // 图里裁的是圆弧角：同样的半径下连续曲率的角在对角线上更贴角，会露出一丝透明
+    layer?.cornerCurve = shotRadius > 0 ? .circular : .continuous
     layer?.masksToBounds = !shaped
     layer?.borderWidth = shaped ? 0 : Style.HUD.strokeWidth
     layer?.borderColor = NSColor.separatorColor.cgColor
@@ -589,6 +595,7 @@ private final class PinView: NSView {
         width: originalSize.width * scale, height: originalSize.height * scale), display: true)
     window.invalidateShadow()
     textLayer?.setContentsRectNeedsUpdate()
+    needsDisplay = true  // 圆角跟着缩放（updateLayer）
     showZoom(scale)
   }
 

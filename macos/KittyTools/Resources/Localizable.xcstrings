@@ -2065,6 +2065,16 @@
         }
       }
     },
+    "%lld 点" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld pt"
+          }
+        }
+      }
+    },
     "%lld 秒" : {
       "localizations" : {
         "en" : {
@@ -7579,6 +7589,23 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "拷贝,复制,文件,PNG,对拷线"
+          }
+        }
+      }
+    },
+    "search.screenshot.corners" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rounded Corners,Square,Corners,Transparent,Radius"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "圆角,直角,四角,透明,半径"
           }
         }
       }
@@ -26110,6 +26137,16 @@
         }
       }
     },
+    "截图圆角" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Corner radius"
+          }
+        }
+      }
+    },
     "截图带上鼠标指针" : {
       "localizations" : {
         "en" : {
@@ -27398,6 +27435,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Drag Out"
+          }
+        }
+      }
+    },
+    "拖到最左是直角。截出来的图四角透明（PNG），粘进不认透明的程序时四角可能是黑的或白的。单击整扇窗口截下、开着「窗口截图带阴影」时按窗口自己的圆角；录屏、长截图是直角。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag all the way left for square corners. Screenshots get transparent corners (PNG); apps that don’t support transparency may show them black or white. A whole window you click keeps its own corners while “Add a shadow to window screenshots” is on; screen recordings and Scrolling Capture stay square."
           }
         }
       }
@@ -33734,6 +33781,16 @@
         }
       }
     },
+    "框选的框和截出来的图都是这个圆角" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Used by the selection frame and the screenshot itself"
+          }
+        }
+      }
+    },
     "桌面" : {
       "localizations" : {
         "en" : {
@@ -38704,12 +38761,12 @@
         }
       }
     },
-    "画面就是框选时看到的；别的 App 的窗口挡住的地方换成这扇窗口自己的，拷贝、存储、钉图都带透明边。选区拖动过、窗口有一部分在屏幕外时照旧按矩形裁。框选时窗口的框跟着出图的样子：开着时是窗口的圆角，选区拖动过或关掉这项就是直角。" : {
+    "画面就是框选时看到的；别的 App 的窗口挡住的地方换成这扇窗口自己的，拷贝、存储、钉图都带透明边。框选时这扇窗口的框照它自己的圆角画；选区拖动过、窗口有一部分在屏幕外、关掉这项时按「截图圆角」裁。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The picture is what you saw while selecting; parts covered by other apps’ windows show this window’s own content, and copies, saves, and pins keep the transparent edge. If you moved the selection or part of the window is off screen, it’s cropped as a rectangle as before. While selecting, the window’s frame matches the result: rounded like the window while this is on, square once you move the selection or turn this off."
+            "value" : "The picture is what you saw while selecting; parts covered by other apps’ windows show this window’s own content, and copies, saves, and pins keep the transparent edge. While selecting, the window’s frame follows its own rounded corners; if you moved the selection, part of the window is off screen, or this is off, it’s cropped with Corner radius instead."
           }
         }
       }
@@ -39023,6 +39080,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Line"
+          }
+        }
+      }
+    },
+    "直角" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Square"
           }
         }
       }

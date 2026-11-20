@@ -60,6 +60,8 @@ struct SelectionInteractionTests {
         windowIDs: windowIDs, session: self.session, keepsColors: keepsColors, showsHint: showsHint,
         loupe: loupe)
       styles = UserDefaults(suiteName: styleSuite)!
+      // 截图圆角默认按直角测（注册域是整个进程共用的：别的测试注册过默认值 10 的话临时域也读得到）；测圆角的自己设
+      styles.set(0.0, forKey: Prefs.screenshotCornerRadius)
       view.styleDefaults = styles
       window = KeyWindow(
         contentRect: NSRect(origin: origin, size: size),
@@ -1408,7 +1410,8 @@ struct SelectionInteractionTests {
   }
 
   // 2026-11-20 用户：悬停时是圆角、单击选中后变直角。框的形状就是出图的形状：开着「窗口截图带阴影」时整扇窗口悬停和
-  // 选中都按量出来的圆角（先按默认的画，量完换上），挪过一点就是直角；没有窗口号的（菜单栏那条）、关着开关、录屏一律直角
+  // 选中都按量出来的圆角（先按默认的画，量完换上），挪过一点就按「截图圆角」（这里是 0，直角）；没有窗口号的（菜单栏那条）、
+  // 关着开关时同样按它，录屏一律直角
   @Test func windowFrameFollowsOutputShape() async throws {
     let frame = CGRect(x: 200, y: 150, width: 500, height: 400)
     let bar = CGRect(x: 0, y: 770, width: 1200, height: 30)
@@ -1444,6 +1447,59 @@ struct SelectionInteractionTests {
     let record = Harness(mode: .record, windows: [frame], windowIDs: [42])
     record.styles.set(true, forKey: Prefs.screenshotWindowShadow)
     #expect(record.view.cornerRadius(of: frame) == 0)
+  }
+
+  // 设置 › 截图「截图圆角」（2026-11-20 用户：要圆角、图也要圆角、能调）：悬停菜单栏那条、拖出来的选区按它画，
+  // 拷贝 / 钉图出去的图四角裁透明（历史的原图也是），识字不裁；单击的整扇窗口按窗口自己的，挪过就回到设置的；录屏直角
+  @Test func cornerRadiusSettingRoundsFrameAndImage() async throws {
+    let frame = CGRect(x: 200, y: 150, width: 500, height: 400)
+    let bar = CGRect(x: 0, y: 770, width: 1200, height: 30)
+    let h = Harness(windows: [frame, bar], windowIDs: [42, nil])
+    h.session.measureRadius = { _ in 16 }
+    h.styles.set(12.0, forKey: Prefs.screenshotCornerRadius)
+    h.styles.set(true, forKey: Prefs.screenshotWindowShadow)
+    #expect(h.view.cornerRadius(of: bar) == 12)
+    h.drag(CGPoint(x: 100, y: 100), CGPoint(x: 400, y: 300))
+    let drawn = try #require(h.view.selection)
+    #expect(h.view.selectionRadius == 12)
+    #expect(
+      h.view.shade.path?.contains(CGPoint(x: drawn.minX + 1, y: drawn.maxY - 1), using: .evenOdd)
+        == true)
+    func image(_ action: RegionSelector.Action) async -> RegionSelector.Capture? {
+      guard case .capture(let capture)? = await h.outcome(of: { h.view.output(action) }) else {
+        return nil
+      }
+      return capture
+    }
+    let copied = try #require(await image(.copy))
+    let pixels = copied.image
+    #expect(WindowShotTests.pixel(pixels, 0, 0)[3] == 0)
+    #expect(WindowShotTests.pixel(pixels, pixels.width - 1, pixels.height - 1)[3] == 0)
+    #expect(WindowShotTests.pixel(pixels, pixels.width / 2, 0)[3] == 255)
+    #expect(copied.original.map { WindowShotTests.pixel($0, 0, 0)[3] } == 0)
+    let read = try #require(await image(.recognize))
+    #expect(WindowShotTests.pixel(read.image, 0, 0)[3] == 255)
+    // 0 = 直角，出图不裁
+    h.styles.set(0.0, forKey: Prefs.screenshotCornerRadius)
+    #expect(h.view.selectionRadius == 0)
+    let square = try #require(await image(.copy))
+    #expect(WindowShotTests.pixel(square.image, 0, 0)[3] == 255)
+    // 单击整扇窗口：按窗口自己的圆角；方向键挪一点回到设置的
+    h.styles.set(12.0, forKey: Prefs.screenshotCornerRadius)
+    let w = Harness(windows: [frame], windowIDs: [42])
+    w.session.measureRadius = { _ in 16 }
+    w.styles.set(12.0, forKey: Prefs.screenshotCornerRadius)
+    w.styles.set(true, forKey: Prefs.screenshotWindowShadow)
+    _ = w.view.cornerRadius(of: frame)
+    for _ in 0..<20 where w.view.cornerRadius(of: frame) != 16 { await Task.yield() }
+    w.click(CGPoint(x: 400, y: 300))
+    #expect(w.view.selectionRadius == 16)
+    w.arrow(kVK_RightArrow)
+    #expect(w.view.selectionRadius == 12)
+    // 录屏录的是矩形
+    let record = Harness(mode: .record, windows: [bar], windowIDs: [nil])
+    record.styles.set(12.0, forKey: Prefs.screenshotCornerRadius)
+    #expect(record.view.cornerRadius(of: bar) == 0)
   }
 
   // 截图翻译 / 识字：待选和框选时有放大镜、尺寸只读，⇧ 照样正方形，松手即确认（交回裁好的图）

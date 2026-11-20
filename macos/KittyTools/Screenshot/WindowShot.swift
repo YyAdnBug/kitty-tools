@@ -221,6 +221,16 @@ enum WindowShot {
     return crossing / (1 - 1 / 2.squareRoot())
   }
 
+  /// 四角按 radius（像素）裁成透明：截图圆角（SelectionView.output），形状同框选时的框（SelectionView.roundedPath）。
+  /// ponytail: 在主线程整张重画一遍（同 Annotation.render 出图），5K 整屏几十毫秒
+  static func rounded(_ image: CGImage, radius: CGFloat) -> CGImage? {
+    canvas(width: image.width, height: image.height, like: image) { context, rect in
+      context.addPath(SelectionView.roundedPath(rect, radius: radius))
+      context.clip()
+      context.draw(image, in: rect)
+    }
+  }
+
   /// 冻结帧那一块垫底，rects（像素，原点左下）里换成单独截的（大小按单独截的）
   static func patch(_ frozen: CGImage, with live: CGImage, in rects: [CGRect]) -> CGImage? {
     canvas(width: live.width, height: live.height, like: live) { context, rect in

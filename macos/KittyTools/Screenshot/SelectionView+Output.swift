@@ -18,15 +18,23 @@ extension SelectionView {
     guard let selection, let window else { return }
     let pixels = RegionSelector.pixelRect(
       selection, viewSize: bounds.size, imageSize: CGSize(width: image.width, height: image.height))
-    let result =
+    let rendered =
       annotates
       ? Annotation.render(annotations, over: image, pixelRect: pixels, viewSize: bounds.size)
       : image.cropping(to: pixels)
-    guard let result else { return session.finish(nil) }
+    guard let rendered else { return session.finish(nil) }
+    // 截图圆角：拷贝 / 存储 / 钉图出去的图按框的圆角把四角裁透明（识字、翻译要的是字，不裁）；历史里的原图同样裁
+    let corner = selectionRadius * CGFloat(pixels.width) / max(1, selection.width)
+    let rounds = corner > 0 && [.copy, .save, .saveAs, .pin].contains(action)
+    let round = { (image: CGImage) in
+      rounds ? WindowShot.rounded(image, radius: corner) ?? image : image
+    }
+    let result = round(rendered)
     // 截图历史要没画标注的那一张 + 挪到这张图里的标注坐标（拍板 A1）；没画标注时成品就是原图，不白渲一遍
     let original =
       annotations.isEmpty
-      ? result : Annotation.render([], over: image, pixelRect: pixels, viewSize: bounds.size)
+      ? result
+      : Annotation.render([], over: image, pixelRect: pixels, viewSize: bounds.size).map(round)
     let moved = annotations.map {
       $0.offset(by: CGSize(width: -selection.minX, height: -selection.minY))
     }
