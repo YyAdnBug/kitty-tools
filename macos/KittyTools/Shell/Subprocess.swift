@@ -213,10 +213,13 @@ enum Subprocess {
     FileManager.default.temporaryDirectory.appending(path: "kitty-\(UUID().uuidString)")
   }
 
-  /// 一直跑着、按行交出标准输出的子进程（SystemFocus 的 `log stream`）：流结束 = 子进程退出了（拿到退出码）；
-  /// 消费的任务被取消、流被丢掉时停掉子进程（SIGTERM）。stop：当场停掉（App 退出时用——那时候任务取消来不及走到
-  /// onTermination，子进程会留下来归 launchd，评审）。标准错误丢掉。管道的读回调在系统的线程上：这里只切行、
-  /// yield 出去，不碰别的状态（mac-native §3，同录制的事件流）
+  /// 一直跑着、按行交出标准输出的子进程（SystemFocus 的 `log stream`）：流结束 = 子进程退出了、输出也读完了
+  /// （最后没换行的半行照样交一行，再交退出码）；消费的任务被取消、流被丢掉时停掉子进程（SIGTERM）。stop：当场停掉
+  /// （App 退出时用——那时候任务取消来不及走到 onTermination，子进程会留下来归 launchd，评审）。标准错误丢掉。
+  /// 管道的读回调和退出回调都在系统的线程上、两者没有先后：这里只切行、yield 出去，状态只在一个 Mutex 里
+  /// （mac-native §3，同录制的事件流）
+  /// ponytail: 要等管道读到头才算结束——子进程留下后台的孙进程拿着标准输出时，要等孙进程也退出（log stream 没有）；
+  /// 真用在那种命令上再加「退出后最多再等几秒」
   nonisolated static func lines(
     _ tool: String, _ arguments: [String], quality: QualityOfService = .utility
   ) -> (lines: AsyncStream<Line>, stop: @Sendable () -> Void) {
@@ -229,28 +232,38 @@ enum Subprocess {
     let lines = AsyncStream<Line> { continuation in
       let pipe = Pipe()
       process.standardOutput = pipe
-      // 上一次读到、还没换行的半行
-      let pending = Mutex(Data())
+      // 还没换行的半行、管道读到头没有、退出码。退出的通知可能比管道里最后那几十 KB 先到（2026-11-20 全量单测负载高时
+      // 少收过最后几行）：两样都齐了才收尾，后到的那个回调收
+      let state = Mutex((pending: Data(), drained: false, status: Int32?.none))
+      @Sendable func end(_ tail: Data, _ status: Int32) {
+        if !tail.isEmpty { continuation.yield(.output(String(decoding: tail, as: UTF8.self))) }
+        continuation.yield(.exited(status))
+        continuation.finish()
+      }
       pipe.fileHandleForReading.readabilityHandler = { handle in
         let data = handle.availableData
-        guard !data.isEmpty else {
-          handle.readabilityHandler = nil
-          return
-        }
-        let complete = pending.withLock { buffer -> [Data] in
-          buffer.append(data)
+        if data.isEmpty { handle.readabilityHandler = nil }
+        let (complete, ending) = state.withLock { state -> ([Data], (Data, Int32)?) in
+          state.pending.append(data)
           var lines: [Data] = []
-          while let newline = buffer.firstIndex(of: 0x0A) {
-            lines.append(buffer[buffer.startIndex..<newline])
-            buffer.removeSubrange(buffer.startIndex...newline)
+          while let newline = state.pending.firstIndex(of: 0x0A) {
+            lines.append(state.pending[state.pending.startIndex..<newline])
+            state.pending.removeSubrange(state.pending.startIndex...newline)
           }
-          return lines
+          guard data.isEmpty else { return (lines, nil) }
+          state.drained = true
+          return (lines, state.status.map { (state.pending, $0) })
         }
         for line in complete { continuation.yield(.output(String(decoding: line, as: UTF8.self))) }
+        if let (tail, status) = ending { end(tail, status) }
       }
       process.terminationHandler = { finished in
-        continuation.yield(.exited(finished.terminationStatus))
-        continuation.finish()
+        let status = finished.terminationStatus
+        let tail = state.withLock { state -> Data? in
+          state.status = status
+          return state.drained ? state.pending : nil
+        }
+        if let tail { end(tail, status) }
       }
       continuation.onTermination = { _ in
         if process.isRunning { process.terminate() }
