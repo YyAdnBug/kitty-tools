@@ -5388,12 +5388,15 @@ struct SnapshotProbeTests {
     prefs.set(80, forKey: Prefs.smoothScrollStrength)
     prefs.set(150, forKey: Prefs.smoothScrollSpeed)
     prefs.set(true, forKey: Prefs.smoothScrollReverseVertical)
-    try snapshot(
-      SmoothScrollTab(
-        smoothScroll: scroll, authorized: true, others: ["另一个滚轮工具"], natural: false,
-        excluded: ["com.apple.TextEdit", "com.apple.Preview"]
-      ).defaultAppStorage(prefs),
-      size: NSSize(width: 640, height: 1100), dark: false, to: "\(out)/smooth-settings-any.png")
+    for dark in [false, true] {
+      try snapshot(
+        SmoothScrollTab(
+          smoothScroll: scroll, authorized: true, others: ["另一个滚轮工具"], natural: false,
+          excluded: ["com.apple.TextEdit", "com.apple.Preview"]
+        ).defaultAppStorage(prefs),
+        size: NSSize(width: 640, height: 1100), dark: dark,
+        to: "\(out)/smooth-settings-any\(dark ? "-dark" : "").png")
+    }
   }
 
   /// App 快捷键（插件，2026-11-17）：面板（访达那样的几张卡、两段式和 🌐 的键帽，浅 / 深；221 条要竖着滚；一条都没有、
