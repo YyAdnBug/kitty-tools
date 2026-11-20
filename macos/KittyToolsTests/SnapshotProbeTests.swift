@@ -4585,7 +4585,7 @@ struct SnapshotProbeTests {
   }
 
   /// 截图圆角（2026-11-20 用户：悬停是圆角、单击选中后变直角；要圆角、图也要圆角、设置里能调）：假桌面上一扇圆角 16.5 的
-  /// 窗口，「截图圆角」10（默认）时悬停、单击选中、选中后悬停左上角（加粗的边和圆弧）、方向键挪过一点、悬停窗口里的元素、
+  /// 窗口，「截图圆角」8（默认）时悬停、单击选中、选中后悬停左上角（加粗的边和圆弧）、方向键挪过一点、悬停窗口里的元素、
   /// 关着「窗口截图带阴影」时悬停、拖出来的选区（拖动中、选中），调成直角时拖出来的选区，和拷贝出去的那张图（垫棋盘格看透明的角），
   /// 图以 corner- 开头，几秒：-only-testing:'KittyToolsTests/SnapshotProbeTests/windowCorners()'
   @Test(.enabled(if: directory != nil)) func windowCorners() async throws {
@@ -4654,7 +4654,7 @@ struct SnapshotProbeTests {
     ]
     for (name, shadow, configure) in states {
       prefs.set(shadow, forKey: Prefs.screenshotWindowShadow)
-      prefs.set(name.hasSuffix("square") ? 0.0 : 10.0, forKey: Prefs.screenshotCornerRadius)
+      prefs.set(name.hasSuffix("square") ? 0.0 : 8.0, forKey: Prefs.screenshotCornerRadius)
       let session = SelectionSession(mode: .capture, lastRegion: .zero)
       session.measureRadius = { _ in 16.5 }
       session.findsElements = name.contains("element")
@@ -4672,8 +4672,8 @@ struct SnapshotProbeTests {
       try renderLayers(
         view, size: size, dark: false, configure: configure, to: "\(out)/\(name).png")
     }
-    // 拷贝出去的那张：拖出来的选区按 10 点裁成透明的角，垫在棋盘格上
-    prefs.set(10.0, forKey: Prefs.screenshotCornerRadius)
+    // 拷贝出去的那张：拖出来的选区按 8 点裁成透明的角，垫在棋盘格上
+    prefs.set(8.0, forKey: Prefs.screenshotCornerRadius)
     let session = SelectionSession(mode: .capture, lastRegion: .zero)
     let view = SelectionView(
       image: desktop, windows: [frame], session: session, keepsColors: false, showsHint: false,
