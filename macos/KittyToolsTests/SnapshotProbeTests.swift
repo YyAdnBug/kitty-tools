@@ -5767,6 +5767,110 @@ struct SnapshotProbeTests {
       }
     }
     try shot("big", big, app: "Xcode")
+    // 2026-11-20 用户截图里那个：Claude 的 64 条（11-17 本机读到的真实菜单；英文菜单、窗口 › 移动与调整大小 13 条），
+    // 叠字、截断、碎卡都出在这份上
+    var claude = MenuReading()
+    var bars: [String] = []
+    for line in #"""
+    ⌘, Claude › Settings…
+    ⌘H Claude › Hide Claude
+    ⌥⌘H Claude › Hide Others
+    ⌘Q Claude › Quit Claude
+    ⌘N File › New Session
+    ⌘O File › Open File…
+    ⇧⌘O File › Open Folder…
+    ⇧⌘T File › Reopen Closed Session
+    ⌘W File › Close Session
+    ⇧⌘W File › Close Window
+    ⌥⇧⌘W File › Close All
+    ⌘Z Edit › Undo
+    ⇧⌘Z Edit › Redo
+    ⌘X Edit › Cut
+    ⌘C Edit › Copy
+    ⌘V Edit › Paste
+    ⌥⇧⌘V Edit › Paste and Match Style
+    ⌘A Edit › Select All
+    ⌘F Edit › Find › Find…
+    ⌘G Edit › Find › Find Next
+    ⇧⌘G Edit › Find › Find Previous
+    🎤 Edit › Start Dictation…
+    🌐E Edit › Emoji & Symbols
+    ⌘K View › Command Palette…
+    ⌘B View › Hide Sidebar
+    ⇧⌘D View › Show Changes
+    ⇧⌘B View › Show Browser
+    ⇧⌘F View › Show Files
+    ⌘J View › Show Terminal
+    ⌘; View › Show Side Chat
+    ⌘\ View › Close Pane
+    ⌃⌘\ View › Split View › New Session on the Right
+    ⌃⌘- View › Split View › New Session Below
+    ⌃] View › Split View › Focus Next Split View
+    ⌃[ View › Split View › Focus Previous Split View
+    ⌃⌘W View › Split View › Close Split View
+    ⌘0 View › Actual Size
+    ⌘+ View › Zoom In
+    ⌘- View › Zoom Out
+    ⌘R View › Reload
+    ⌃⌘F View › Enter Full Screen
+    ⌘[ Go › Back
+    ⌘] Go › Forward
+    ⇧⌘[ Go › Previous Session
+    ⇧⌘] Go › Next Session
+    ⇧⌘K Go › Search…
+    ⌘M Window › Minimize
+    ⌥⌘M Window › Minimize All
+    🌐⌃F Window › Fill
+    🌐⌃C Window › Center
+    🌐⌃← Window › Move & Resize › Left
+    🌐⌃→ Window › Move & Resize › Right
+    🌐⌃↑ Window › Move & Resize › Top
+    🌐⌃↓ Window › Move & Resize › Bottom
+    🌐⌃⇧← Window › Move & Resize › Left & Right
+    🌐⌃⌥⇧← Window › Move & Resize › Left & Quarters
+    🌐⌃⇧→ Window › Move & Resize › Right & Left
+    🌐⌃⌥⇧→ Window › Move & Resize › Right & Quarters
+    🌐⌃⇧↑ Window › Move & Resize › Top & Bottom
+    🌐⌃⌥⇧↑ Window › Move & Resize › Top & Quarters
+    🌐⌃⇧↓ Window › Move & Resize › Bottom & Top
+    🌐⌃⌥⇧↓ Window › Move & Resize › Bottom & Quarters
+    🌐⌃R Window › Move & Resize › Return to Previous Size
+    ⌘/ Help › Keyboard Shortcuts
+    """#.split(separator: "\n") {
+      let text = line.trimmingCharacters(in: .whitespaces)
+      guard let space = text.firstIndex(of: " ") else { continue }
+      let parts = text[text.index(after: space)...].components(separatedBy: " › ")
+      if !bars.contains(parts[0]) { bars.append(parts[0]) }
+      let bar = bars.firstIndex(of: parts[0])! + 1
+      let title = parts.last!
+      claude.shortcuts.append(
+        MenuShortcut(
+          menu: parts[0], path: Array(parts.dropFirst().dropLast()),
+          title: MenuShortcuts.cleaned(title), keys: String(text[..<space]),
+          location: [bar, claude.shortcuts.count { $0.menu == parts[0] }],
+          hasEllipsis: MenuShortcuts.endsWithEllipsis(title)))
+    }
+    let claudeIcon = NSWorkspace.shared.icon(for: .application)
+    for dark in [false, true] {
+      let model = AppShortcutsModel()
+      model.load(claude, name: "Claude", icon: claudeIcon, available: screen)
+      try snapshot(
+        AppShortcutsView(model: model), size: model.layout.size, dark: dark,
+        to: "\(out)/app-shortcuts-claude\(dark ? "-dark" : "").png")
+    }
+    // 点开「移动与调整大小」；按着 ⌘ 再按住 ⇧（只亮带 ⇧ 的）
+    let expanded = AppShortcutsModel()
+    expanded.load(claude, name: "Claude", icon: claudeIcon, available: screen)
+    expanded.expand()
+    try snapshot(
+      AppShortcutsView(model: expanded), size: expanded.layout.size, dark: false,
+      to: "\(out)/app-shortcuts-claude-expanded.png")
+    let shifted = AppShortcutsModel()
+    shifted.load(claude, name: "Claude", icon: claudeIcon, available: screen)
+    shifted.heldModifiers = ["⇧"]
+    try snapshot(
+      AppShortcutsView(model: shifted), size: shifted.layout.size, dark: true,
+      to: "\(out)/app-shortcuts-claude-shift.png")
     // 点了搜索框、留住之后：打了「废纸篓」，选中第一条；搜不到
     for (name, query) in [("search", "废纸篓"), ("search-none", "没有这个")] {
       let model = AppShortcutsModel()

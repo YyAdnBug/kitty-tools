@@ -2320,12 +2320,21 @@ Alfred 的 Related Apps、BetterTouchTool 按 App 停用，调研和测开销的
   选 ⇧ 时那一行下面提醒中文输入法会切中英文。界面里写死「⌘」的说法都改成跟着设的键（没响应那句插进键的符号，速查表第一行写现在的键）；
   🌐 / fn 不给选（系统拿它开听写、表情），分左右的不做。
 - ponytail：同一组合只按「同一处同名」去重，隐藏的菜单项（AX 分不出）照列；Java（JetBrains）、Qt、游戏没测；选中高亮是每行
-  自己的一块底、不在行间滑（几列卡片里滑一块要算跨列的位置，等真机看了再说）。
+  自己的一块底、不在行间滑（几栏之间滑一块要算跨栏的位置，等真机看了再说）。
 - 第五轮体检（2026-11-18，第 3 批）P1：按住的那一刻起挂一个全局监听（按键、鼠标键、滚轮、指针挪出 30 点，`watchBreaks`），
   一有动静就作废这一次、取消在读的菜单（原来只在 0.3 秒、到点、读完这几个时刻查 `quiet`，按着 ⌘ 按 ⌘C、挪鼠标时前台 App
   照样把整个菜单答完）；H3②：留住时按组合找那一项改用 `firstNonNil`（红线不许 `lazy.compactMap(f).first`）。
 - 验证：单测 `AppShortcutsTests`（还原快捷键、标题、状态机、分组、排版、时长；`TEST_RUNNER_KITTY_LIVE_MENU=1` 实读访达）；
   截图自检 `SnapshotProbeTests/appShortcuts()`（图以 app-shortcuts- 开头）。真机手感：HANDTEST「App 快捷键手测」，**都还没走**。
+- 2026-11-20 改版（用户嫌面板不够惊艳、截图里叠字）：调研 10 家（原版、KeyClu、Keysi、KeyCue、iPad 三代、Raycast 搜菜单项、系统菜单、
+  VS Code / IntelliJ 速查卡），拍板页 https://claude.ai/artifact/4wNyemdCHoRjJFrUZ1pTNj （材料在 `macos/build/research/app-shortcuts-panel-2026-11-20/`），
+  用户「全部按推荐」：不画卡片、连续分栏各栏差不多一样高 + 栏间发丝线，组接到下一栏写「续」、栏底不留光杆组名、组尾不只剩 1 条（A1 D1，
+  `AppShortcutsLayout` 按「组名 / 子菜单小标题 / 快捷键 / 收起的一行」排）；一串符号的快捷键、主键对成一列（B1，`MenuKeys`）；
+  栏宽按最长一行量、210–300（B2）；标题的「…」画回来（B3，`MenuShortcut.hasEllipsis`）；子菜单小标题 + 缩进引导线（C1）；
+  系统「移动与调整大小」按 🌐⌃ 组合认、收成一行、点开面板往下长高（C2）；一屏放不下竖着滚（D2）；头部图标 28 / 名字 17 / 搜索框 240
+  （E1）；命中的字黄底（E2）；各栏依次浮现（F1）；按着 ⌘ 再按住 ⇧⌥⌃🌐 只亮相关的（F2）；不做常用 / 收藏（G1）。顺手修了 🌐 🎤
+  画成彩色 emoji（共用 `KeyCap` 也改）、启动器菜单项副标题里 🌐 写成 fn。规格在 `mac-whisker/app-shortcuts.md`，手测
+  HANDTEST「App 快捷键手测」37–45；更新日志等下一版发版时写。
 
 ### 第五轮体检（2026-11-18 拍板、11-18–19 做完，进 0.10.1）
 

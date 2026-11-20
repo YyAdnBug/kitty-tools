@@ -53,7 +53,10 @@ enum MenuSearch {
       return LauncherItem(
         kind: .menuItem,
         target: String(pid) + "\n" + item.location.map(String.init).joined(separator: "."),
-        title: item.title, subtitle: item.keys.isEmpty ? path : path + " · " + item.keys,
+        title: item.title,
+        // 副标题是一段字、放不进系统符号：🌐 写成 fn（同系统的键盘快捷键帮助）
+        subtitle: item.keys.isEmpty
+          ? path : path + " · " + item.keys.replacingOccurrences(of: "🌐", with: "fn"),
         names: terms.names, initials: terms.initials,
         menuItem: Entry(
           pid: pid, appPath: appPath, item: item,

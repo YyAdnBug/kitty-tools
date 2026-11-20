@@ -110,58 +110,270 @@ struct AppShortcutsTests {
     #expect(groups[0].items.map(\.title) == ["新建", "打开"])
   }
 
-  /// 排版：放得下就用最少的列；放不下用最多的列、竖着滚；按先后一列列往下排，列底放不下的卡拆到下一列
-  @Test func layout() {
+  /// 排进栏的行：组名排版时加；进了子菜单先起一行小标题，子菜单里的项 nested
+  @Test func linesOfGroups() {
+    func item(_ path: [String], _ title: String, _ index: Int) -> MenuShortcut {
+      MenuShortcut(menu: "窗口", path: path, title: title, keys: "⌘M", location: [5, index])
+    }
+    let groups = AppShortcutsModel.groups([
+      item([], "最小化", 0), item(["移动与调整大小"], "左", 1), item(["移动与调整大小"], "右", 2),
+      item([], "居中", 3), item(["移动与调整大小"], "上", 4),
+    ])
+    #expect(
+      AppShortcutsModel.lines(groups, folding: false) == [
+        [
+          .item(group: 0, item: 0, nested: false), .submenu(group: 0, item: 1),
+          .item(group: 0, item: 1, nested: true), .item(group: 0, item: 2, nested: true),
+          .item(group: 0, item: 3, nested: false), .submenu(group: 0, item: 4),
+          .item(group: 0, item: 4, nested: true),
+        ]
+      ])
+  }
+
+  /// 子菜单的项接到下一栏：小标题写的是它自己那个子菜单的，一栏里不出两个一样的行（2026-11-20 评审：组 0 的子菜单是
+  /// A B B A、再一组 1 条时，拉下去的那条曾写成 A 的小标题、同一栏出两个 B）；搜索结果少时排进最少的栏
+  @Test func continuedSubmenuHeadings() {
     let screen = NSSize(width: 1470, height: 920)
-    let empty = AppShortcutsLayout.make(rows: [], available: screen)
+    var reading = MenuReading()
+    reading.shortcuts =
+      ["A", "B", "B", "A"].enumerated().map { index, path in
+        MenuShortcut(
+          menu: "显示", path: [path], title: "第 \(index) 项", keys: "⌘\(index)",
+          location: [3, index])
+      } + [MenuShortcut(menu: "窗口", path: [], title: "最小化", keys: "⌘M", location: [4, 0])]
+    let model = AppShortcutsModel()
+    model.load(reading, name: "预览", icon: nil, available: screen)
+    for column in model.layout.columns {
+      #expect(Set(column).count == column.count)
+      var heading: [String] = []
+      for line in column {
+        if case .submenu(let group, let index) = line {
+          heading = model.item(group: group, index: index)?.path ?? []
+        }
+        if case .item(let group, let index, true) = line {
+          #expect(model.item(group: group, index: index)?.path == heading)
+        }
+      }
+    }
+    // 打开时多栏，搜到 3 条：一栏放得下就一栏，不摊成 2 + 1
+    var many = MenuReading()
+    many.shortcuts = (0..<120).map { index in
+      MenuShortcut(
+        menu: "菜单 \(index / 20)", path: [], title: index < 3 ? "关闭 \(index)" : "第 \(index) 项",
+        keys: "⌘K", location: [index / 20 + 1, index % 20])
+    }
+    model.load(many, name: "预览", icon: nil, available: screen)
+    #expect(model.layout.columns.count > 1)
+    model.search("关闭")
+    #expect(model.layout.columns.count == 1)
+  }
+
+  /// 系统的「移动与调整大小」（一段子菜单每条都是 🌐⌃ 开头、至少 4 条，不认名字）收成一行；别的子菜单不收；
+  /// ↑↓ 跳过收起的；点开、搜索时照常列出
+  @Test func foldsSystemTiling() {
+    var reading = MenuReading()
+    let tiling = ["🌐⌃←", "🌐⌃→", "🌐⌃↑", "🌐⌃↓", "🌐⌃⇧←"]
+    reading.shortcuts =
+      [MenuShortcut(menu: "Window", path: [], title: "Minimize", keys: "⌘M", location: [6, 0])]
+      + tiling.enumerated().map { index, keys in
+        MenuShortcut(
+          menu: "Window", path: ["Move & Resize"], title: "Tile \(index)", keys: keys,
+          location: [6, 1, index])
+      }
+      + [
+        MenuShortcut(
+          menu: "Window", path: ["Sort"], title: "Name", keys: "🌐⌃1", location: [6, 2, 0]),
+        MenuShortcut(menu: "Window", path: [], title: "Center", keys: "🌐⌃C", location: [6, 3]),
+      ]
+    let groups = AppShortcutsModel.groups(reading.shortcuts)
+    #expect(
+      AppShortcutsModel.lines(groups, folding: true) == [
+        [
+          .item(group: 0, item: 0, nested: false), .folded(group: 0, item: 1, count: 5),
+          .submenu(group: 0, item: 6), .item(group: 0, item: 6, nested: true),
+          .item(group: 0, item: 7, nested: false),
+        ]
+      ])
+    // 不到 4 条、或者有一条不是 🌐⌃ 开头的不收
+    #expect(!AppShortcutsModel.isSystemTiling(groups[0].items[1...3]))
+    #expect(!AppShortcutsModel.isSystemTiling(groups[0].items[0...4]))
+    let model = AppShortcutsModel()
+    model.load(reading, name: "Notes", icon: nil, available: NSSize(width: 1470, height: 920))
+    #expect(model.flat.map(\.title) == ["Minimize", "Name", "Center"])
+    let size = model.layout.size
+    var resized: NSSize?
+    model.onResize = { resized = $0 }
+    model.expand()
+    #expect(model.flat.count == 8)
+    // 面板跟着长高（宽度不变），不是在原来的大小里竖着滚
+    #expect(model.layout.size.width == size.width && model.layout.size.height > size.height)
+    #expect(resized == model.layout.size)
+    #expect(!model.layout.scrolls)
+    model.load(reading, name: "Notes", icon: nil, available: NSSize(width: 1470, height: 920))
+    model.search("tile")
+    #expect(model.flat.count == 5)
+  }
+
+  /// 按着 ⌘ 时又按住的修饰键：只亮带着 ⌘ 和它们的；没按住别的都亮
+  @Test func litByHeldModifiers() {
+    func item(_ keys: String) -> MenuShortcut {
+      MenuShortcut(menu: "编辑", path: [], title: keys, keys: keys, location: [3, 0])
+    }
+    #expect(AppShortcutsModel.lit(item("⌘Z"), hold: "⌘", held: []))
+    #expect(AppShortcutsModel.lit(item("🌐⌃F"), hold: "⌘", held: []))
+    #expect(AppShortcutsModel.lit(item("⇧⌘Z"), hold: "⌘", held: ["⇧"]))
+    #expect(!AppShortcutsModel.lit(item("⌘Z"), hold: "⌘", held: ["⇧"]))
+    #expect(!AppShortcutsModel.lit(item("⇧⌃Z"), hold: "⌘", held: ["⇧"]))
+    #expect(AppShortcutsModel.lit(item("⌥⇧⌘V"), hold: "⌘", held: ["⇧", "⌥"]))
+    #expect(!AppShortcutsModel.lit(item("⇧⌘V"), hold: "⌘", held: ["⇧", "⌥"]))
+    // 两段式看第一段；按住的是 ⌥ 时要带 ⌥
+    #expect(AppShortcutsModel.lit(item("⇧⌘K ⌘S"), hold: "⌘", held: ["⇧"]))
+    #expect(AppShortcutsModel.lit(item("⌥⇧F"), hold: "⌥", held: ["⇧"]))
+    // 菜单只报打出来的字（⌘?），按的时候按着 ⇧
+    #expect(AppShortcutsModel.lit(item("⌘?"), hold: "⌘", held: ["⇧"]))
+    #expect(AppShortcutsModel.lit(item("⌘+"), hold: "⌘", held: ["⇧"]))
+    #expect(!AppShortcutsModel.lit(item("⌘/"), hold: "⌘", held: ["⇧"]))
+    #expect(AppShortcuts.symbols([.shift, .option]) == ["⇧", "⌥"])
+    #expect(AppShortcuts.symbols([.function, .control, .command]) == ["🌐", "⌃", "⌘"])
+  }
+
+  /// 快捷键拆成修饰键和主键；「…」去掉了也记得，面板里画回来
+  @Test func keyPartsAndEllipsis() {
+    #expect(MenuKeys.split("⌥⇧⌘V") == (["⌥", "⇧", "⌘"], "V"))
+    #expect(MenuKeys.split("🌐⌃←") == (["🌐", "⌃"], "←"))
+    #expect(MenuKeys.split("F6") == ([], "F6"))
+    #expect(MenuKeys.split("🎤") == ([], "🎤"))
+    #expect(MenuKeys.split("⌘") == ([], "⌘"))
+    #expect(MenuShortcuts.endsWithEllipsis("Run…"))
+    #expect(MenuShortcuts.endsWithEllipsis("打开... "))
+    #expect(!MenuShortcuts.endsWithEllipsis("Run"))
+    #expect(MenuShortcuts.endsWithEllipsis("Keyboard Shortcuts… [⌘K ⌘S]"))
+    #expect(!MenuShortcuts.endsWithEllipsis("Keyboard Shortcuts [⌘K ⌘S]"))
+    let run = MenuShortcut(
+      menu: "Product", path: [], title: "Run", keys: "⌥⌘R", location: [8, 1], hasEllipsis: true)
+    #expect(run.displayTitle == "Run…")
+  }
+
+  /// 栏宽按最长的一行量，夹在 210…300
+  @Test func columnWidthFollowsLongestRow() {
+    func item(_ title: String, _ keys: String) -> MenuShortcut {
+      MenuShortcut(menu: "文件", path: [], title: title, keys: keys, location: [2, 0])
+    }
+    let short = AppShortcutsLayout.baseWidth(for: [item("新建", "⌘N")])
+    #expect(short == AppShortcutsLayout.minColumnWidth)
+    let long = AppShortcutsLayout.baseWidth(for: [
+      item("新建", "⌘N"), item("Paste and Match Style With A Very Long Name", "⌥⇧⌘V"),
+    ])
+    #expect(long > short && long <= AppShortcutsLayout.maxColumnWidth)
+    let huge = AppShortcutsLayout.baseWidth(for: [item(String(repeating: "很长", count: 40), "⌘N")])
+    #expect(huge == AppShortcutsLayout.maxColumnWidth)
+  }
+
+  /// 排版：放得下就用最少的栏（只有一栏、又有两个菜单时分两栏）；放不下用最多的栏、竖着滚。按先后一栏栏往下排，
+  /// 组接到下一栏时栏顶写「续」；栏底不留光杆组名、子菜单小标题；组尾不只剩 1 条
+  @Test func layout() {
+    typealias Line = AppShortcutsLayout.Line
+    let screen = NSSize(width: 1470, height: 920)
+    let base = AppShortcutsLayout.minColumnWidth
+    func groups(_ rows: [Int]) -> [[Line]] {
+      rows.enumerated().map { group, count in
+        (0..<count).map { Line.item(group: group, item: $0, nested: false) }
+      }
+    }
+    let empty = AppShortcutsLayout.make(groups: [], base: base, available: screen)
     #expect(empty.size == AppShortcutsLayout.emptySize)
     #expect(empty.columns.isEmpty)
 
-    let one = AppShortcutsLayout.make(rows: [5], available: screen)
-    #expect(one.columns == [[AppShortcutsLayout.Segment(group: 0, rows: 0..<5)]])
-    // 只有一列时被最窄宽度撑开（顶上那一行放得下），列跟着放宽
+    // 一组：一栏，被最窄宽度撑开，栏跟着放宽
+    let one = AppShortcutsLayout.make(groups: groups([5]), base: base, available: screen)
+    #expect(one.columns.count == 1)
+    #expect(one.columns[0].first == .menu(group: 0, continued: false))
     #expect(one.size.width == AppShortcutsLayout.minWidth)
-    #expect(one.columnWidth > AppShortcutsLayout.columnWidth)
+    #expect(one.columnWidth > base)
     #expect(
       one.size.height
         == AppShortcutsLayout.padding * 2 + AppShortcutsLayout.header
-        + AppShortcutsLayout.cardHeight(rows: 5))
+        + AppShortcutsLayout.rowHeight * 6)
     #expect(!one.scrolls)
+    // 两组 7 + 3 条：一栏放得下也分两栏
+    #expect(
+      AppShortcutsLayout.make(groups: groups([7, 3]), base: base, available: screen).columns.count
+        == 2)
 
-    // 访达那样八组 117 条（一组 30 条）：13 寸屏上多列、一屏放得下，每一行都排上、先后不乱
-    let rows = [4, 30, 22, 25, 20, 10, 5, 1]
-    let finder = AppShortcutsLayout.make(rows: rows, available: screen)
+    /// 一份排版守住的规矩
+    func check(_ layout: AppShortcutsLayout, _ input: [[Line]]) {
+      // 每一条都排上，先后不乱
+      let items = layout.columns.flatMap { $0 }.filter(\.isItem)
+      #expect(items == input.flatMap { $0 }.filter(\.isItem))
+      for column in layout.columns {
+        // 栏顶是组名（接着排的写「续」），栏底不是组名、不是小标题
+        #expect(column.first?.isMenu == true)
+        if let last = column.last {
+          #expect(!last.isMenu)
+          if case .submenu = last { Issue.record("栏底留了子菜单小标题") }
+        }
+        // 栏底那一组接到下一栏时，这一栏里至少留了 2 条
+        if let heading = column.lastIndex(where: \.isMenu) {
+          let tail = column[heading...].count(where: \.isItem)
+          #expect(tail >= 2 || tail == input[column[heading].group].count(where: \.isItem))
+        }
+      }
+      // 接到下一栏的那一段不只 1 条（整组就 1 条的除外）
+      for (index, column) in layout.columns.enumerated() where index > 0 {
+        if case .menu(let group, true) = column[0] {
+          let head = column.prefix { !$0.isMenu || $0 == column[0] }.count(where: \.isItem)
+          #expect(head >= 2 || input[group].count(where: \.isItem) < 3)
+        }
+      }
+    }
+
+    // 访达那样八组 117 条（一组 30 条）：13 寸屏上多栏、一屏放得下，各栏差不多一样高
+    let finderInput = groups([4, 30, 22, 25, 20, 10, 5, 1])
+    let finder = AppShortcutsLayout.make(groups: finderInput, base: base, available: screen)
     #expect(finder.columns.count > 1)
     #expect(!finder.scrolls)
     #expect(finder.size.width <= screen.width * 0.9)
     #expect(finder.size.height <= screen.height * 0.8)
-    let segments = finder.columns.flatMap { $0 }
-    for (group, count) in rows.enumerated() {
-      let parts = segments.filter { $0.group == group }.map(\.rows)
-      #expect(parts.first?.lowerBound == 0)
-      #expect(parts.last?.upperBound == count)
-      #expect(zip(parts, parts.dropFirst()).allSatisfy { $0.upperBound == $1.lowerBound })
+    check(finder, finderInput)
+    func height(_ column: [Line]) -> CGFloat {
+      column.enumerated().reduce(0) {
+        $0 + AppShortcutsLayout.height($1.element, top: $1.offset == 0)
+      }
     }
-    #expect(segments.map(\.group) == segments.map(\.group).sorted())
-    #expect(
-      segments.filter(\.continued).allSatisfy { $0.rows.lowerBound >= AppShortcutsLayout.minSplit })
+    let heights = finder.columns.dropLast().map(height)
+    #expect((heights.max() ?? 0) - (heights.min() ?? 0) <= AppShortcutsLayout.rowHeight * 3)
 
-    // Xcode 那样 12 组 214 条：最多列，竖着滚
-    let big = AppShortcutsLayout.make(
-      rows: Array(repeating: 14, count: 11) + [60], available: screen)
+    // Xcode 那样 12 组 214 条：最多栏，竖着滚
+    let bigInput = groups(Array(repeating: 14, count: 11) + [60])
+    let big = AppShortcutsLayout.make(groups: bigInput, base: base, available: screen)
     #expect(big.columns.count == 5)
     #expect(big.scrolls)
     #expect(big.size.height <= screen.height * 0.8)
+    check(big, bigInput)
 
-    let flowed = AppShortcutsLayout.flow([3, 3, 3, 3], into: 2)
-    #expect(flowed.columns.map { $0.map(\.group) } == [[0, 1], [2, 3]])
-    #expect(flowed.height == AppShortcutsLayout.cardHeight(rows: 3) * 2 + AppShortcutsLayout.gap)
-    // 一组 30 条排进两列：拆成两段，第二段接着第一段
-    let split = AppShortcutsLayout.flow([30], into: 2)
+    // 一组 30 条排进两栏：拆成两段，第二段栏顶写「续」
+    let split = AppShortcutsLayout.flow(groups([30]), into: 2)
     #expect(split.columns.count == 2)
-    #expect(split.columns[0][0].rows.lowerBound == 0)
-    #expect(split.columns[1][0].continued)
-    #expect(split.columns[1][0].rows.upperBound == 30)
+    #expect(split.columns[1][0] == .menu(group: 0, continued: true))
+    // 子菜单里的项接到下一栏：小标题再写一遍
+    let nested: [[Line]] = [
+      [.submenu(group: 0, item: 0)] + (0..<20).map { .item(group: 0, item: $0, nested: true) }
+    ]
+    let continued = AppShortcutsLayout.flow(nested, into: 2)
+    #expect(
+      Array(continued.columns[1].prefix(2)) == [
+        .menu(group: 0, continued: true), .submenu(group: 0, item: 0),
+      ])
+    // 组名下面只放得下 1 条时整组挪到下一栏；组尾只剩 1 条时前面拉 1 条下去
+    for rows in [[9, 2], [6, 6, 6], [10, 1, 10], [3, 3, 3, 3, 3]] {
+      for count in 2...3 {
+        let input = groups(rows)
+        let flowed = AppShortcutsLayout.flow(input, into: count)
+        check(
+          AppShortcutsLayout(
+            columns: flowed.columns, base: base, contentHeight: flowed.height, size: .zero), input)
+      }
+    }
   }
 
   /// 实读访达的菜单（按需：TEST_RUNNER_KITTY_LIVE_MENU=1，测试宿主要有辅助功能授权；只读、不点菜单）：主线程外读得出来、
