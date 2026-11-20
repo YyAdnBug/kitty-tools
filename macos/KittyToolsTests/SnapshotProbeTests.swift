@@ -4584,6 +4584,84 @@ struct SnapshotProbeTests {
     }
   }
 
+  /// 框选时窗口的框跟着出图的形状（2026-11-20 用户：悬停是圆角、单击选中后变直角）：假桌面上一扇圆角 16.5 的窗口，
+  /// 悬停、单击选中、选中后悬停左上角（加粗的边和圆弧）、方向键挪过一点、悬停窗口里的元素、关着「窗口截图带阴影」时悬停，
+  /// 图以 corner- 开头，几秒：-only-testing:'KittyToolsTests/SnapshotProbeTests/windowCorners()'
+  @Test(.enabled(if: directory != nil)) func windowCorners() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    let size = NSSize(width: 600, height: 420)
+    let frame = CGRect(x: 90, y: 90, width: 400, height: 250)
+    let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+    let context = try #require(
+      CGContext(
+        data: nil, width: Int(size.width) * 2, height: Int(size.height) * 2, bitsPerComponent: 8,
+        bytesPerRow: 0, space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    context.scaleBy(x: 2, y: 2)
+    // 壁纸 + 一扇圆角 16.5 的窗口（标题栏、几行字的灰条）
+    context.setFillColor(CGColor(srgbRed: 0.16, green: 0.42, blue: 0.47, alpha: 1))
+    context.fill(CGRect(origin: .zero, size: size))
+    context.addPath(
+      CGPath(roundedRect: frame, cornerWidth: 16.5, cornerHeight: 16.5, transform: nil))
+    context.setFillColor(CGColor(gray: 0.97, alpha: 1))
+    context.fillPath()
+    context.setFillColor(CGColor(gray: 0.82, alpha: 1))
+    for row in 0..<6 {
+      context.fill(
+        CGRect(x: frame.minX + 24, y: frame.maxY - 60 - CGFloat(row) * 28, width: 280, height: 10))
+    }
+    let desktop = try #require(context.makeImage())
+    let suite = "kitty-snapshot-corners-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: suite))
+    defer { prefs.removePersistentDomain(forName: suite) }
+    let states: [(String, Bool, (SelectionView) -> Void)] = [
+      ("corner-window-hover", true, { $0.mouse = CGPoint(x: 300, y: 160) }),
+      (
+        "corner-window-selected", true,
+        {
+          $0.clickedWindow = (7, frame, 0)
+          $0.select(frame)
+        }
+      ),
+      (
+        "corner-window-selected-corner", true,
+        {
+          $0.clickedWindow = (7, frame, 0)
+          $0.select(frame)
+          $0.mouse = CGPoint(x: frame.minX + 2, y: frame.maxY - 2)
+        }
+      ),
+      (
+        "corner-window-moved", true,
+        {
+          $0.clickedWindow = (7, frame, 0)
+          $0.select(frame.offsetBy(dx: 1, dy: 0))
+        }
+      ),
+      ("corner-element-hover", true, { $0.mouse = CGPoint(x: 200, y: 265) }),
+      ("corner-window-hover-off", false, { $0.mouse = CGPoint(x: 300, y: 160) }),
+    ]
+    for (name, shadow, configure) in states {
+      prefs.set(shadow, forKey: Prefs.screenshotWindowShadow)
+      let session = SelectionSession(mode: .capture, lastRegion: .zero)
+      session.measureRadius = { _ in 16.5 }
+      session.findsElements = name.contains("element")
+      // 指针那一行（问元素给的是全局坐标）
+      session.findElements = { _, point in
+        .chain([
+          ElementFinder.Layer(
+            frame: CGRect(x: point.x - 100, y: point.y - 15, width: 300, height: 30), name: "文本")
+        ])
+      }
+      let view = SelectionView(
+        image: desktop, windows: [frame], owners: [[4242]], windowIDs: [7], session: session,
+        keepsColors: false, showsHint: false, loupe: .off)
+      view.styleDefaults = prefs
+      try renderLayers(
+        view, size: size, dark: false, configure: configure, to: "\(out)/\(name).png")
+    }
+  }
+
   /// 框选遮罩：截图翻译的待选（整屏轻暗 + 提示）和拖动中（选区外变暗），截图的悬停窗口 + 放大镜、拖动中（尺寸）、
   /// 调整（手柄 + 工具栏，深浅色）。图层要在窗口里显示过才有内容，所以放进屏外窗口再 render
   private func renderSelection(_ out: String) throws {
@@ -4688,10 +4766,12 @@ struct SnapshotProbeTests {
       ),
     ]
     for (name, dark, configure) in capture {
+      // 悬停的窗口按它量出来的圆角画（cornerRadius(of:)；这里不问 ScreenCaptureKit）
+      let session = SelectionSession(mode: .capture, lastRegion: .zero)
+      session.measureRadius = { _ in WindowShot.defaultRadius }
       try renderLayers(
         SelectionView(
-          image: desktop, windows: windows,
-          session: SelectionSession(mode: .capture, lastRegion: .zero), showsHint: true,
+          image: desktop, windows: windows, windowIDs: [1, 2], session: session, showsHint: true,
           loupe: .full),
         size: NSSize(width: 600, height: 480), dark: dark, configure: configure,
         to: "\(out)/\(name).png")

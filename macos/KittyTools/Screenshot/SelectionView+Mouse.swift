@@ -289,13 +289,15 @@ extension SelectionView {
       // 单击：截鼠标下最前面的窗口，没有窗口就截整屏；已有选区（本屏或别的屏）时点选区外什么也不做，
       // 免得误点丢掉选区
       if !isAdjusting, !session.hasSelection(besides: self) {
-        select(pressedHover ?? hoverRect(at: point) ?? bounds)
-        // 选中的正好是一整扇窗口（全在这块屏里、不是窗口里的元素）：记下它，出图时能单独截（N1）
-        if let selection, let index = windows.firstIndex(of: selection),
+        let picked = pressedHover ?? hoverRect(at: point) ?? bounds
+        // 选中的正好是一整扇窗口（全在这块屏里、不是窗口里的元素）：记下它，出图时能单独截（N1）。先记再选中：
+        // 选中时那一下重画就按它的圆角画（selectionRadius）
+        if let index = windows.firstIndex(of: picked),
           let id = windowIDs.indices.contains(index) ? windowIDs[index] : nil
         {
-          clickedWindow = (id, selection, index)
+          clickedWindow = (id, picked, index)
         }
+        select(picked)
         if isOverBars(point) { clickSelected = (event.timestamp, point) }
         // ⌥S：单击选中的那一块（元素、窗口、整屏）同框完松手，直接翻
         if autoTranslates { translateInPlace() }

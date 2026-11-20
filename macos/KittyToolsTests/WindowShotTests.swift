@@ -55,6 +55,27 @@ import Testing
       original: frozen, annotations: annotations)
   }
 
+  // 量窗口的圆角（悬停 / 选中窗口的框照它画）：圆弧半径 20 像素的量出 20（±1），实心角 0，半透明的照样量得出，
+  // 几乎透明、太小的量不出
+  @Test func measuresCornerRadius() throws {
+    let measured = try #require(
+      WindowShot.cornerRadius(of: Self.image(width: 300, height: 200, fill: Self.green, radius: 20))
+    )
+    #expect(abs(measured - 20) < 1)
+    let big = try #require(
+      WindowShot.cornerRadius(of: Self.image(width: 600, height: 400, fill: Self.red, radius: 33)))
+    #expect(abs(big - 33) < 1)
+    #expect(WindowShot.cornerRadius(of: Self.image(width: 300, height: 200, fill: Self.green)) == 0)
+    let translucent = CGColor(srgbRed: 0, green: 1, blue: 0, alpha: 0.4)
+    let faint = try #require(
+      WindowShot.cornerRadius(
+        of: Self.image(width: 300, height: 200, fill: translucent, radius: 20)))
+    #expect(abs(faint - 20) < 1)
+    let clear = CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0)
+    #expect(WindowShot.cornerRadius(of: Self.image(width: 300, height: 200, fill: clear)) == nil)
+    #expect(WindowShot.cornerRadius(of: Self.image(width: 6, height: 6, fill: Self.green)) == nil)
+  }
+
   // 换上透明圆角带阴影的那一张：画面是冻结帧（红），单独截的（绿）只借形状；四周留出阴影的边、frame 跟着往外扩
   // （像素 / 点不变），四角透明
   @Test func composesTransparentCornersAndShadow() throws {

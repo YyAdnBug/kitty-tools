@@ -38704,12 +38704,12 @@
         }
       }
     },
-    "画面就是框选时看到的；别的 App 的窗口挡住的地方换成这扇窗口自己的，拷贝、存储、钉图都带透明边。选区拖动过、窗口有一部分在屏幕外时照旧按矩形裁。" : {
+    "画面就是框选时看到的；别的 App 的窗口挡住的地方换成这扇窗口自己的，拷贝、存储、钉图都带透明边。选区拖动过、窗口有一部分在屏幕外时照旧按矩形裁。框选时窗口的框跟着出图的样子：开着时是窗口的圆角，选区拖动过或关掉这项就是直角。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The picture is what you saw while selecting; parts covered by other apps’ windows show this window’s own content, and copies, saves, and pins keep the transparent edge. If you moved the selection or part of the window is off screen, it’s cropped as a rectangle as before."
+            "value" : "The picture is what you saw while selecting; parts covered by other apps’ windows show this window’s own content, and copies, saves, and pins keep the transparent edge. If you moved the selection or part of the window is off screen, it’s cropped as a rectangle as before. While selecting, the window’s frame matches the result: rounded like the window while this is on, square once you move the selection or turn this off."
           }
         }
       }

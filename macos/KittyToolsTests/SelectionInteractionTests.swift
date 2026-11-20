@@ -53,6 +53,8 @@ struct SelectionInteractionTests {
       if findsElements { self.session.findsElements = true }
       // 单击窗口出图时的单独截图（N1）：不问真的 ScreenCaptureKit
       self.session.snapshotWindow = { _ in nil }
+      // 悬停、选中整扇窗口时量它的圆角：同样不问真的（量不出 = 按默认的画）
+      self.session.measureRadius = { _ in nil }
       view = SelectionView(
         image: image ?? context.makeImage()!, windows: windows, owners: owners,
         windowIDs: windowIDs, session: self.session, keepsColors: keepsColors, showsHint: showsHint,
@@ -1403,6 +1405,45 @@ struct SelectionInteractionTests {
     bar.styles.set(true, forKey: Prefs.screenshotWindowShadow)
     bar.click(CGPoint(x: 600, y: 785))
     #expect(bar.view.clickedWindow == nil)
+  }
+
+  // 2026-11-20 用户：悬停时是圆角、单击选中后变直角。框的形状就是出图的形状：开着「窗口截图带阴影」时整扇窗口悬停和
+  // 选中都按量出来的圆角（先按默认的画，量完换上），挪过一点就是直角；没有窗口号的（菜单栏那条）、关着开关、录屏一律直角
+  @Test func windowFrameFollowsOutputShape() async throws {
+    let frame = CGRect(x: 200, y: 150, width: 500, height: 400)
+    let bar = CGRect(x: 0, y: 770, width: 1200, height: 30)
+    let h = Harness(windows: [frame, bar], windowIDs: [42, nil])
+    h.session.measureRadius = { _ in 12 }
+    h.styles.set(true, forKey: Prefs.screenshotWindowShadow)
+    #expect(h.view.cornerRadius(of: frame) == WindowShot.defaultRadius)
+    for _ in 0..<20 where h.view.cornerRadius(of: frame) != 12 { await Task.yield() }
+    #expect(h.view.cornerRadius(of: frame) == 12)
+    #expect(h.view.cornerRadius(of: bar) == 0)
+    // 悬停：洞和粉框都是圆角（窗口左上角那一点在洞外）
+    let corner = CGPoint(x: frame.minX + 1, y: frame.maxY - 1)
+    h.move(CGPoint(x: 400, y: 300))
+    #expect(h.view.shade.path?.contains(corner, using: .evenOdd) == true)
+    #expect(h.view.highlight.path?.contains(CGPoint(x: frame.minX + 2, y: frame.maxY - 2)) == false)
+    // 单击选中：洞、边框还是那个圆角
+    h.click(CGPoint(x: 400, y: 300))
+    #expect(h.view.selection == frame)
+    #expect(h.view.selectionRadius == 12)
+    #expect(h.view.shade.path?.contains(corner, using: .evenOdd) == true)
+    #expect(h.view.outline.path?.contains(CGPoint(x: frame.minX, y: frame.maxY)) == false)
+    // 挪了一点：出图成了矩形裁切，框也成了直角
+    h.arrow(kVK_RightArrow)
+    #expect(h.view.selectionRadius == 0)
+    let moved = try #require(h.view.selection)
+    #expect(
+      h.view.shade.path?.contains(CGPoint(x: moved.minX + 1, y: moved.maxY - 1), using: .evenOdd)
+        == false)
+    // 关着开关：悬停也是直角
+    h.styles.set(false, forKey: Prefs.screenshotWindowShadow)
+    #expect(h.view.cornerRadius(of: frame) == 0)
+    // 录屏录的是矩形
+    let record = Harness(mode: .record, windows: [frame], windowIDs: [42])
+    record.styles.set(true, forKey: Prefs.screenshotWindowShadow)
+    #expect(record.view.cornerRadius(of: frame) == 0)
   }
 
   // 截图翻译 / 识字：待选和框选时有放大镜、尺寸只读，⇧ 照样正方形，松手即确认（交回裁好的图）

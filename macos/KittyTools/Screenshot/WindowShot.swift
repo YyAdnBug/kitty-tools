@@ -14,6 +14,8 @@
 // 历史存的原图是带阴影、没标注的那张（另记一个「窗口截图」的标记，钉图按它不套框），标注跟着挪进留边；frame 往外扩出留边：
 // 飞行卡片、钉图按它摆，窗口落在原来的位置。合成在主线程（同 Annotation.render 出图）：阴影的大头挪到了四分之一大小上画，
 // 3000 × 1900 像素的窗口整次见 PLAN §10 的量测。
+// 框选时这扇窗口的框（悬停、单击选中）照它真实的圆角画、和出图一个形状（2026-11-20，SelectionView.cornerRadius(of:)）：
+// 圆角在这里量（cornerRadius，只截左上角一小块），SelectionSession.windowRadius 记着。
 
 import AppKit
 import ScreenCaptureKit
@@ -71,9 +73,9 @@ enum WindowShot {
     return dressed
   }
 
-  /// 单独截那一扇窗口：不要系统阴影、不垫白底，按窗口所在屏的分辨率；截不到 nil（屏幕录制授权在截图开始时已经查过）。
-  /// 系统服务不答最多等 2 秒（同冻结帧的 E22）
-  static func snapshot(_ id: CGWindowID) async -> CGImage? {
+  /// 单独截那一扇窗口：不要系统阴影、不垫白底，按窗口所在屏的分辨率；corner 给了就只截左上角 corner 点见方（量圆角；
+  /// 窗口不到它两倍大时 nil）。截不到 nil（屏幕录制授权在截图开始时已经查过）。系统服务不答最多等 2 秒（同冻结帧的 E22）
+  static func snapshot(_ id: CGWindowID, corner: CGFloat? = nil) async -> CGImage? {
     let shot = try? await ScreenCapture.within(.seconds(2)) { () async throws -> CGImage? in
       let content = try await SCShareableContent.excludingDesktopWindows(
         false, onScreenWindowsOnly: true)
@@ -81,8 +83,14 @@ enum WindowShot {
       let filter = SCContentFilter(desktopIndependentWindow: window)
       let configuration = SCStreamConfiguration()
       let scale = CGFloat(filter.pointPixelScale)
-      configuration.width = Int((filter.contentRect.width * scale).rounded())
-      configuration.height = Int((filter.contentRect.height * scale).rounded())
+      var size = filter.contentRect.size
+      if let corner {
+        guard size.width >= corner * 2, size.height >= corner * 2 else { return nil }
+        size = CGSize(width: corner, height: corner)
+        configuration.sourceRect = CGRect(origin: .zero, size: size)  // 原点在窗口左上（27.0.1 实测）
+      }
+      configuration.width = Int((size.width * scale).rounded())
+      configuration.height = Int((size.height * scale).rounded())
       configuration.showsCursor = false
       configuration.ignoreShadowsSingleWindow = true
       configuration.shouldBeOpaque = false
@@ -90,6 +98,19 @@ enum WindowShot {
         contentFilter: filter, configuration: configuration)
     }
     return shot ?? nil
+  }
+
+  /// 那扇窗口的圆角（点）：只截左上角 48 点见方来量（cornerRadius(of:)；27.0.1 实测连同列窗口一次约 50 ms）。量不出 nil
+  static func cornerRadius(of id: CGWindowID) async -> CGFloat? {
+    let side: CGFloat = 48
+    guard let corner = await snapshot(id, corner: side), let radius = cornerRadius(of: corner)
+    else { return nil }
+    return radius * side / CGFloat(corner.width)
+  }
+
+  /// 窗口的圆角量出来之前先按这个画（点）：15 上的标准窗口约 10；26 起变大，27.0.1 实测各 App 的窗口都是 16.5
+  static var defaultRadius: CGFloat {
+    if #available(macOS 26, *) { 16.5 } else { 10 }
   }
 
   /// 合成（文件头 2、3）。live 是单独截的那扇窗口，和 capture 里的冻结帧那一块同一个大小（差 tolerance 以内）；
@@ -168,6 +189,36 @@ enum WindowShot {
     guard drawn else { return true }
     let solid = stride(from: 3, to: pixels.count, by: 4).filter { pixels[$0] > 24 }.count
     return solid * 2 < side * side
+  }
+
+  /// 窗口左上角的圆角半径（像素）：沿对角线从角往里走，alpha 到里面那一点（离角 side − 1 格）的一半处离角 t（像素中心、
+  /// 前后两格插值），圆弧的话 t = r(1 − 1/√2)。只读左上角一小块（27.0.1 实测各 App 的窗口四个角一样，WindowRadiusProbeTests）；
+  /// 几乎透明、太小 nil，角上就是实心的 0
+  static func cornerRadius(of image: CGImage) -> CGFloat? {
+    let side = min(96, image.width / 2, image.height / 2)
+    guard side >= 4, let corner = image.cropping(to: CGRect(x: 0, y: 0, width: side, height: side))
+    else { return nil }
+    var pixels = [UInt8](repeating: 0, count: side * side * 4)
+    let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
+      guard
+        let context = CGContext(
+          data: buffer.baseAddress, width: side, height: side, bitsPerComponent: 8,
+          bytesPerRow: side * 4, space: CGColorSpaceCreateDeviceRGB(),
+          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+      else { return false }
+      context.draw(corner, in: CGRect(x: 0, y: 0, width: side, height: side))
+      return true
+    }
+    // 对角线上第 i 格的 alpha（内存里第 0 行在上面）
+    let at = { (i: Int) in CGFloat(pixels[(i * side + i) * 4 + 3]) }
+    let half = at(side - 1) / 2
+    guard drawn, half >= 8, let first = (0..<side).first(where: { at($0) >= half }) else {
+      return nil
+    }
+    guard first > 0 else { return 0 }
+    let crossing =
+      CGFloat(first) - 0.5 + (half - at(first - 1)) / max(1, at(first) - at(first - 1))
+    return crossing / (1 - 1 / 2.squareRoot())
   }
 
   /// 冻结帧那一块垫底，rects（像素，原点左下）里换成单独截的（大小按单独截的）

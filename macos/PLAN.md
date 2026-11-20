@@ -2386,6 +2386,32 @@ Alfred 的 Related Apps、BetterTouchTool 按 App 停用，调研和测开销的
   `ScreenshotSnapshotTests/renderBatch8()`（shot-delay-countdown、shot-window-shadow*）、`SnapshotProbeTests/batch8()`
   （settings-screenshot-batch8、launcher-menu-items*）。真机：HANDTEST「第五轮体检手测」102–115。
 
+### 框选时窗口的框跟着出图的圆角（2026-11-20）
+
+- 来由：用户反馈「框选时预览的选区是圆角，框选完成后变成了直角」。查下来是**框线前后不一致（A）**，出图（B）0.10.1 已经对了：
+  悬停时洞和粉框一律圆角 10（不管是窗口、窗口里的元素还是菜单栏那条），单击选中时洞 10 → 0（`pop`）、选区双描边是矩形；
+  可单击窗口拷贝出来的图是 N1 的透明圆角带阴影（框是直角、图是圆角，正好反过来）。另外 27.0.1 上窗口的真实圆角是 16.5，
+  固定的 10 本来就贴不住。
+- 做法（推荐、直接做了）：**框的形状就是出图的形状**（`SelectionView.cornerRadius(of:)` / `selectionRadius`，条件和
+  `windowShot(for:)` 同一组）——截图模式、开着「窗口截图带阴影」、整个在这块屏里、有窗口号的整扇窗口，悬停和单击选中都按它
+  **真实的圆角**画（选区双描边同心、角手柄落在圆弧正中、悬停的边让出圆角、悬停的角连着圆弧），拖边 / 挪动 / 方向键微调过
+  一下就成直角（出图也成了矩形裁切，跟手、不做动画）；别的（窗口里的元素、程序坞 / 菜单栏、半截在屏外的窗口、录屏、截图翻译 /
+  识字、关着那个开关）悬停、选中都是直角。原来「悬停一律圆角 10」是装饰，和出图对不上，去掉了。
+- 圆角怎么来：**量**（`WindowShot.cornerRadius(of: 窗口号)`）——ScreenCaptureKit 单独截那扇窗口的左上角 48 点见方（`sourceRect`，
+  原点在窗口左上，27.0.1 实测），沿对角线找 alpha 过半的那一点、按圆弧反推半径（`cornerRadius(of: 图)`，纯函数配单测）。
+  `SelectionSession.windowRadius`：第一次问一扇窗口时先给 `WindowShot.defaultRadius`（15 上 10、26 起 16.5）、在后台量，一次只量
+  一扇、这次框选记着，量完各屏重画（悬停着的 `glide` 过去）。量不出的按默认的记下。没有用固定值：26 上不同样式的窗口圆角不一样
+  （没在 26 上量过，推断），App 自己画的无边框窗口（本 App 的浮层、别家的启动器）圆角各不相同，量一次约 50 ms（含列窗口）、只发生在
+  第一次悬停到那扇窗口时。
+- 本机实测（27.0.1，`WindowRadiusProbeTests`）：微信、访达、VS Code、Claude、Chrome 的窗口四个角都是 16.5 点；单独截整扇
+  25–35 ms、只截左上角同样 16.5；列窗口 23 ms。
+- 出图那一路（N1）没动：只出 PNG（`ScreenshotOutput`，没有 JPG 的透明问题）；拷贝进剪贴板的 PNG 四角透明，粘进不认透明的 App
+  会是黑 / 白角（N1 起就这样）；钉图按 `isWindow` 不套框；标注照常（四角圆角外的标注出图时被裁掉，N1 起就这样）；长截图 / 录屏
+  本来就是矩形，框跟着是直角。
+- 验证：单测 `WindowShotTests.measuresCornerRadius`、`SelectionInteractionTests.windowFrameFollowsOutputShape`；截图自检
+  `SnapshotProbeTests/windowCorners()`（corner-*，几秒）；本机量圆角 `TEST_RUNNER_KITTY_LIVE_WINDOW_RADIUS=1 …
+  -only-testing:'KittyToolsTests/WindowRadiusProbeTests/measure()'`。真机：HANDTEST「框选时窗口的框跟着出图的圆角」1–8。
+
 ### 搁着的计划（第四轮体检新功能，2026-11-17）
 
 - 来由：第四轮体检（2026-10-30）的 24 项新功能 X1–X24 加 T3、T5，拍板页「全部按推荐」；2026-11-17 用户「先按照你推荐的全部开始执行直至全部完成」。

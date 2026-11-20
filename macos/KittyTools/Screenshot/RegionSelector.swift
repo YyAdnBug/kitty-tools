@@ -397,6 +397,29 @@ final class SelectionSession {
   }
   /// 单击窗口出图时单独截那扇窗口（N1，WindowShot.snapshot）；单测、截图自检换成假的——真的会去问 ScreenCaptureKit
   var snapshotWindow: (CGWindowID) async -> CGImage? = { await WindowShot.snapshot($0) }
+  /// 量窗口的圆角（WindowShot.cornerRadius）；单测、截图自检换成假的
+  var measureRadius: (CGWindowID) async -> CGFloat? = { await WindowShot.cornerRadius(of: $0) }
+  /// 这次框选量过的窗口圆角（点），和正在量的那一扇（一次只量一扇）
+  private var radii: [CGWindowID: CGFloat] = [:]
+  private var measuring: CGWindowID?
+
+  /// 那扇窗口的圆角（点）：量过的直接给；没量过的先给 WindowShot.defaultRadius、开始量（前一扇还没量完就等下一次问），
+  /// 量完各屏重画一次（还悬停 / 选着它的就换成量出来的；量不出的按默认的记下，不再量）
+  func windowRadius(_ id: CGWindowID) -> CGFloat {
+    if let known = radii[id] { return known }
+    if measuring == nil {
+      measuring = id
+      let measure = measureRadius
+      Task { [weak self] in
+        let radius = await measure(id)
+        guard let self else { return }
+        measuring = nil
+        radii[id] = radius ?? WindowShot.defaultRadius
+        for view in views { view.refresh() }
+      }
+    }
+    return WindowShot.defaultRadius
+  }
   /// 这次框选问元素的缓存（单测直接设 woken）
   let hits = ElementFinder.Cache()
   /// 问过超时的 App：这次框选不再问它，只认窗口（卡住的 App 每动一下鼠标都等一次就卡成幻灯片了）

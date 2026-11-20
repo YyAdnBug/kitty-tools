@@ -129,13 +129,16 @@ extension SelectionView {
     let shown = selection.map(pixelAligned)
     updateHole(hovered: hovered, shown: shown)
     // 选区双描边：内 1.5 pt 粉 + 外 1 pt black 0.28（亮底暗底都看得清）。贴着屏幕边的边（整屏、吸到屏幕边）画在边里面：
-    // 画在外面整条都落到屏幕外（见 insideScreen）
+    // 画在外面整条都落到屏幕外（见 insideScreen）。单击选中的整扇窗口按它的圆角画（同心，selectionRadius）
+    let radius = selectionRadius
     outline.path = shown.map {
-      CGPath(rect: insideScreen($0.insetBy(dx: -0.75, dy: -0.75), by: 0.75), transform: nil)
+      Self.framePath(
+        insideScreen($0.insetBy(dx: -0.75, dy: -0.75), by: 0.75), radius: radius, grow: 0.75)
     }
     outlineOuter.path = shown.map {
-      CGPath(rect: insideScreen($0.insetBy(dx: -2, dy: -2), by: 2), transform: nil)
+      Self.framePath(insideScreen($0.insetBy(dx: -2, dy: -2), by: 2), radius: radius, grow: 2)
     }
+    translatingPulse.cornerRadius = radius
     // 就地翻译中：选区上一条浅白渐变从左扫到右（1.1 秒一轮），衬着浅色底也看得出来；
     // 减弱动态效果时不扫，光带停在选区外，只留压暗那一层
     translatingPulse.frame = shown ?? .zero
@@ -229,24 +232,27 @@ extension SelectionView {
   }
 
   /// S5 窗口磁吸：洞（蒙层里的圆角矩形）和粉色高亮框。路径元素数恒定（外框 + 一个圆角矩形，没悬停窗口时是光标处的
-  /// 零尺寸占位），窗口之间、桌面 ↔ 窗口用 glide 从当前（可能还在动的）形状变形过去；单击窗口选中时洞圆角 10 → 0 用 pop；
-  /// 拖动、微调一律跟手。shown 是按像素取整后的选区（见 pixelAligned）
+  /// 零尺寸占位），窗口之间、桌面 ↔ 窗口、窗口的圆角量出来时用 glide 从当前（可能还在动的）形状变形过去；圆角按出图的
+  /// 形状（cornerRadius(of:)），单击选中时不变，pop 只补上按像素取整的那一点（和还没变形完的那一截）；拖动、微调一律跟手。
+  /// shown 是按像素取整后的选区（见 pixelAligned）
   private func updateHole(hovered: CGRect?, shown: CGRect?) {
     let spot = CGRect(origin: placeholder, size: .zero)
     let hole = shown ?? hovered ?? spot
+    let hoverRadius = hovered.map(cornerRadius(of:)) ?? 0
     let path = CGMutablePath()
     path.addRect(bounds)
-    path.addPath(Self.roundedPath(hole, radius: selection == nil ? Style.Radius.card : 0))
+    path.addPath(Self.roundedPath(hole, radius: shown == nil ? hoverRadius : selectionRadius))
     let frame: CGPath? =
       selection == nil
-      ? Self.roundedPath(hovered?.insetBy(dx: 1, dy: 1) ?? spot, radius: Style.Radius.card - 1)
+      ? Self.roundedPath(hovered?.insetBy(dx: 1, dy: 1) ?? spot, radius: hoverRadius - 1)
       : nil
     var oldShade = shade.presentation()?.path ?? shade.path
     var oldHighlight = highlight.presentation()?.path ?? highlight.path
     var morph: CABasicAnimation?
     if selection == nil {
       // 同一状态下占位跟着光标走，只改模型值：正在跑的变形会追着新终点
-      if hovered != shownHover, shade.path != nil, !holeIsSelection {
+      let reshaped = hovered != shownHover || (hovered != nil && shade.path != path)
+      if reshaped, shade.path != nil, !holeIsSelection {
         morph = Style.Motion.glide.caAnimation(keyPath: "path") as? CABasicAnimation
       }
     } else if !holeIsSelection, shownHover != nil, selection == shownHover, !Style.reduceMotion {
@@ -299,6 +305,9 @@ extension SelectionView {
     let appearing = rect != nil && !handlesShown
     handlesShown = rect != nil
     let reduced = Style.reduceMotion
+    // 圆角的选区（单击选中的整扇窗口）：角上的手柄落在圆弧正中，不悬在角外的空处
+    let radius = rect == nil ? 0 : selectionRadius
+    let cornerInset = radius * (1 - 1 / 2.squareRoot())
     for (index, handle) in Self.handleOrder.enumerated() {
       guard let layer = handleLayers[handle] else { continue }
       guard let rect else {
@@ -312,6 +321,10 @@ extension SelectionView {
       let halfWidth: CGFloat = shape.width / 2 + 1
       let halfHeight: CGFloat = shape.height / 2 + 1
       var point = handle.point(in: rect)
+      if !isEdge {
+        point.x += handle.movesMinX ? cornerInset : -cornerInset
+        point.y += handle.movesMinY ? cornerInset : -cornerInset
+      }
       point.x = min(max(point.x, bounds.minX + halfWidth), bounds.maxX - halfWidth)
       point.y = min(max(point.y, bounds.minY + halfHeight), bounds.maxY - halfHeight)
       let pixel = window?.backingScaleFactor ?? 2
@@ -351,7 +364,7 @@ extension SelectionView {
     }
     if let hot, let rect {
       let edge = insideScreen(rect.insetBy(dx: -0.75, dy: -0.75), by: 1.25)
-      edgeHighlight.path = Self.edgePath(hot, of: edge)
+      edgeHighlight.path = Self.edgePath(hot, of: edge, radius: radius > 0 ? radius + 0.75 : 0)
     } else {
       edgeHighlight.path = nil
     }
@@ -445,6 +458,30 @@ extension SelectionView {
   /// 描边中线 rect 夹进屏内 inset（线宽的一半）：贴着屏幕边的那几条边整条画在屏里，其余不动
   private func insideScreen(_ rect: CGRect, by inset: CGFloat) -> CGRect {
     rect.intersection(bounds.insetBy(dx: inset, dy: inset))
+  }
+
+  /// 这一块按多大的圆角画（点；洞、悬停的粉框、选区边框同一个）：框的形状就是出图的形状——出图会换成透明圆角那张（N1）
+  /// 的整扇窗口（截图、开着「窗口截图带阴影」、整个在这块屏里、有窗口号）按它真实的圆角（session.windowRadius），别的
+  /// （窗口里的元素、程序坞 / 菜单栏、半截在屏外的窗口、录屏、截图翻译 / 识字、关着那个开关）一律直角。2026-11-20 用户：
+  /// 悬停时是圆角、单击选中后变直角（原来悬停一律圆角 10、选中时 10 → 0）
+  func cornerRadius(of rect: CGRect) -> CGFloat {
+    guard mode == .capture, styleDefaults.bool(forKey: Prefs.screenshotWindowShadow),
+      let index = windows.firstIndex(of: rect), windowIDs.indices.contains(index),
+      let id = windowIDs[index]
+    else { return 0 }
+    return session.windowRadius(id)
+  }
+
+  /// 选区的圆角：单击选中的整扇窗口、选区没再动过、没贴就地翻译的译文（出图会换成透明圆角那张，同 windowShot 的前几条）
+  /// 才按窗口的；拖边、挪动、微调过就是直角（出图也成了矩形裁切）
+  var selectionRadius: CGFloat {
+    guard let selection, clickedWindow?.frame == selection, untranslated == nil else { return 0 }
+    return cornerRadius(of: selection)
+  }
+
+  /// 选区边框：直角时照旧是矩形（描边的角是尖的）；圆角时按 radius + grow 画（边框在选区外 grow 点，和洞同心）
+  static func framePath(_ rect: CGRect, radius: CGFloat, grow: CGFloat) -> CGPath {
+    radius > 0 ? roundedPath(rect, radius: radius + grow) : CGPath(rect: rect, transform: nil)
   }
 
   /// 圆角矩形，元素恒为 move + 4 ×（line + curve）+ close：半径 0、零尺寸时也一样，洞和高亮框才能在窗口、
@@ -602,17 +639,32 @@ extension SelectionView {
   ]
 
   /// 悬停的边（角 = 两条边），edge 是内描边的中线（贴着屏幕边时已挪进来）
-  private static func edgePath(_ handle: RegionSelector.Handle, of edge: CGRect) -> CGPath {
+  private static func edgePath(_ handle: RegionSelector.Handle, of edge: CGRect, radius: CGFloat)
+    -> CGPath
+  {
+    // 圆角的选区：边的两头让出圆角，角上再接那一段圆弧（画法同 roundedPath）
+    let r = max(0, min(radius, edge.width / 2, edge.height / 2))
     let path = CGMutablePath()
-    if handle.movesMinX || handle.movesMaxX {
-      let x = handle.movesMinX ? edge.minX : edge.maxX
-      path.move(to: CGPoint(x: x, y: edge.minY))
-      path.addLine(to: CGPoint(x: x, y: edge.maxY))
+    let vertical = handle.movesMinX || handle.movesMaxX
+    let horizontal = handle.movesMinY || handle.movesMaxY
+    let x = handle.movesMinX ? edge.minX : edge.maxX
+    let y = handle.movesMinY ? edge.minY : edge.maxY
+    if vertical {
+      path.move(to: CGPoint(x: x, y: edge.minY + r))
+      path.addLine(to: CGPoint(x: x, y: edge.maxY - r))
     }
-    if handle.movesMinY || handle.movesMaxY {
-      let y = handle.movesMinY ? edge.minY : edge.maxY
-      path.move(to: CGPoint(x: edge.minX, y: y))
-      path.addLine(to: CGPoint(x: edge.maxX, y: y))
+    if horizontal {
+      path.move(to: CGPoint(x: edge.minX + r, y: y))
+      path.addLine(to: CGPoint(x: edge.maxX - r, y: y))
+    }
+    if r > 0, vertical, horizontal {
+      let dx: CGFloat = handle.movesMinX ? 1 : -1
+      let dy: CGFloat = handle.movesMinY ? 1 : -1
+      let k = r * 0.4477
+      path.move(to: CGPoint(x: x, y: y + dy * r))
+      path.addCurve(
+        to: CGPoint(x: x + dx * r, y: y), control1: CGPoint(x: x, y: y + dy * k),
+        control2: CGPoint(x: x + dx * k, y: y))
     }
     return path
   }
