@@ -1,6 +1,8 @@
 // 设置里的悬停预览（2026-11-18 设置改版 S10，规格 SPEC §6）：停在几行有演示的设置上，舞台上用缩小的真界面演它的效果
 // （照系统设置 › 鼠标 / 触控板停在一行上的动画，但不用视频）。舞台 = 一块 120 高的小桌面（外观缩略图那张壁纸 + 顶上 7 pt 的
 // 菜单栏），放在那一组的第一行之上、跟着表单一起滚；没停在任何一行上时画这一页的静止帧（当前设置下演完的样子）。
+// 刘海岛页和它的正在播放 / 日程与月历 / 音量与亮度三个子页例外（2026-11-20，0.10.1 用户反馈）：演示的行散在整页，跟着
+// 表单滚的舞台在停到「活动」那几行时早就滚出去了，所以钉在页头下面（pinned()），表单在它下面滚；设置窗最矮时下面还露四五行。
 // 首批三个场景：截完图放哪（截图页）、呼出面板时挤压弹开（通用 › 高级）、刘海岛的点刘海 / 自动展开 / 正在播放 / 日程 / 音量。
 // 规矩：只在有行被停着时演（.task 跟着停着的那一行，离开就取消、回到静止帧，不另起定时器）；减弱动态效果时只给静止的一帧；
 // 读屏整块藏起来（装饰，行的副标题已经说了效果）；舞台里的一切是摆出来的——刘海岛用「摆出来的岛」Island(showing:…)：
@@ -84,6 +86,9 @@ struct PreviewStage: View {
   @State private var island: Island?
 
   static let height: CGFloat = 120
+
+  /// 钉在页头下面、表单上面（刘海岛页和三个子页）：左右和分组表单的组对齐
+  func pinned() -> some View { padding(.horizontal, 20).padding(.top, 10) }
 
   /// 正在演的那一行（减弱动态效果、截图自检、设置窗不在前台时不演）
   private var playing: PreviewScene? {
@@ -352,7 +357,9 @@ struct PreviewStage: View {
       if case .notch = island.geometry { island.expandActivity() } else { show(awake, on: island) }
     case (.nowPlaying, 1): show(media, on: island)
     case (.calendar, 1): show(event, on: island)
-    case (.levels, 1): island.showLevel(Island.Level(kind: .volume, fraction: 0.625))
+    // 停得够久：子页里它是静止帧，按岛的停留两秒就收了（演的时候每一轮新建一座岛，照样两秒左右换下一轮）
+    case (.levels, 1):
+      island.showLevel(Island.Level(kind: .volume, fraction: 0.625, stay: .seconds(3600)))
     default: break
     }
   }

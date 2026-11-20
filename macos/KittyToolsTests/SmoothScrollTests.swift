@@ -393,6 +393,22 @@ struct SmoothScrollTests {
         == S.Settings(strength: 80, speed: 150, reverseVertical: true))
   }
 
+  /// 「滚动」页脚的恢复默认：只管两条滑块，回到的正是滚动用的默认值，反向开关不动（临时偏好域）
+  @Test func resetRestoresOnlySliders() throws {
+    #expect(SmoothScrollTab.resetKeys == [Prefs.smoothScrollStrength, Prefs.smoothScrollSpeed])
+    #expect(Prefs.defaults[Prefs.smoothScrollStrength] as? Int == S.Settings().strength)
+    #expect(Prefs.defaults[Prefs.smoothScrollSpeed] as? Int == S.Settings().speed)
+    let suite = "smooth-scroll-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.set(80, forKey: Prefs.smoothScrollStrength)
+    defaults.set(150, forKey: Prefs.smoothScrollSpeed)
+    defaults.set(true, forKey: Prefs.smoothScrollReverseVertical)
+    #expect(SettingsReset.differs(SmoothScrollTab.resetKeys, in: defaults))
+    _ = SettingsReset.reset(SmoothScrollTab.resetKeys, in: defaults, domain: suite)
+    #expect(SmoothScroll.settings(defaults) == S.Settings(reverseVertical: true))
+  }
+
   // MARK: 按需的实机自检
 
   /// 见文件头。合成的探针滚轮：3 行往下，应滑出 120 点

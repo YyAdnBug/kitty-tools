@@ -4,7 +4,8 @@
 // （提示停多久、触感反馈、模糊四周、细边、全屏时藏起来、截图录屏时不显示）。
 // 岛上的提示是全 App 的轻提示，没有总开关（mac-native §1）。2026-11-13 起这一页是刘海岛插件的页（点刘海那一张、两边的活动、
 // 系统提示归它，拍板 P1b）：没添加时不在侧栏，页底「关于这个插件」（后台、同步、移除）。
-// 页头画在自己的 NavigationStack 里，推进子页时一起换掉。
+// 页头画在自己的 NavigationStack 里，推进子页时一起换掉。悬停预览的舞台钉在页头下面（停到「活动」那几行时也看得见，
+// 2026-11-20 用户反馈），正在播放 / 日程与月历 / 音量与亮度三个子页各自也有一块。
 
 import SwiftUI
 
@@ -67,8 +68,10 @@ struct IslandTab: View {
   private var page: some View {
     VStack(spacing: 0) {
       PageHeader(page: .island)
+      PreviewStage(still: .notchClick).pinned()
       form
     }
+    .environment(previewFocus)
     .navigationTitle(SettingsPage.island.title)
     .navigationDestination(for: String.self) { route in
       switch SettingsSubpage(route: route) {
@@ -91,7 +94,6 @@ struct IslandTab: View {
   private var form: some View {
     Form {
       Section {
-        PreviewStage(still: .notchClick)
         SettingRow(
           title: "点刘海打开", subtitle: "停上去鼓起一点，点一下打开",
           info: "两指往下滑也行；刘海两边挂着东西时打开它的卡片，没有时是快捷动作。装了别的刘海 App 时可以关掉：提示和挂在刘海两边的录制计时这些照常，快捷键照样能叫出快捷动作。"
@@ -116,6 +118,7 @@ struct IslandTab: View {
           Text("1 秒").tag(1.0)
         }
         .disabled(!hoverExpands)
+        .previews(.hoverExpand)
         .settingsAnchor(.islandHoverDelay)
         SettingRow(
           title: "列出最近的提示", subtitle: "快捷动作下面列最近 10 条",
@@ -159,7 +162,6 @@ struct IslandTab: View {
     }
     .formStyle(.grouped)
     .settingsScrollTarget()
-    .environment(previewFocus)
   }
 
   /// 一个子页的推进行（新功能标记看子页里的行和子页名，如 0.9.0 的「正在播放」）

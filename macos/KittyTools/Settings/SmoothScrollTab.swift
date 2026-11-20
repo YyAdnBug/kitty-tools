@@ -1,6 +1,7 @@
 // 设置 › 平滑滚动（插件，2026-11-17，issue #14；PLAN §10「平滑滚动」）。页头由 SettingsRoot 画（家族色橄榄绿）。
 // 四组（缺辅助功能时「权限」在最上面）+「关于这个插件」：
-// 「滚动」——平滑程度（轻 ↔ 重）、滚动距离（近 ↔ 远，旁边写百分比）；页脚说只管滚轮鼠标（妙控鼠标只反向）、几个修饰键、点一下停下；
+// 「滚动」——平滑程度（轻 ↔ 重）、滚动距离（近 ↔ 远，旁边写百分比）；ⓘ 说只管滚轮鼠标（妙控鼠标只反向）、几个修饰键、点一下停下；
+//   页脚右边「恢复默认」只管这两条滑块（拖过就拖不回原来那一格，0.10.1 用户反馈；同子页页脚那一个，ResetDefaultsButton）；
 // 「方向」——鼠标上下 / 左右反向（只反鼠标；副标题写系统设置里的「自然滚动」现在开没开）；页脚说不同步；
 // 「在这些 App 里停用」——同快捷键页那张停用名单的样子（AppListRow、「＋ −」、⌫ 删除）；页脚说虚拟机、远程桌面、游戏自动照原样；
 // 「权限」——辅助功能（PluginPermissionSection，按 Shell/Plugin.swift 的声明；没有它用不了）；授权有却接不住滚轮、别的改滚轮的
@@ -105,6 +106,13 @@ struct SmoothScrollTab: View {
           info:
             "平滑只管滚轮鼠标；妙控鼠标本来就滑着滚，这两项不管它，它只跟着下面的反向开关；触控板都照系统的。按住 ⌥ 滚动时不平滑；按住 ⇧ 改成左右滚；按着 ⌘ 或 ⌃ 时交给 App（缩放这类）。滑着的时候点一下鼠标就停下。"
         )
+      } footer: {
+        HStack {
+          Spacer()
+          ResetDefaultsButton(
+            keys: Self.resetKeys,
+            place: "\(SettingsPage.smoothScroll.title) › \(String(localized: "滚动"))")
+        }
       }
       .gated(by: .smoothScroll)
       Section {
@@ -168,6 +176,9 @@ struct SmoothScrollTab: View {
     }
     return lines.isEmpty ? nil : lines.joined(separator: "\n")
   }
+
+  /// 「滚动」页脚的「恢复默认」管的键：两条滑块（方向的两个开关点一下就回去，不归它）
+  static let resetKeys = SettingsReset.keys(of: [.smoothStrength, .smoothDistance])
 
   /// 滑块是 Double，偏好里存整数（读的时候夹进范围：导入、同步来的值也许不在里面）；按 step 取整（不用 Slider 的 step：
   /// 那样会画一排刻度）
