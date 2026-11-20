@@ -121,7 +121,8 @@ struct PreviewView: View {
         ReadOnlyTextView(
           text: model.displayText(of: item),
           style: form == .json ? .json : form == .code ? .code : .plain,
-          highlights: Search.tokens(model.query), fontScale: 1.2, onCopy: model.copySelectedText)
+          highlights: Search.tokens(model.query), fontScale: 1.2, onCopy: model.copySelectedText,
+          onSpace: model.toggleQuickLook)
       }
     case .image:
       VStack(alignment: .leading, spacing: 8) {
@@ -153,7 +154,7 @@ struct PreviewView: View {
           Text("识别到的文字").font(.system(size: 11, weight: .semibold)).foregroundStyle(.tertiary)
           ReadOnlyTextView(
             text: ocr, style: .plain, highlights: Search.tokens(model.query), inset: .zero,
-            onCopy: model.copySelectedText
+            onCopy: model.copySelectedText, onSpace: model.toggleQuickLook
           )
           .frame(maxHeight: QuickLookView.ocrHeight)
         }
@@ -622,6 +623,8 @@ private struct ReadOnlyTextView: NSViewRepresentable {
   /// 文字离边：左右就是卡的边线（行片段自带的左右 5 pt 留白清掉了，见 makeNSView）
   var inset = NSSize(width: PreviewView.edge, height: 12)
   let onCopy: (String) -> Void
+  /// 点进来选字（大卡当 key）后按空格：收回大卡
+  let onSpace: () -> Void
 
   func makeNSView(context: Context) -> NSScrollView {
     let textView = CopyPlainTextView(frame: .zero)
@@ -644,6 +647,7 @@ private struct ReadOnlyTextView: NSViewRepresentable {
   func updateNSView(_ scroll: NSScrollView, context: Context) {
     guard let textView = scroll.documentView as? CopyPlainTextView else { return }
     textView.onCopy = onCopy
+    textView.onSpace = onSpace
     let font: NSFont =
       style == .plain
       ? .systemFont(ofSize: 13 * fontScale)
@@ -671,9 +675,18 @@ private struct ReadOnlyTextView: NSViewRepresentable {
 }
 
 /// ⌘C（和右键「拷贝」）只拷选中的纯文本，交给 onCopy 经 Paster.write 写：系统的复制会把语法着色、搜索词黄底、放大的字号
-/// 一起写成 RTF（这条历史再粘贴会带黄底），watcher 还会把来源记成前台的别的 App、触发复制即译（体检 B11）
+/// 一起写成 RTF（这条历史再粘贴会带黄底），watcher 还会把来源记成前台的别的 App、触发复制即译（体检 B11）。
+/// 只读，空格没别的用处：交给 onSpace 收回大卡（搜索框空着时空格开、这里空格关，按住不放的连发不算）
 final class CopyPlainTextView: NSTextView {
   var onCopy: ((String) -> Void)?
+  var onSpace: (() -> Void)?
+
+  override func keyDown(with event: NSEvent) {
+    guard let onSpace, event.charactersIgnoringModifiers == " ",
+      event.modifierFlags.isDisjoint(with: [.command, .control, .option, .shift])
+    else { return super.keyDown(with: event) }
+    if !event.isARepeat { onSpace() }
+  }
 
   override func copy(_ sender: Any?) {
     let whole = string as NSString

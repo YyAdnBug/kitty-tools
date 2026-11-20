@@ -328,7 +328,7 @@ struct ShortcutsSheet: View {
           Entry("⌘K", "→", text: "打开 / 关闭操作菜单（→ 要在搜索词末尾按；在「移到收藏夹 ›」上按 → 或 ↩ 进去）"),
           Entry("←", text: "操作菜单开着、过滤词为空时回上一级 / 关掉它"),
           Entry("⌫", text: "搜索框为空时：选中最后一个筛选标签，再按一次删掉"),
-          Entry("⌘Y", text: "放大预览"),
+          Entry(String(localized: "空格"), "⌘Y", text: "放大预览 / 收回（空格要在搜索框没有字时按）"),
           Entry("⌘T", text: "翻译（文本，或识别出文字的图片）", needs: .translate),
           Entry("⌘O", text: "打开链接，或用默认 App 打开文件"),
           Entry("⌘R", text: "在访达中显示（文件）"),

@@ -9,6 +9,8 @@
 // placeholder 是系统画的，组字时自己会藏；外面另画占位的（便签标题、启动台搜索）要据此藏起来（issue #16）。
 // focusRequest：面板里主输入框之外的第二个框（快速记一条的标题）——不登记成 initialFirstResponder（面板呼出时焦点不进它），
 // 这个数每变一次拿一次焦点（同 SourceTextView.focusRequest，mac-overlay-panel §3）。
+// onSpace：往空着的框里打了一个空格（剪贴板面板拿它开关放大预览）。字进了框才判断（同 maxLength），输入法总是先拿到空格：
+// 组字时选字的空格、不在框里显示拼音的输入法都吞不到；接了就把框退回空的。
 
 import AppKit
 import SwiftUI
@@ -33,6 +35,8 @@ struct CommandTextField: NSViewRepresentable {
   /// 返回 true 表示已处理（moveUp: / moveDown: / insertNewline: / cancelOperation: …）。
   /// 没处理的 cancelOperation: 交给窗口（浮层据此关闭）
   var onCommand: (Selector) -> Bool = { _ in false }
+  /// 空着的框里打了一个空格（isLoneSpace）：返回 true = 外面接了这一下，框里退回空的；false 照常留下这个空格
+  var onSpace: (() -> Bool)?
   /// 焦点进出（画焦点环用）
   var onFocusChange: ((Bool) -> Void)?
   /// 输入法开始 / 结束组字（外面画的占位：text 空着、又没在组字才显示）
@@ -87,6 +91,16 @@ struct CommandTextField: NSViewRepresentable {
     }
   }
 
+  /// 原来空着的框里现在的字是不是「打了一个空格」（纯函数，单测）：只有一个半角或全角空格（中文、日文输入法没在组字时
+  /// 按空格上屏的是后者）、不在组字；当前事件是按键时不能带 ⌘⌃⌥⇧（⌘V 粘进来的、⇧空格都照常进框）。
+  /// modifiers 是 nil（当前事件不是按键：输入法晚一拍上屏）也算
+  nonisolated static func isLoneSpace(
+    _ text: String, composing: Bool, modifiers: NSEvent.ModifierFlags?
+  ) -> Bool {
+    guard !composing, text == " " || text == "\u{3000}" else { return false }
+    return modifiers.map { $0.isDisjoint(with: [.command, .control, .option, .shift]) } ?? true
+  }
+
   func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
   final class Coordinator: NSObject, NSTextFieldDelegate {
@@ -99,6 +113,16 @@ struct CommandTextField: NSViewRepresentable {
 
     func controlTextDidChange(_ notification: Notification) {
       guard let field = notification.object as? NSTextField else { return }
+      if let onSpace = parent.onSpace, parent.text.isEmpty,
+        CommandTextField.isLoneSpace(
+          field.stringValue,
+          composing: (field.currentEditor() as? NSTextView)?.hasMarkedText() == true,
+          modifiers: NSApp.currentEvent.flatMap { $0.type == .keyDown ? $0.modifierFlags : nil }),
+        onSpace()
+      {
+        field.stringValue = ""
+        return
+      }
       if let maxLength = parent.maxLength, field.stringValue.count > maxLength {
         // 输入法还在组字：先不动（改字会打断组字）；确认后仍超出就整段退回
         guard (field.currentEditor() as? NSTextView)?.hasMarkedText() != true else { return }

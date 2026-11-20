@@ -7,7 +7,8 @@
 // 范围和筛选只以搜索框里的标签出现：Tab 开关筛选面板、⇧Tab 循环范围、⌫（搜索为空）先选中最后一个标签再删；
 // ⌘K 或 →（光标在末尾）打开操作面板，← 关掉；两个面板开着时搜索框用来过滤条目，↑↓ ↩ 选择执行，Esc 关掉；
 // ⌘K 里「移到收藏夹 ›」→ / ↩ 进子列表、← / Esc 回来；右键菜单和 ⌘K 是同一份动作表（actions(for:targets:)）；
-// ⌘Y 放大预览（QuickLookView，单独的浮层，不抢键盘：↑↓ 照样在这里换条目）。
+// ⌘Y 放大预览（QuickLookView，单独的浮层，不抢键盘：↑↓ 照样在这里换条目）；搜索框空着时按空格同样开关（handleSpace，
+// 从搜索框的 onSpace 进来：字进了框才判断，输入法组字的空格吞不到；有字时空格照常输入）。
 // 按类型的动作：⌘T 翻译、⌘O 打开链接 / 文件、⌘R 在访达中显示、⌥⌘C 复制路径、图片和文字钉到屏幕；行能拖到别的 App（dragItems）。
 
 import AppKit
@@ -593,6 +594,15 @@ import Observation
     } else {
       NSSound.beep()
     }
+  }
+
+  /// 搜索框空着时打的空格（CommandTextField.onSpace）：同 ⌘Y。筛选 / 操作面板开着时框里是过滤词、对话框开着时
+  /// 不是它的事，交还输入框；按住不放的连发吞掉、不来回开关
+  func handleSpace() -> Bool {
+    noteActivity()
+    guard palette == nil, dialog == nil else { return false }
+    if !Style.isKeyRepeat { toggleQuickLook() }
+    return true
   }
 
   /// 预览浮层收走了（缩回放完、点了外面、跟着面板收起）：同步状态、拆掉卡片
@@ -1328,7 +1338,9 @@ import Observation
           prettyJSON.toggle()
         }
       }
-      add("放大预览", "eye", "⌘Y", section: 1) { [unowned self] in
+      // 写这时按得动的那个键：搜索框空着是空格，有字时空格要打进框里，写 ⌘Y
+      let previewKey = query.isEmpty ? String(localized: "空格") : "⌘Y"
+      add("放大预览", "eye", previewKey, section: 1) { [unowned self] in
         select(single)
         toggleQuickLook()
       }

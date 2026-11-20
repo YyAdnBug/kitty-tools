@@ -234,7 +234,8 @@ struct ClipboardPanelView: View {
       // 筛选面板 / ⌘K 开着时，搜索框改成过滤它们的条目
       CommandTextField(
         text: model.palette != nil ? $model.actionQuery : $model.query,
-        placeholder: placeholder, fontSize: 20, onCommand: model.handleCommand
+        placeholder: placeholder, fontSize: 20, onCommand: model.handleCommand,
+        onSpace: model.handleSpace
       )
       .frame(maxWidth: .infinity)
       .padding(.leading, tokens.isEmpty ? 0 : 2)
