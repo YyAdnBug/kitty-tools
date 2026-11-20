@@ -319,6 +319,36 @@ struct ScreenshotTests {
     #expect(recorded == [1, 2, 3, 4, 5, 6, 20, 21, 22, 23, 24, 25, 26])
   }
 
+  /// 长截图照拍的自家窗口（2026-11-20：以前整个本 App 都滤掉，长截图拍不到设置窗）：设置窗、全部便签、截图历史这类普通窗口、
+  /// 它们的 sheet、选文件 / 另存为框，和挂在上面的确认框、弹出框照拍；浮层（连同挂在它上面的）、钉图、浮动便签、那叠、
+  /// 长截图自己的面板和边框、状态栏层级的都不拍
+  @Test func scrolledOwnWindowsAreOrdinaryWindows() {
+    func window(
+      _ id: CGWindowID, _ className: String, level: NSWindow.Level = .normal,
+      parent: CGWindowID? = nil
+    ) -> ScreenCapture.OwnWindow {
+      ScreenCapture.OwnWindow(
+        id: id, className: className, level: level.rawValue, isVisible: true, alpha: 1,
+        parent: parent)
+    }
+    let kept = ScreenCapture.scrolledOwnWindows([
+      window(1, "NSWindow"),  // 设置窗 / 全部便签 / 截图历史
+      window(2, "SheetPresentationWindow"),  // 设置窗上的引导、速查表
+      window(3, "_NSAlertPanel", parent: 1),  // 设置窗里的确认框
+      window(4, "_NSPopoverWindow", parent: 2),
+      window(5, "NSSavePanel", level: .modalPanel),
+      window(10, "OverlayPanel", level: .floating),  // 固定着的剪贴板面板
+      window(11, "_NSAlertPanel", level: .floating, parent: 10),
+      window(12, "PinPanel", level: .floating),  // 压在选区上时淡到 0.3 让开
+      window(13, "NoteFloatPanel", level: .floating),
+      window(14, "NoteDeckPanel", level: .floating),
+      window(15, "ScrollCapturePanel", level: .floating),
+      window(16, "NSPanel", level: .statusBar),  // 选区边框
+      window(17, "NSStatusBarWindow", level: .statusBar),
+    ])
+    #expect(kept == [1, 2, 3, 4, 5])
+  }
+
   /// 截图遮罩开着时浮层不因失焦 / 点击收起；遮罩收起（orderOut）后照常。
   /// 遮罩放在屏外 (-20000, -20000) 只 orderFront、不 makeKey：不遮屏、不抢键盘
   @Test func selectionOverlayKeepsPanelsOpen() throws {

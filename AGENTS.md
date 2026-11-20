@@ -232,6 +232,11 @@ TEST_RUNNER_KITTY_TRANSLATE_PROBE=1 xcodebuild -project macos/KittyTools.xcodepr
 TEST_RUNNER_KITTY_LAUNCHPAD_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/LaunchpadProbeTests/measure()'
 
+# 截图 / 录屏 / 长截图拍不拍得到本 App 自己的窗口（按需，要「屏幕录制」授权，几秒；**屏幕左下角会出现一扇红窗口和一块绿面板约 2 秒**，
+# 不当 key；另把正在跑的正式版 Kitty 在屏上的窗口用系统 screencapture 各截一张）。图和 report.md 在目录里，看完删
+TEST_RUNNER_KITTY_LIVE_SELF_CAPTURE=/tmp/kitty-self xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:'KittyToolsTests/SelfCaptureLiveTests/ownWindowInEveryPath()'
+
 # 启动台布局的随机操作测试：随机挪 / 建文件夹 / 拖出 / 删 / 装新 App / 卸 App / 改行列数，每步查不变式；
 # 步数随手给（默认 1500，2 万步几秒钟），换种子加 TEST_RUNNER_KITTY_LAUNCHPAD_FUZZ_SEED=<种子>
 TEST_RUNNER_KITTY_LAUNCHPAD_FUZZ=20000 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
