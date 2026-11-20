@@ -136,7 +136,7 @@ struct SystemFocusTests {
     #expect(ReminderFocus.effective(filter: .normal, focused: true, setting: .hold) == .normal)
   }
 
-  /// 一直跑着的子进程按行交出来（SystemFocus 的 log stream 走它）：分几次写的行拼得起来，没换行的半行不交，退出时交退出码
+  /// 一直跑着的子进程按行交出来（SystemFocus 的 log stream 走它）：分几次写的行拼得起来，最后没换行的半行读完了也交，再交退出码
   @MainActor @Test func subprocessLinesStreamsUntilExit() async {
     var got: [Subprocess.Line] = []
     for await line in Subprocess.lines(
@@ -144,13 +144,37 @@ struct SystemFocusTests {
     ).lines {
       got.append(line)
     }
-    #expect(got == [.output("a"), .output("bc"), .output("{"), .exited(3)])
+    #expect(got == [.output("a"), .output("bc"), .output("{"), .output("tail"), .exited(3)])
     // 当场停掉：流随之结束、交出被信号结束的退出码
     let (lines, stop) = Subprocess.lines("/bin/sleep", ["30"])
     stop()
     var ended: [Subprocess.Line] = []
     for await line in lines { ended.append(line) }
     #expect(ended == [.exited(SIGTERM)])
+  }
+
+  /// 退出前写了一大段：进程退出的通知和管道的读回调各在各的线程上，没有先后。退出那边先到时管道里还剩几十 KB 没读，
+  /// 要读完、交出没换行的半行，才交退出码（2026-11-20 负载高时全量单测少收过最后几行；没修时这里 10 轮每轮都丢一万来行）
+  @MainActor @Test func subprocessLinesDrainsPipeBeforeExit() async {
+    let count = 20_000
+    for _ in 0..<10 {
+      var numbers = 0
+      var last = ""
+      var rest: [Subprocess.Line] = []
+      for await line in Subprocess.lines(
+        "/bin/sh", ["-c", "/usr/bin/seq 1 \(count); printf tail; exit 3"]
+      ).lines {
+        if case .output(let text) = line, Int(text) != nil, rest.isEmpty {
+          numbers += 1
+          last = text
+        } else {
+          rest.append(line)
+        }
+      }
+      #expect(numbers == count)
+      #expect(last == "\(count)")
+      #expect(rest == [.output("tail"), .exited(3)])
+    }
   }
 
   /// 一直挂着的那个活动：最不要紧（放歌时让给正在播放）；没刘海的屏上不进菜单栏（系统自己有专注模式的图标）
