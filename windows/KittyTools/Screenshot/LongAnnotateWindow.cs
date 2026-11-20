@@ -147,6 +147,8 @@ internal sealed class LongAnnotateWindow
         presenter.IsMaximizable = false;
         presenter.IsMinimizable = false;
         _window.AppWindow.SetPresenter(presenter);
+        // 不留系统画的那圈 3 像素浅色框（同状态屏、截图遮罩，issue #38）
+        Frameless.Apply(WinRT.Interop.WindowNative.GetWindowHandle(_window));
 
         _view = new CanvasVirtualControl();
         _view.RegionsInvalidated += OnRegions;

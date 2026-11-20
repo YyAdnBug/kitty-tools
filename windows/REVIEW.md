@@ -8,6 +8,51 @@
 
 条目编号不复用。行号按条目里写的那个提交。
 
+## issue #38：双屏时状态屏「清洁屏幕」副屏边上一道白边（审查方在 Mac 上写、没编译，2026-11-20）
+
+报告人 lixiao0618：Windows 11、两台显示器，进「清洁屏幕」后副屏右侧有一条白边。照片是两台横放的屏贴在一起那一段：
+左边那台的右缘、贴着中间边框，一道细白线从顶到底（照片里约 3 像素宽，相对屏宽 0.2–0.4 %，折合几个物理像素），别处全黑；
+右边那台左缘底部一小段亮的，按位置看是左屏那道白线在右屏边框上的反光。
+
+### R112（P1）没边框的整屏窗往外扩了一圈系统画的浅色框，多屏时压在隔壁屏的边上 → 待核验
+
+- **根因**：`SetBorderAndTitleBar(false, false)` 之后 WinUI 还给窗口留着 WS_DLGFRAME，四边各约 3 像素（随缩放变宽）系统画的浅色框
+  （ecd8de3a 在便签药丸上屏上实测过 E3 / FF / F0）。熄屏 / 告示的整屏窗（`StatusScreenPanel.FitClientToBounds`）和截图遮罩
+  （`SelectionOverlayWindow.FixClientArea`）为了让客户区正好盖满整屏，把窗口往外扩了这一圈：单屏时它落在屏幕外，看不见；
+  双屏时落在隔壁屏贴着的那条边上。`ArrangePanels` 按左上排、每秒 `RaiseAll` 依次提到最上面，右边那块屏的窗在上面，
+  它左边那圈框就盖在左屏最右边几列上——和照片一样：只有一条、在左屏右缘、从顶到底、宽几个像素、是浅色。
+- **排除了的（看代码就能定）**：
+  - DPI 感知：`app.manifest` 是 PerMonitorV2（`true/pm` + `PerMonitorV2`）。
+  - 每块屏的范围和缩放：`ScreenCapture.Monitors()` 用 `GetMonitorInfo` 的 `rcMonitor`（PMv2 进程里是物理像素、含任务栏）和
+    每块屏自己的 `GetDpiForMonitor`（MDT_EFFECTIVE_DPI），没有拿主屏的缩放算副屏；也没用 `DisplayArea`。
+  - 摆窗口：`AppWindow.MoveAndResize` 收物理像素，传的就是 `rcMonitor`；黑窗里是拉伸的 `Grid`，跟着窗口大小走，不按 DIP 算宽。
+    用缩放算的只有告示那一列的宽（`_width * 0.8`）、底部提示的位置和长出来的动画，都是用这块屏自己的 `Scale`。
+  - 主屏 150 % / 副屏 100 % 这类「副屏按 1/1.5 算小了」：那样露出来的是三分之一宽、而且右边和底边都露，和照片对不上。
+  - 透出样式、提醒的全屏：压暗层是没边框的 Win32 弹出窗（`CreateScrim`，WS_POPUP），没有这圈框；底板是居中的 HUD 小窗。
+  - 录屏 / 长截图的选区边框（`RecordingFrame`）、提醒的光晕（`ReminderGlow`）：都是 WS_POPUP 的 Win32 窗，没有这圈框。
+- **改了什么**：
+  - 新 `Shell/Frameless.cs`：子类化窗口过程，`WM_NCCALCSIZE` 答「客户区 = 整扇窗」（便签药丸 `NoteDeckTiny` 是同一招，那次屏上验过），
+    同时关掉 DWM 的细边框（窗口正好贴着屏幕边时它会画在屏幕最外一圈），`SWP_FRAMECHANGED` 立刻重算一次。
+  - 状态屏熄屏 / 告示的整屏窗、截图遮罩：建窗时 `Frameless.Apply`；`FitClientToBounds` / `FixClientArea`（往外扩那一圈）换成
+    `PlaceAgain`：到了那块屏上再按屏幕范围原样摆一次（留着这第二次，是防两块屏缩放不同时第一次挪过来碰上 WM_DPICHANGED 把大小改掉）。
+  - 长图标注窗（铺满工作区、同样没边框）：`Frameless.Apply`，去掉它自己四边那圈浅色框（没人报过，同一个原因，一起改）。
+  - `--status-screen-probe` 每块屏多记一行 `status.probe-frame … window=… client=… fits=True|False`（熄屏 / 告示的整屏窗矩形、客户区是不是正好这块屏）。
+  - 没有新的矩形换算（删掉的就是那段往外扩的算法），所以没加单测；自检的 `fits` 就是这次的检查。
+- **要你们做**：
+  1. 编译零警告（Debug、x64 / ARM64 AOT），`dotnet test` 全过。
+  2. **先用改前的包复现一次**（两块屏左右放）：清洁屏幕 → 左屏最右边几列是浅色；用 `GetWindowRect` 或 Spy++ 看右屏那扇黑窗的左边是不是比右屏的 `rcMonitor` 左边小几个像素。
+     对上了再换新包。对不上（白线还在、或者在别处）就照实记下来，Frameless 的改动照样保留（截图遮罩、长图标注那圈框是确定的）。
+  3. 新包 `--status-screen-probe=<目录>`（两块屏都接着）：每块屏 `status.probe-frame … fits=True`，`window=` 和 `bounds=` 一样。
+  4. HANDTEST 1759–1768（下面几种多屏组合挑手头能接的走；缩放用 系统 › 屏幕 › 缩放 改，改完重新进状态屏）。
+  5. 便签药丸 / 标签列（`NoteDeckTiny`）没动，不用回归。
+- **风险 / 退路**：
+  - 状态屏黑窗和截图遮罩开着 `ExtendsContentIntoTitleBar`，Frameless 把 `WM_NCCALCSIZE` 截在 WinUI 自己的处理前面（便签药丸没开这个）。看一眼截图遮罩最上面那一条能正常框选、
+    不会拖动窗口；状态屏顶上照样全黑。
+  - 窗口现在正好等于屏幕范围（以前比屏幕大一圈）：前台时任务栏要照样被压下去（HANDTEST 1763）。
+  - 接缝处隔壁屏的边上如果看到一道发暗的阴影（DWM 给带框样式的窗口画的阴影，以前也可能有）：在 `Frameless.Apply` 里再设
+    `DWMWA_NCRENDERING_POLICY`（2）= `DWMNCRP_DISABLED`（1），整扇窗不要 DWM 的非客户区渲染。
+  - 更新日志（下一版）：fix「双屏时状态屏和截图遮罩的边上会露出一道白边」/ "Fixed a white strip along the edge between two monitors in the status screen and the screenshot overlay"。
+
 ## 0.3.0 发布（2026-11-17，Claude 在 Windows 上；用户批准发布、打 tag、建 release）
 
 - **提交**：`aa686373`（版本号 0.3.0 + `changelog.json` 0.3.0 一条，24 项）、`13891c07`（其中一条措辞：「关掉半透明的窗口后偶尔闪退」→「…的问题修好了」）。

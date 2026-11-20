@@ -174,6 +174,8 @@ internal sealed partial class SelectionOverlayWindow : Window
         };
 
         _hwnd = (HWND)WinRT.Interop.WindowNative.GetWindowHandle(this);
+        // 窗口 = 客户区 = 这块屏，不留系统的浅色框（多屏时它压到隔壁屏的边上，issue #38）
+        Frameless.Apply(_hwnd);
         // 直接用冻结帧里这块屏自己的缩放比例：构造时窗口还没挪到那块屏上，GetDpiForWindow 拿到的是错的
         // （第二版 §2 第 5 条）。
         _scale = Math.Max(1, screen.Scale);
@@ -904,7 +906,7 @@ internal sealed partial class SelectionOverlayWindow : Window
         AppWindow.MoveAndResize(new RectInt32(
             _screen.Bounds.Left, _screen.Bounds.Top, _screen.Bounds.Width, _screen.Bounds.Height));
         DisableRoundCorners();
-        FixClientArea();
+        PlaceAgain();
         AppWindow.Show();
         if (key)
         {
@@ -3004,26 +3006,15 @@ internal sealed partial class SelectionOverlayWindow : Window
         DwmSetWindowAttribute(_hwnd, 33, &preference, sizeof(int));
     }
 
-    private unsafe void FixClientArea()
-    {
-        if (!GetWindowRect(_hwnd, out var window) || !GetClientRect(_hwnd, out var client))
-        {
-            return;
-        }
-
-        var origin = new POINT();
-        ClientToScreen(_hwnd, &origin);
-        var left = _screen.Bounds.Left;
-        var top = _screen.Bounds.Top;
-        var dx = origin.X - window.Left;
-        var dy = origin.Y - window.Top;
-        var extraWidth = (window.Right - window.Left) - client.Right;
-        var extraHeight = (window.Bottom - window.Top) - client.Bottom;
-        SetWindowPos(
-            _hwnd, new IntPtr(-1), left - dx, top - dy,
-            _screen.Bounds.Width + extraWidth, _screen.Bounds.Height + extraHeight,
+    /// <summary>
+    /// 到了这块屏上再按屏幕范围摆一次（同 StatusScreenPanel.PlaceAgain：窗口没有系统边框，窗口 = 客户区；
+    /// 两块屏缩放不同时第一次挪过来大小可能被改掉，第二次不跨屏、不再变）。以前按客户区比窗口小多少往外扩一圈，
+    /// 那圈系统的浅色框多屏时压在隔壁屏的边上（issue #38）。
+    /// </summary>
+    private void PlaceAgain()
+        => SetWindowPos(
+            _hwnd, new IntPtr(-1), _screen.Bounds.Left, _screen.Bounds.Top, _screen.Bounds.Width, _screen.Bounds.Height,
             0x0010 | 0x0040); // SWP_NOACTIVATE | SWP_SHOWWINDOW
-    }
 
     /// <summary>光标跟上（mac refreshCursor，E15）：顺序同按下的优先级；状态没变不换。</summary>
     private void UpdateCursor()
@@ -3119,36 +3110,8 @@ internal sealed partial class SelectionOverlayWindow : Window
         Crop,
     }
 
-    [StructLayout(LayoutKind.Sequential)]
-    private struct POINT
-    {
-        public int X;
-        public int Y;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct RECT
-    {
-        public int Left;
-        public int Top;
-        public int Right;
-        public int Bottom;
-    }
-
     [LibraryImport("dwmapi.dll")]
     private static unsafe partial int DwmSetWindowAttribute(IntPtr hwnd, int attribute, int* value, int size);
-
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool GetWindowRect(IntPtr hwnd, out RECT rect);
-
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool GetClientRect(IntPtr hwnd, out RECT rect);
-
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static unsafe partial bool ClientToScreen(IntPtr hwnd, POINT* point);
 
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

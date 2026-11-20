@@ -829,6 +829,15 @@ internal static partial class StatusScreenHost
             }
 
             await Task.Delay(1200);
+            // issue #38：整屏窗正好盖住每块屏（窗口不比屏大，多屏时不压到隔壁屏上）
+            for (var index = 0; index < Panels.Count; index++)
+            {
+                if (Panels[index].FrameReport() is { } frame)
+                {
+                    Log.Info($"status.probe-frame style={preset.Style} screen={index} {frame}");
+                }
+            }
+
             await SnapAsync(directory, preset.Style + "-entered");
             InputBlock.SendProbeKey(0x41);
             await Task.Delay(300);

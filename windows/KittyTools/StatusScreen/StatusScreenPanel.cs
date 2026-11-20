@@ -138,7 +138,7 @@ internal sealed unsafe partial class StatusScreenPanel
         window.Content = _surfaceRoot;
         window.AppWindow.MoveAndResize(new RectInt32(Bounds.Left, Bounds.Top, Bounds.Width, Bounds.Height));
         var hwnd = Handle(window);
-        FitClientToBounds(hwnd);
+        PlaceAgain(hwnd);
         // 要从卡片长出来的：露面之前就把窗口裁成卡片那一块（第一帧就在卡片上），露面那一刻开始长
         var growth = growFrom is { } card ? new Growth(hwnd, _surfaceRoot, card, Bounds, Scale, () => _closed) : null;
         RevealWhenDrawn(window, hwnd, key, () => _closed, growth is null ? null : new Action(growth.Start));
@@ -562,6 +562,8 @@ internal sealed unsafe partial class StatusScreenPanel
             window.ExtendsContentIntoTitleBar = true;
             var square = 1; // DWMWCP_DONOTROUND：盖满整块屏，角上不留圆
             DwmSetWindowAttribute(Handle(window), 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, &square, sizeof(int));
+            // 窗口 = 客户区 = 这块屏，不留系统的浅色框（多屏时它压到隔壁屏的边上，issue #38）
+            Frameless.Apply(Handle(window));
         }
 
         window.AppWindow.Closing += (_, args) => args.Cancel = !_closed;
@@ -571,23 +573,31 @@ internal sealed unsafe partial class StatusScreenPanel
     private static IntPtr Handle(Window? window) => window is null ? IntPtr.Zero : WinRT.Interop.WindowNative.GetWindowHandle(window);
 
     /// <summary>
-    /// 没边框的 WinUI 窗还留一圈看不见的缩放边（第 0 批 e4e1d9cd 实测约 3 px；截图遮罩 SelectionOverlayWindow.FixClientArea 同样补）：
-    /// 不补的话熄屏 / 告示四边漏出桌面、底部提示的命中范围（按屏幕算）和画出来的错几个像素。按客户区比窗口小多少往外扩。
+    /// 到了这块屏上再按屏幕范围摆一次（窗口没有系统边框，Frameless：窗口 = 客户区）。窗口新建在别的屏上、两块屏缩放不同时，
+    /// 第一次挪过来会碰上缩放变了（WM_DPICHANGED），大小可能被按两块屏的缩放比改掉；这时已经在这块屏上了，第二次不再变。
+    /// 以前这里按客户区比窗口小多少往外扩一圈，那圈系统的浅色框多屏时压在隔壁屏的边上（issue #38）。
     /// </summary>
-    private void FitClientToBounds(IntPtr hwnd)
+    private void PlaceAgain(IntPtr hwnd)
+        => SetWindowPos(hwnd, new IntPtr(-1) /* HWND_TOPMOST */, Bounds.Left, Bounds.Top, Bounds.Width, Bounds.Height, 0x0010 /* SWP_NOACTIVATE */);
+
+    /// <summary>
+    /// 自检（--status-screen-probe，issue #38）：熄屏 / 告示那扇整屏窗的窗口矩形、客户区是不是正好这块屏（fits）。
+    /// 透出样式没有整屏的 WinUI 窗（压暗层是没边框的 Win32 弹出窗），返回 null。
+    /// </summary>
+    internal string? FrameReport()
     {
+        var hwnd = Handle(_surface);
         WinRect window;
         WinRect client;
-        var origin = default(WinPoint);
-        if (!GetWindowRect(hwnd, &window) || !GetClientRect(hwnd, &client) || !ClientToScreen(hwnd, &origin))
+        if (hwnd == IntPtr.Zero || !GetWindowRect(hwnd, &window) || !GetClientRect(hwnd, &client))
         {
-            return;
+            return hwnd == IntPtr.Zero ? null : "unreadable";
         }
 
-        SetWindowPos(
-            hwnd, new IntPtr(-1) /* HWND_TOPMOST */, Bounds.Left - (origin.X - window.Left), Bounds.Top - (origin.Y - window.Top),
-            Bounds.Width + (window.Right - window.Left) - client.Right, Bounds.Height + (window.Bottom - window.Top) - client.Bottom,
-            0x0010 /* SWP_NOACTIVATE */);
+        var fits = window.Left == Bounds.Left && window.Top == Bounds.Top && window.Right == Bounds.Right && window.Bottom == Bounds.Bottom &&
+                   client.Right == Bounds.Width && client.Bottom == Bounds.Height;
+        return $"bounds={Bounds.Left},{Bounds.Top},{Bounds.Right},{Bounds.Bottom} scale={Scale:0.##} " +
+               $"window={window.Left},{window.Top},{window.Right},{window.Bottom} client={client.Right}x{client.Bottom} fits={fits}";
     }
 
     /// <summary>
@@ -753,10 +763,6 @@ internal sealed unsafe partial class StatusScreenPanel
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool GetClientRect(IntPtr hwnd, WinRect* rect);
 
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool ClientToScreen(IntPtr hwnd, WinPoint* point);
-
     [LibraryImport("gdi32.dll")]
     private static partial IntPtr CreateRoundRectRgn(int left, int top, int right, int bottom, int widthEllipse, int heightEllipse);
 
@@ -794,7 +800,7 @@ internal sealed unsafe partial class StatusScreenPanel
             _full = new PixelRect(bounds.Left, bounds.Top, bounds.Width, bounds.Height);
             _scale = scale;
             _closed = closed;
-            // 窗口区域按窗口左上角算（没边框的窗口外面还有一圈看不见的缩放边，见 FitClientToBounds）
+            // 窗口区域按窗口左上角算（窗口没有系统边框，左上角就是这块屏的左上角；读不出来按屏幕算）
             WinRect window;
             _origin = GetWindowRect(hwnd, &window) ? (window.Left, window.Top) : (bounds.Left, bounds.Top);
             if (content is not null)
@@ -874,12 +880,5 @@ internal sealed unsafe partial class StatusScreenPanel
         public int Top;
         public int Right;
         public int Bottom;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct WinPoint
-    {
-        public int X;
-        public int Y;
     }
 }
