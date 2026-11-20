@@ -261,6 +261,15 @@ enum ScreenCapture {
     }
   }
 
+  /// 长截图时本 App 哪些窗口照拍（2026-11-20：以前整个本 App 都滤掉，对着设置窗、全部便签窗口长截图拍到的是它们后面的东西）：
+  /// 录屏白名单里去掉浮层和屏幕上的那几样——设置窗、全部便签、截图历史（NSWindow）、它们的 sheet、选文件 / 另存为框，和挂在
+  /// 上面的确认框、弹出框照拍；浮层（没固定的开始前收了，固定着的压在选区上会吞滚轮）、钉图（压在选区上的淡到 0.3 让开，拍进去
+  /// 是一块鬼影）、浮动便签和那叠不拍；边框、长截图面板、轻提示这些装饰本来就不在白名单里。纯函数，配单测
+  static func scrolledOwnWindows(_ windows: [OwnWindow]) -> Set<CGWindowID> {
+    let onScreen: Set = ["OverlayPanel", "PinPanel", "NoteDeckPanel", "NoteFloatPanel"]
+    return recordedOwnWindows(windows.filter { !onScreen.contains($0.className) })
+  }
+
   /// 窗口列表（CGWindowListCopyWindowInfo 的结果，从前到后）→ 可截的窗口矩形（AppKit 全局坐标，原点在主屏左下）和
   /// 归哪个进程，顺序不变。只要普通层到浮动面板（低于程序坞）、展开着的弹出菜单和菜单栏那一条（主菜单层级，归 WindowServer，
   /// 2026-11-08 用户：程序坞和菜单栏截不到；程序坞那扇是盖满整屏的透明窗口，不在这里收，见 hoverWindows）；去掉全透明、太小的和自家窗口

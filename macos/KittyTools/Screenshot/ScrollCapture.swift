@@ -1,6 +1,6 @@
 // 长截图会话：截图框选后按 S（或工具栏按钮）进入。遮罩收起、露出实时画面，选区外画一圈边框，旁边一个面板
 // （拼接预览、状态、按钮）。用户在选区里滚动（滚轮、触控板都行），或按空格自动滚动；一直用 ScreenCaptureKit
-// 截选区（滤掉本 App 的所有窗口），交给 ScrollStitcher 拼。↩ 拷贝、⌘S 存储、⇧⌘S 另存为…，Esc 取消。
+// 截选区（滤掉本 App，设置窗这类普通窗口照拍：filter），交给 ScrollStitcher 拼。↩ 拷贝、⌘S 存储、⇧⌘S 另存为…，Esc 取消。
 // 边框和面板是不激活前台的 NSPanel（面板要当 key 收按键），会话结束立即释放；前台 App 一直不变。
 // 预览上滚轮 = 往回看长图前面的内容（右边一条细指示条说在哪一段，双击或滚回最新那头回到跟随；浏览时不滑纸带、不闪接缝）。
 // Whisker（mac-whisker §6 长截图）：面板是永远深色的 HUD（216 宽、圆角 16）；预览像纸带一样滚动、上下 18 pt 渐隐，
@@ -104,15 +104,7 @@ final class ScrollCapture {
     guard let display = content.displays.first(where: { $0.displayID == screen.displayID }) else {
       throw CaptureError.noDisplay
     }
-    // 滤掉本 App 的全部窗口（含之后才建的轻提示）；万一列表里还是没有本 App，退回按窗口排除此刻建好的边框和面板
-    // ponytail: 退回时之后才建的轻提示会进画面；真遇到了再连它们一起换过滤器
-    if let me = content.applications.first(where: { $0.processID == getpid() }) {
-      filter = SCContentFilter(display: display, excludingApplications: [me], exceptingWindows: [])
-    } else {
-      filter = SCContentFilter(
-        display: display,
-        excludingWindows: content.windows.filter { $0.owningApplication?.processID == getpid() })
-    }
+    filter = Self.filter(display: display, content: content)
     configuration = SCStreamConfiguration()
     configuration.sourceRect = source
     configuration.width = Int((source.width * scale).rounded())
@@ -127,6 +119,23 @@ final class ScrollCapture {
     else { throw CaptureError.tooSmall }
     self.stitcher = stitcher
     gain = scale
+  }
+
+  /// 滤掉本 App（含之后才建的轻提示），只把设置窗这类普通窗口列进例外（ScreenCapture.scrolledOwnWindows）；万一列表里
+  /// 还是没有本 App，退回按窗口排除此刻建好的边框、面板和别的不照拍的自家窗口
+  /// ponytail: 退回时之后才建的轻提示会进画面；真遇到了再连它们一起换过滤器
+  static func filter(display: SCDisplay, content: SCShareableContent) -> SCContentFilter {
+    let kept = ScreenCapture.scrolledOwnWindows(ScreenCapture.ownWindows())
+    guard let me = content.applications.first(where: { $0.processID == getpid() }) else {
+      return SCContentFilter(
+        display: display,
+        excludingWindows: content.windows.filter {
+          $0.owningApplication?.processID == getpid() && !kept.contains($0.windowID)
+        })
+    }
+    return SCContentFilter(
+      display: display, excludingApplications: [me],
+      exceptingWindows: content.windows.filter { kept.contains($0.windowID) })
   }
 
   private enum CaptureError: LocalizedError {
