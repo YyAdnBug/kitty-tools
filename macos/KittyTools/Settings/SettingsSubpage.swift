@@ -77,14 +77,18 @@ struct SubpageForm<Content: View>: View {
   /// 页头下面那一句：现在的状态
   let status: LocalizedStringResource
   var statusIsProblem = false
+  /// 钉在页头下面的悬停预览（刘海岛的几个子页）：页里挂 .previews 的行停着时演它
+  var preview: PreviewScene?
   @ViewBuilder let content: Content
   @Environment(\.dismiss) private var dismiss
+  @State private var previewFocus = PreviewFocus()
 
   var body: some View {
     VStack(spacing: 0) {
       DetailHeader(title: subpage.title, status: status, isProblem: statusIsProblem) {
         KindTile(symbol: subpage.page.symbol, color: subpage.page.color, size: 40)
       }
+      if let preview { PreviewStage(still: preview).pinned() }
       Form {
         content
         let keys = subpage.resetKeys
@@ -101,6 +105,7 @@ struct SubpageForm<Content: View>: View {
       .formStyle(.grouped)
       .settingsScrollTarget()
     }
+    .environment(previewFocus)
     .navigationTitle(String(localized: subpage.title))
     .toolbar { SettingsBackButton { dismiss() } }
   }

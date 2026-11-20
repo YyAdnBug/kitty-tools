@@ -1,6 +1,8 @@
 // 设置 › 刘海岛的六个子页（2026-11-18 设置改版 S3，规格 SPEC §2.8）：快捷动作（那张有序列表）、正在播放、日程与月历、
 // 音量与亮度、专注模式、系统提示。外面（IslandTab）一页一行推进行，行尾写开着几样 / 关；推进行的状态和子页页头那一句
 // 是同一个纯函数（各页的 value）。每页自己读自己那几个偏好，「恢复默认」只管这一页登记的键（SettingsReset）。
+// 正在播放、日程与月历、音量与亮度三页顶上钉一块悬停预览（SubpageForm 的 preview，2026-11-20）：主开关那一行（音量那页还有
+// 细条的两样）停着时演，细条的颜色、百分比一拨舞台上就跟着变。
 
 import SwiftUI
 
@@ -135,7 +137,7 @@ struct IslandMediaPage: View {
   }
 
   var body: some View {
-    SubpageForm(subpage: .islandMedia, status: Self.value(on: nowPlaying)) {
+    SubpageForm(subpage: .islandMedia, status: Self.value(on: nowPlaying), preview: .nowPlaying) {
       Section {
         SettingRow(
           title: "在刘海上显示正在播放", subtitle: "刘海两边显示封面和跳动条",
@@ -147,6 +149,7 @@ struct IslandMediaPage: View {
         }
         // 0.9.0 的「新」挂在「正在播放」（WhatsNew 的 island-now-playing）：拨过这个开关才算看过
         .onChange(of: nowPlaying) { WhatsNew.touch(section: "正在播放", of: .island) }
+        .previews(.nowPlaying)
         .settingsAnchor(.islandNowPlaying)
         Group {
           Toggle(isOn: $trackPeek) {
@@ -214,7 +217,8 @@ struct IslandCalendarPage: View {
   var body: some View {
     SubpageForm(
       subpage: .islandCalendar,
-      status: Self.value(nextEvent: nextEvent, calendar: monthCalendar, hourly: hourlyChime)
+      status: Self.value(nextEvent: nextEvent, calendar: monthCalendar, hourly: hourlyChime),
+      preview: .calendar
     ) {
       Section {
         // 打开时先问「日历」授权，给了才真的打开（偏好开着 = 当时授权过）；没给就留在关着、橙字说怎么开
@@ -238,6 +242,7 @@ struct IslandCalendarPage: View {
           Text("在刘海上显示下一个日程")
           Text("开始前 10 分钟在刘海两边倒数")
         }
+        .previews(.calendar)
         .settingsAnchor(.islandNextEvent)
         // 开关关着、也没被拒绝过时不去查授权（截图自检画这一页不碰 EventKit）
         if calendarDenied || (nextEvent && !NextEvent.isAuthorized) {
@@ -379,7 +384,9 @@ struct IslandLevelsPage: View {
   var body: some View {
     let status = keyStatus ?? mediaKeys?.status
     let state = Self.value(on: keyLevels, catches: !keyLevels || Self.catches(status))
-    SubpageForm(subpage: .islandLevels, status: state.text, statusIsProblem: state.isProblem) {
+    SubpageForm(
+      subpage: .islandLevels, status: state.text, statusIsProblem: state.isProblem, preview: .levels
+    ) {
       Section {
         SettingRow(
           title: "按音量键、亮度键时显示在刘海上", subtitle: "换掉系统自己的音量、亮度提示",
@@ -388,6 +395,7 @@ struct IslandLevelsPage: View {
           Toggle("按音量键、亮度键时显示在刘海上", isOn: $keyLevels)
             .toggleStyle(.switch)
         }
+        .previews(.levels)
         .settingsAnchor(.islandKeyLevels)
         Group {
           Picker("停多久", selection: $levelStay) {
@@ -397,8 +405,10 @@ struct IslandLevelsPage: View {
           }
           .settingsAnchor(.islandLevelStay)
           Toggle("细条用强调色", isOn: $levelAccent)
+            .previews(.levels)
             .settingsAnchor(.islandLevelAccent)
           Toggle("细条旁边显示百分比", isOn: $levelPercent)
+            .previews(.levels)
             .settingsAnchor(.islandLevelPercent)
         }
         .disabled(!keyLevels)

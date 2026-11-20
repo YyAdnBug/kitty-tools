@@ -743,6 +743,17 @@ struct SnapshotProbeTests {
           to: "\(out)/settings-\(subpage.rawValue.replacing(".", with: "-"))\(suffix).png")
       }
       islandNavigation.path = []
+      // 滚到底（「活动」那几行）、窗口最矮时（设置窗最矮 460，去掉工具栏约 410）：预览还看不看得见
+      try snapshot(
+        IslandTab().defaultAppStorage(islandPrefs).environment(islandNavigation),
+        size: NSSize(width: 640, height: 600), dark: dark,
+        to: "\(out)/settings-island-scrolled\(suffix).png"
+      ) { Self.scrollToBottom($0) }
+      try snapshot(
+        IslandTab().defaultAppStorage(islandPrefs).environment(islandNavigation),
+        size: NSSize(width: 640, height: 410), dark: dark,
+        to: "\(out)/settings-island-short\(suffix).png"
+      ) { Self.scrollToBottom($0) }
       try snapshot(
         IslandTab(drawsAdvanced: true).defaultAppStorage(islandPrefs),
         size: NSSize(width: 480, height: 480), dark: dark,
@@ -2130,17 +2141,7 @@ struct SnapshotProbeTests {
       try snapshot(
         AboutTab(), size: NSSize(width: 590, height: 420), dark: dark,
         to: "\(out)/settings-about-credits\(dark ? "-dark" : "").png"
-      ) { root in
-        @MainActor func scrollView(in view: NSView) -> NSScrollView? {
-          if let scroll = view as? NSScrollView { return scroll }
-          for subview in view.subviews {
-            if let found = scrollView(in: subview) { return found }
-          }
-          return nil
-        }
-        guard let scroll = scrollView(in: root), let document = scroll.documentView else { return }
-        document.scroll(NSPoint(x: 0, y: document.bounds.height - scroll.contentSize.height))
-      }
+      ) { Self.scrollToBottom($0) }
     }
   }
 
@@ -6425,6 +6426,16 @@ struct SnapshotProbeTests {
           to: "\(out)/launcher-menu-items\(name)\(suffix).png")
       }
     }
+  }
+
+  /// 截图自检：把视图里第一个滚动区滚到底（拍页面最底下那几行）
+  private static func scrollToBottom(_ root: NSView) {
+    func scrollView(in view: NSView) -> NSScrollView? {
+      if let scroll = view as? NSScrollView { return scroll }
+      return view.subviews.firstNonNil(scrollView(in:))
+    }
+    guard let scroll = scrollView(in: root), let document = scroll.documentView else { return }
+    document.scroll(NSPoint(x: 0, y: document.bounds.height - scroll.contentSize.height))
   }
 
   private func snapshot(
