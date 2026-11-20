@@ -212,10 +212,15 @@ enum Prefs {
   /// 窗口截图带阴影（第五轮体检 N1，默认开；设置 › 截图 › 高级）：单击窗口截下、出图时单独截那一扇窗口（四角透明）、
   /// 四周画上窗口阴影（WindowShot）；关着时照旧按矩形从冻结帧里裁
   static let screenshotWindowShadow = "screenshotWindowShadow"
-  /// 截图圆角（点，0 = 直角；默认 8（用户定），2026-11-20 用户：「我想要圆角，截图后图片也有圆角，设置里能调」；设置 › 截图）：
+  /// 截图圆角（点，0 = 直角；默认和系统窗口的圆角一样，见 screenshotCornerRadiusDefault；2026-11-20 用户：「我想要圆角，截图后图片也有圆角，设置里能调」；设置 › 截图）：
   /// 框选时的框（悬停、拖动、选中）和截出来的图（拷贝 / 存储 / 钉图，四角透明）都按它；单击的整扇窗口开着阴影时按窗口自己的。
   /// 录屏、长截图、识字 / 翻译的输入不圆
   static let screenshotCornerRadius = "screenshotCornerRadius"
+  /// 截图圆角的默认值（点）：和系统窗口的圆角一样（用户 2026-11-20「和苹果统一」）——15 上的标准窗口 10，26 起 16
+  /// （27.0.1 实测各 App 的窗口 16.5，WindowRadiusProbeTests；滑块 2 一格取 16）。没公开的数，换系统大版本时再量一遍
+  nonisolated static var screenshotCornerRadiusDefault: Double {
+    if #available(macOS 26, *) { 16 } else { 10 }
+  }
   /// 截图圆角能调到多大（点；滑块按 2 一格）
   nonisolated static let screenshotCornerRadii: ClosedRange<Double> = 0...24
   /// 延时截图等几秒（第五轮体检 N2，默认 5；设置 › 截图 › 高级）：按「延时截图」后倒数这么久再冻结、进框选。
@@ -723,7 +728,7 @@ enum Prefs {
       screenshotFindsElements: false,
       screenshotFindsWebElements: false,
       screenshotWindowShadow: true,
-      screenshotCornerRadius: 8.0,
+      screenshotCornerRadius: screenshotCornerRadiusDefault,
       screenshotDelay: 5,
       shotHistory: true,
       shotHistoryDays: 30,

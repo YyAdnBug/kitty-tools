@@ -462,7 +462,7 @@ extension SelectionView {
 
   /// 这一块按多大的圆角画（点；洞、悬停的粉框、选区边框同一个）：框的形状就是出图的形状（截出来的图按 selectionRadius
   /// 裁圆角，output）。出图会换成透明圆角那张（N1）的整扇窗口按它真实的圆角（windowRadius），别的按设置 › 截图「截图圆角」
-  /// （shotRadius，默认 8）；录屏录的是矩形，一律直角。2026-11-20 用户：悬停是圆角、单击选中后变直角，要圆角、图也要圆角、
+  /// （shotRadius，默认和系统窗口一样：15 上 10、26 起 16）；录屏录的是矩形，一律直角。2026-11-20 用户：悬停是圆角、单击选中后变直角，要圆角、图也要圆角、
   /// 设置里能调（原来悬停一律圆角 10、选中时 10 → 0、出图是矩形）
   func cornerRadius(of rect: CGRect) -> CGFloat {
     mode == .record ? 0 : windowRadius(of: rect) ?? shotRadius

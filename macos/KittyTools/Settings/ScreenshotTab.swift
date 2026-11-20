@@ -34,7 +34,8 @@ struct ScreenshotTab: View {
   @AppStorage(Prefs.screenshotFindsElements) private var findsElements = false
   @AppStorage(Prefs.screenshotFindsWebElements) private var findsWebElements = false
   @AppStorage(Prefs.screenshotWindowShadow) private var windowShadow = true
-  @AppStorage(Prefs.screenshotCornerRadius) private var cornerRadius = 8.0
+  @AppStorage(Prefs.screenshotCornerRadius) private var cornerRadius = Prefs
+    .screenshotCornerRadiusDefault
   @AppStorage(Prefs.screenshotDelay) private var delay = 5
   /// 认元素要辅助功能授权（拍板 D2：没授权只在这里说，不弹框）；从系统设置授权回来、设置窗重新当 key 时刷新
   @State private var trusted = Permissions.isAccessibilityTrusted
