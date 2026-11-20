@@ -120,7 +120,7 @@ struct AppShortcutsTests {
       item([], "居中", 3), item(["移动与调整大小"], "上", 4),
     ])
     #expect(
-      AppShortcutsModel.lines(groups) == [
+      AppShortcutsModel.lines(groups, folding: false) == [
         [
           .item(group: 0, item: 0, nested: false), .submenu(group: 0, item: 1),
           .item(group: 0, item: 1, nested: true), .item(group: 0, item: 2, nested: true),
@@ -166,6 +166,75 @@ struct AppShortcutsTests {
     #expect(model.layout.columns.count > 1)
     model.search("关闭")
     #expect(model.layout.columns.count == 1)
+  }
+
+  /// 系统的「移动与调整大小」（一段子菜单每条都是 🌐⌃ 开头、至少 4 条，不认名字）收成一行；别的子菜单不收；
+  /// ↑↓ 跳过收起的；点开、搜索时照常列出
+  @Test func foldsSystemTiling() {
+    var reading = MenuReading()
+    let tiling = ["🌐⌃←", "🌐⌃→", "🌐⌃↑", "🌐⌃↓", "🌐⌃⇧←"]
+    reading.shortcuts =
+      [MenuShortcut(menu: "Window", path: [], title: "Minimize", keys: "⌘M", location: [6, 0])]
+      + tiling.enumerated().map { index, keys in
+        MenuShortcut(
+          menu: "Window", path: ["Move & Resize"], title: "Tile \(index)", keys: keys,
+          location: [6, 1, index])
+      }
+      + [
+        MenuShortcut(
+          menu: "Window", path: ["Sort"], title: "Name", keys: "🌐⌃1", location: [6, 2, 0]),
+        MenuShortcut(menu: "Window", path: [], title: "Center", keys: "🌐⌃C", location: [6, 3]),
+      ]
+    let groups = AppShortcutsModel.groups(reading.shortcuts)
+    #expect(
+      AppShortcutsModel.lines(groups, folding: true) == [
+        [
+          .item(group: 0, item: 0, nested: false), .folded(group: 0, item: 1, count: 5),
+          .submenu(group: 0, item: 6), .item(group: 0, item: 6, nested: true),
+          .item(group: 0, item: 7, nested: false),
+        ]
+      ])
+    // 不到 4 条、或者有一条不是 🌐⌃ 开头的不收
+    #expect(!AppShortcutsModel.isSystemTiling(groups[0].items[1...3]))
+    #expect(!AppShortcutsModel.isSystemTiling(groups[0].items[0...4]))
+    let model = AppShortcutsModel()
+    model.load(reading, name: "Notes", icon: nil, available: NSSize(width: 1470, height: 920))
+    #expect(model.flat.map(\.title) == ["Minimize", "Name", "Center"])
+    let size = model.layout.size
+    var resized: NSSize?
+    model.onResize = { resized = $0 }
+    model.expand()
+    #expect(model.flat.count == 8)
+    // 面板跟着长高（宽度不变），不是在原来的大小里竖着滚
+    #expect(model.layout.size.width == size.width && model.layout.size.height > size.height)
+    #expect(resized == model.layout.size)
+    #expect(!model.layout.scrolls)
+    model.load(reading, name: "Notes", icon: nil, available: NSSize(width: 1470, height: 920))
+    model.search("tile")
+    #expect(model.flat.count == 5)
+  }
+
+  /// 按着 ⌘ 时又按住的修饰键：只亮带着 ⌘ 和它们的；没按住别的都亮
+  @Test func litByHeldModifiers() {
+    func item(_ keys: String) -> MenuShortcut {
+      MenuShortcut(menu: "编辑", path: [], title: keys, keys: keys, location: [3, 0])
+    }
+    #expect(AppShortcutsModel.lit(item("⌘Z"), hold: "⌘", held: []))
+    #expect(AppShortcutsModel.lit(item("🌐⌃F"), hold: "⌘", held: []))
+    #expect(AppShortcutsModel.lit(item("⇧⌘Z"), hold: "⌘", held: ["⇧"]))
+    #expect(!AppShortcutsModel.lit(item("⌘Z"), hold: "⌘", held: ["⇧"]))
+    #expect(!AppShortcutsModel.lit(item("⇧⌃Z"), hold: "⌘", held: ["⇧"]))
+    #expect(AppShortcutsModel.lit(item("⌥⇧⌘V"), hold: "⌘", held: ["⇧", "⌥"]))
+    #expect(!AppShortcutsModel.lit(item("⇧⌘V"), hold: "⌘", held: ["⇧", "⌥"]))
+    // 两段式看第一段；按住的是 ⌥ 时要带 ⌥
+    #expect(AppShortcutsModel.lit(item("⇧⌘K ⌘S"), hold: "⌘", held: ["⇧"]))
+    #expect(AppShortcutsModel.lit(item("⌥⇧F"), hold: "⌥", held: ["⇧"]))
+    // 菜单只报打出来的字（⌘?），按的时候按着 ⇧
+    #expect(AppShortcutsModel.lit(item("⌘?"), hold: "⌘", held: ["⇧"]))
+    #expect(AppShortcutsModel.lit(item("⌘+"), hold: "⌘", held: ["⇧"]))
+    #expect(!AppShortcutsModel.lit(item("⌘/"), hold: "⌘", held: ["⇧"]))
+    #expect(AppShortcuts.symbols([.shift, .option]) == ["⇧", "⌥"])
+    #expect(AppShortcuts.symbols([.function, .control, .command]) == ["🌐", "⌃", "⌘"])
   }
 
   /// 快捷键拆成修饰键和主键；「…」去掉了也记得，面板里画回来

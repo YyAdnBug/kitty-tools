@@ -5568,6 +5568,19 @@ struct SnapshotProbeTests {
         AppShortcutsView(model: model), size: model.layout.size, dark: dark,
         to: "\(out)/app-shortcuts-claude\(dark ? "-dark" : "").png")
     }
+    // 点开「移动与调整大小」；按着 ⌘ 再按住 ⇧（只亮带 ⇧ 的）
+    let expanded = AppShortcutsModel()
+    expanded.load(claude, name: "Claude", icon: claudeIcon, available: screen)
+    expanded.expand()
+    try snapshot(
+      AppShortcutsView(model: expanded), size: expanded.layout.size, dark: false,
+      to: "\(out)/app-shortcuts-claude-expanded.png")
+    let shifted = AppShortcutsModel()
+    shifted.load(claude, name: "Claude", icon: claudeIcon, available: screen)
+    shifted.heldModifiers = ["⇧"]
+    try snapshot(
+      AppShortcutsView(model: shifted), size: shifted.layout.size, dark: true,
+      to: "\(out)/app-shortcuts-claude-shift.png")
     // 点了搜索框、留住之后：打了「废纸篓」，选中第一条；搜不到
     for (name, query) in [("search", "废纸篓"), ("search-none", "没有这个")] {
       let model = AppShortcutsModel()

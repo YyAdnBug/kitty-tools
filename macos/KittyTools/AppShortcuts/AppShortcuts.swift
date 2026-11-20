@@ -66,6 +66,8 @@ final class AppShortcuts {
     }
     panel.keyEquivalentHandler = { [unowned self] event in keyEquivalent(event) }
     model.onPerform = { [unowned self] item in perform(item) }
+    // 点开「移动与调整大小」后长高：顶边不动、往下伸（同启动器随结果条数）
+    model.onResize = { [weak panel] size in panel?.setContentHeight(size.height, animated: true) }
     return panel
   }
   /// 这一次弹的是哪个 App 的（执行时按它的 pid 找菜单）
@@ -167,6 +169,12 @@ final class AppShortcuts {
 
   private func flagsChanged(_ event: NSEvent) {
     let key = Self.currentHoldKey
+    let held = event.modifierFlags.intersection([.command, .option, .control, .shift, .function])
+    // 弹出来、还没留住，那个键还按着：又按住的修饰键只用来挑亮哪几行（拍板 F2），面板不收；松开那个键照常交给状态机收起
+    if let panel = panel.panel, panel.isVisible, !model.isStaying, held.contains(key.flag) {
+      model.heldModifiers = Self.symbols(held.subtracting(key.flag))
+      return
+    }
     switch hold.handle(flags: event.modifierFlags, at: event.timestamp, key: key) {
     case .began(let since): began(since: since, key: key)
     case .ended:
@@ -174,6 +182,14 @@ final class AppShortcuts {
       dismissPeek()
     case nil: break
     }
+  }
+
+  /// 修饰键 → 和快捷键同一种写法的符号（纯函数）
+  static func symbols(_ flags: NSEvent.ModifierFlags) -> Set<String> {
+    let names: [(NSEvent.ModifierFlags, String)] = [
+      (.function, "🌐"), (.control, "⌃"), (.option, "⌥"), (.shift, "⇧"), (.command, "⌘"),
+    ]
+    return Set(names.filter { flags.contains($0.0) }.map(\.1))
   }
 
   private func cancelPending() {
@@ -319,6 +335,7 @@ final class AppShortcuts {
   private func stay() {
     guard let panel = panel.panel, panel.isVisible, !model.isStaying else { return }
     model.isStaying = true
+    model.heldModifiers = []
     if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
     keyMonitor = nil
     if !(panel.firstResponder is NSText), let field = panel.initialFirstResponder {
