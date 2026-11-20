@@ -82,7 +82,7 @@
       <li>⌘O opens a file and ⌘R shows it in Finder, ⌘T translates the item; images and text can be pinned to the screen, and items drag straight into other apps</li>
       <li>The panel appears at the top of the screen, at the pointer, or where you last left it; drag its edges to resize</li>
       <li>Skips password managers and content marked private, and blocks text that looks like keys or bank card numbers; exclude apps, pause recording, or clear history when you quit or lock the screen</li>
-      <li>On the Mac, snippet dates and times can be offset and formatted, and snippets can ask you to fill in blanks before pasting; text mixed with images pastes back with its images; while recording is paused, the menu bar icon shows a pause badge</li>
+      <li>On the Mac, snippet dates and times can be offset and formatted, and snippets can ask you to fill in blanks before pasting; text mixed with images pastes back with its images; while recording is paused, the menu bar icon shows a pause badge; image items show as small pictures that grow in place when selected, and Space opens the large preview while the search field is empty</li>
     </ul>
   </div>
   <div class="stage feature-stage"><picture><source srcset="../../assets/shots/en/clipboard-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif"><source srcset="../../assets/shots/en/clipboard-light.avif" type="image/avif"><img class="shot" src="../../assets/shots/en/clipboard-light.png" width="720" height="520" alt="The Clipboard History panel: meeting notes expanded in place, with an image, a link, a PDF, SQL and a color value below" loading="lazy"></picture></div>
@@ -101,7 +101,7 @@
       <li>System commands: lock, sleep, empty the Trash, mute; quit or force quit apps, eject disks; “kill” ends processes, “port 3000” shows what’s using a port, and “ip” shows your addresses</li>
       <li>Search “Bluetooth” or “Displays” to jump to that page of System Settings; “g keyword” searches the web, with a dozen popular sites preset and room for your own</li>
       <li>Bookmarks and history from the browsers on your computer, with site icons; type a URL or a path starting with ~/ to open it directly</li>
-      <li>On the Mac, run shortcuts from the Shortcuts app too, and find things by their English or Chinese names whichever language the interface is in</li>
+      <li>On the Mac, run shortcuts from the Shortcuts app too, and find things by their English or Chinese names whichever language the interface is in; type a path starting with / or ~ to list what’s in the folder, with Tab to go in and ⇧Tab to go up a level; with the App Shortcuts plugin added, search the frontmost app’s menu items</li>
     </ul>
   </div>
   <div class="stage feature-stage"><picture><source srcset="../../assets/shots/en/launcher-calc-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif"><source srcset="../../assets/shots/en/launcher-calc-light.avif" type="image/avif"><img class="shot" src="../../assets/shots/en/launcher-calc-light.png" width="720" height="209" alt="Launcher: a unit conversion answered as you type" loading="lazy"></picture></div>
@@ -118,7 +118,7 @@
       <li>Look up a single word for a dictionary entry, with real-voice pronunciation for English words; replace the original text with the translation, or set a shortcut that does it in one press</li>
       <li>Translation history and the Word List: searchable, with favorites, and exportable as a spreadsheet or flashcards</li>
       <li>With the target set to Auto it translates between your first and second languages; translations can be read aloud or copied automatically</li>
-      <li>The Mac version translates 30 languages (Vietnamese, Thai, Arabic, Dutch, Polish…), and very long texts are translated in parts so they don’t stop halfway</li>
+      <li>The Mac version translates 30 languages (Vietnamese, Thai, Arabic, Dutch, Polish…), and very long texts are translated in parts so they don’t stop halfway; language models can explain foreign sentences (key words and the sentence pattern), each language model service can take extra instructions, and reading aloud can go slower or faster</li>
     </ul>
   </div>
   <div class="stage feature-stage"><picture><source srcset="../../assets/shots/en/translate-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif"><source srcset="../../assets/shots/en/translate-light.avif" type="image/avif"><img class="shot" src="../../assets/shots/en/translate-light.png" width="420" height="404" alt="The translation panel: a Chinese paragraph and two services’ English translations" loading="lazy"></picture></div>
@@ -137,7 +137,7 @@
       <li>↩ copies, ⌘S saves, or pin it to the screen for reference; recognize text (QR codes too) or translate it; right-click a toolbar button to change its key</li>
       <li>Scrolling Capture: after selecting, press S and scroll inside the selection to stitch it together, or press Space to scroll automatically (speed adjustable); annotate the result afterwards</li>
       <li>Screenshot History: screenshots, scrolling captures, pinned images and recordings all in one place, searchable and filterable; double-click one to keep annotating</li>
-      <li>On the Mac, you can also select, copy and translate text right on pins, crop while annotating, edit annotations from the thumbnail in the corner, include the pointer or hide desktop icons, and turn off the hints and magnifier while selecting</li>
+      <li>On the Mac, you can also select, copy and translate text right on pins, crop while annotating, edit annotations from the thumbnail in the corner, include the pointer or hide desktop icons, and turn off the hints and magnifier while selecting; screenshots have rounded, transparent corners (adjustable, or square if you prefer), clicking a whole window captures its own rounded corners and shadow, and Timed Screenshot counts down 5 or 10 seconds before you select so you can capture tooltips</li>
     </ul>
   </div>
   <div class="stage feature-stage full"><picture><source srcset="../../assets/shots/en/screenshot-annotate-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif"><source srcset="../../assets/shots/en/screenshot-annotate-light.avif" type="image/avif"><img class="screen" src="../../assets/shots/en/screenshot-annotate-light.jpg" width="1600" height="1000" alt="Screenshot annotation: a rectangle, an arrow, counters and a note inside the selection, an email address blurred out, and the toolbar below" loading="lazy"></picture></div>
@@ -249,6 +249,7 @@
       <li>Copy paths and names, or open with a chosen app</li>
       <li>Create text, Markdown, document, spreadsheet or presentation files, or a new file from the text or image on the clipboard</li>
       <li>Move or copy to favorite folders, cut and paste, make aliases</li>
+      <li>Cut files with ⌘X and move them with ⌘V right in Finder (off by default, needs Accessibility access); when nothing is cut, ⌘V pastes as usual</li>
       <li>Compress to zip, 7z or TAR.GZ (which opens on Linux and Windows 11 without extra software), skipping things like node_modules and .git; extract zip, 7z, rar, tar, gz and more, asking for passwords when needed, or hold ⌥ to choose where; follow the progress on the Notch and stop it there</li>
       <li>“Copy Text from Image”: right-click an image to copy the text in it, or the contents of a QR code</li>
       <li>Undo moving, copying or cut and paste from the Notch; optionally move archives to the Trash after extracting</li>
@@ -298,7 +299,7 @@
     <p class="fsec-lead">A regular mouse wheel glides like a trackpad.</p>
     <ul class="points cols">
       <li>Adjust how long it glides and how far each notch scrolls</li>
-      <li>Reverse the mouse on its own, leaving the trackpad as it is</li>
+      <li>Reverse the mouse on its own (the Magic Mouse too), leaving the trackpad as it is</li>
       <li>Hold ⌥ to scroll without smoothing for a moment, or ⇧ to scroll sideways</li>
       <li>Games, virtual machines and remote desktops are left alone automatically, and you can add other apps; needs Accessibility access</li>
     </ul>
@@ -311,6 +312,8 @@
     <p class="fsec-lead">Hold ⌘ on its own for a moment in any app to see every shortcut in its menus, grouped by menu.</p>
     <ul class="points cols">
       <li>Use ⌥, ⌃ or ⇧ instead, and set how long to hold (0.6–2 seconds); a shortcut can open it too</li>
+      <li>Columns run on with the shortcuts lined up in one column, and matched text is highlighted; the system’s Move & Resize items fold into one row you can expand</li>
+      <li>Once it’s up, keep holding ⌘ and also hold ⇧, ⌥, ⌃ or 🌐 to highlight only the shortcuts that use those keys</li>
       <li>Press another key while holding and it goes to the app as usual</li>
       <li>Click a row to run it; click the search field to keep the list open and type to search</li>
       <li>Needs Accessibility access</li>
@@ -339,6 +342,7 @@
       <li>Turn off features you don’t need: their entry points, shortcuts and background work stop together and come back the moment you turn them on; on the Mac, Notes, Reminders, the Notch, Smooth Scrolling and others are plugins you add in Settings › All Plugins, where you can see what each one does and needs before adding it</li>
       <li>The Mac version’s interface is available in English and Simplified Chinese: choose in Settings › General › Language, which follows the system by default</li>
       <li>Change any global shortcut, including to a double press of a modifier key; on the Mac, shortcuts can be turned off in specific apps, handing the keys to them; Keyboard Shortcuts lists them all by feature, searchable</li>
+      <li>On the Mac, each Settings page shows what you use most, groups open on their own page, rarely changed options are under Advanced…, and details are behind the ⓘ at the end of each row; search takes you straight to a setting, and resting on a few settings plays a preview of the effect</li>
       <li>Sync: choose a folder on a synced drive (iCloud Drive, for example) or connect to a WebDAV server, and settings, snippets and favorites, the Word List, notes, reminders and more sync between computers, each kind with its own switch; keys don’t sync. Snippets, favorites, the Word List, web searches, translation services, notes and reminders also sync between Mac and Windows</li>
       <li>A backup every day; export settings and data to a single file and import it again, including between the Mac and Windows versions</li>
       <li>New versions show up in the menu bar and install in one click; on the Mac they download in the background and install when you quit, and you can skip a version</li>
@@ -369,7 +373,7 @@
       </tbody>
     </table>
   </div>
-  <p class="small muted">macOS 15.0 and 15.1 don’t allow shortcuts with only ⌥; on those versions, use a combination with ⌘ or ⌃ (the Shortcuts page tells you).</p>
+  <p class="small muted">macOS 15.0 and 15.1 don’t allow shortcuts with only ⌥; on those versions, use a combination with ⌘ or ⌃ (the Shortcuts page tells you). While another app is taking a password (macOS has Secure Input on), shortcuts on the Mac that use only ⌥ with a letter, number or symbol can’t fire—macOS doesn’t allow it. The menu bar icon then shows a small orange lock that tells you which app has Secure Input on and how to turn it off. To use a shortcut even in password fields, give it ⌃ or ⌘, or make it a double press of a modifier (⌥Space isn’t affected).</p>
 </section>
 
 </div>

@@ -63,9 +63,10 @@ Clipboard History, Launcher, Translate, Screenshot and Screen and Audio Recordin
   <img src="docs/images/en/clipboard.png" width="720" alt="The Clipboard History panel">
 </p>
 
-- Records the **text (with formatting, and text mixed with images pastes back with its images), images and files** you copy; copying something again just moves it to the top
+- Records the **text (with formatting, and text mixed with images pastes back with its images), images and files** you copy; copying something again just moves it to the top. Text synced over from other devices by remote-control tools or input methods is recorded too
 - **Keyboard first**: ↩ pastes back into the app you were using, ⌥↩ pastes plain text, ⌘1–9 pastes the Nth item, select several to paste them together, and ⌘Z undoes deletions one after another
-- **Lens preview**: the selected item expands in place—code and JSON get line numbers and syntax coloring, colors show HEX / RGB / HSL, links show their title and image; ⌘Y for a larger preview
+- **Lens preview**: the selected item expands in place—code and JSON get line numbers and syntax coloring, colors show HEX / RGB / HSL, links show their title and image; ⌘Y (or Space while the search field is empty) for a larger preview
+- **Images you can see**: image items show as small pictures (you can see the top of long or phone screenshots) and grow in place when selected; turn this off in Settings if you prefer
 - **Search**: text, text inside images (recognized on your Mac, no network), file paths, labels and source apps are all searchable; press Tab to filter by type, kind of content, source app or collection
 - **Collections, snippets and labels**: favorites can go into several collections and any item can have a label; snippets support placeholders such as `{date}`, `{time}`, `{uuid}`, `{clipboard:N}` and `{cursor}`, dates and times can be offset and formatted (`{date+1d}`, `{date-1w:yyyy/MM/dd}`), and `{input:Name}` asks you to fill in a blank before pasting; favorites and snippets are never cleaned up automatically
 - **Handy actions**: ⌘O opens a file and ⌘R shows it in Finder, ⌘T translates the selected item, images and text can be pinned to the screen, and items can be dragged straight into other apps
@@ -84,14 +85,16 @@ Clipboard History, Launcher, Translate, Screenshot and Screen and Audio Recordin
 
 - **Find apps**: by English name, Chinese name, full pinyin or initials, ranked by how you use them (pick an app once for what you typed and it comes first next time); iPad apps are found too, and English and Chinese names both work whichever language the interface is in; ⌘D adds favorites, which come first when the field is empty
 - **File search**: `open name` opens a file and `find name` selects it in Finder; ⌘Y for Quick Look, ⌘K to open it with another app or move it to the Trash
+- **Browse folders**: type a path starting with `/` or `~` to list what’s in the folder, filtered by what you’ve typed so far; Tab goes into a folder, ⇧Tab goes up a level, ↩ opens. A file’s ⌘K menu can also open it in Terminal, copy the file, or copy its path in terminal form
 - **Calculator and conversions**: arithmetic, percentages, powers and functions; units (`10 km to mi`, `30 c to f`), number bases (`255 in hex`) and currency (`100 usd`, fetched online, using the last saved rates when offline); ↩ pastes the result
 - **Script Commands**: every script in your scripts folder is a command, with optional arguments (pop-up choices, passwords); results can be copied, pasted, shown in full (live as the script runs, with terminal colors) or listed as rows that open links and files. 8 come built in (Unix timestamps, Base64, URL encoding, JSON formatting, number bases, regex testing, UUIDs, toggling Dark Mode). Copy a script an AI wrote for you and click “New from Clipboard” to use it
 - **Commands & Aliases**: change the keyword for any built-in command or script, turn off the ones you don’t use, and give each command its own shortcut; apps can have aliases too
 - **System commands**: `lock`, `sleep`, `restart`, `emptytrash`, `mute` and more; `quit` / `hide` / `forcequit` manage running apps, `eject` ejects disks, `kill` ends processes or finds them by port (`kill :3000`), `port` shows which ports are in use and by whom (`port 3000`), and `ip` lists your local and public addresses
 - **Shortcuts**: type the name of a shortcut from the Shortcuts app to run it
+- **Search menu items**: with the App Shortcuts plugin added, search the frontmost app’s menu items (including ones without a shortcut) and press ↩ to switch back and run one
 - **System Settings**: search “Bluetooth”, “Displays” or “Privacy & Security” and press ↩ to jump to that page
 - **Web Search**: keywords like `g swift` and `gh swift` go straight to a site; 13 search engines come preset, including Google, Bing, GitHub and more, and you can add your own searches and Quicklinks
-- **Browser bookmarks and history**: Safari, Chrome, Edge, Arc, Brave, Firefox and more—only the ones you have installed, with site icons; type a URL or a `~/` path to open it directly
+- **Browser bookmarks and history**: Safari, Chrome, Edge, Arc, Brave, Firefox and more—only the ones you have installed, with site icons; type a URL to open it directly
 - `cb keyword` jumps to Clipboard History search, `fy text` translates right away, `remind me in 10 min to stretch` creates a reminder, and ⌘K or → opens the actions menu
 
 ### 🌐 Translate
@@ -101,10 +104,11 @@ Clipboard History, Launcher, Translate, Screenshot and Screen and Audio Recordin
 - **Translate Selection**: select text in any app and press the shortcut; the panel appears centered at the top of the screen (or at the pointer if you prefer). When the selection can’t be read directly it copies it with ⌘C and restores your clipboard afterwards
 - **Type to Translate, Translate on Copy and Translate Screenshot**: select text on the screen, recognize it on your Mac and translate it; translations can also be placed back on the screenshot, with paragraphs that don’t fit moved to a card beside it
 - **Several services at once**: Zhipu GLM (built in, ready to use), Apple Translation and Youdao Dictionary (no key needed), Baidu, Youdao, Google, DeepL / DeepLX, Microsoft (works without a key), Volcengine, Tencent, and large language models using the OpenAI, Azure OpenAI or Anthropic protocols; presets for DeepSeek, Kimi, Qwen, SiliconFlow, OpenRouter, Gemini, Ollama and others work once you add a key. Language model translations stream in as they’re generated. Free services are marked in Settings, and services you collapse translate only when you expand them, so they use no quota
+- **Sentence explanations**: turn on “Explain foreign sentences” for a language model service, and when one foreign sentence is translated into your first language you get three to five key words and the sentence pattern along with the translation—handy for learning a language. Each language model service can also take extra instructions (such as “keep technical terms in English”)
 - **Dictionary lookups**: a single word shows a dictionary card from the system dictionary, arranged by part of speech, sense and example, with real-voice pronunciation for English words; language models answer in the same dictionary format
 - **Replace the original**: replace the selected text in the original app with the translation, or set a silent shortcut that replaces it in one press
 - **History and Word List**: searchable, with favorites; export as CSV or as a TSV you can import straight into Anki
-- 30 languages (including Vietnamese, Thai, Indonesian, Arabic, Turkish, Dutch, Polish and Ukrainian); with the target language set to Auto it translates between your first and second languages; very long texts are translated in parts, by paragraph and sentence, so they don’t stop halfway; read aloud and copy translations automatically
+- 30 languages (including Vietnamese, Thai, Indonesian, Arabic, Turkish, Dutch, Polish and Ukrainian); with the target language set to Auto it translates between your first and second languages; very long texts are translated in parts, by paragraph and sentence, so they don’t stop halfway; read aloud (slower or faster if you like) and copy translations automatically
 
 <br clear="right">
 
@@ -115,13 +119,15 @@ Clipboard History, Launcher, Translate, Screenshot and Screen and Audio Recordin
 </p>
 
 - **Selection**: the screen freezes before you select; hovering detects windows, and the selection snaps to window and screen edges. Type an exact size or lock the aspect ratio, or keep the screen at its normal colors instead of dimming it
+- **Rounded corners and shadows**: the selection frame and the captured image have rounded, transparent corners (adjust them in Settings › Screenshot › Corner radius, or drag all the way left for square corners); clicking a whole window captures it with the window’s own rounded corners and shadow, and parts covered by other windows come out as the window’s own content
 - **Detect elements in windows** (off by default): hovering picks out buttons, text fields, sidebars, file names and links, and the scroll wheel moves in and out of them; the Dock and menu bar can be captured by hovering too. Turn on “Also detect elements in web pages” to outline parts of pages in browsers
 - **Magnifier color picker**: press C to copy the `#RRGGBB` under the pointer; the hints and the magnifier shown while selecting can be turned off
 - **10 annotation tools**: rectangle, ellipse, arrow (bend it into an arc, or make it double-headed), line, pen, highlighter, text (adjustable font size), counter, blur and spotlight, switched with the number keys 1–0. Annotations stay editable—move them, drag corners and edges to resize (⇧ keeps proportions, ⌥ resizes from the center), duplicate them—with undo and redo; an eyedropper picks colors from the screenshot; crop too, trimming a scrolling capture or an older screenshot
 - **Blur**: a real Gaussian blur that keeps text unreadable even at the light setting, or pixelate instead; “Auto” covers phone numbers, email addresses, bank card numbers and ID numbers in one go
 - **Output**: ↩ copies (or copies a PNG file, which gets through clipboards shared between computers), ⌘S saves a PNG, T pins it to the screen for reference (drag to select text right on a pin, ⌘C to copy, or right-click to translate, search or look it up), O captures text (QR codes included), and one click sends it to Translate
 - **Change the keys used while capturing**: right-click any button on the toolbar to change its key—21 in all; the toolbar sits to the right of the selection by default, or centered if you prefer
-- **Scrolling Capture**: after selecting, press S and scroll inside the selection to stitch it together, or press Space to scroll automatically (at a speed you choose); annotate the result afterwards with the same ten tools
+- **Scrolling Capture**: after selecting, press S and scroll inside the selection to stitch it together, or press Space to scroll automatically (at a speed you choose); annotate the result afterwards with the same ten tools; Kitty Tools’ own Settings and All Notes windows can be captured too
+- **Timed Screenshot**: counts down 5 or 10 seconds before you select, so you can capture tooltips and pop-ups that disappear at a keypress
 - **Screenshot History**: screenshots, scrolling captures, pinned screenshots, screen and audio recordings and GIFs all in one place, sorted by date, searchable and filterable; double-click one to keep editing its annotations on the original, copy it again or pin it back where it was
 - After capturing, a thumbnail waits in the lower-right corner or hangs on the Clothesline at the top of the screen; drag it out as a file or click “Edit Annotations” to keep editing. Screenshots can include the pointer, and desktop icons can be hidden in screenshots and recordings; results like recognized text and picked colors pop out of the notch
 
@@ -141,7 +147,7 @@ Clipboard History, Launcher, Translate, Screenshot and Screen and Audio Recordin
   <img src="docs/images/en/settings.png" width="720" alt="Settings: the sidebar grouped by feature, with appearance, accent color and features on the General page">
 </p>
 
-Appearance (Auto / Light / Dark), 8 accent colors, launch at login, permission status and recording global shortcuts are all in the Settings window, whose sidebar is grouped by feature and can search for settings. A shortcut can also be a double press of ⌘, ⌥, ⌃ or ⇧, and shortcuts can be turned off in specific apps, handing the keys to them. The menu bar icon can be shown in color or hidden entirely (shortcuts keep working).
+Appearance (Auto / Light / Dark), 8 accent colors, launch at login, permission status and recording global shortcuts are all in the Settings window, whose sidebar is grouped by feature: each page shows what you use most, groups open on their own page, rarely changed options are under Advanced…, and details are behind the ⓘ at the end of each row. Search in the sidebar takes you straight to a setting, and resting on a few settings plays a preview of the effect. A shortcut can also be a double press of ⌘, ⌥, ⌃ or ⇧, and shortcuts can be turned off in specific apps, handing the keys to them. The menu bar icon can be shown in color or hidden entirely (shortcuts keep working).
 
 - **Features and Plugins**: Settings › General › Features has a switch for each feature; turning one off stops its entry points, shortcuts and background work, and turning it back on brings them back right away. Plugins have their own page, All Plugins (first in the sidebar’s Plugins group), grouped by what they’re for; open one you haven’t added to see what it does and what it needs before adding it. First-run setup takes you through both
 - **Language**: choose System Language, 简体中文 or English in Settings › General › Language. New installs follow the system; Macs updating from an earlier version stay in Chinese
@@ -209,6 +215,7 @@ These are plugins: add them in Settings › All Plugins. A plugin you haven’t 
 ### 🗂️ Finder Menu
 
 - Right-click in Finder: copy paths and names, open with a chosen app, create new files (text, Markdown, document, spreadsheet, presentation, or from the text or image on the clipboard), move or copy to favorite folders, cut and paste, make aliases—optionally all in one submenu
+- **Cut with ⌘X, move with ⌘V** (off by default, needs Accessibility access): cut and move files in Finder with the keyboard; when nothing is cut, ⌘V pastes as usual
 - Compress to zip / 7z / TAR.GZ (TAR.GZ opens on Linux and Windows 11 without extra software; skip things like node_modules, .git and *.log, each common one with its own switch), Extract Here (zip, 7z, rar, tar, gz, bz2 and more, asking for passwords when needed; hold ⌥ for “Extract To…” to choose where; optionally move the archive to the Trash afterwards), with a progress bar on the Notch that can be stopped
 - **Copy Text from Image**: right-click images to copy the text in them, or the contents of a QR code; several at once
 - Undo “Move To”, “Copy To” and cut and paste from the Notch; when there’s no room next to the file (a read-only disk), put the result in Downloads or choose another place
@@ -236,13 +243,14 @@ Copied, saved, something went wrong—notices grow out of the notch, and hoverin
 
 ### 🖱️ Smooth Scrolling
 
-- A regular mouse wheel glides like a trackpad, with adjustable glide time and distance per notch; reverse the mouse on its own while the trackpad stays the same
+- A regular mouse wheel glides like a trackpad, with adjustable glide time and distance per notch; reverse the mouse on its own (the Magic Mouse too) while the trackpad stays the same
 - Hold ⌥ to scroll without smoothing for a moment, or ⇧ to scroll sideways; games, virtual machines and remote desktops are left alone automatically, and you can add other apps
 - Needs Accessibility access
 
 ### ⌨️ App Shortcuts
 
-- Hold ⌘ on its own for a moment in any app (or ⌥, ⌃ or ⇧, held for 0.6–2 seconds as you choose) to see every shortcut in its menus, grouped by menu; a shortcut can open it too
+- Hold ⌘ on its own for a moment in any app (or ⌥, ⌃ or ⇧, held for 0.6–2 seconds as you choose) to see every shortcut in its menus: grouped by menu in columns that run on, with the shortcuts lined up in one column and the system’s Move & Resize items folded into one row you can expand; a shortcut can open it too
+- Once it’s up, keep holding ⌘ and also hold ⇧, ⌥, ⌃ or 🌐 to highlight only the shortcuts that use those keys
 - Press another key while holding and it goes to the app as usual; click a row to run it, or click the search field to keep the list open and type to search
 - Needs Accessibility access
 
@@ -268,6 +276,8 @@ Copied, saved, something went wrong—notices grow out of the notch, and hoverin
 
 Translate and Replace Selection, Record Audio, Screenshot History, Clothesline, Pin Clipboard Content, New Note, All Notes, New Reminder, Launchpad, Status Screen, Open Notch, Open Home, Keep Awake, App Shortcuts and the notes stack on the screen edge have no shortcut by default—record one in Settings › Shortcuts when you need it. Every shortcut can be changed there, including to a double press of a modifier key. Shortcuts don’t work while their feature is off or their plugin isn’t added: new installs only turn on Clipboard, Launcher, Translate and Screenshot, so turn on Recording in Settings › General › Features for Record Screen, and add the Notes plugin for Quick Note. macOS 15.0 and 15.1 don’t allow shortcuts with only ⌥; on those versions, use a combination with ⌘ or ⌃ (the Shortcuts page tells you).
 
+While another app is taking a password (macOS has Secure Input on), shortcuts that use only ⌥ with a letter, number or symbol can’t fire—macOS doesn’t allow it, and there’s no way around it. When that happens, the menu bar icon shows a small orange lock; hover over it to see which app has Secure Input on and how to turn it off. To use a shortcut even in password fields, give it ⌃ or ⌘, or make it a double press of a modifier (⌥Space isn’t affected).
+
 ## Installing the macOS version
 
 1. Download `Kitty.Tools_x.y.z_arm64.dmg` from [Releases](https://github.com/YyAdnBug/kitty-tools/releases/latest) (on a Mac with Intel, `_x86_64.dmg`; the `.zip` files and `macos-update.json` are for in-app updates, so you don’t need to download them), or build it yourself as described below.
@@ -288,7 +298,7 @@ Translate and Replace Selection, Record Audio, Screenshot History, Clothesline, 
 
 You only need to allow it the first time. After that, when a new version is out, the menu bar shows “Update to x.y.z…” and it updates in one click, with no need to allow it again.
 
-> After a new install (or a major macOS update), the system has to prepare a text recognition model for the app before the first recognition, which takes about a minute. The app prepares it in the background once it starts; if you happen to use it before it’s ready, the Notch says it’s preparing the model and how long it has waited. After that, recognition is instant.
+> After a new install (or a major macOS update), the system has to prepare a text recognition model for the app before the first recognition, which takes about a minute. The app prepares it in the background once it starts; if you happen to use it before it’s ready, the Notch says it’s preparing the model and how long it has waited. After that, recognition is instant. To make the first recognition faster, turn off “Unload the text recognition model when idle” in Settings › Screenshot › Advanced so the model stays loaded.
 
 ## Building the macOS version from source
 
