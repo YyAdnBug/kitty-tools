@@ -40,7 +40,7 @@
 | QuickLookThumbnailing `QLThumbnailGenerator` | 10.15 | 剪贴板检查器里文件的真实缩略图（PDF 首页、图片、视频帧） |
 | QuickLookUI `QLPreviewView` | 10.6 | 剪贴板 ⌘Y 放大预览里的文件（嵌在自己的浮层里；不用 `QLPreviewPanel`，见 D3） |
 | VisionKit `ImageAnalyzer`、`ImageAnalysisOverlayView`（系统的实况文本） | 13 / 14（`selectedRanges`、`text`） | 钉图上直接选字（2026-11-17，§10「截图提示、放大镜开关和钉图选字」）：识别在系统服务 `mediaanalysisd` 里跑（本进程只多十来 MB），选区、跨行、双击选词用系统那一套；只在 `Screenshot/PinPanel.swift` |
-| Vision `RecognizeTextRequest` | 15.0 | 剪贴板图片 OCR、截图翻译识字；空闲时放掉识字模型用它的私有 `VNSession.globalSession.releaseCachedResources`（2026-10-07 用户同意，接口不在就不放，mac-clipboard §1） |
+| Vision `RecognizeTextRequest` | 15.0 | 剪贴板图片 OCR、截图翻译识字；空闲时放掉识字模型（设置里能关，PR #39）用它的私有 `VNSession.globalSession.releaseCachedResources`（2026-10-07 用户同意，接口不在就不放，mac-clipboard §1） |
 | ScreenCaptureKit `SCShareableContent` + `SCScreenshotManager` | 14.0 | 截图翻译的冻结帧（逐屏截图）；长截图用 `SCStreamConfiguration.sourceRect`（12.3+）反复截选区 |
 | NaturalLanguage `NLLanguageRecognizer` | 10.14 | 语种检测（替代 Lingua，能识别繁体） |
 | ScreenCaptureKit `SCStream` + `SCRecordingOutput`；AVFoundation `AVAudioRecorder`、`AVCaptureDevice`（麦克风授权与设备）、`AVURLAsset` / `AVAssetImageGenerator` / `AVAssetExportSession` / `AVMutableComposition`；Synchronization `Mutex` | 15.0 | 录屏与录音（2026-09-30 立项，PLAN §10「录屏与录音」）：系统录制管线直接写文件、录音、闪退恢复读文件、最后一帧、音轨导出；录制委托的可变状态（`Mutex` 翻译服务已在用）。第 1 批起在用：`SCStream` + `SCRecordingOutput`（`Screenshot/ScreenRecorder.swift` 录屏）、`AVURLAsset`（启动时读上次闪退留下的文件 `isPlayable`）；第 3 批起 `AVAssetImageGenerator`（停止后取最后一帧，飞入和视频卡用）；第 4 批起 `AVCaptureDevice`（麦克风授权、默认输入的设备名 / 蓝牙、断开通知）；第 5 批起 `AVAudioRecorder`（`Screenshot/AudioRecorder.swift` 录音：m4a、暂停续写、`updateMeters` / `averagePower` 电平，主线程直接用、不挂委托）；第 6 批起 `AVMutableComposition` + `AVAssetExportSession`（录系统声音：录屏管线的 mp4 只取音轨无损导出成 m4a，`ScreenRecorder.extractAudio`）和 `CMSampleBuffer` 的格式描述 / 数据块（样本回调里读 Float32 声音样本算电平）；第 7 批 `AVAssetImageGenerator` 还用来逐帧取 GIF 的帧（`VideoExport`） |
@@ -426,6 +426,7 @@ https://claude.ai/artifact/NQLWKFVipMqoqDabJ2ZQTf 当时没回，11-18 拍板页
 **常驻内存（2026-10-07）**
 - 背景：用户让查正式版（0.3.2 本地包，跑了 3 天）`footprint` 342 MB、峰值 510 的构成。只读活进程（两份 memgraph，各停约 3 秒）+ 独立小程序 + 仓库拷贝里跑探针，给了 5 项改法，用户回「全部按推荐」，分批提交。**不是漏**（`leaks` 20 个 / 3 KB；窗口 10 个、面板 3 个、带位图的图层 32 个都对得上）：用过一次就不还的台阶 + 填到上限的缓存 + 堆里空着没还的页。
 - 构成、量法、分批，描边换画法、空闲回收、空闲时放掉识字模型、链接预览的头图，以及便签接进空闲回收（调优 T2）的实现记录和实测数已归档到 `docs/archive/PLAN-batches-2026-10.md`（§10「常驻内存」）；规矩在 mac-whisker §8、mac-clipboard §5「链接预览」、mac-native「测量与诊断」。
+- **PR #39（2026-11-20，外部 PR，作者 DCDYSMRZ）**：设置 › 截图 › 高级 加「空闲时释放识字模型」，**默认开 = 原来的行为**；关掉的模型不放，开着截图或翻译时启动（和刚打开时）就在进程内预热（作者原提交默认关，修正提交改回默认开、只在关掉时预热）。实测（27.0.1）：省第一次识字 0.1–0.3 s；27 上模型在 footprint 的 neural 一类、不计入 phys_footprint，放掉对 phys_footprint 基本没影响（mac-clipboard §1）。下一版更新日志写一句：「设置 › 截图 › 高级 新增「空闲时释放识字模型」，关掉后识字模型一直留着、第一次识字更快」。
 - 等用户定（原「链接预览的头图」那条末尾）：头图分档（透镜只要 320 × 180 像素，按它解一张画过才约 0.5 MB，12 条都看过从约 70 MB 降到约 6 MB；代价是 ⌘Y 大卡要另解一张 1200 的，从透镜长出来的头几帧先糊后清）；把 12 条调小。
 - 不做：字形缓存（系统封顶，公开接口清不了）；进程内 Metal（符号动效就会带起来，单把棋盘格 Canvas 换成形状实测省不到 1 MB）；主面板用完放掉（描边改完后三块加起来只再还约 10 MB，每次呼出却要重建）；设置窗的一次性开销（系统控件的堆）；缩略图上限不改（改成空闲时清）；识字全走子进程（现成的 `--ocr` 子进程每次 0.51–0.70 s，进程内热的是 0.22 s，每次都过 0.3 s、都会闪「识别中」）。
 

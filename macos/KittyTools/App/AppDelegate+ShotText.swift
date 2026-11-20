@@ -195,8 +195,12 @@ extension AppDelegate {
   private func recognizing<T>(_ work: () async -> T) async -> T {
     // 进程内识过字，模型就留在内存里：这一路不一定开关面板（⌥O 识字、钉图上识字），自己记得回头放掉
     defer { idleReclaim.schedule() }
+    let warmup = OCR.foreground.beginUse()
     await prepareRecognition()
-    return await island.showIfSlow(Self.recognizingTitle, work)
+    return await island.showIfSlow(Self.recognizingTitle) {
+      await warmup?.value
+      return await work()
+    }
   }
 
   /// 识字模型还没加载：刘海岛上说一声、按秒报已等多久，等它加载好（第一次要一分钟左右）
@@ -253,7 +257,9 @@ extension AppDelegate {
     FileMoves.enqueue("正在识别图里的文字…", detail: "0/\(urls.count)", island: island) {
       [unowned self] report in
       defer { idleReclaim.schedule() }
+      let warmup = OCR.foreground.beginUse()
       await prepareRecognition()
+      await warmup?.value
       var texts: [String] = []
       var codesOnly = true
       var unreadable = 0

@@ -7855,6 +7855,23 @@
         }
       }
     },
+    "search.screenshot.releaseOCR" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capture Text,OCR,Text Recognition,Model,Idle,Unload,Release,Memory"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "识字,OCR,模型,空闲,释放,内存"
+          }
+        }
+      }
+    },
     "search.screenshot.saveFolder" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -39804,6 +39821,16 @@
         }
       }
     },
+    "空闲时释放识字模型" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unload the text recognition model when idle"
+          }
+        }
+      }
+    },
     "窄" : {
       "localizations" : {
         "en" : {
@@ -47632,6 +47659,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Panel size"
+          }
+        }
+      }
+    },
+    "面板收起两分钟后释放识字模型占用的内存，下次识字时要重新加载。关掉后模型一直留着，开着截图或翻译时启动就在后台加载好，第一次识字快一点。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After panels have been closed for 2 minutes, this frees the memory used by the text recognition model, and the next Capture Text has to load it again. When it’s off, the model stays loaded, and it’s loaded in the background at launch if Screenshot or Translate is on, so the first Capture Text is a little faster."
           }
         }
       }

@@ -457,13 +457,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 那叠收起、浮动便签收回（2026-10-18）都重新计时，过了 Memory.idleDelay 还闲着（isIdle），就把闲着白占的还回去——
   /// 透镜缓存（装满约 50 MB，再看到时重做）、链接预览的头图（12 条都看过约 70 MB；字节留着，再看到时重解，不联网）、
   /// 关着的全部便签窗口（约 12 MB）、便签图片的缩略图（便签墙上看过 50 张图约 65 MB）、程序坞预览的缩略图缓存（最多
-  /// 20 张、最坏约 11 MB）和收着的预览面板（约 6 MB；预览收起时也重新计时）、识字模型（约 50 MB，下次识字
-  /// 重新加载，慢 0.2–0.4 s；放它要 18–200 ms，在主线程外做）、分配器手里的空页（跑了三天的正式版估 20–34 MB；放在
-  /// 最后，前几样腾出来的页一起还）。到点时还忙着（面板固定着、正在用）就再等一轮
+  /// 20 张、最坏约 11 MB）和收着的预览面板（约 6 MB；预览收起时也重新计时）、识字模型（macOS 15 上约 50 MB，下次识字
+  /// 重新加载，慢 0.2–0.4 s；放它要 18–200 ms，在主线程外做；设置里关掉「空闲时释放识字模型」的不放，PR #39）、
+  /// 分配器手里的空页（跑了三天的正式版估 20–34 MB；放在最后，前几样腾出来的页一起还）。到点时还忙着（面板固定着、
+  /// 正在用）就再等一轮
   lazy var idleReclaim = Memory.IdleTimer(
     after: Memory.idleDelay,
     isIdle: { [unowned self] in Self.isIdle(windows: NSApp.windows, isCapturing: isCapturing) },
     work: { [unowned self] in reclaimIdleMemory() })
+
+  /// 上一次看到的「空闲时释放识字模型」。AppDelegate 建出来时默认值还没注册（bool(forKey:) 读到 false），先按注册的
+  /// 默认值（开）记；偏好里是关的，第一次偏好通知时预热一次，和启动时那次是同一个（OCR.foreground 只做一次）
+  private var lastOCRReleaseWhenIdle = true
+
+  /// 「空闲时释放识字模型」变了（设置里拨、导入、同步）：打开时上一轮空闲回收可能已经做完，重新排一次；关掉时预热上
+  func applyIdleOCRPreference() {
+    let enabled = UserDefaults.standard.bool(forKey: Prefs.ocrReleaseWhenIdle)
+    guard enabled != lastOCRReleaseWhenIdle else { return }
+    lastOCRReleaseWhenIdle = enabled
+    if enabled { idleReclaim.schedule() } else { warmRecognitionIfKept() }
+  }
+
+  /// 关掉了「空闲时释放识字模型」、开着截图或翻译、模型编好了：在后台把进程内的识字模型加载上（OCR.foreground：本次
+  /// 运行最多一次，真实请求先到就不做）。默认开着释放时不预热——预热完两分钟又会被空闲回收放掉，白做一回（PR #39）。
+  /// 实测（macOS 27.0.1，2026-11-20）：预热 0.2 s、CPU 0.1 s，之后第一次识 1200 × 600 的选区快 0.1–0.3 s
+  func warmRecognitionIfKept() {
+    guard !UserDefaults.standard.bool(forKey: Prefs.ocrReleaseWhenIdle),
+      !Feature.enabled.isDisjoint(with: [.screenshot, .translate]), OCR.isPrepared()
+    else { return }
+    OCR.foreground.warmIfUnused { [self] in
+      if !(await OCR.warmForegroundModels()) { Log.clipboard.error("前台识字预热没成") }
+      idleReclaim.schedule()
+    }
+  }
 
   /// 现在算不算闲（纯函数）：没在框选，看得见的窗口里没有浮层（三块主面板等）、没有全部便签窗口、没有展开着的那叠
   /// （扇着、打开着便签；一直展开时静置的那一列常驻屏幕上，不算）。**浮动便签不拦**：它可以一直浮在屏幕上，拦了就
@@ -492,7 +518,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let floating = (noteEdge?.floats.floatingIDs ?? []).compactMap { noteStore?.note($0) }
     NoteImageThumbnails.discard(keeping: Set(floating.flatMap { NoteImages.ids(in: $0.body) }))
     Task {
-      await OCR.releaseModel()
+      if UserDefaults.standard.bool(forKey: Prefs.ocrReleaseWhenIdle) {
+        await OCR.releaseModel()
+      }
       Memory.relieve()
     }
   }

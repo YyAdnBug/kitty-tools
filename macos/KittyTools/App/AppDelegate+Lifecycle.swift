@@ -251,6 +251,7 @@ extension AppDelegate {
       MainActor.assumeIsolated {
         guard let self else { return }
         self.applyFeatures()
+        self.applyIdleOCRPreference()
         self.island.respondsToNotch = self.respondsToNotch
         self.applyIslandFeel()
         self.systemNotices.apply()
@@ -268,11 +269,6 @@ extension AppDelegate {
         // 提醒列表在偏好里：设置页改了、导入了、它自己删掉响过的一次性提醒，都从这里跟上（只比列表那一个键）
         if Feature.reminders.isOn { self.reminders.defaultsChanged() }
       }
-    }
-    // 新装、系统更新后识字模型要现场编译一回（约一分钟）：用得到识字的功能开着就趁早在后台子进程里编好，
-    // 第一次截图翻译 / 识字不用干等（OCR.prepare；编好了它直接返回）
-    if !Feature.enabled.isDisjoint(with: [.clipboard, .translate, .screenshot]) {
-      Task { await OCR.prepare() }
     }
     // 访达右键把 App 冷启动时交过来的动作：剪贴板历史、偏好都起来了再做（拷贝的路径才记得进历史）
     for url in pendingLinks { FinderLink.perform(url, island: island) }
@@ -334,6 +330,15 @@ extension AppDelegate {
     let turnedOn = now.subtracting(before ?? [])
     let turnedOff = (before ?? []).subtracting(now)
     let launching = before == nil
+
+    // 新装、系统更新后识字模型要现场编译一回（约一分钟）：用得到识字的功能开着（启动时、刚打开）就趁早在后台子进程里
+    // 编好，第一次截图翻译 / 识字不用干等（OCR.prepare；编好了它直接返回）。编好后再看要不要把进程内的那份也预热上
+    if !turnedOn.isDisjoint(with: [.clipboard, .translate, .screenshot]) {
+      Task {
+        await OCR.prepare()
+        warmRecognitionIfKept()
+      }
+    }
 
     // 新插件的「新」：添加了就算碰过（插件页改版 E1；启动时开着的也记——同步来的、旧版本里加过的）
     for plugin in turnedOn where plugin.isPlugin { WhatsNew.touch(plugin: plugin) }

@@ -996,9 +996,31 @@ struct ScreenshotTests {
     #expect(!OCR.isPrepared(defaults, domainName: suite))
     await OCR.prepare(defaults, domainName: suite)
     #expect(OCR.isPrepared(defaults, domainName: suite))
-    let sample = try #require(OCR.writeSample())
+    let sample = try #require(await OCR.writeSample())
     defer { try? FileManager.default.removeItem(at: sample) }
     #expect(await OCR.recognizeText(in: sample) == "Kitty")
+  }
+
+  /// 预热的合成图走真正的两条识别路径；不靠真实偏好或另一个测试留下的全局会话。
+  @MainActor @Test func warmsForegroundSessionOnce() async throws {
+    let session = OCR.ForegroundSession()
+    var attempts = 0
+    session.warmIfUnused {
+      attempts += 1
+      #expect(await OCR.warmForegroundModels())
+    }
+    session.warmIfUnused { attempts += 1 }
+    let pending = try #require(session.beginUse())
+    await pending.value
+    #expect(session.beginUse() == nil)
+    session.warmIfUnused { attempts += 1 }
+    #expect(session.beginUse() == nil)
+    #expect(attempts == 1)
+
+    let userFirst = OCR.ForegroundSession()
+    #expect(userFirst.beginUse() == nil)
+    userFirst.warmIfUnused { Issue.record("真实请求先到，不应补跑合成图") }
+    #expect(userFirst.beginUse() == nil)
   }
 
   /// 真的起子进程识字（单测宿主的可执行文件带 --ocr；图在临时目录，子进程只读图、写标准输出，不碰用户数据）。
