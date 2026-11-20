@@ -2,7 +2,7 @@
 // 右键 / ⌘Y「复制」只复制被点的那条、菜单开着时过滤框的编辑键、⌘K 与右键同一份动作表（分节、子列表、按类型的动作）、
 // 共用的菜单过滤（拼音前缀）、钉到屏幕的位置、复制路径、拖出去的剪贴板条目、对话框能否保存、⌘Y 里的纯文本复制、
 // 判定「行标题已显示全」的条目在行里真的没被截断（把行画在屏外窗口里比像素）、行右侧的字停在行的右边线上、
-// 缩略图缓存的记账和大卡档的丢弃。
+// 缩略图缓存的记账和大卡档的丢弃、搜索框空着时空格开关放大预览。
 // 用内存库 + 临时目录，不碰真实数据；不跑会真的打开网址 / 文件、弹面板的动作。
 
 import AppKit
@@ -620,11 +620,102 @@ struct ClipboardPanelTests {
     }
   }
 
-  /// 速查表跟着按键走：剪贴板组里有 ⌘T ⌘O ⌘R ⌥⌘C
+  /// 速查表跟着按键走：剪贴板组里有 ⌘T ⌘O ⌘R ⌥⌘C，放大预览是空格和 ⌘Y
   @Test func cheatSheetListsNewKeys() throws {
     let clipboard = try #require(ShortcutsSheet.groups.first { $0.title.key == "剪贴板" })
     let keys = Set(clipboard.entries.flatMap(\.keys))
     #expect(keys.isSuperset(of: ["⌘T", "⌘O", "⌘R", "⌥⌘C"]))
+    #expect(clipboard.entries.contains { $0.keys == [String(localized: "空格"), "⌘Y"] })
+  }
+
+  /// 空格开预览（2026-11-20）：只认往空着的框里打的一个空格——半角、全角（中文 / 日文输入法没在组字时上屏的）都算；
+  /// 在组字（选字的空格由输入法用掉，这里只会看到确认的字）、带 ⌘⌃⌥⇧（⌘V 粘进来的、⇧空格）、不止一个字的都不算；
+  /// 当前事件不是按键（输入法晚一拍上屏）也算
+  @Test func loneSpaceOnly() {
+    typealias Field = CommandTextField
+    #expect(Field.isLoneSpace(" ", composing: false, modifiers: []))
+    #expect(Field.isLoneSpace("\u{3000}", composing: false, modifiers: []))
+    #expect(Field.isLoneSpace(" ", composing: false, modifiers: [.capsLock, .function]))
+    #expect(Field.isLoneSpace(" ", composing: false, modifiers: nil))
+    #expect(!Field.isLoneSpace(" ", composing: true, modifiers: []))
+    #expect(!Field.isLoneSpace(" ", composing: false, modifiers: .command))
+    #expect(!Field.isLoneSpace(" ", composing: false, modifiers: .shift))
+    #expect(!Field.isLoneSpace("你", composing: false, modifiers: []))
+    #expect(!Field.isLoneSpace("  ", composing: false, modifiers: []))
+    #expect(!Field.isLoneSpace("a", composing: false, modifiers: []))
+  }
+
+  /// 搜索框的空格接到 onSpace：框原来空着、打了一个空格 → 交给它，它接了框退回空的、绑定不变；它不接、或框里原来有字，
+  /// 空格照常进框
+  @Test func spaceReachesHandlerOnlyFromEmptyField() {
+    final class Box { var text = "" }
+    let box = Box()
+    var handled = true
+    var calls = 0
+    let field = NSTextField()
+    let coordinator = CommandTextField(
+      text: Binding(get: { box.text }, set: { box.text = $0 }), placeholder: "",
+      onSpace: {
+        calls += 1
+        return handled
+      }
+    ).makeCoordinator()
+    func type(_ text: String) {
+      field.stringValue = text
+      coordinator.controlTextDidChange(
+        Notification(name: NSControl.textDidChangeNotification, object: field))
+    }
+    type(" ")
+    #expect(calls == 1 && field.stringValue.isEmpty && box.text.isEmpty)
+    handled = false
+    type(" ")
+    #expect(calls == 2 && box.text == " ")
+    box.text = "ab"
+    type("ab ")
+    #expect(calls == 2 && box.text == "ab ")
+  }
+
+  /// 空格同 ⌘Y 开关放大预览；筛选 / 操作面板开着（框里是过滤词）、对话框开着时交还输入框。
+  /// ⌘K 里「放大预览」写这时按得动的键：搜索框空着是空格，有字时是 ⌘Y
+  @Test func spaceTogglesQuickLook() throws {
+    let (model, _) = try makeModel(["一", "二"])
+    var opened = 0
+    var closed = 0
+    model.openQuickLook = { opened += 1 }
+    model.closeQuickLook = { _ in closed += 1 }
+    let first = try item(model, "一")
+    model.select(first)
+    #expect(model.handleSpace() && model.isQuickLooking && opened == 1)
+    #expect(model.handleSpace() && !model.isQuickLooking && closed == 1)
+    model.palette = .actions
+    #expect(!model.handleSpace() && !model.isQuickLooking)
+    model.palette = nil
+    model.dialog = .newSnippet
+    #expect(!model.handleSpace() && !model.isQuickLooking)
+    model.dialog = nil
+    let preview = { model.actions(for: first, targets: [first]).first { $0.title == "放大预览" } }
+    #expect(preview()?.shortcut == String(localized: "空格"))
+    model.query = "一"
+    #expect(preview()?.shortcut == "⌘Y")
+  }
+
+  /// 点进大卡里选字后（焦点在只读正文里）空格收回大卡；带修饰键的、按住不放的连发不算
+  @Test func spaceInCardText() throws {
+    let textView = CopyPlainTextView(frame: .zero)
+    var spaces = 0
+    textView.onSpace = { spaces += 1 }
+    func press(_ flags: NSEvent.ModifierFlags = [], repeated: Bool = false) throws {
+      textView.keyDown(
+        with: try #require(
+          NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0,
+            context: nil, characters: " ", charactersIgnoringModifiers: " ", isARepeat: repeated,
+            keyCode: UInt16(kVK_Space))))
+    }
+    try press()
+    try press(repeated: true)
+    try press(.option)
+    #expect(spaces == 1)
   }
 
   /// ClipRowView.showsWholeText 认可的标题，行里真的没被截断（它的宽度预算照着行的布局写，行的布局改了这里先失败）：

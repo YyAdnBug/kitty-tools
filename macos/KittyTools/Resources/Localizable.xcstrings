@@ -30183,6 +30183,16 @@
         }
       }
     },
+    "放大预览 / 收回（空格要在搜索框没有字时按）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enlarge preview / close it (Space works with the search field empty)"
+          }
+        }
+      }
+    },
     "放弃录制" : {
       "localizations" : {
         "en" : {
