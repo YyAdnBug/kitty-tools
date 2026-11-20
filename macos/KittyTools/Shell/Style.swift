@@ -423,19 +423,26 @@ struct KeyCap: View {
   }
 
   var body: some View {
-    Text(text)
-      .font(.system(size: 10.5, weight: isPrimary ? .semibold : .medium, design: .rounded))
-      .monospacedDigit()
-      .padding(.horizontal, 5)
-      .frame(minWidth: 20, minHeight: 18)
-      .foregroundStyle(
-        isPrimary
-          ? AnyShapeStyle(isDanger ? Style.onDanger : Style.onBrand) : AnyShapeStyle(.secondary)
-      )
-      .background(
-        isPrimary
-          ? AnyShapeStyle(isDanger ? Style.danger : Style.brand) : AnyShapeStyle(Style.controlFill),
-        in: .rect(cornerRadius: Style.Radius.mini, style: .continuous))
+    // 🌐 🎤 画成系统符号（单色、跟着字色）：emoji 是彩色的，和别的键帽不搭（2026-11-20）
+    Group {
+      if let symbol = MenuKeys.symbols[text] {
+        Image(systemName: symbol).imageScale(.small)
+      } else {
+        Text(text)
+      }
+    }
+    .font(.system(size: 10.5, weight: isPrimary ? .semibold : .medium, design: .rounded))
+    .monospacedDigit()
+    .padding(.horizontal, 5)
+    .frame(minWidth: 20, minHeight: 18)
+    .foregroundStyle(
+      isPrimary
+        ? AnyShapeStyle(isDanger ? Style.onDanger : Style.onBrand) : AnyShapeStyle(.secondary)
+    )
+    .background(
+      isPrimary
+        ? AnyShapeStyle(isDanger ? Style.danger : Style.brand) : AnyShapeStyle(Style.controlFill),
+      in: .rect(cornerRadius: Style.Radius.mini, style: .continuous))
   }
 }
 

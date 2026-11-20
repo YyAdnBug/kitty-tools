@@ -26,8 +26,14 @@ nonisolated struct MenuShortcut: Sendable, Hashable, Identifiable {
   let keys: String
   /// 怎么找回它：菜单栏第几个，再一级级是菜单里第几项（执行时按它重新找、标题对得上才按）
   let location: [Int]
+  /// 标题末尾原来有「…」（读的时候去掉了，好搜、好按标题找回来）：面板里照菜单画回来，不然 Xcode 的「Run」和
+  /// 「Run…」看着一样（2026-11-20 改版拍板 B3）
+  var hasEllipsis = false
 
   var id: [Int] { location }
+
+  /// 面板里显示的标题
+  var displayTitle: String { hasEllipsis ? title + "…" : title }
 }
 
 /// 读一次的结果
@@ -116,7 +122,9 @@ nonisolated enum MenuShortcuts {
         let key = ([top] + path + [found.title, found.keys]).joined(separator: "\u{1F}")
         guard seen.insert(key).inserted else { continue }
         reading.shortcuts.append(
-          MenuShortcut(menu: top, path: path, title: found.title, keys: found.keys, location: here))
+          MenuShortcut(
+            menu: top, path: path, title: found.title, keys: found.keys, location: here,
+            hasEllipsis: endsWithEllipsis(title)))
       }
     }
 
@@ -272,6 +280,15 @@ nonisolated enum MenuShortcuts {
     for number in 16...19 { table[0x8F + number - 16] = "F\(number)" }
     return table
   }()
+
+  /// 标题末尾有「…」「...」（两段式写在方括号里的看方括号前面：「Foo… [⌘K ⌘S]」）
+  static func endsWithEllipsis(_ title: String) -> Bool {
+    var title = title.trimmingCharacters(in: .whitespaces)
+    if bracketed(title) != nil, let open = title.lastIndex(of: "[") {
+      title = title[..<open].trimmingCharacters(in: .whitespaces)
+    }
+    return title.hasSuffix("…") || title.hasSuffix("...")
+  }
 
   /// 标题末尾的「…」「...」去掉（拍板 C3）
   static func cleaned(_ title: String) -> String {
