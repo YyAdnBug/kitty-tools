@@ -1,5 +1,15 @@
 [
   {
+    "version": "0.10.2",
+    "date": "2026-11-20",
+    "summary": "设置里两处小改：平滑滚动的两条滑块拖过之后能一键恢复默认；刘海岛页的效果演示钉在页头下面，滚到「活动」那几行也看得见，正在播放、日程与月历、音量与亮度三页里也有。",
+    "summaryEn": "Two small changes in Settings: Smooth Scrolling’s two sliders can be put back with Restore Defaults, and the Notch page’s preview now stays pinned below the header, so you can see it while on the Activities further down; Now Playing, Events & Calendar, and Volume & Brightness have their own preview too.",
+    "changes": [
+      { "type": "ui", "scope": "设置", "text": "设置 › 平滑滚动「滚动」一组下面加了「恢复默认」：两条滑块拖过之后一点就回到原位，没改过时是灰的", "textEn": "Settings › Smooth Scrolling: a Restore Defaults button under Scrolling puts both sliders back where they started; it’s dimmed until you move them" },
+      { "type": "ui", "scope": "设置", "text": "设置 › 刘海岛的效果演示钉在页头下面，滚到「活动」那几行时也看得见；正在播放、日程与月历、音量与亮度三页里也有，拨细条的颜色、百分比时当场跟着变", "textEn": "Settings › Notch: the preview stays pinned below the header, so it’s still visible when you scroll down to Activities; Now Playing, Events & Calendar, and Volume & Brightness show one too, and it updates as you change the bar’s color or percentage" }
+    ]
+  },
+  {
     "version": "0.10.1",
     "date": "2026-11-19",
     "summary": "设置重新排过：每页外面只放常用的，成组的推进下一页，不常改的收进「高级…」，说明文字压成一句、细节点 ⓘ 看；搜索直接落到那一项，停在几项设置上能看到效果演示。翻译能讲解外文句子：大模型服务打开「讲解外文句子」后，一句外文译成第一语言时，除了译文还列出重点词和句型；每个大模型服务能写「附加要求」，朗读能选慢一点或快一点。访达里能用 ⌘X 剪切、⌘V 移动文件。启动器里输入路径能直接看到文件夹里的东西。另外修了几处：访达右键新建文件后进入改名的有时是父文件夹，平滑滚动认不出妙控鼠标，刘海上提醒的「稍后」会把「知道了」顶走。第五轮体检也在这一版：WebDAV 密码不对不再硬试、同步停了会说；单击窗口截图带透明圆角和阴影，新增延时截图，启动器能搜前台 App 的菜单项；提醒、刘海岛、截图、法语德语键盘上的快捷键、更新入口和读屏修了一批。",
