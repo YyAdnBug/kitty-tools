@@ -35,6 +35,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
   case clipboardImageBudget = "clipboard.imageBudget"
   case clipboardImageUsage = "clipboard.imageUsage"
   case clipboardLens = "clipboard.lens"
+  case clipboardImageRows = "clipboard.imageRows"
   case clipboardLinkPreview = "clipboard.linkPreview"
   case clipboardPasteOnClick = "clipboard.pasteOnClick"
   case clipboardPanelPosition = "clipboard.panelPosition"
@@ -389,6 +390,11 @@ enum SettingsItem: String, CaseIterable, Identifiable {
       Self.row(
         .clipboard, "显示透镜", LocalizedStringResource("search.clipboard.lens", defaultValue: "透镜,预览"),
         keys: [Prefs.clipboardShowPreview], place: .advanced)
+    case .clipboardImageRows:
+      Self.row(
+        .clipboard, "列表里直接显示图片",
+        LocalizedStringResource("search.clipboard.imageRows", defaultValue: "图片,缩略图,预览,大图"),
+        keys: [Prefs.clipboardImageRows], place: .advanced)
     case .clipboardLinkPreview:
       Self.row(
         .clipboard, "链接显示网页标题和图片",

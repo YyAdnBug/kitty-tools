@@ -4,6 +4,8 @@
 // 标题已经把整条文本原样显示全的（showsWholeText），透镜不再画第二遍、有搜索词也不摘录；
 // ⌘1–9 键帽只在按住 ⌘ 时出现。选中是列表背后一块滑动的中性高亮（透镜的底），行本身不填色、文字不反白；
 // 多选时最左边多一个品牌粉勾选圆，勾中的行品牌粉 0.14 底。选中行在它下面展开透镜（LensView）。
+// 图片行（设置「列表里直接显示图片」，默认开，2026-11-20）：64 高，图标块换成来源 App，标题那一格是一张 48 高的图（RowPicture，
+// 从顶上裁）+ 宽×高；选中时这张图在原地长到 108 高、整张放在棋盘格上（透镜只剩元信息行，同一张图不画两遍）。
 // 行内用到的摘要文字、图标与取色缓存、缩略图也放在这里。
 
 import AppKit
@@ -23,30 +25,77 @@ struct ClipRowView: View {
   /// 所在收藏夹的名字：只在收藏夹筛选为「全部」时传
   let groupName: String?
   let images: ImageStore
+  /// 图片行：标题那一格画图（只对图片条目、设置开着时传 true）
+  var picture = false
+  /// 图片行选中展开：图长到 108 高，各格顶对齐
+  var expanded = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   static let height: CGFloat = 40
+  /// 图片行：64 高，图 48 高、上下各留 8；展开时图 108 高（同原来透镜里的图），行头只剩上面 8
+  static let pictureRowHeight: CGFloat = 64
+  static let pictureHeight: CGFloat = 48
+  static let expandedPictureHeight: CGFloat = 108
+  static let picturePadding: CGFloat = 8
+
+  /// 一行没展开时的高：图片行 64，其余 40（ListLayout、窗口高度都按它累加）
+  static func height(of item: ClipItem, imageRows: Bool) -> CGFloat {
+    imageRows && item.kind == .image ? pictureRowHeight : height
+  }
+
+  /// 图片行里那张图的框（点）。平时高 48、宽按比例夹在 0.75–5 倍高（手机截图、长截图不至于成一条缝，从顶上裁；
+  /// 超宽的横幅不占满整行）；展开时高 108、宽 60–360（同原来透镜里的图，整张放进去、两边垫棋盘格）
+  static func pictureSize(_ image: ClipItem.ImageInfo?, expanded: Bool) -> CGSize {
+    let ratio = image.map { CGFloat($0.width) / CGFloat(max($0.height, 1)) } ?? 1.5
+    if expanded {
+      return CGSize(
+        width: min(max(expandedPictureHeight * ratio, 60), 360), height: expandedPictureHeight)
+    }
+    return CGSize(
+      width: min(max(pictureHeight * ratio, pictureHeight * 0.75), pictureHeight * 5),
+      height: pictureHeight)
+  }
   /// 行内间距、左右内边距、右侧文字最宽：布局和 showsWholeText 的宽度预算共用
   private static let spacing: CGFloat = 10
   private static let padding: CGFloat = 10
   private static let trailingMax: CGFloat = 220
 
   var body: some View {
-    HStack(spacing: Self.spacing) {
+    // 每一格都放在 40 高的一条里：普通行就是这一行；图片行平时居中（在 64 的正中），展开时顶对齐——图标块、右侧文字、
+    // 键帽留在最上面这一条里，图往下长（位置变化跟着选中那次 transaction 动画）
+    HStack(alignment: expanded ? .top : .center, spacing: Self.spacing) {
       if let isChecked {
         Image(systemName: isChecked ? "checkmark.circle.fill" : "circle")
           .font(.system(size: 15))
           .foregroundStyle(isChecked ? Style.brand : .secondary)
           .contentTransition(.symbolEffect(.replace))
+          .frame(height: Self.height)
       }
-      IconTile(item: item, form: form, images: images)
-      Text(title)
-        .font(
-          form == .code || form == .json
-            ? .system(size: 12, design: .monospaced) : .system(size: 13)
-        )
-        .lineLimit(1)
-        .truncationMode(.tail)
+      IconTile(item: item, form: form, images: images, showsThumbnail: !picture)
+        .frame(height: Self.height)
+      if picture {
+        RowPicture(item: item, images: images, expanded: expanded)
+          .padding(.top, Self.picturePadding)
+          .padding(.bottom, expanded ? 0 : Self.picturePadding)
+        // 宽×高（靠识别文字搜到的接命中那段）；展开后宽×高在元信息行里有、不画第二遍，
+        // 但搜到图中文字的照样留着（看得出为什么命中：搜索时第一条就是选中展开的）
+        Text(title)
+          .font(.system(size: 13))
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .truncationMode(.tail)
+          .frame(height: Self.height)
+          .opacity(expanded && !matchesText ? 0 : 1)
+          .accessibilityLabel(item.title)
+      } else {
+        Text(title)
+          .font(
+            form == .code || form == .json
+              ? .system(size: 12, design: .monospaced) : .system(size: 13)
+          )
+          .lineLimit(1)
+          .truncationMode(.tail)
+      }
       Spacer(minLength: 8)
       // 右侧文字、标记、星标是一组，星标自己带它前面的间距：没收藏时星标宽 0、间距也是 0（直接放在外层 HStack 里的话，
       // 宽 0 的星标仍占一个间距，没收藏的行右侧文字比分组横线、键帽往里缩 10 pt）
@@ -90,11 +139,13 @@ struct ClipRowView: View {
           .animation(Style.Motion.pop.animation(reduced: reduceMotion), value: item.favorite)
           .accessibilityLabel(item.favorite ? "已收藏" : "")
       }
+      .frame(height: Self.height)
       // 和原来右侧文字那一格一样先分到宽度（里面那一格最宽 220），剩下的才是标题的
       .layoutPriority(1)
       // 没按 ⌘ 时不在布局里（占着宽度和间距的话，前九行的标题比别的行早截断）
       if isChecked == nil, let shortcutIndex, showsShortcut {
         KeyCap("⌘\(shortcutIndex + 1)")
+          .frame(height: Self.height)
           .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.9)))
       }
     }
@@ -104,17 +155,31 @@ struct ClipRowView: View {
         : .easeOut(duration: 0.12).delay(Double(shortcutIndex ?? 0) * 0.015), value: showsShortcut
     )
     .padding(.horizontal, Self.padding)
-    .frame(height: Self.height)
+    .frame(
+      height: !picture
+        ? Self.height
+        : expanded ? Self.picturePadding + Self.expandedPictureHeight : Self.pictureRowHeight,
+      alignment: .top
+    )
     .background(
       isChecked == true ? Style.brand.opacity(0.14) : .clear,
       in: .rect(cornerRadius: Style.Radius.card, style: .continuous)
     )
   }
 
+  /// 图片是靠识别文字搜到的（标题后面接着命中那段）
+  private var matchesText: Bool {
+    guard !query.isEmpty, let ocr = item.ocrText else { return false }
+    return Search.firstHit(in: ocr, query: query) != nil
+  }
+
   /// 标题：有搜索词且命中不在开头时从命中处摘录（前 12 字 + 「…」），命中词黄底。
-  /// 图片靠识别文字搜到的，「图片 宽×高」后面接上命中的那段识别文字
+  /// 图片靠识别文字搜到的，「图片 宽×高」后面接上命中的那段识别文字（图片行里图已经在前面，只写「宽×高」）
   private var title: AttributedString {
-    let full = item.title
+    // 宽高按原样的数字插（同 ClipItem.title：插 Int 会按语言加千分位）
+    let full =
+      picture
+      ? item.image.map { "\(String($0.width))×\(String($0.height))" } ?? item.title : item.title
     guard !query.isEmpty else { return AttributedString(full) }
     var shown = full
     switch item.kind {
@@ -188,6 +253,8 @@ struct IconTile: View {
   let item: ClipItem
   let form: ContentForm?
   let images: ImageStore
+  /// 图片画缩略图；图片行里图另有一格，这里是来源 App（没有就是种类图标）
+  var showsThumbnail = true
   @AppStorage(Prefs.clipboardLinkPreview) private var showsLinkPreview = true
   @Environment(\.clipRowArriving) private var arriving
 
@@ -204,7 +271,7 @@ struct IconTile: View {
         shape.fill(Color(color))
           .background(Checkerboard(cell: 4).clipShape(shape))
           .overlay(shape.strokeBorder(Style.swatchRim, lineWidth: 1))
-      } else if item.kind == .image {
+      } else if item.kind == .image, showsThumbnail {
         // 先定框再裁：fill 的图比框宽（长截图 5:1），只裁自己的边界会溢出盖住标题
         ThumbnailView(id: item.id, images: images, maxPixel: ThumbnailView.iconPixel)
           .frame(width: Self.side, height: Self.side)
@@ -248,6 +315,39 @@ struct IconTile: View {
 
   private var favicon: NSImage? {
     form == .link && showsLinkPreview ? LinkPreview.shared.favicon(forLink: item.text ?? "") : nil
+  }
+}
+
+/// 图片行里的那张图（ClipRowView.picture）：平时填满 48 高的框、从顶上裁（长截图看得到开头），用按框算的那一档缩略图
+/// （ThumbnailView.rowPixel）；选中展开时框长到 108 高，换成透镜那一档、整张放在 8 pt 棋盘格上（同原来透镜里的图）。
+/// 两层交叉淡入淡出，框的大小跟着选中那次 transaction 走
+private struct RowPicture: View {
+  let item: ClipItem
+  let images: ImageStore
+  let expanded: Bool
+
+  var body: some View {
+    let size = ClipRowView.pictureSize(item.image, expanded: expanded)
+    let shape = RoundedRectangle(cornerRadius: Style.Radius.control, style: .continuous)
+    ZStack {
+      Checkerboard(cell: 8).opacity(expanded ? 1 : 0)
+      // 先定框再裁：fill 的图比框大，靠 frame 的 .top 让多出来的落在下面被裁掉
+      ThumbnailView(id: item.id, images: images, maxPixel: ThumbnailView.rowPixel(for: item.image))
+        .frame(width: size.width, height: size.height, alignment: .top)
+        .clipped()
+        .opacity(expanded ? 0 : 1)
+      if expanded {
+        ThumbnailView(
+          id: item.id, images: images, maxPixel: ThumbnailView.lensPixel, contentMode: .fit
+        )
+        .clipShape(shape)
+        .transition(.opacity)
+      }
+    }
+    .frame(width: size.width, height: size.height)
+    .clipShape(shape)
+    .overlay(shape.hairlineBorder())
+    .accessibilityHidden(true)
   }
 }
 
@@ -416,7 +516,8 @@ enum AppIcons {
 
 /// 图片条目的缩略图：后台按需生成，NSCache 复用。缓存里有的在建视图时就直接用（滚回来、透镜展开不闪一下占位）。
 /// 缓存有上限（第二轮体检 M1）：画过的缩略图每张在内存里留两份「宽 × 高 × 4」（CG raster data、CoreAnimation 各一份，
-/// 内存探针实测），窗口关了也不还，缓存放手才还。行图标单独一个缓存（icons），透镜和 ⌘Y 大卡共用一个（previews）；
+/// 内存探针实测），窗口关了也不还，缓存放手才还。行里的图（行图标、图片行的图）单独一个缓存（icons），透镜和 ⌘Y 大卡
+/// 共用一个（previews）；
 /// 大卡那一档在大卡放掉时整档丢掉（dropCards），面板都收起两分钟后 previews 整个清掉（dropPreviews，空闲回收）。
 /// 正在显示的那张不怕被淘汰：视图自己的 @State 还拿着它
 struct ThumbnailView: View {
@@ -426,14 +527,18 @@ struct ThumbnailView: View {
   var contentMode = ContentMode.fill
   @State private var image: NSImage?
 
-  /// 三档的长边（像素）：行图标、透镜、⌘Y 大卡
+  /// 三档的长边（像素）：行图标、透镜、⌘Y 大卡。图片行的图另按框算（rowPixel），都比透镜这一档小
   static let iconPixel = 72
   static let lensPixel = 720
   static let cardPixel = 2400
+  /// 图片行的图最长取这么多：比例极端的长截图（1:20 以上）按框算要上千像素，只看得到顶上一截，不值
+  static let rowPixelCap = 640
 
-  /// 行图标最多留这么多张，单独一个缓存：不让大图把它们挤掉（重做一张要把原图整张解码）。一张最大 72 × 72，
-  /// 画过后实测留 25–31 KB，留满 7–10 MB；列表一屏十来行，300 张 = 连着翻过二三十屏的图片
+  /// 行里的图最多留这么多张、这么多字节（按 cost），单独一个缓存：不让大图把它们挤掉（重做一张要把原图整张解码）。
+  /// 行图标一张最大 72 × 72，画过后实测留 25–31 KB，300 张 7–10 MB；图片行的图一张常见 70–370 KB（整屏截图约 115 KB，
+  /// 2026-11-20 独立探针：100 张常见比例的画过一遍比行图标多约 9 MB），16 MB 约 140 张 = 连着翻过二十来屏都是图的列表
   static let iconCount = 300
+  static let iconBytes = 16 * 1_048_576
   /// 透镜 + 大卡最多留这么多（按 cost）：约 18 张整屏截图的透镜，或一张大卡（整屏截图约 29 MB）+ 7 张透镜。
   /// 最大的一张大卡（2400 × 2400，44 MB）加同一张图的透镜（720 × 720，4 MB）也放得下：正在看的这两张不会把对方挤掉
   static let previewBytes = 48 * 1_048_576
@@ -442,6 +547,7 @@ struct ThumbnailView: View {
   static let icons = {
     let cache = NSCache<NSString, NSImage>()
     cache.countLimit = iconCount
+    cache.totalCostLimit = iconBytes
     return cache
   }()
   static let previews = {
@@ -494,9 +600,19 @@ struct ThumbnailView: View {
   /// 一张缩略图画过之后占的内存：宽 × 高 × 4 字节，两份
   static func cost(width: Int, height: Int) -> Int { width * height * 4 * 2 }
 
-  /// 这一档进哪个缓存：行图标档进 icons，更大的（透镜、大卡）进 previews
+  /// 这一档进哪个缓存：行里的图（行图标、图片行的图，都比透镜小）进 icons，透镜、大卡进 previews
   static func cache(for maxPixel: Int) -> NSCache<NSString, NSImage> {
-    maxPixel <= iconPixel ? icons : previews
+    maxPixel < lensPixel ? icons : previews
+  }
+
+  /// 图片行的图要的长边（像素）：按 2x 屏正好盖住它的框（ClipRowView.pictureSize，填满裁切），最多 rowPixelCap。
+  /// 不知道尺寸的按行图标那一档。纯函数（单测）
+  static func rowPixel(for image: ClipItem.ImageInfo?) -> Int {
+    guard let image, image.width > 0, image.height > 0 else { return iconPixel }
+    let box = ClipRowView.pictureSize(image, expanded: false)
+    let (width, height) = (CGFloat(image.width), CGFloat(image.height))
+    let scale = max(box.width * 2 / width, box.height * 2 / height)
+    return min(Int((max(width, height) * scale).rounded(.up)), rowPixelCap)
   }
 
   /// ⌘Y 大卡放掉了：大卡档的缩略图都丢掉（一张整屏截图约 29 MB，留着会把透镜档挤出去）

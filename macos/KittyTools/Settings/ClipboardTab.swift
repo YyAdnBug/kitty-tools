@@ -14,6 +14,7 @@ struct ClipboardTab: View {
   @AppStorage(Prefs.clipboardRetentionDays) private var retentionDays = 7
   @AppStorage(Prefs.clipboardImageBudgetMB) private var imageBudgetMB = 512
   @AppStorage(Prefs.clipboardShowPreview) private var showPreview = true
+  @AppStorage(Prefs.clipboardImageRows) private var imageRows = true
   @AppStorage(Prefs.clipboardLinkPreview) private var linkPreview = true
   @AppStorage(Prefs.clipboardPasteOnClick) private var pasteOnClick = false
   @AppStorage(Prefs.clipboardPanelPosition) private var panelPosition = "top"
@@ -173,6 +174,14 @@ struct ClipboardTab: View {
           .toggleStyle(.switch)
       }
       .settingsAnchor(.clipboardLens)
+      SettingRow(
+        title: "列表里直接显示图片", subtitle: "图片条目显示成一张小图，选中时原地放大",
+        info: "关掉就和别的条目一样，行首一个小方块，一屏多露出几行。"
+      ) {
+        Toggle("列表里直接显示图片", isOn: $imageRows)
+          .toggleStyle(.switch)
+      }
+      .settingsAnchor(.clipboardImageRows)
       SettingRow(
         title: "链接显示网页标题和图片", subtitle: "选中链接时联网读取", info: "本机、内网和带登录令牌的网址不读。"
       ) {

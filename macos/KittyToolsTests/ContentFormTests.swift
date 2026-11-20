@@ -152,6 +152,16 @@ struct ContentFormTests {
     #expect(Lens.bodyHeight(for: ClipItem(kind: .file), form: nil) == 76)
     #expect(Lens.height(for: text("{}"), form: .json) == 198)  // 最高的透镜
     #expect(Lens.reserve == 198 - ClipRowView.height)
+    // 图片行（列表里直接显示图片）：没有正文区，图在行头里长到 108；展开多出的 82 在透镜预留以内（↑↓ 不改窗口高度）
+    let picture = ClipItem(kind: .image)
+    #expect(Lens.bodyHeight(for: picture, form: nil, imageRows: true) == 0)
+    #expect(Lens.height(for: picture, form: nil, imageRows: true) == 146)
+    #expect(
+      Lens.height(for: picture, form: nil, imageRows: true)
+        - ClipRowView.height(of: picture, imageRows: true) <= Lens.reserve)
+    // 只对图片：别的条目开不开都一样
+    #expect(Lens.height(for: text("{}"), form: .json, imageRows: true) == 198)
+    #expect(Lens.height(for: ClipItem(kind: .image), form: nil) == 178)
   }
 
   /// 行标题有没有把整条文本原样显示全（透镜要不要正文区）：只看条目自己的数据。标题列最窄 352 pt

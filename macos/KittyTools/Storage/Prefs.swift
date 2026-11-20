@@ -98,6 +98,8 @@ enum Prefs {
   static let clipboardClearOnQuit = "clipboardClearOnExit"
   static let clipboardClearOnLock = "clipboardClearOnLock"
   static let clipboardShowPreview = "clipboardShowPreview"
+  /// 列表里直接显示图片（2026-11-20，默认开）：图片条目画成 64 高的图片行，选中时图在原地长大；关掉 = 24 pt 小方块
+  static let clipboardImageRows = "clipboardImageRows"
   /// 检查器的链接卡联网取网页标题、头图和图标（LinkPreview）
   static let clipboardLinkPreview = "clipboardLinkPreview"
   /// 单击条目直接粘贴（设置 › 剪贴板「面板」，默认关 = 单击选中、双击粘贴）；⌘ 单击、⇧ 单击不看它，照常多选
@@ -677,6 +679,7 @@ enum Prefs {
       clipboardClearOnQuit: false,
       clipboardClearOnLock: false,
       clipboardShowPreview: true,
+      clipboardImageRows: true,
       clipboardLinkPreview: true,
       clipboardPasteOnClick: false,
       clipboardPanelPosition: "top",

@@ -577,15 +577,21 @@ struct ClipboardStoreTests {
   // MARK: 面板（Lens Bar）
 
   @Test func panelHeightReservesLensAndCaps() throws {
-    #expect(ClipboardPanelView.listHeight(rows: 0, sections: 0, reservesLens: true) == 140)
+    #expect(ClipboardPanelView.listHeight(rowsHeight: 0, sections: 0, reservesLens: true) == 140)
     // 上下内缩 12 + 分组标题 24 + 两行 80（+ 透镜预留 158）
-    #expect(ClipboardPanelView.listHeight(rows: 2, sections: 1, reservesLens: true) == 274)
-    #expect(ClipboardPanelView.listHeight(rows: 2, sections: 1, reservesLens: false) == 116)
-    #expect(ClipboardPanelView.listHeight(rows: 50, sections: 3, reservesLens: true) == 427.5)
+    #expect(ClipboardPanelView.listHeight(rowsHeight: 80, sections: 1, reservesLens: true) == 274)
+    #expect(ClipboardPanelView.listHeight(rowsHeight: 80, sections: 1, reservesLens: false) == 116)
+    #expect(
+      ClipboardPanelView.listHeight(rowsHeight: 2000, sections: 3, reservesLens: true) == 427.5)
+    // 各行的高：图片行开着时图片 64，其余 40；「新建片段」40
+    let rows = [text("a"), ClipItem(kind: .image), text("b")]
+    #expect(ClipboardPanelView.rowsHeight(rows, newSnippet: false, imageRows: true) == 144)
+    #expect(ClipboardPanelView.rowsHeight(rows, newSnippet: true, imageRows: false) == 160)
     let (store, _) = try makeStore()
     for index in 0..<3 { store.record(text("条目 \(index)", ago: Double(10 - index))) }
     let model = ClipboardPanelModel(store: store)
-    let height = ClipboardPanelView.height(for: model, showsLens: true, banner: false)
+    let height = ClipboardPanelView.height(
+      for: model, showsLens: true, banner: false, imageRows: true)
     #expect(height == 406.5)  // 56 + 0.5 + (12 + 24 + 120 + 158) + 36
     // ↑↓ 换选中不改窗口高度（透镜预留是常数）
     model.select(store.items[2])
@@ -621,6 +627,17 @@ struct ClipboardStoreTests {
     let leading = ListLayout(leading: 40, sections: sections, lens: nil)
     #expect(leading.offset(of: c.id) == 168)  // 40 + 24 + 80 + 24
     #expect(leading.sectionTops == [40, 144])
+    // 图片行（列表里直接显示图片）：图片 64，展开 146；关掉时和别的行一样 40
+    let picture = ClipItem(kind: .image)
+    let mixed: [ClipboardPanelView.DaySection] = [(.now, "今天", [(0, a), (1, picture), (2, b)])]
+    let rows = ListLayout(sections: mixed, lens: (a.id, 70), imageRows: true)
+    #expect(rows.offset(of: picture.id) == 94 && rows.height(of: picture.id) == 64)
+    #expect(rows.offset(of: b.id) == 158)  // 24 + 70 + 64
+    #expect(Lens.height(for: picture, form: nil, imageRows: true) == 146)
+    let open = ListLayout(sections: mixed, lens: (picture.id, 146), imageRows: true)
+    #expect(open.offset(of: b.id) == 210 && open.height(of: picture.id) == 146)  // 24 + 40 + 146
+    let off = ListLayout(sections: mixed, lens: nil)
+    #expect(off.height(of: picture.id) == 40 && off.offset(of: b.id) == 104)
   }
 
   /// 剪贴板面板挂进屏外窗口（不弹面板、不抢键盘）；「显示透镜」等用临时偏好域，不读 Dev 版里手测时改过的设置

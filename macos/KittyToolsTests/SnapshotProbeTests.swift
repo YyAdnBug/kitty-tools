@@ -417,6 +417,8 @@ struct SnapshotProbeTests {
         width: ClipboardPanelView.width,
         height: ClipboardPanelView.height(for: model, showsLens: false)),
       dark: false, to: "\(out)/clip-no-lens.png")
+    // 图片行（设置「列表里直接显示图片」，默认开，2026-11-20）：常见比例的图，没选中 64 高、选中时图在原地长到 108
+    try await renderImageRows(out)
     // 增强对比度（体检 B53）：发丝线 1 pt（分组标题线、底栏顶线、竖线、透镜里的描边），深浅色各一张
     for dark in [false, true] {
       model.reset()
@@ -4042,6 +4044,161 @@ struct SnapshotProbeTests {
     }
     var rect = NSRect(x: 0, y: 0, width: 128, height: 128)
     return image.cgImage(forProposedRect: &rect, context: nil, hints: nil)!
+  }
+
+  /// 剪贴板的图片行（设置「列表里直接显示图片」，2026-11-20）：一份只放图的历史，常见比例各一张（窗口截图 1600 × 1000、
+  /// 照片 4032 × 3024、手机截图 1179 × 2556、长截图 1179 × 6000、横幅 2400 × 480），夹两条文字。clip-images-*：
+  /// 没选中图片（都是 64 高的图片行）、选中一张（图在原地长到 108、透镜只剩元信息行）、选中手机截图（窄图在棋盘格里）、
+  /// 搜到图中文字、多选、只看图片、关掉开关（原来的 24 pt 小方块 + 透镜里的图）。偏好走临时偏好域，不读 Dev 版里改过的设置
+  private func renderImageRows(_ out: String) async throws {
+    let dir = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let store = try ClipboardStore(
+      db: Database(path: ":memory:"), images: ImageStore(directory: dir))
+    func add(_ picture: CGImage, ago: Double, from source: (String, String), ocr: String? = nil)
+      throws
+    {
+      let png = try #require(
+        NSBitmapImageRep(cgImage: picture).representation(using: .png, properties: [:]))
+      var item = ClipItem(
+        kind: .image, sourceName: source.0, sourceBundleID: source.1,
+        copiedAt: Date.now.addingTimeInterval(-ago))
+      try png.write(to: store.images.url(for: item.id))
+      // 去重按 sha256：每张给不同的
+      item.image = .init(
+        width: picture.width, height: picture.height, byteCount: png.count,
+        sha256: item.id.uuidString)
+      item.ocrText = ocr
+      store.record(item)
+    }
+    func note(_ text: String, ago: Double) {
+      var item = ClipItem(
+        kind: .text, sourceName: "备忘录", sourceBundleID: "com.apple.Notes",
+        copiedAt: Date.now.addingTimeInterval(-ago))
+      item.text = text
+      store.record(item)
+    }
+    let weChat = ("微信", "com.tencent.xinWeChat")
+    note("会议纪要：周五发布 0.1.0 预发布版，负责人 yy", ago: 20)
+    try add(
+      Self.windowShot(1600, 1000, lines: ["Lens Bar", "透镜指令条"]), ago: 60, from: weChat,
+      ocr: "Lens Bar\n透镜指令条")
+    try add(Self.photo(4032, 3024, hue: 0.3), ago: 180, from: ("照片", "com.apple.Photos"))
+    note("下周三前把发票寄回财务", ago: 300)
+    try add(Self.photo(1179, 2556, hue: 0.6), ago: 480, from: weChat)
+    try add(
+      Self.windowShot(1179, 6000, lines: ["长截图", "Scrolling Capture"]), ago: 900,
+      from: ("Safari", "com.apple.Safari"))
+    try add(Self.photo(2400, 480, hue: 0.02), ago: 1200, from: ("预览", "com.apple.Preview"))
+    // 屏外渲染时 .task 来不及跑：先把图片行那一档、透镜那一档放进缓存（关掉开关那张要行图标档）
+    for item in store.items where item.kind == .image {
+      for maxPixel in [
+        ThumbnailView.rowPixel(for: item.image), ThumbnailView.lensPixel, ThumbnailView.iconPixel,
+      ] {
+        _ = await ThumbnailView.load(item.id, images: store.images, maxPixel: maxPixel)
+      }
+    }
+    let model = ClipboardPanelModel(store: store)
+    func pick(_ m: ClipboardPanelModel, _ match: (ClipItem) -> Bool) {
+      if let item = m.visibleItems.first(where: match) { m.select(item) }
+    }
+    let states: [(String, (ClipboardPanelModel) -> Void)] = [
+      ("", { m in pick(m) { $0.kind == .text } }),
+      ("-open", { m in pick(m) { $0.kind == .image } }),
+      ("-tall", { m in pick(m) { $0.image?.height == 2556 } }),
+      ("-search", { m in m.query = "透镜" }),
+      ("-multi", { m in m.multiSelection = Set(m.visibleItems.prefix(3).map(\.id)) }),
+      ("-filter", { m in m.kind = .image }),
+    ]
+    for (on, names) in [(true, states.map(\.0)), (false, ["", "-open"])] {
+      let suite = "kitty-snapshot-\(UUID().uuidString)"
+      let prefs = try #require(UserDefaults(suiteName: suite))
+      defer { prefs.removePersistentDomain(forName: suite) }
+      prefs.set(on, forKey: Prefs.clipboardImageRows)
+      for dark in on ? [false, true] : [false] {
+        for (name, configure) in states where names.contains(name) {
+          model.reset()
+          configure(model)
+          try snapshot(
+            ClipboardPanelView(model: model).defaultAppStorage(prefs),
+            size: NSSize(
+              width: ClipboardPanelView.width,
+              height: ClipboardPanelView.height(
+                for: model, showsLens: true, banner: false, imageRows: on)),
+            dark: dark, to: "\(out)/clip-images\(on ? "" : "-off")\(name)\(dark ? "-dark" : "").png"
+          )
+        }
+      }
+    }
+  }
+
+  /// 截图自检用的「窗口截图」：浅灰底、标题栏和三个圆点、左上角几行字，下面一块块色条铺满（长截图也像一页网页）
+  private static func windowShot(_ width: Int, _ height: Int, lines: [String]) throws -> CGImage {
+    let context = try #require(
+      CGContext(
+        data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
+    let (w, h) = (CGFloat(width), CGFloat(height))
+    context.setFillColor(NSColor(white: 0.97, alpha: 1).cgColor)
+    context.fill(CGRect(x: 0, y: 0, width: w, height: h))
+    context.setFillColor(NSColor(white: 0.88, alpha: 1).cgColor)
+    context.fill(CGRect(x: 0, y: h - 64, width: w, height: 64))
+    for (index, color) in [NSColor.systemRed, .systemYellow, .systemGreen].enumerated() {
+      context.setFillColor(color.cgColor)
+      context.fillEllipse(in: CGRect(x: 28 + CGFloat(index) * 40, y: h - 46, width: 28, height: 28))
+    }
+    let text = try ScreenshotTests.render(lines)
+    context.draw(
+      text,
+      in: CGRect(
+        x: 40, y: h - 100 - CGFloat(text.height), width: CGFloat(text.width),
+        height: CGFloat(text.height)))
+    let colors: [NSColor] = [.systemBlue, .systemPink, .systemTeal, .systemOrange]
+    var y = h - 140 - CGFloat(text.height)
+    var index = 0
+    while y > 60 {
+      let block = CGRect(
+        x: 40, y: y - 120, width: (w - 80) * [1, 0.7, 0.85][index % 3], height: 120)
+      context.setFillColor(colors[index % colors.count].withAlphaComponent(0.25).cgColor)
+      context.addPath(CGPath(roundedRect: block, cornerWidth: 16, cornerHeight: 16, transform: nil))
+      context.fillPath()
+      y -= 160
+      index += 1
+    }
+    return try #require(context.makeImage())
+  }
+
+  /// 截图自检用的「照片」：两种颜色的斜向渐变 + 一个圆
+  private static func photo(_ width: Int, _ height: Int, hue: CGFloat) -> CGImage {
+    let space = CGColorSpace(name: CGColorSpace.sRGB)!
+    let context = CGContext(
+      data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+      bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+    let colors = [
+      NSColor(hue: hue, saturation: 0.65, brightness: 0.9, alpha: 1).cgColor,
+      NSColor(
+        hue: (hue + 0.12).truncatingRemainder(dividingBy: 1), saturation: 0.7, brightness: 0.45,
+        alpha: 1
+      )
+      .cgColor,
+    ]
+    let gradient = CGGradient(colorsSpace: space, colors: colors as CFArray, locations: [0, 1])!
+    context.drawLinearGradient(
+      gradient, start: .zero, end: CGPoint(x: width, y: height), options: [])
+    let side = CGFloat(min(width, height)) * 0.4
+    context.setFillColor(
+      NSColor(
+        hue: (hue + 0.5).truncatingRemainder(dividingBy: 1), saturation: 0.5, brightness: 1,
+        alpha: 0.85
+      )
+      .cgColor)
+    context.fillEllipse(
+      in: CGRect(
+        x: CGFloat(width) * 0.62 - side / 2, y: CGFloat(height) * 0.6 - side / 2, width: side,
+        height: side))
+    return context.makeImage()!
   }
 
   private static func fakeFavicon(_ letter: String, _ color: NSColor) -> NSImage {

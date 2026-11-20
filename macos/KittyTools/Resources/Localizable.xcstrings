@@ -5236,6 +5236,23 @@
         }
       }
     },
+    "search.clipboard.imageRows" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "图片,缩略图,预览,大图"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Image,Thumbnail,Preview,Large Image"
+          }
+        }
+      }
+    },
     "search.clipboard.lens" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -13260,6 +13277,16 @@
         }
       }
     },
+    "关掉就和别的条目一样，行首一个小方块，一屏多露出几行。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn it off to show images like other entries, as a small square, so more rows fit."
+          }
+        }
+      }
+    },
     "关掉就是纯列表，一屏多露出几行。" : {
       "localizations" : {
         "en" : {
@@ -14218,6 +14245,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "While an app in this list is in front, the wheel scrolls the way the system does (and isn’t reversed). Common virtual machines, remote desktops and apps marked as games are left alone automatically, so you don’t need to add them; add other games and apps that handle the wheel themselves."
+          }
+        }
+      }
+    },
+    "列表里直接显示图片" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Images in the List"
           }
         }
       }
@@ -18478,6 +18515,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Limit image storage to %@?"
+          }
+        }
+      }
+    },
+    "图片条目显示成一张小图，选中时原地放大" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Image entries show a small picture that enlarges in place when selected"
           }
         }
       }

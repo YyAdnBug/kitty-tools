@@ -750,10 +750,40 @@ struct ClipboardPanelTests {
     #expect(ThumbnailView.cache(for: ThumbnailView.lensPixel) === ThumbnailView.previews)
     #expect(ThumbnailView.cache(for: ThumbnailView.cardPixel) === ThumbnailView.previews)
     #expect(ThumbnailView.icons.countLimit == ThumbnailView.iconCount)
+    #expect(ThumbnailView.icons.totalCostLimit == ThumbnailView.iconBytes)
     #expect(ThumbnailView.previews.totalCostLimit == ThumbnailView.previewBytes)
+    // 图片行的图（按框算的那一档）都进行里的缓存：最大的一档也比透镜小
+    #expect(ThumbnailView.rowPixelCap < ThumbnailView.lensPixel)
+    #expect(ThumbnailView.cache(for: ThumbnailView.rowPixelCap) === ThumbnailView.icons)
+    // 300 张画过的图片行的图（整屏截图 148 × 96，两份）放不下：按字节先封顶
+    #expect(
+      ThumbnailView.cost(width: 148, height: 96) * ThumbnailView.iconCount > ThumbnailView.iconBytes
+    )
     let card = ThumbnailView.cost(width: ThumbnailView.cardPixel, height: ThumbnailView.cardPixel)
     let lens = ThumbnailView.cost(width: ThumbnailView.lensPixel, height: ThumbnailView.lensPixel)
     #expect(card + lens <= ThumbnailView.previewBytes)
+  }
+
+  /// 图片行的图要多大（rowPixel）：按 2x 正好盖住框（高 48、宽按比例夹在 36–240，填满裁切），比例极端的封顶
+  @Test func rowPicturePixels() {
+    func pixel(_ width: Int, _ height: Int) -> Int {
+      ThumbnailView.rowPixel(for: .init(width: width, height: height, byteCount: 0, sha256: ""))
+    }
+    // 整屏截图 2940 × 1912：框 73.8 × 48，缩成 148 × 96
+    #expect(pixel(2940, 1912) == 148)
+    // 手机截图 1179 × 2556：框夹到最窄 36，宽要 72 → 长边 157
+    #expect(pixel(1179, 2556) == 157)
+    // 横幅 2400 × 480：框夹到最宽 240，宽要 480
+    #expect(pixel(2400, 480) == 480)
+    // 长截图 1179 × 6000 还在上限内；1:30 的封顶 640
+    #expect(pixel(1179, 6000) == 367)
+    #expect(pixel(1000, 30000) == ThumbnailView.rowPixelCap)
+    // 不知道尺寸：按行图标那一档
+    #expect(ThumbnailView.rowPixel(for: nil) == ThumbnailView.iconPixel)
+    // 展开的框同原来透镜里的图：高 108、宽 60–360
+    let wide = ClipItem.ImageInfo(width: 2400, height: 480, byteCount: 0, sha256: "")
+    #expect(ClipRowView.pictureSize(wide, expanded: true) == CGSize(width: 360, height: 108))
+    #expect(ClipRowView.pictureSize(wide, expanded: false) == CGSize(width: 240, height: 48))
   }
 
   /// ⌘Y 大卡放掉时只丢大卡那一档（dropCards）：透镜、行图标还在缓存里（再取是同一个对象），大卡档要重新生成
