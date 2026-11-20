@@ -117,7 +117,8 @@ struct ScreenshotTab: View {
           SettingRow(
             title: "截图圆角", subtitle: "框选的框和截出来的图都是这个圆角",
             info:
-              "拖到最左是直角。截出来的图四角透明（PNG），粘进不认透明的程序时四角可能是黑的或白的。单击整扇窗口截下、开着「窗口截图带阴影」时按窗口自己的圆角；录屏、长截图是直角。"
+              "拖到最左是直角。截出来的图四角透明（PNG），粘进不认透明的程序时四角可能是黑的或白的。单击整扇窗口截下、开着「窗口截图带阴影」时按窗口自己的圆角；录屏、长截图是直角。",
+            isNew: WhatsNew.marks(section: "截图圆角", of: .screenshot, in: navigation.fresh)
           ) {
             HStack(spacing: 8) {
               Slider(value: $cornerRadius, in: Prefs.screenshotCornerRadii, step: 2) {
@@ -131,6 +132,8 @@ struct ScreenshotTab: View {
                 .frame(width: 40, alignment: .trailing)
             }
           }
+          // 拖过这一行，「新」就算看过了（0.10.2，WhatsNew）
+          .onChange(of: cornerRadius) { WhatsNew.touch(section: "截图圆角", of: .screenshot) }
           .settingsAnchor(.screenshotCorners)
         }
         Section {

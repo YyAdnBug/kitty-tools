@@ -115,6 +115,12 @@ enum WhatsNew {
     Entry(
       id: "speech-speed", version: "0.10.1", feature: .translate, page: .translate,
       section: "朗读速度"),
+    // 0.10.2：设置 › 截图「截图圆角」（拖过算看过）——升上来以后截出来的图默认就是圆角、四角透明，标出来让人知道在哪调。
+    // 剪贴板图片行、空格放大预览、空闲释放识字模型（都在面板里或「高级…」里，默认样子就看得到 / 没变）、App 快捷键面板改版、
+    // 安全输入的小锁和录键提醒（改样子、修问题）不标，交给更新日志
+    Entry(
+      id: "screenshot-corner-radius", version: "0.10.2", feature: .screenshot, page: .screenshot,
+      section: "截图圆角"),
   ]
 
   /// 一版最多标几个（拍板 B1：标多了到处都是「新」，等于没标）。同一版的几个新插件算一个：都只标在「全部插件」一处

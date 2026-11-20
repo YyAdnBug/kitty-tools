@@ -2564,6 +2564,16 @@ Alfred 的 Related Apps、BetterTouchTool 按 App 停用，调研和测开销的
 `MARKETING_VERSION` 升到 0.10.2，更新日志 0.10.2 一条（中英两条，都是 ui）；这两处都不是新入口，`WhatsNew` 没挑。以后进 0.10.2 的改动更新日志加在同一条里。
 没 push、没打 tag、没打测试包。全量 2540 过。待手测：HANDTEST「设置的两处反馈」1–5。
 
+**2026-11-20：0.10.2 收齐**（用户「0.10.1 后面的所有功能都放在 0.10.2，然后打包给我测试准备发布 0.10.2」）：集成分支 `claude/v0102`
+（工作树 `.claude/worktrees/v0102`，从 origin/macos `ffc5a397`；那上面已有 PR #39 识字预热、剪贴板图片行、截图圆角），合并提交收：
+`claude/settings-feedback-120ed5`（上面那条，含升版本）、`claude/vibrant-tesla-52b5b5`（`Subprocess.lines` 退出前读完管道）、
+`claude/clip-space-preview`（空格开关放大预览）、`claude/self-capture`（长截图拍得到自家普通窗口）、`claude/app-shortcuts-panel`
+（App 快捷键面板改版三批）、`claude/secure-input-hotkeys`（安全输入的小锁和录键提醒，issue #27 第二轮）。11-16/17 那几个旧分支查过都已经以改过的样子进了
+0.10.0；`claude/launcher-crash` 的测试提交是 0.10.0 之前的、没收。更新日志 0.10.2 共 12 条（`Subprocess` 那条看不出来，不写）；`WhatsNew` 挑了
+「截图圆角」一个。arm64 + x86_64 测试包在工作树 `macos/build/`。没 push、没 tag；用户测完说「发布」再发。待手测：HANDTEST「空闲时释放识字模型」1–5、
+「剪贴板图片行」1–8、「截图圆角」1–10、「设置的两处反馈」1–5、「剪贴板空格预览」1–10、「截图、录屏、长截图拍到 Kitty 自己的窗口」1–5、
+「App 快捷键手测」37–45、「安全输入挡住快捷键」6–15。
+
 **2026-11-19：0.10.1 发布**（用户「测过了，发布」）：tag `macos-v0.10.1` = `b85f0e0b`，latest，origin/macos 快进 `ffe16444` → `b85f0e0b`。
 发布前按用户「先并进来再发」又并了 #36（输入框不弹系统「填充验证码」）、#37（平滑滚动按修饰键缩放时停滑、钉图滚轮缩放幅度）、#32（跨设备同步来的
 剪贴板不看临时标记）三个提交，更新日志补三条（共 34 条）、日期改成 11-19；这三处用户没在测试包里试过。全量 2539 过（第一遍
