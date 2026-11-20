@@ -413,27 +413,20 @@ struct HomeView: View {
     .frame(maxWidth: .infinity, minHeight: Home.noteHeight, alignment: .leading)
   }
 
-  /// 「「Google Chrome」开着安全输入，⌥ 快捷键暂时不响应」：橙字（同快捷键页注册失败的那行），悬停说为什么、怎么恢复。
-  /// 只是告诉人为什么没反应，不给按钮——能做的是离开那个密码框，或者把快捷键换成带 ⌘ / ⌃ 的
+  /// 「「Google Chrome」开着安全输入，⌥ 快捷键暂时不响应」：橙字（同快捷键页注册失败的那行），悬停说为什么、按开着它的 App
+  /// 怎么关、哪些不受影响（SecureInputBlock.explanation）。只是告诉人为什么没反应，不给按钮——能做的是让那个 App 把安全输入关掉，
+  /// 或者把快捷键换成带 ⌘ / ⌃ 的、连按两下
   private func secureInputNote(_ block: HotKeyCenter.SecureInputBlock) -> some View {
-    Group {
-      if let holder = block.holder {
-        // App 名原样显示（Text(String) 不按 Markdown 解析）
-        Text(String(localized: "「\(holder)」开着安全输入，⌥ 快捷键暂时不响应"))
-      } else {
-        Text("有 App 开着安全输入，⌥ 快捷键暂时不响应")
-      }
-    }
-    .foregroundStyle(Color(nsColor: .systemOrange))
-    .font(.system(size: 11))
-    .lineLimit(1)
-    .truncationMode(.middle)
-    .help(
-      "输入密码时系统会打开安全输入，这时只带 ⌥ 的快捷键收不到，按键会打进那个输入框。离开密码框或退出那个 App 后恢复；带 ⌘ 或 ⌃ 的快捷键不受影响。"
-    )
-    .padding(.leading, Home.inset + 10)
-    .padding(.trailing, Home.inset)
-    .frame(maxWidth: .infinity, minHeight: Home.noteHeight, alignment: .leading)
+    // App 名原样显示（Text(String) 不按 Markdown 解析）
+    Text(block.summary)
+      .foregroundStyle(Color(nsColor: .systemOrange))
+      .font(.system(size: 11))
+      .lineLimit(1)
+      .truncationMode(.middle)
+      .help(block.explanation)
+      .padding(.leading, Home.inset + 10)
+      .padding(.trailing, Home.inset)
+      .frame(maxWidth: .infinity, minHeight: Home.noteHeight, alignment: .leading)
   }
 
   /// 底栏（同启动器的底栏，mac-whisker §3「面板里共用的几件」）：左边有新版本时「更新到 x」，右边两个能点的动作

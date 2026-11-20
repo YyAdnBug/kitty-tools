@@ -12,8 +12,10 @@
 // 按 App 停用（2026-11-10，HotKeyBlock）：名单里的 App 在前台时 reload 不注册它停用的那几个（「全部」时连命令的快捷键、
 // 连按两下一起），按键原样到那个 App；看着前台切换（frontChanged），停用的集合变了才重新注册一遍（8 个热键约 0.3 ms）。
 // 录屏倒数的临时 Esc 不受名单管。本 App 的浮层不激活自己，开在名单里的 App 上面时前台还是它、快捷键照样停着。
-// 安全输入（issue #27）：别的 App 开着它时只带 ⌥ 的组合收不到（HotKey.yieldsToSecureInput），注册照样成功、什么都看不出来；
-// 主界面打开时看一眼（secureInputBlock），挡着就在底下写一行是哪个 App。重新注册、停用都记一条日志（类别 hotkeys）。
+// 安全输入（issue #27）：别的 App 开着它时只带 ⌥ 的出字的键收不到（HotKey.yieldsToSecureInput），注册照样成功、什么都看不出来；
+// 系统故意的，公开接口绕不过去（2026-11-20 实测）。主界面打开时看一眼（secureInputBlock），挡着就在底下写一行是哪个 App；
+// 菜单栏图标的橙色小锁跟着 checkSecureInput 走（切换前台 App、按下 ⌥ 时看，挡着时 3 秒复查到没了为止）。
+// 重新注册、停用都记一条日志（类别 hotkeys）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -100,12 +102,20 @@ struct HotKey: Codable, Hashable {
 
   var isReservedEditKey: Bool { Self.reservedEditKeys.contains(self) }
 
-  /// 只带 ⌥（或 ⌥⇧）的字母数字符号键（F 键、连按两下不算）：有进程开着安全输入（别的 App 在输密码）时，系统不把它交给
-  /// 全局热键，按键原样打进前台 App（issue #27，2026-11-16 macOS 27.0.1 实测：⌥J、⌥⇧J 不响应，⌃⌥J、⌘⌥J、⌥F19 照常；
-  /// 安全输入一关马上恢复）。默认键全是这种
+  /// 只带 ⌥（或 ⌥⇧）的字母数字符号键——会打出字的那些：有进程开着安全输入（别的 App 在输密码）时，系统不把它交给全局热键，
+  /// 按键原样打进前台 App（issue #27；macOS 27.0.1 实测，2026-11-16 和 11-20 两次，合成按键和真键盘一样：⌥J、⌥⇧J、⌥1、⌥/
+  /// 不响应，独占注册也一样；⌃⌥J、⌘⌥J 照常，**不出字的键照常**——⌥空格、⌥↩、⌥⌫、⌥↓、⌥Home、⌥F19、F18；连按两下不走
+  /// Carbon，也照常。安全输入一关马上恢复）。默认键除了 ⌥空格（启动器）全是这种
   var yieldsToSecureInput: Bool {
     modifiers & UInt32(cmdKey | controlKey) == 0 && modifiers & UInt32(optionKey) != 0
-      && Self.functionKeys[Int(keyCode)] == nil
+      && Self.specialKeys[Int(keyCode)] == nil && Self.functionKeys[Int(keyCode)] == nil
+  }
+
+  /// 录制框录到这种组合时那一行的提示（不拦）
+  var secureInputHint: String? {
+    yieldsToSecureInput
+      ? String(localized: "别的 App 在输密码时这个组合会失效；要随时能用，加上 ⌃ 或 ⌘，或改成连按两下修饰键")
+      : nil
   }
 
   /// 例如 ⌘⇧V；连按两下是两个同样的修饰键「⌘⌘」（KeyCombo 画成两个键帽）
@@ -784,6 +794,12 @@ enum HotKeyAction: String, CaseIterable {
   @ObservationIgnored private var appliedBlock: HotKeyBlock.Rule?
   @ObservationIgnored private var blockedSomething = false
   @ObservationIgnored private var frontObserver: NSObjectProtocol?
+  /// 菜单栏图标的橙色小锁（AppDelegate 接）：挡着快捷键的安全输入出现、换了持有者、没了时调（checkSecureInput）
+  @ObservationIgnored var onSecureInputChange: (SecureInputBlock?) -> Void = { _ in }
+  /// 上次交给 onSecureInputChange 的；排着的那次复查；按下 ⌥ 时看一眼的全局监听
+  @ObservationIgnored private var secureBlock: SecureInputBlock?
+  @ObservationIgnored private var secureCheck: Task<Void, Never>?
+  @ObservationIgnored private var optionMonitor: Any?
   /// 前台 App 的 bundle id：开始看时取一次，之后跟着激活通知改（通知里带的那个，不在通知里再读 frontmostApplication）
   @ObservationIgnored private var frontID: String?
 
@@ -831,6 +847,8 @@ enum HotKeyAction: String, CaseIterable {
     }
     registerCommands(blocked: block?.blocksCommands == true)
     watchTaps()
+    watchOption()
+    checkSecureInput()
     watchTrust(HotKeyAction.allCases.contains { $0.isActive && $0.hotKey?.doubleTap != nil })
     // 只记个数和错误码（命令的编号可能是用户的脚本名，不记）
     let actions = failures.map { "\($0.key.rawValue) \($0.value)" }
@@ -841,22 +859,119 @@ enum HotKeyAction: String, CaseIterable {
     )
   }
 
-  /// 此刻挡着快捷键的安全输入（主界面底下那一行）。holder：开着它的 App 的名字（会话字典里记的是负责的那个 App，
-  /// 2026-11-16 实测只在开着时才有这一项）；取不到 nil
+  /// 此刻挡着快捷键的安全输入（主界面底下那一行、菜单栏图标的小锁、菜单最上面那行）。holder / bundleID：开着它的 App
+  /// （会话字典里记的是负责的那个 App，2026-11-16 实测只在开着时才有这一项）；取不到 nil
   struct SecureInputBlock: Equatable {
     var holder: String?
+    var bundleID: String? = nil
+
+    /// 「「Google Chrome」开着安全输入，⌥ 快捷键暂时不响应」
+    var summary: String {
+      holder.map { String(localized: "「\($0)」开着安全输入，⌥ 快捷键暂时不响应") }
+        ?? String(localized: "有 App 开着安全输入，⌥ 快捷键暂时不响应")
+    }
+
+    /// 怎么让它关掉，按开着它的 App 给（一句，不带句号）
+    var advice: String {
+      switch Holder(bundleID: bundleID) {
+      case .terminal: String(localized: "在「终端」菜单里关掉「安全键盘输入」")
+      case .iTerm: String(localized: "在「iTerm2」菜单里关掉「Secure Keyboard Entry」")
+      case .browser: String(localized: "点一下网页上别的输入框或切个标签页；还不行就退出浏览器再打开")
+      case .onePassword: String(localized: "锁定 1Password 再解锁，或者更新到新版")
+      case .loginWindow: String(localized: "多半是锁屏或登录时留下的：锁定屏幕再解锁，还不行就注销重新登录")
+      case .other:
+        holder.map { String(localized: "切回「\($0)」点一下别的输入框，或者退出它") }
+          ?? String(localized: "离开正在输密码的输入框，或者退出开着它的 App")
+      }
+    }
+
+    /// 主界面那一行、菜单栏图标的悬停说明：为什么、怎么关、哪些不受影响
+    var explanation: String {
+      String(
+        localized:
+          "输入密码时系统会打开安全输入，这时只带 ⌥ 的字母、数字、符号键收不到，按键会打进那个输入框。\(advice)。带 ⌘ 或 ⌃ 的快捷键、⌥空格、F 键和连按两下修饰键不受影响。"
+      )
+    }
+
+    /// 常见的几种持有者（有自己的关法）：终端和 iTerm2 的「安全键盘输入」会一直开着；Chromium 系浏览器离开密码框后有时不关
+    /// （issue #27 报告人那次就是 Chrome）；1Password 旧版本有同样的问题；loginwindow 是锁屏、登录输密码时留下的
+    enum Holder: Equatable {
+      case terminal, iTerm, browser, onePassword, loginWindow, other
+
+      init(bundleID: String?) {
+        let id = bundleID?.lowercased() ?? ""
+        let browsers = [
+          "com.google.chrome", "com.microsoft.edgemac", "com.brave.browser", "company.thebrowser.",
+          "com.vivaldi.vivaldi", "com.operasoftware.opera", "org.chromium.chromium",
+          "com.apple.safari", "org.mozilla.firefox",
+        ]
+        self =
+          switch id {
+          case "com.apple.terminal": .terminal
+          case "com.googlecode.iterm2": .iTerm
+          case "com.apple.loginwindow": .loginWindow
+          case _ where id.hasPrefix("com.1password.") || id.hasPrefix("com.agilebits.onepassword"):
+            .onePassword
+          case _ where browsers.contains(where: id.hasPrefix): .browser
+          default: .other
+          }
+      }
+    }
   }
 
-  /// 有进程开着安全输入、生效的快捷键里又有只带 ⌥ 的（这时它们按了没反应）才有；主界面打开时看一眼，不轮询
+  /// 有进程开着安全输入、生效的快捷键里又有只带 ⌥ 的出字的键（这时它们按了没反应）才有
   func secureInputBlock() -> SecureInputBlock? {
     guard IsSecureEventInputEnabled(),
       bindings.values.contains(where: \.yieldsToSecureInput)
         || commandBindings.values.contains(where: \.yieldsToSecureInput)
     else { return nil }
     let session = CGSessionCopyCurrentDictionary() as? [String: Any]
-    let pid = (session?["kCGSSessionSecureInputPID"] as? NSNumber)?.int32Value
-    return SecureInputBlock(
-      holder: pid.flatMap { NSRunningApplication(processIdentifier: $0)?.localizedName })
+    let app = ((session?["kCGSSessionSecureInputPID"] as? NSNumber)?.int32Value)
+      .flatMap { NSRunningApplication(processIdentifier: $0) }
+    return SecureInputBlock(holder: app?.localizedName, bundleID: app?.bundleIdentifier)
+  }
+
+  /// 看一眼安全输入挡没挡着快捷键，和上次不一样就交给 onSecureInputChange（菜单栏图标的小锁）。挡着时 3 秒后再看一次，
+  /// 直到没了——安全输入关掉没有通知，只能复查；不挡着时不排下一次，平时不轮询。delay：切换前台 App 时等半秒（从密码框
+  /// 切走的那一刻安全输入可能还没关，马上看会让小锁闪一下）
+  func checkSecureInput(after delay: Duration = .zero) {
+    secureCheck?.cancel()
+    secureCheck = Task { [weak self] in
+      if delay > .zero { try? await Task.sleep(for: delay) }
+      guard !Task.isCancelled, let self else { return }
+      let block = secureInputBlock()
+      if block != secureBlock {
+        secureBlock = block
+        Log.hotkeys.notice(
+          "安全输入挡着只带 ⌥ 的快捷键：\(block?.bundleID ?? (block == nil ? "没了" : "认不出"), privacy: .public)"
+        )
+        onSecureInputChange(block)
+      }
+      guard block != nil else { return }
+      try? await Task.sleep(for: .seconds(3))
+      guard !Task.isCancelled else { return }
+      checkSecureInput()
+    }
+  }
+
+  /// 有只带 ⌥ 的出字的键注册着时，看着全局的修饰键变化：⌥ 按下的那一刻多半是要按快捷键，看一眼安全输入（安全输入开着时
+  /// 修饰键的变化照样收得到，2026-11-20 实测）。要辅助功能授权，没有时监听收不到东西，只剩切换前台 App 那一处在看
+  private func watchOption() {
+    if let optionMonitor { NSEvent.removeMonitor(optionMonitor) }
+    optionMonitor = nil
+    guard
+      bindings.values.contains(where: \.yieldsToSecureInput)
+        || commandBindings.values.contains(where: \.yieldsToSecureInput)
+    else { return }
+    optionMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) {
+      [weak self] event in
+      MainActor.assumeIsolated {
+        guard event.modifierFlags.contains(.option),
+          [kVK_Option, kVK_RightOption].contains(Int(event.keyCode))
+        else { return }
+        self?.checkSecureInput()
+      }
+    }
   }
 
   /// 命令的快捷键（在各动作之后注册：和动作撞了的是命令这边失败）。blocked：前台 App 停用了全部快捷键，照样记下要注册的
@@ -927,6 +1042,7 @@ enum HotKeyAction: String, CaseIterable {
     appliedBlock = nil
     blockedSomething = false
     watchTaps()
+    watchOption()
   }
 
   /// 第一次 reload 时开始看前台切换（之后一直看着；只比较规则，开销可以忽略）
@@ -946,6 +1062,7 @@ enum HotKeyAction: String, CaseIterable {
   /// 热键停着（录快捷键、截图框选、状态屏）时不动，停的那一方结束时 reload 会按那时的前台算
   private func frontChanged(_ bundleID: String?) {
     frontID = bundleID
+    checkSecureInput(after: .milliseconds(500))
     guard !suspended, handlerRef != nil,
       HotKeyBlock.rule(for: bundleID, in: HotKeyBlock.stored) != appliedBlock
     else { return }

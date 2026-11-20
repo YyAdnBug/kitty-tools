@@ -163,6 +163,16 @@ extension AppDelegate {
       if let on = extra.isOn(state) { item.state = on ? .on : .off }
       if extra == .settings, WhatsNew.inSettingsOnly(fresh) { item.badge = WhatsNew.menuBadge }
     }
+    // 别的 App 开着安全输入、挡着只带 ⌥ 的快捷键（issue #27）：最上面一行说是谁开着、小字说怎么关。只是说明，点不了
+    // （没有动作的菜单项系统自动画成灰的）；和菜单栏图标的小锁、主界面那行橙字同一份字
+    if let block = hotKeys.secureInputBlock() {
+      let item = NSMenuItem(title: block.summary, action: nil, keyEquivalent: "")
+      item.subtitle = block.advice
+      item.image = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: nil)?
+        .withSymbolConfiguration(.init(hierarchicalColor: .systemOrange))
+      menu.addItem(item)
+      menu.addItem(.separator())
+    }
     // 有新版本时最上面一项就是更新（强调色：现在该操作的东西）；跳过了的版本不挂（X11）
     if let release = updater.nudge {
       if let obstacle = updater.obstacle {

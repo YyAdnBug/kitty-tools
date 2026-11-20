@@ -177,6 +177,8 @@ extension AppDelegate {
     updater.island = island
     // 有新版本：菜单栏图标右上角出小圆点，常驻到更新为止
     updater.onAvailableChange = { [weak statusItem] in statusItem?.updateVersion = $0?.version }
+    // 别的 App 开着安全输入、挡着只带 ⌥ 的快捷键：菜单栏图标右下角出橙色小锁，没了就撤（issue #27）
+    hotKeys.onSecureInputChange = { [weak statusItem] in statusItem?.secureInput = $0 }
     updater.start()
     // 刘海岛：点刘海、快捷键「打开刘海岛」叫出那一张。快捷动作每次打开时现取（照 设置 › 刘海岛 的先后和开关，
     // 关着的功能不出，录着时写「停止录屏」）

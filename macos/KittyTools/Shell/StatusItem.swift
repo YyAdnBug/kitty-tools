@@ -16,6 +16,8 @@
 // 隐藏后靠再打开一次本 App 回到主界面（AppDelegate.applicationShouldHandleReopen，设置从那里一键过去），退出在启动器里（MenuExtra.quit）。
 // 有新版本时图标右上角一个强调色小圆点（updateVersion，2026-10-06）：常驻到更新为止，点开菜单最上面就是「更新到 x…」。
 // 暂停记录剪贴板时右下角一个灰色的暂停角标（clipboardPaused，第四轮体检 X13）：暂停只在这次运行里有效，很容易忘了。
+// 别的 App 开着安全输入、挡着只带 ⌥ 的快捷键时，同一个位置换成橙色小锁（secureInput，issue #27 2026-11-20）：按了没反应时
+// 看一眼就知道为什么，悬停说是谁开着、怎么关；两样同时有时显示锁。
 
 import AppKit
 import Carbon.HIToolbox
@@ -34,8 +36,9 @@ final class StatusItem: NSObject, NSMenuDelegate {
   private var isApplying = false
   /// 按钮上现在是哪种图（nil = 还没设）
   private var style: IconStyle?
-  private let badge = BadgeDot()
-  private let pauseBadge = BadgeDot(paused: true)
+  private let badge = BadgeDot(.update)
+  private let pauseBadge = BadgeDot(.paused)
+  private let lockBadge = BadgeDot(.lock)
   /// 有新版本（Updater.available 的版本号，AppDelegate 给）：图标右上角出小圆点、悬停提示写版本号；nil = 没有
   var updateVersion: String? {
     didSet { if updateVersion != oldValue { applyBadge() } }
@@ -43,6 +46,10 @@ final class StatusItem: NSObject, NSMenuDelegate {
   /// 暂停记录剪贴板（AppDelegate 跟 ClipboardWatcher.isUserPaused 一起设）：右下角灰色暂停角标、悬停提示说一声
   var clipboardPaused = false {
     didSet { if clipboardPaused != oldValue { applyBadge() } }
+  }
+  /// 安全输入挡着只带 ⌥ 的快捷键（HotKeyCenter.onSecureInputChange）：右下角橙色小锁（压过暂停角标），悬停说是谁开着、怎么关
+  var secureInput: HotKeyCenter.SecureInputBlock? {
+    didSet { if secureInput != oldValue { applyBadge() } }
   }
 
   /// 图标样式（设置 › 通用「图标样式」）：单色 = 角色剪影模板图（跟着菜单栏深浅反色）；彩色 = 完整的 App 图标
@@ -122,10 +129,11 @@ final class StatusItem: NSObject, NSMenuDelegate {
     applyBadge()
   }
 
-  /// 圆点贴在图标的右上角、暂停角标贴在右下角（两种图标大小不一样，换样式时跟着挪）。不做出场动画：后台查到新版本的那一刻没人在看
+  /// 圆点贴在图标的右上角、暂停角标 / 小锁贴在右下角（两种图标大小不一样，换样式时跟着挪）。不做出场动画：后台查到新版本的那一刻没人在看
   private func applyBadge() {
     guard let button = item.button else { return }
     let tips = [
+      secureInput.map { $0.summary + "\n" + $0.advice },
       updateVersion.map { String(localized: "有新版本 \($0)") },
       clipboardPaused ? String(localized: "已暂停记录剪贴板") : nil,
     ].compactMap(\.self)
@@ -133,7 +141,8 @@ final class StatusItem: NSObject, NSMenuDelegate {
     let icon = button.image?.size
     for (view, shown, frame) in [
       (badge, updateVersion != nil, Self.badgeFrame),
-      (pauseBadge, clipboardPaused, Self.pauseFrame),
+      (pauseBadge, clipboardPaused && secureInput == nil, Self.pauseFrame),
+      (lockBadge, secureInput != nil, Self.pauseFrame),
     ] {
       guard shown, let icon else {
         view.removeFromSuperview()
@@ -153,7 +162,7 @@ final class StatusItem: NSObject, NSMenuDelegate {
     return NSRect(x: x, y: flipped ? top : bottom, width: side, height: side)
   }
 
-  /// 暂停角标的位置（纯函数，单测）：直径 9，圆心压在图标的右下角往里 1 pt，不出按钮
+  /// 暂停角标、小锁的位置（纯函数，单测）：直径 9，圆心压在图标的右下角往里 1 pt，不出按钮
   static func pauseFrame(icon: NSSize, in bounds: NSRect, flipped: Bool) -> NSRect {
     let side: CGFloat = 9
     let x = min(bounds.midX + icon.width / 2 - side / 2 - 1, bounds.maxX - side)
@@ -395,13 +404,21 @@ final class StatusItem: NSObject, NSMenuDelegate {
   }
 #endif
 
-/// 菜单栏图标上「有新版本」的小圆点：强调色实心（现在该操作的东西），在 draw 里取色，跟着菜单栏的深浅和设置里的强调色走
+/// 菜单栏图标上的角标，在 draw 里取色，跟着菜单栏的深浅和设置里的强调色走
 private final class BadgeDot: NSView {
-  /// 灰底白色两竖的暂停角标（X13）；false = 强调色小圆点（有新版本）
-  private let paused: Bool
+  enum Kind {
+    /// 有新版本：强调色实心小圆点（现在该操作的东西）
+    case update
+    /// 暂停记录剪贴板：灰底白色两竖（X13）
+    case paused
+    /// 安全输入挡着快捷键：橙底白色小锁（警示色，同主界面那行橙字）
+    case lock
+  }
 
-  init(paused: Bool = false) {
-    self.paused = paused
+  private let kind: Kind
+
+  init(_ kind: Kind) {
+    self.kind = kind
     super.init(frame: .zero)
     wantsLayer = true
   }
@@ -409,10 +426,30 @@ private final class BadgeDot: NSView {
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
   override func draw(_ dirtyRect: NSRect) {
-    guard paused else {
+    switch kind {
+    case .update:
       NSColor(Style.brand).setFill()
-      return NSBezierPath(ovalIn: bounds).fill()
+      NSBezierPath(ovalIn: bounds).fill()
+    case .lock:
+      NSColor.systemOrange.setFill()
+      NSBezierPath(ovalIn: bounds).fill()
+      let config = NSImage.SymbolConfiguration(pointSize: bounds.height * 0.55, weight: .bold)
+        .applying(.init(paletteColors: [.white]))
+      guard
+        let lock = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: nil)?
+          .withSymbolConfiguration(config)
+      else { return }
+      let size = lock.size
+      lock.draw(
+        in: NSRect(
+          x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2, width: size.width,
+          height: size.height))
+    case .paused:
+      drawPause()
     }
+  }
+
+  private func drawPause() {
     NSColor.systemGray.setFill()
     NSBezierPath(ovalIn: bounds).fill()
     NSColor.white.setFill()
