@@ -286,8 +286,6 @@ enum Prefs {
   /// 面板收起两分钟后放掉进程内的识字模型（默认开，同原来；关掉的模型一直留着，开着截图或翻译时启动就在后台预热，
   /// AppDelegate.warmRecognitionIfKept，PR #39）
   static let ocrReleaseWhenIdle = "ocrReleaseWhenIdle"
-  /// 识字模型已经为哪个系统版本编好了（OCR.prepare；存 OCR.systemVersion「27.0.1 (26A434)」，不跟界面语言变）。这台电脑自己的状态：不注册默认值、不跟着导出
-  nonisolated static let ocrPreparedSystem = "ocrPreparedSystem"
 
   /// 状态屏的状态列表（StatusPreset 数组的 JSON）。**不注册默认值**：没存过 / 解不出 / 为空时用自带的三个
   /// （StatusPreset.load）。照样跟着设置的导出 / 导入和每日备份走——SettingsArchive.kinds 里单独登记（文件里写成一组状态，
