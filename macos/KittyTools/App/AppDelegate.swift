@@ -46,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// nil = 还没起过（启动时）
   var appliedFeatures: Set<Feature>?
   var appliedCopyToTranslate = false
+  var ocrMarkerWatcher: OCRPreparationMarkerWatcher?
   /// 上一次应用的「截完图放哪」：换了就重新起停晾衣绳（2026-10-27 用户手测）
   var appliedPlacement: Prefs.ShotPlacement?
   /// 屏幕边缘的便签起过没有：便签开着才起（start 会把固定着的浮动便签放回屏幕上），启动时关着的打开时再起

@@ -315,6 +315,8 @@ extension AppDelegate {
   /// 录屏卡的拷贝）都看它，不各写各的
   var recordsClipboard: Bool { Feature.clipboard.isOn && !watcher.isUserPaused }
 
+  private static let ocrFeatures: Set<Feature> = [.clipboard, .translate, .screenshot]
+
   /// 按功能开关（Feature，设置 › 通用 › 功能）起停各功能：后台活起 / 停、关掉的那些开着的界面收起、热键重新注册。
   /// 启动时调一次（只起开着的，不碰关着的功能），之后偏好一变就调，只对变了的功能做事；数据层（库、备份、到期清理）不动
   private func applyFeatures() {
@@ -333,13 +335,19 @@ extension AppDelegate {
     let turnedOff = (before ?? []).subtracting(now)
     let launching = before == nil
 
-    // 新装、系统更新后识字模型要现场编译一回（约一分钟）：用得到识字的功能开着（启动时、刚打开）就趁早在后台子进程里
-    // 编好，第一次截图翻译 / 识字不用干等（OCR.prepare；编好了它直接返回）。编好后再看要不要把进程内的那份也预热上
-    if !turnedOn.isDisjoint(with: [.clipboard, .translate, .screenshot]) {
-      Task {
-        await OCR.prepare()
-        warmRecognitionIfKept()
+    // 识字模型在启动 / 刚启用时提前准备；运行中缓存被清理，也走同一个 OCR.prepare，不等下一次截图。
+    if now.isDisjoint(with: Self.ocrFeatures) {
+      ocrMarkerWatcher?.stop()
+      ocrMarkerWatcher = nil
+    } else if !turnedOn.isDisjoint(with: Self.ocrFeatures), let marker = OCR.preparationMarker {
+      if ocrMarkerWatcher == nil {
+        ocrMarkerWatcher = OCRPreparationMarkerWatcher(marker: marker) { [weak self] in
+          let prepared = await OCR.prepare(marker: marker)
+          if prepared, !Task.isCancelled { self?.warmRecognitionIfKept() }
+          return prepared
+        }
       }
+      ocrMarkerWatcher?.start(preparing: true)
     }
 
     // 新插件的「新」：添加了就算碰过（插件页改版 E1；启动时开着的也记——同步来的、旧版本里加过的）
@@ -670,6 +678,8 @@ extension AppDelegate {
 
   func applicationWillTerminate(_ notification: Notification) {
     guard isRunning else { return }
+    ocrMarkerWatcher?.stop()
+    ocrMarkerWatcher = nil
     FileMoves.forgetCut()  // 访达右键剪切的清单只在内存里：退出后扩展别再列「粘贴」
     statusScreen.exit(.quit)  // 在状态屏里被要求退出（远程、脚本）：拦截当场撤掉
     SystemFocus.shared.terminate()  // 读专注模式的 log stream 当场停掉，不留给 launchd（评审）
