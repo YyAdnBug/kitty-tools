@@ -37,13 +37,6 @@ struct KeyRemappingTab: View {
             Text(verbatim: problem.message)
           }
         }
-        if remapping.needsFnAccess {
-          LabeledContent {
-            Button("去授权") { Permissions.grant(.accessibility) }
-          } label: {
-            Text("Globe / Fn 组合键需要辅助功能权限")
-          }
-        }
       }
       if let keyboard = remapping.keyboards.first(where: { $0.id == keyboardID }) {
         rules(for: keyboard)

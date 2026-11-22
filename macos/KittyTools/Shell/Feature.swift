@@ -107,8 +107,11 @@ nonisolated enum Feature: String, CaseIterable {
   /// 同步里「没有这一项 = 默认值」，改了的话 0.8.x 的文件、电脑会把没拨过的便签悄悄关掉）；刘海岛也算开着——0.7.0 起就有
   /// 点刘海，升级上来照旧能用。新装照样一个插件都没添加：seedNewInstall 把核心以外的都明写成关
   var defaultOn: Bool {
-    ![.dockPreview, .finderMenu, .keepAwake, .bluetoothSnooze, .smoothScroll, .appShortcuts, .keyRemapping]
-      .contains(self)
+    ![
+      .dockPreview, .finderMenu, .keepAwake, .bluetoothSnooze, .smoothScroll, .appShortcuts,
+      .keyRemapping,
+    ]
+    .contains(self)
   }
 
   /// 新装默认开着的四个（功能管理拍板 M4）

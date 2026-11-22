@@ -67,10 +67,14 @@ enum HIDKeyMapping {
   }
 
   enum Failure: Error {
-    case read, write, conflict(UInt64)
+    case read
+    case write
+    case conflict(UInt64)
   }
 
   /// 只撤回本插件写入且目前仍相同的映射。其它来源写入的规则原样保留。
+  /// 系统里已有、和规则一模一样的条目也算自己的（闪退、被强退后重开，上一次写的就是这样留下来的；不认的话移除插件撤不掉）。
+  /// ponytail: 别的工具恰好写了同一条时，移除插件会连它一起撤掉；要分得清就得把写过的按服务记到磁盘上
   static func plan(
     current: [UInt64: UInt64], owned: [UInt64: UInt64], desired: [RemapRule]
   ) throws -> (mapping: [UInt64: UInt64], owned: [UInt64: UInt64]) {
@@ -79,6 +83,7 @@ enum HIDKeyMapping {
     for rule in desired {
       if let existing = mapping[rule.source] {
         guard existing == rule.target else { throw Failure.conflict(rule.source) }
+        claimed[rule.source] = rule.target
       } else {
         mapping[rule.source] = rule.target
         claimed[rule.source] = rule.target

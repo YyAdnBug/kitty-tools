@@ -1017,7 +1017,9 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         .smoothScroll, "在这些 App 里停用",
         LocalizedStringResource("search.smoothScroll.excluded", defaultValue: "停用,游戏,虚拟机,远程桌面"))
     case .keyRemappingKeyboard:
-      Self.row(.keyRemapping, "键盘", keys: [Prefs.keyRemappingRules])
+      Self.row(
+        .keyRemapping, "键盘",
+        LocalizedStringResource("search.keyRemapping.keyboard", defaultValue: "改键,映射,源键,目标键"))
     case .appShortcutsHold:
       Self.row(
         .appShortcuts, "按住一个键叫出来",

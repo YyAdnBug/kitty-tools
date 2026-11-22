@@ -472,6 +472,8 @@ enum Prefs {
   /// App 快捷键：按住哪个修饰键（ModifierTaps.Key 的 rawValue：command / option / control / shift，默认 command；2026-11-18
   /// 用户要能换）。读它走 AppShortcuts.holdKey，认不出的按 ⌘。跟着导出、同步
   nonisolated static let appShortcutsHoldKey = "appShortcutsHoldKey"
+  /// 键位映射插件（PR #43）：每把键盘的规则（KeyRemapping.Profile 数组的 JSON，键盘按「厂商:产品:连接方式:序列号」认）。
+  /// 跟着这台 Mac 接的键盘走，**不注册默认值**：不跟着导出 / 导入、同步走（别人给的设置文件不该能改你的键）；没存过 = 没有规则
   nonisolated static let keyRemappingRules = "keyRemappingRules"
 
   /// 访达右键（第十一族，2026-11-08，FinderLink）：扩展把动作交过来时带的凭证（App 第一次启动时生成，FinderLink.ensureKey；
@@ -677,7 +679,6 @@ enum Prefs {
       appShortcutsHold: true,
       appShortcutsDelay: 1000,
       appShortcutsHoldKey: ModifierTaps.Key.command.rawValue,
-      keyRemappingRules: "[]",
       finderOpenWithApps: finderOpenWithDefault,
       panelSqueezeEntrance: false,
       floatingPinned: false,

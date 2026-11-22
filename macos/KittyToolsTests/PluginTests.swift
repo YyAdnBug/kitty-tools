@@ -35,7 +35,11 @@ struct PluginTests {
   /// 接没接鼠标有关），并且都进了 localKeys
   @Test func localPluginsMatchBefore() {
     let local = Feature.plugins.filter { !$0.syncsAddition }
-    #expect(local == [.launchpad, .dockPreview, .finderMenu, .bluetoothSnooze, .smoothScroll, .appShortcuts, .keyRemapping])
+    #expect(
+      local == [
+        .launchpad, .dockPreview, .finderMenu, .bluetoothSnooze, .smoothScroll, .appShortcuts,
+        .keyRemapping,
+      ])
     for plugin in Feature.plugins {
       #expect(
         SettingsSync.localKeys.contains(plugin.prefsKey) == !plugin.syncsAddition, "\(plugin)")

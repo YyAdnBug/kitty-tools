@@ -98,8 +98,11 @@ extension Feature {
   /// 过去会在那台凭空弹框；平滑滚动还跟这台接没接鼠标有关），和跟这台的屏幕、触控板有关的（启动台，连同它整页的设置）只在这台。
   /// 状态屏只在进入时才要辅助功能，跟着同步
   var syncsAddition: Bool {
-    ![.launchpad, .dockPreview, .finderMenu, .bluetoothSnooze, .smoothScroll, .appShortcuts, .keyRemapping]
-      .contains(self)
+    ![
+      .launchpad, .dockPreview, .finderMenu, .bluetoothSnooze, .smoothScroll, .appShortcuts,
+      .keyRemapping,
+    ]
+    .contains(self)
   }
 
   /// 介绍页「能做什么」：两三条
@@ -139,7 +142,7 @@ extension Feature {
         "按着那个键再按别的键，这一下照常给 App；点一行直接执行",
         "点一下搜索框能留住，打字搜菜单里的名字；启动器里打字也搜得到当前 App 的菜单项，没有快捷键的也算")
     case .keyRemapping:
-      Self.points("为每把键盘分别选择源键和目标键", "支持 F20–F24 和苹果的 🌐 Globe / Fn")
+      Self.points("为每把键盘分别选择源键和目标键", "支持 F1–F24 和苹果的 🌐 Globe / Fn")
     case .island:
       Self.points(
         "点刘海叫出快捷动作和最近的提示", "录屏计时、提醒倒数、正在播放的歌挂在刘海两边", "能另外打开下一个日程、音量和亮度")
@@ -179,7 +182,7 @@ extension Feature {
     case .bluetoothSnooze: "等着电脑睡下去；醒来时只打开睡前自己关掉的蓝牙"
     case .smoothScroll: "接住鼠标滚轮，在单独一条线程上滑出去；不碰触控板，没在滚时什么都不做"
     case .appShortcuts: "看着设的那个键有没有单独按住；按够了、或者在启动器里打字时才读一次前台 App 的菜单，启动器收起半分钟后丢掉"
-    case .keyRemapping: "键盘连上后应用映射。需要处理 Globe / Fn 组合键时，会用到辅助功能权限"
+    case .keyRemapping: "映射交给系统做，不看你按了什么键；只在键盘连上、断开和电脑醒来时核对一遍"
     case .island:
       "看着指针有没有停在刘海上；打开了系统提示才听电源、耳机、网络，打开了正在播放才起一个读播放信息的小进程，打开了下一个日程才读日历，打开了音量和亮度才接那五个键。不添加时提示照常弹"
     default: nil

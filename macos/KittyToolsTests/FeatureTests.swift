@@ -30,7 +30,8 @@ struct FeatureTests {
     for feature in Feature.allCases {
       #expect(
         HotKeyAction.allCases.contains { $0.feature == feature }
-          == ![.dockPreview, .finderMenu, .bluetoothSnooze, .smoothScroll, .keyRemapping].contains(feature))
+          == ![.dockPreview, .finderMenu, .bluetoothSnooze, .smoothScroll, .keyRemapping].contains(
+            feature))
       #expect(feature.page.rawValue == feature.rawValue)
     }
     #expect(HotKeyAction.screenshotTranslate.feature == .translate)
@@ -212,7 +213,8 @@ struct FeatureTests {
   @Test func switchesAreExportedSettings() {
     #expect(
       Feature.allCases.filter { !$0.defaultOn } == [
-        .dockPreview, .finderMenu, .keepAwake, .bluetoothSnooze, .smoothScroll, .appShortcuts, .keyRemapping,
+        .dockPreview, .finderMenu, .keepAwake, .bluetoothSnooze, .smoothScroll, .appShortcuts,
+        .keyRemapping,
       ])
     #expect(
       [Feature.notes, .reminders, .statusScreen, .launchpad, .island].allSatisfy {
