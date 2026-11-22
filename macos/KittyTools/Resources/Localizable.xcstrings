@@ -285,6 +285,16 @@
         }
       }
     },
+    "%@ 已有其他映射" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ already has another mapping"
+          }
+        }
+      }
+    },
     "%@ 文件" : {
       "comment" : "访达右键「自定义后缀…」建出来的文件名（不含扩展名），%@ 是大写的后缀：JSON 文件",
       "localizations" : {
@@ -734,6 +744,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ (yesterday)"
+          }
+        }
+      }
+    },
+    "%@（未连接）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (disconnected)"
           }
         }
       }
@@ -2787,6 +2807,16 @@
         }
       }
     },
+    "HID 用法编号" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HID usage code"
+          }
+        }
+      }
+    },
     "HTTPS 连接失败（证书问题）" : {
       "localizations" : {
         "en" : {
@@ -3549,6 +3579,142 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "语言"
+          }
+        }
+      }
+    },
+    "hidKey.brightnessDown" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "亮度 −"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brightness Down"
+          }
+        }
+      }
+    },
+    "hidKey.brightnessUp" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "亮度 +"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brightness Up"
+          }
+        }
+      }
+    },
+    "hidKey.mute" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "静音"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mute"
+          }
+        }
+      }
+    },
+    "hidKey.nextTrack" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "下一首"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next Track"
+          }
+        }
+      }
+    },
+    "hidKey.playPause" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "播放 / 暂停"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Play / Pause"
+          }
+        }
+      }
+    },
+    "hidKey.previousTrack" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "上一首"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Previous Track"
+          }
+        }
+      }
+    },
+    "hidKey.volumeDown" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "音量 −"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volume Down"
+          }
+        }
+      }
+    },
+    "hidKey.volumeUp" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "音量 +"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volume Up"
           }
         }
       }
@@ -4600,6 +4766,26 @@
         }
       }
     },
+    "macOS 未应用映射。请检查输入监听权限。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS didn’t apply the mapping. Check Input Monitoring permission."
+          }
+        }
+      }
+    },
+    "macOS 未应用键位映射" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS didn’t apply the key mapping"
+          }
+        }
+      }
+    },
     "markdown.heading" : {
       "comment" : "便签「格式」菜单里的标题（几级之外的）",
       "extractionState" : "extracted_with_value",
@@ -5249,16 +5435,16 @@
     "search.clipboard.imageRows" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "图片,缩略图,预览,大图"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Image,Thumbnail,Preview,Large Image"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "图片,缩略图,预览,大图"
           }
         }
       }
@@ -6636,6 +6822,23 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "定时,时段,工作日"
+          }
+        }
+      }
+    },
+    "search.keyRemapping.keyboard" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "改键,映射,源键,目标键"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "remap,mapping,source key,target key"
           }
         }
       }
@@ -11002,6 +11205,26 @@
         }
       }
     },
+    "为指定键盘设置系统级键位映射，支持 🌐 Globe / Fn" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remap keys on a selected keyboard, including 🌐 Globe / Fn"
+          }
+        }
+      }
+    },
+    "为每把键盘分别选择源键和目标键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose source and target keys for each keyboard"
+          }
+        }
+      }
+    },
     "主显示器" : {
       "localizations" : {
         "en" : {
@@ -12463,6 +12686,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fixed"
+          }
+        }
+      }
+    },
+    "修饰键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modifier Keys"
           }
         }
       }
@@ -15336,6 +15569,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Features"
+          }
+        }
+      }
+    },
+    "功能键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Function Keys"
           }
         }
       }
@@ -19390,6 +19633,16 @@
         }
       }
     },
+    "在选定键盘上把一个键改成另一个键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Map one key to another on the selected keyboard"
+          }
+        }
+      }
+    },
     "在钉图的字上拖动就是选字" : {
       "localizations" : {
         "en" : {
@@ -20199,6 +20452,16 @@
         }
       }
     },
+    "媒体键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Media Keys"
+          }
+        }
+      }
+    },
     "子菜单" : {
       "localizations" : {
         "en" : {
@@ -20235,6 +20498,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Text size, line breaks, and screenshot translation"
+          }
+        }
+      }
+    },
+    "字母、数字和符号" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Letters, Numbers, and Symbols"
           }
         }
       }
@@ -20990,6 +21263,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Re-importing an export won’t duplicate"
+          }
+        }
+      }
+    },
+    "导航键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Navigation Keys"
           }
         }
       }
@@ -27083,6 +27366,16 @@
         }
       }
     },
+    "打开输入监听设置" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Input Monitoring Settings"
+          }
+        }
+      }
+    },
     "打开选中的 App（鼠标单击同样；打开后启动台自己收起）" : {
       "localizations" : {
         "en" : {
@@ -29589,6 +29882,16 @@
         }
       }
     },
+    "支持 F1–F24 和苹果的 🌐 Globe / Fn" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supports F1–F24 and Apple’s 🌐 Globe / Fn"
+          }
+        }
+      }
+    },
     "支持 {date} {time} {clipboard} {cursor} 等" : {
       "localizations" : {
         "en" : {
@@ -30339,6 +30642,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Education"
+          }
+        }
+      }
+    },
+    "数字小键盘" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Numeric Keypad"
           }
         }
       }
@@ -31231,12 +31544,32 @@
         }
       }
     },
+    "无法保存键位映射" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t save key mappings"
+          }
+        }
+      }
+    },
     "无法打开数据库" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Can’t open the database"
+          }
+        }
+      }
+    },
+    "无法读取保存的键位映射" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t load saved key mappings"
           }
         }
       }
@@ -31377,6 +31710,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Days"
+          }
+        }
+      }
+    },
+    "映射交给系统做，不看你按了什么键；只在键盘连上、断开和电脑醒来时核对一遍" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The system does the remapping, and Kitty Tools doesn’t see what you type. It only checks again when a keyboard connects or disconnects, or when your Mac wakes"
+          }
+        }
+      }
+    },
+    "映射规则" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mapping Rules"
           }
         }
       }
@@ -32103,6 +32456,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Release Notes"
+          }
+        }
+      }
+    },
+    "更新映射" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update Mapping"
           }
         }
       }
@@ -37196,6 +37559,16 @@
         }
       }
     },
+    "添加映射" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Mapping"
+          }
+        }
+      }
+    },
     "添加状态" : {
       "localizations" : {
         "en" : {
@@ -37422,6 +37795,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Source Language"
+          }
+        }
+      }
+    },
+    "源键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Source key"
           }
         }
       }
@@ -39094,6 +39477,16 @@
         }
       }
     },
+    "目标键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Target key"
+          }
+        }
+      }
+    },
     "直到你停止" : {
       "localizations" : {
         "en" : {
@@ -39832,6 +40225,16 @@
         }
       }
     },
+    "移除后撤掉这个插件写进系统的映射；规则留着，再添加就回来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Removing it undoes the mappings this plugin gave the system. Your rules are kept and come back when you add it again"
+          }
+        }
+      }
+    },
     "移除后点刘海没反应、刘海两边不挂计时；岛上的提示照常弹。设置留着，再添加就回来" : {
       "localizations" : {
         "en" : {
@@ -39908,6 +40311,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Remove Selected Folder"
+          }
+        }
+      }
+    },
+    "移除映射" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove Mapping"
           }
         }
       }
@@ -42060,6 +42473,16 @@
         }
       }
     },
+    "自定义 HID 用法" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Custom HID Usage"
+          }
+        }
+      }
+    },
     "自定义 · %@" : {
       "comment" : "自定义纸色的名字，后面是色相的叫法",
       "localizations" : {
@@ -43782,6 +44205,16 @@
         }
       }
     },
+    "请输入有效的十六进制 HID 用法编号" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter a valid hexadecimal HID usage code"
+          }
+        }
+      }
+    },
     "请重试" : {
       "localizations" : {
         "en" : {
@@ -44450,6 +44883,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Input source, panel, and usage history"
+          }
+        }
+      }
+    },
+    "输入监听" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Input Monitoring"
           }
         }
       }
@@ -46564,6 +47007,16 @@
         }
       }
     },
+    "选中键盘，再添加一条映射规则" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select a keyboard and add a mapping rule"
+          }
+        }
+      }
+    },
     "选了重新开始，便签的文字之后还能导回来：到 设置 › 通用 › 备份与导出导入 点「从备份恢复」，选 %@那份，只勾「便签」（%lld 条；图片和「最近删除」里的不在里面）。" : {
       "localizations" : {
         "en" : {
@@ -46828,6 +47281,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The folders you choose appear under “Move To” and “Copy To” in Finder Menu"
+          }
+        }
+      }
+    },
+    "选择键位" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select a Key"
+          }
+        }
+      }
+    },
+    "选择键盘" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select a Keyboard"
           }
         }
       }
@@ -47462,6 +47935,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Missed reminder: %@"
+          }
+        }
+      }
+    },
+    "键位映射" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Key Remapping"
+          }
+        }
+      }
+    },
+    "键位映射,改键,键盘,源键,目标键,Globe,Fn,F24" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "key remapping,remap,keyboard,source key,target key,Globe,Fn,F24"
+          }
+        }
+      }
+    },
+    "键盘" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keyboard"
           }
         }
       }

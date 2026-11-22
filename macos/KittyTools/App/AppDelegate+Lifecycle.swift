@@ -74,6 +74,7 @@ extension AppDelegate {
       MainActor.assumeIsolated {
         guard let self else { return }
         self.noteSyncer?.syncNow()
+        if Feature.keyRemapping.isOn { self.keyRemapping.refresh(recheck: true) }
       }
     }
     // 每天一份备份：启动时一次（在最后，等便签开好：finishLaunchingNotes），一直开着不退的靠系统的换日通知
@@ -264,6 +265,7 @@ extension AppDelegate {
         self.nextEvent.apply()
         self.mediaKeys.apply()
         self.smoothScroll.apply()
+        if Feature.keyRemapping.isOn { self.keyRemapping.defaultsChanged() }
         self.finderKeys.apply()
         // 命令的快捷键跟着「命令和别名」的开关和别名、脚本命令总开关、⌘K「关掉这条命令」走（第 4 批评审：只在那一页的
         // onChange 里跟，别处改的不注销）；没变不动
@@ -410,6 +412,8 @@ extension AppDelegate {
       }
     }
 
+    if turnedOn.contains(.keyRemapping) { keyRemapping.start() }
+
     // 睡眠关蓝牙：运行中添加、还没问过蓝牙授权时当场问（同程序坞预览：启动时、欢迎引导里勾上的不当场弹）
     if turnedOn.contains(.bluetoothSnooze) {
       bluetoothSnooze.start()
@@ -499,6 +503,7 @@ extension AppDelegate {
     if turnedOff.contains(.dockPreview) { dockPreview.stop() }
     if turnedOff.contains(.bluetoothSnooze) { bluetoothSnooze.stop() }
     if turnedOff.contains(.appShortcuts) { appShortcuts.stop() }
+    if turnedOff.contains(.keyRemapping) { keyRemapping.stop() }
     if turnedOff.contains(.reminders) { reminders.stop() }
     idleReclaim.schedule()  // 关掉的功能占着的缓存跟着还
   }
@@ -680,6 +685,7 @@ extension AppDelegate {
     guard isRunning else { return }
     ocrMarkerWatcher?.stop()
     ocrMarkerWatcher = nil
+    if Feature.keyRemapping.isOn { keyRemapping.stop() }
     FileMoves.forgetCut()  // 访达右键剪切的清单只在内存里：退出后扩展别再列「粘贴」
     statusScreen.exit(.quit)  // 在状态屏里被要求退出（远程、脚本）：拦截当场撤掉
     SystemFocus.shared.terminate()  // 读专注模式的 log stream 当场停掉，不留给 launchd（评审）

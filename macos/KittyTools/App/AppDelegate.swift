@@ -139,6 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   lazy var finderKeys = FinderKeys(island: island)
   /// 平滑滚动（插件，SmoothScroll/）：起停跟着插件添没添加和辅助功能授权（apply），滚动那条线程由它管
   private(set) lazy var smoothScroll = SmoothScroll()
+  lazy var keyRemapping = KeyRemapping(rulesKey: Prefs.keyRemappingRules)
   /// 应用内更新（读本仓库的 GitHub release）
   let updater = Updater()
   /// CleanShot 式常驻缩略图（截图飞入右下角后留在那里）
@@ -963,6 +964,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AnyView(BluetoothSnoozeTab { [unowned self] in bluetoothSnooze.requestAccess() })
       case .smoothScroll: AnyView(SmoothScrollTab(smoothScroll: smoothScroll))
       case .appShortcuts: AnyView(AppShortcutsTab())
+      case .keyRemapping: AnyView(KeyRemappingTab(remapping: keyRemapping))
       case .translate:
         AnyView(
           TranslateTab(services: serviceStore, history: historyStore, speaker: speaker)

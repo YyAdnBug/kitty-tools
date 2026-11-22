@@ -45,12 +45,13 @@ extension Permissions.Kind {
     case .calendar: "日历"
     case .bluetooth: "蓝牙"
     case .finderExtension: "访达扩展"
+    case .inputMonitoring: "输入监听"
     }
   }
 
   /// 只能去系统设置里打开的（系统不给本 App 弹框问）：添加插件时缺这几样就跳到它自己的设置页（插件页改版 C3）
   var grantsInSettings: Bool {
-    [.accessibility, .screenRecording, .finderExtension].contains(self)
+    [.accessibility, .screenRecording, .finderExtension, .inputMonitoring].contains(self)
   }
 
   /// 没给时那个按钮上的字（同通用 › 权限；访达扩展是去系统设置里自己打开）
@@ -67,6 +68,7 @@ extension Permissions.Kind {
     case .calendar: "calendar"
     case .bluetooth: SettingsPage.bluetoothSnooze.symbol
     case .finderExtension: "puzzlepiece.extension.fill"
+    case .inputMonitoring: "keyboard"
     }
   }
 
@@ -79,6 +81,7 @@ extension Permissions.Kind {
     case .calendar: Style.Family.reminders
     case .bluetooth: Style.Family.bluetoothSnooze
     case .finderExtension: Style.Family.finderMenu
+    case .inputMonitoring: Style.Family.keyboard
     }
   }
 }

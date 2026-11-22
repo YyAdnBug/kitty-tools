@@ -586,6 +586,8 @@ struct SnapshotProbeTests {
 
       // 授权按固定的「没给」画
       case .appShortcuts: AnyView(AppShortcutsTab(trusted: false))
+      // 没 start()：不列键盘、不碰系统的键位
+      case .keyRemapping: AnyView(KeyRemappingTab(remapping: KeyRemapping(rulesKey: "unused")))
       case .translate:
         AnyView(TranslateTab(services: services, history: history, speaker: speaker))
       case .hotkeys: AnyView(HotkeysTab(center: hotKeys))
