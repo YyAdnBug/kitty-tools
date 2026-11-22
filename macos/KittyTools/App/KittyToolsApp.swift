@@ -8,6 +8,7 @@
 // 真正的入口是 Main：带 --ocr 起的是剪贴板后台识字的子进程（OCR.recognizeTextInHelper），只识字、写标准输出、退出，
 // 不启动 SwiftUI / NSApplication（没有菜单栏图标、热键，不碰偏好 / 数据库 / 钥匙串，也不走单实例检查）。
 // 它只肯识本 App 数据目录的 images 和临时目录里的图（OCR.helperRoots：参数是信任边界）。
+// --prepare-ocr 则只用内存里的合成图预热找码和识字模型，不接受路径。
 
 import AppKit
 import SwiftUI
@@ -20,8 +21,12 @@ enum Main {
       // 识字是异步的：主线程交给 dispatchMain 转着，识完直接 exit
       Task { exit(await OCR.runHelper(image)) }
       dispatchMain()
+    case .prepare:
+      Task { exit(await OCR.warmForegroundModels() ? 0 : 1) }
+      dispatchMain()
     case .usage:
-      FileHandle.standardError.write(Data("用法：\(OCR.helperFlag) <图片路径>\n".utf8))
+      FileHandle.standardError.write(
+        Data("用法：\(OCR.helperFlag) <图片路径> | \(OCR.prepareFlag)\n".utf8))
       exit(2)
     case nil:
       // AppKit 会缓存原生提示的初始延迟，创建 NSApplication 前注册；单位毫秒，只在本进程生效。

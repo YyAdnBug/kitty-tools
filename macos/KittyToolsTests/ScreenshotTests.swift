@@ -987,11 +987,13 @@ struct ScreenshotTests {
     #expect(OCR.text(again, joined: false).contains("Release"))
   }
 
-  /// 子进程识字（第二轮体检 M2）的命令行和输出约定：第一个参数是 --ocr 才是识字模式（参数不对报用法，不当成正常启动），
+  /// 两个子进程入口和输出约定：--prepare-ocr 不接路径，--ocr 只接一个图片路径；参数不对报用法，不当成正常启动。
   /// 路径带空格、中文原样；输出是一行头 + 文字，头或字节数对不上就不认；给子进程的环境变量不带测试注入那些
   @Test func helperProtocol() {
     #expect(OCR.launch(["/Applications/Kitty Tools.app/Contents/MacOS/Kitty Tools"]) == nil)
     #expect(OCR.launch(["app", "-NSDocumentRevisionsDebugMode", "YES"]) == nil)
+    #expect(OCR.launch(["app", "--prepare-ocr"]) == .prepare)
+    #expect(OCR.launch(["app", "--prepare-ocr", "/tmp/image.png"]) == .usage)
     #expect(
       OCR.launch(["app", "--ocr", "/tmp/a b/图 1.png"])
         == .recognize(URL(filePath: "/tmp/a b/图 1.png")))
@@ -1016,19 +1018,135 @@ struct ScreenshotTests {
     #expect(environment == ["HOME": "/Users/x", "TMPDIR": "/tmp/"])
   }
 
-  /// 准备识字模型（OCR.prepare）：没记过就起子进程拿那张小图识一次、记下系统版本，记过了 isPrepared 直接是真。
-  /// 那张小图得真识得出字（空白图子进程也成功退出，编不到识字的模型）。宿主的缓存早编好了，这里几秒钟。
-  /// 记在临时偏好域里：宿主是 Dev 版，碰 standard 就是写用户的真实偏好（连「先写再恢复」也不行，并行时还会抢）
-  @Test func preparesModelOnce() async throws {
-    let suite = "kitty-test-ocr-\(UUID().uuidString)"
-    let defaults = try #require(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
-    #expect(!OCR.isPrepared(defaults, domainName: suite))
-    await OCR.prepare(defaults, domainName: suite)
-    #expect(OCR.isPrepared(defaults, domainName: suite))
-    let sample = try #require(await OCR.writeSample())
-    defer { try? FileManager.default.removeItem(at: sample) }
-    #expect(await OCR.recognizeText(in: sample) == "Kitty")
+  /// 模拟 App 自己的缓存根目录；测试可以整棵删掉，不碰宿主的缓存或偏好。
+  private func modelCacheRoot() -> URL {
+    FileManager.default.temporaryDirectory.appending(path: "kitty-ocr-cache-\(UUID())")
+  }
+
+  @MainActor @Test func preparesModelOnce() async throws {
+    let root = modelCacheRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let marker = root.appending(path: "ocr-prepared")
+    var attempts = 0
+    let compile: @MainActor () async -> Bool = {
+      attempts += 1
+      return true
+    }
+
+    let version = try #require(OCR.systemVersion)
+    #expect(!OCR.isPrepared(marker: marker))
+    #expect(await OCR.prepare(marker: marker, compile: compile))
+    #expect(try Data(contentsOf: marker) == Data(version.utf8))
+    #expect(OCR.isPrepared(marker: marker))
+    #expect(await OCR.prepare(marker: marker, compile: compile))
+    #expect(attempts == 1)
+
+    // 没开监听，模拟退出期间整棵缓存被清理。下次准备不应记着刚才那次成功。
+    try FileManager.default.removeItem(at: root)
+    #expect(!OCR.isPrepared(marker: marker))
+    #expect(await OCR.prepare(marker: marker, compile: compile))
+    #expect(try Data(contentsOf: marker) == Data(version.utf8))
+    #expect(attempts == 2)
+  }
+
+  @MainActor @Test func replacesOldModelMarkerOnlyAfterSuccess() async throws {
+    let root = modelCacheRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let marker = root.appending(path: "ocr-prepared")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    try Data("14.0.0 (23A344)".utf8).write(to: marker)
+    #expect(!OCR.isPrepared(marker: marker))
+    let failed = await OCR.prepare(marker: marker) { false }
+    #expect(!failed)
+    #expect(!OCR.isPrepared(marker: marker))
+    let retried = await OCR.prepare(marker: marker) { true }
+    #expect(retried)
+    let version = try #require(OCR.systemVersion)
+    #expect(try Data(contentsOf: marker) == Data(version.utf8))
+  }
+
+  @MainActor @Test func doesNotStampDirectoryReplacedDuringPreparation() async throws {
+    let fm = FileManager.default
+    let root = modelCacheRoot()
+    let retired = root.appendingPathExtension("old")
+    defer {
+      try? fm.removeItem(at: root)
+      try? fm.removeItem(at: retired)
+    }
+    let marker = root.appending(path: "ocr-prepared")
+    try fm.createDirectory(at: root, withIntermediateDirectories: true)
+    let ready = await OCR.prepare(marker: marker) {
+      do {
+        // 模型编在旧目录里；返回时同一路径已经是个空目录，不能给它写「准备好了」。
+        try fm.moveItem(at: root, to: retired)
+        try fm.createDirectory(at: root, withIntermediateDirectories: false)
+        return true
+      } catch {
+        Issue.record(error)
+        return false
+      }
+    }
+    #expect(!ready)
+    #expect(!OCR.isPrepared(marker: marker))
+  }
+
+  @MainActor @Test func concurrentPreparesShareOneCompilation() async throws {
+    let root = modelCacheRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let marker = root.appending(path: "ocr-prepared")
+    var second: Task<Bool, Never>?
+    let first = await OCR.prepare(marker: marker) {
+      // 第一份还没有标记时，让第二个调用者进来；都在 MainActor，先等它挂起再放行。
+      await withCheckedContinuation { (entered: CheckedContinuation<Void, Never>) in
+        second = Task { @MainActor in
+          entered.resume()
+          let ready = await OCR.prepare(marker: marker) {
+            Issue.record("同一份准备不应再起一次子进程")
+            return false
+          }
+          return ready && OCR.isPrepared(marker: marker)
+        }
+      }
+      #expect(!OCR.isPrepared(marker: marker))
+      return true
+    }
+    #expect(first)
+    let joined = try #require(second)
+    #expect(await joined.value)
+  }
+
+  /// 时限给 3 分钟，同别的主线程测试：全量并行跑时主线程排着别的测试，这一条开头那次 prepare 就要等一分多钟（2026-11-22 实测，
+  /// 给 1 分钟时三次全量都超时被杀；单跑 1 s）
+  @MainActor @Test(.timeLimit(.minutes(3))) func rearmedWatcherRepairsRepeatedCacheDeletion()
+    async throws
+  {
+    let root = modelCacheRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let marker = root.appending(path: "ocr-prepared")
+    let prepared = await OCR.prepare(marker: marker) { true }
+    try #require(prepared)
+    var repairs = 0
+    let (completions, signal) = AsyncStream<Bool>.makeStream()
+    defer { signal.finish() }
+    let watcher = OCRPreparationMarkerWatcher(marker: marker) {
+      let ready = await OCR.prepare(marker: marker) {
+        repairs += 1
+        return true
+      }
+      signal.yield(ready)
+      return ready
+    }
+    watcher.start()
+    defer { watcher.stop() }
+    var completion = completions.makeAsyncIterator()
+    for pass in 1...2 {
+      // 不重启监听，也不从测试里主动 prepare。第二次删除的是新建目录里的新标记。
+      try FileManager.default.removeItem(at: root)
+      let restored = await completion.next()
+      try #require(restored == true, "第 \(pass) 次删除后没有修复")
+      #expect(OCR.isPrepared(marker: marker))
+      #expect(repairs == pass)
+    }
   }
 
   /// 预热的合成图走真正的两条识别路径；不靠真实偏好或另一个测试留下的全局会话。

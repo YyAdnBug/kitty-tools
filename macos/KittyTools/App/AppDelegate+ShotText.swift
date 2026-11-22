@@ -217,7 +217,7 @@ extension AppDelegate {
           island.progress(Self.preparingTitle, detail: "\(note) · 已等 \(seconds) 秒")
         }
       }
-      await OCR.prepare()
+      if await OCR.prepare() { ocrMarkerWatcher?.preparationSucceeded() }
       ticker.cancel()
     }
   }
