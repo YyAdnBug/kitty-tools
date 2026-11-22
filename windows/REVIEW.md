@@ -17,7 +17,7 @@
 - **根因（读代码确认）**，两层：
   1. **跨屏 / 「扩展屏过不去」是设计如此**：照 mac「选区只在一块屏上」搬的。`ScreenshotSession` 只记一块屏（`SelectionScreen`）和这块屏里的矩形；
      拖框时按下那块屏的画布 `CapturePointer`，`UpdateDrag` 把点夹在 `new RectD(0, 0, _screen.Width, _screen.Height)` 里。从主屏往扩展屏拖，选区停在主屏边上。
-     要不要做成能跨屏，写在 `PLAN-v24.md`（**拍板前别动**）。
+     跨屏框选写在 `PLAN-v24.md`（2026-11-22 用户「照推荐做」，R113 核验完再做）。
   2. **换到扩展屏以后像是用不了**：`_key`（顶部提示、放大镜、十字准线、悬停窗口的尺寸胶囊）只在开遮罩那一下给光标所在的屏，之后从不跟着鼠标走
      （只有 D 键会换，而且换的时候旧的那块不放下，两块屏都画放大镜）。鼠标挪到扩展屏：那块屏上没放大镜、没提示、没尺寸胶囊，放大镜卡在原来那块屏的边上。
      另外 `ShowOverlay` 里不带参数的 `AppWindow.Show()` 会激活窗口（[文档](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.windowing.appwindow.show)：

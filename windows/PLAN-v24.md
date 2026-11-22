@@ -3,8 +3,12 @@
 2026-11-22。用户反馈：Windows 版截图只能在光标所在的那块屏上框选，框不到扩展屏上，也不能一个选区跨两块屏。
 原因和先做的小修在 `REVIEW.md`「多屏截图」R113（鼠标到哪块屏、哪块屏能框；键盘、放大镜跟过去）。这一版只管「一个选区跨两块屏」。
 
-**拍板前别动。** 用户定了以后，**这一版由 Windows 的 agent 自己写、自己编译、自己在两块屏上验**（要真多屏，Mac 上写不了也验不了），
-照 `AGENTS.md`「每一批的流程」和自查清单；交接写在 `REVIEW.md`「PLAN-v24」，手测接着 `HANDTEST.md` 末尾编。**R113 核验完再做。**
+**拍板：2026-11-22 用户「照推荐做」**，§3 X1–X6 全部按推荐。**R113 核验完再做。**
+
+**分工**（同 PLAN-v10 D5）：纯函数审查方在 Mac 上写好了、**没编译**——`KittyTools.Core/ScreenSpan.cs`（归哪块屏、跨没跨屏、拼图分段、
+所有屏的外接矩形、上次区域还剩哪块）和 `KittyTools.Tests/ScreenSpanTests.cs`（§6 的七种摆法）。**窗口那一半你们自己写、自己编译、在两块屏上验**
+（C1–C3、C5–C7，C4 里拷像素的那段）：要真多屏，Mac 上写不了也验不了。照 `AGENTS.md`「每一批的流程」和自查清单；交接写在 `REVIEW.md`
+「PLAN-v24」，手测接着 `HANDTEST.md` 末尾编。`ScreenSpan` 编不过、或者窗口那边用着不顺手，直接改它和单测，交接里写一句改了什么。
 
 ## 1. 现在为什么不能跨屏
 
@@ -47,27 +51,28 @@ Windows 上能跨屏是常态，用户默认它能。
 
 | # | 内容 |
 |---|---|
-| C1 | **选区换成全局坐标**：`ScreenshotSession.Selection` 存虚拟桌面的物理像素（可以是负数）。`SelectionScreen` 不再单独存，由选区算出来 = 相交最大的那块（X5）；另加 `bool Spans`（和两块以上的屏相交）。遮罩加 `RectD Local(RectD global)`（减去这块屏 `Bounds` 的左上）。现在读写 `Selection` / `SelectionScreen` 的地方（`grep -n 'Selection\b\|SelectionScreen' Screenshot/*.cs`，约 40 处）照这个改：画、拖、手柄、工具栏和胶囊的位置用 `Local`，出图、`GlobalRect`、`SaveLast` 直接用全局。**只在一块屏里时行为不能变**（单屏的手测全部回归）。 |
-| C2 | **拖**：`UpdateDrag` 夹的范围从这块屏换成「所有屏的外接矩形」（换到这块屏的局部坐标）；X2 有标注时仍夹在这块屏。按下那块屏照旧 `CapturePointer`，光标到了别的屏照样收得到移动（`ReadCursor` 是全局减这块屏左上，负数照常）。`Snap` 用会话的全部窗口（`Windows`，全局）加每块屏的四条边（X6），不再只用这块屏裁过的 `_windows`。 |
+| C1 | **选区换成全局坐标**：`ScreenshotSession.Selection` 存虚拟桌面的物理像素（可以是负数）。`SelectionScreen` 不再单独存，由选区算出来 = 相交最大的那块（X5，`ScreenSpan.Owner`）；另加 `bool Spans`（`ScreenSpan.Spans`）。遮罩加 `RectD Local(RectD global)`（减去这块屏 `Bounds` 的左上）。现在读写 `Selection` / `SelectionScreen` 的地方（`grep -n 'Selection\b\|SelectionScreen' Screenshot/*.cs`，约 40 处）照这个改：画、拖、手柄、工具栏和胶囊的位置用 `Local`，出图、`GlobalRect`、`SaveLast` 直接用全局。**只在一块屏里时行为不能变**（单屏的手测全部回归）。 |
+| C2 | **拖**：`UpdateDrag` 夹的范围从这块屏换成「所有屏的外接矩形」（`ScreenSpan.Bounds`，换到这块屏的局部坐标）；X2 有标注时仍夹在这块屏。按下那块屏照旧 `CapturePointer`，光标到了别的屏照样收得到移动（`ReadCursor` 是全局减这块屏左上，负数照常）。`Snap` 用会话的全部窗口（`Windows`，全局）加每块屏的四条边（X6），不再只用这块屏裁过的 `_windows`。 |
 | C3 | **跨屏时别的屏**：画 `Local(Selection)` 和自己的交集（`OnDraw` 已经按屏夹了），只画落在自己身上的手柄；在它上面按住手柄 / 选区里也能拖边、挪选区（按下的这块屏接着 `CapturePointer`）。 |
-| C4 | **出图**：Core 加纯函数 `ScreenshotRegions.Stitch(PixelBounds global, IReadOnlyList<PixelBounds> screens)` → 每块相交的屏一段（屏序号、屏内矩形、目标里的 x / y），配单测（左右、上下、错位、负坐标、一块竖屏、只在一块屏里、和哪块屏都不相交）。会话按它从各块 `FrozenScreen.Crop` 拷进一张图（空着的填黑，X3），包成一块临时 `FrozenScreen`（`Bounds` = 全局矩形，`Scale` = X4 那块屏的），交给现有的拷贝 / 存储 / 另存为 / 钉图 / 识字 / 翻译那几条路——它们照旧收「一块屏 + 屏里的矩形」，不用改。**不跨屏时不拼**，照原来的路。拼图用完 `ReleasePixels`（两块 4K 并排一张就是 66 MB）。 |
+| C4 | **出图**：`ScreenSpan.Pieces(选区, 各屏 Bounds)`（审查方写好了）→ 每块相交的屏一段（屏序号、屏内矩形、拼进图里的 x / y）。会话按它从各块 `FrozenScreen.Crop` 拷进一张图——**先整张填不透明的黑**（B = G = R = 0、A = 255；`new byte[]` 是全 0，空角会变成透明，X3 要的是黑），再逐段按行拷，包成一块临时 `FrozenScreen`（`Bounds` = 全局矩形，`Scale` = X4 那块屏的），交给现有的拷贝 / 存储 / 另存为 / 钉图 / 识字 / 翻译那几条路——它们照旧收「一块屏 + 屏里的矩形」，不用改。**不跨屏时不拼**，照原来的路。拼图用完 `ReleasePixels`（两块 4K 并排一张就是 66 MB）。 |
 | C5 | **X2 的限制**：`Spans` 时工具栏那几个按钮灰掉 + 悬停提示；`ShotKeys` 里对应的键、R（录屏）、S / A（长截图）提示音 + 顶部提示。 |
-| C6 | **上次区域**：`SaveLast` 已经是全局坐标，跨屏的照记；`SelectLastRegion` 的「整块在一块屏里」改成「和任何一块屏相交」，超出所有屏外接矩形的部分夹掉，一块屏都不沾才算没有。 |
+| C6 | **上次区域**：`SaveLast` 已经是全局坐标，跨屏的照记；`SelectLastRegion` 的「整块在一块屏里」换成 `ScreenSpan.LastRegion`：和任何一块屏相交就算，超出所有屏外接矩形的部分夹掉，一块屏都不沾才算没有。 |
 | C7 | `MAC-DIFF.md` 截图一节记长期例外：Windows 能跨屏框选（X1、X2），mac 不能。 |
 
 ## 5. 要注意的边界
 
-- **负坐标**：副屏在主屏左边 / 上边时全局坐标是负的。外接矩形、`Stitch`、`SaveLast`、`SelectLastRegion` 都不许夹到 0；单测要有负坐标的组合。
+- **负坐标**：副屏在主屏左边 / 上边时全局坐标是负的。外接矩形、拼图分段、`SaveLast`、`SelectLastRegion` 都不许夹到 0（`ScreenSpanTests.ScreenOnTheLeftHasNegativeCoordinates` 管着 Core 那一半）。
 - **缩放不同**：X4。拖到另一块屏上时，手柄、描边、线宽按那块屏自己的缩放画（各扇遮罩各画各的，本来就是）；尺寸胶囊写物理像素。
   R113 加的 `screenshot.overlay-frame` 日志先确认每块屏的遮罩、画布倍率都对，再做这一版。
 - **排列不齐**（上下错位、大小不同）：外接矩形里没有屏的地方光标去不了，但矩形能盖到（框一高一矮两块屏的右下角）——遮罩上不用画（那里没有遮罩），出图填黑。
-- **竖屏**：`rcMonitor` 已经是转过的宽高，BitBlt 照常；`Stitch` 单测里加一块竖屏。
+- **竖屏**：`rcMonitor` 已经是转过的宽高，BitBlt 照常（`ScreenSpanTests.PortraitScreen`）。
 - **热插拔**：R113 已经做了：框选期间显示器变了直接退出这次截图。
 - **单屏**：只有一块屏时什么都不变。
 
 ## 6. 验收
 
-- 单测：`Stitch` 的七种组合；`SelectLastRegion` 新条件（跨屏、部分超出、一块屏都不沾）；相交最大那块屏的取法（含面积一样）。
+- 单测：`ScreenSpanTests`（审查方写好了，八条：只在一块屏、左右并排、副屏在左边的负坐标、上下错位留空角、竖屏、哪块屏都不沾、相交一样大、拔屏后的上次区域）全过；
+  窗口那一半要是加了别的纯函数，照样配单测。
 - 手测（接着 `HANDTEST.md` 末尾编号）：
   1. 两块屏左右放（B 在 A 右边、再换到左边各一遍）：从 A 往 B 拖，选区跨过接缝；Enter 拷贝，粘贴出来两半拼得上、接缝那一列不缺不重。
   2. 同 1，上下放；上下错位（一块高一块矮）时框到空角：空角是黑的。
