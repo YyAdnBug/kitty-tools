@@ -14,6 +14,37 @@ struct LaunchpadLookTests {
     CGSize(width: 2560, height: 1440),
   ]
 
+  /// 常用那一排（issue #44）：占原来网格最上面一格高，网格往下挪、格子跟着矮，网格加常用的总高和页点位置不变
+  @Test func frequentRowTakesOneRowOfTheSameArea() {
+    for size in screens {
+      let plain = LaunchpadMetrics(size: size, columns: 7, rows: 5)
+      let row = LaunchpadMetrics(size: size, columns: 7, rows: 5, frequentRow: true)
+      #expect(row.frequentTop == plain.gridTop, "\(size)")
+      #expect(abs(row.gridTop - (row.frequentTop + row.cellHeight)) < 0.001, "\(size)")
+      #expect(abs(row.cellHeight * 6 - plain.cellHeight * 5) < 0.001, "\(size)")
+      #expect(abs(row.gridTop + row.gridHeight - (plain.gridTop + plain.gridHeight)) < 0.001)
+      #expect(row.dotsY == plain.dotsY && row.cellWidth == plain.cellWidth, "\(size)")
+      #expect(row.icon <= plain.icon && row.icon >= 40, "\(size)")
+    }
+  }
+
+  /// 常用排几个、怎么排（纯函数）：分高的在前，同分按名字，0 分的不上，最多 limit 个；隐藏的列表一行一个
+  @Test func frequentRanksByScoreAndSkipsUnused() {
+    func ref(_ id: String) -> LaunchpadAppRef {
+      LaunchpadAppRef(bundleID: id, path: "/Applications/\(id).app")
+    }
+    let ranked = Launchpad.frequent(
+      [
+        (ref("a"), "Alpha", 1.5), (ref("b"), "Beta", 0), (ref("c"), "Charlie", 3),
+        (ref("d"), "Delta", 1.5), (ref("e"), "Echo", 0.2),
+      ], limit: 3)
+    #expect(ranked == [ref("c"), ref("a"), ref("d")])
+    #expect(Launchpad.frequent([(ref("b"), "Beta", 0)], limit: 7).isEmpty)
+    #expect(Launchpad.hiddenIDs("") == [])
+    #expect(
+      Launchpad.hiddenIDs("com.a\n/Applications/B.app\ncom.a") == ["com.a", "/Applications/B.app"])
+  }
+
   /// 7 × 5 时照 macOS 15 的比例：网格居中占 80% 屏宽，第一行图标中心在约 15% 屏高处，图标约屏宽的 5.4%，
   /// 搜索框中心约 6.7%、宽约 1/6，页点在网格下面、屏幕里面
   @Test func metricsFollowMacOS15Proportions() {

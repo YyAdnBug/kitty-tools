@@ -1131,6 +1131,50 @@
         }
       }
     },
+    "%lld 个 App" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld app"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld apps"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld 个 App 不在启动台的网格里" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld app isn’t in the Launchpad grid"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld apps aren’t in the Launchpad grid"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld 个%@" : {
       "localizations" : {
         "en" : {
@@ -3586,16 +3630,16 @@
     "hidKey.brightnessDown" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "亮度 −"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Brightness Down"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "亮度 −"
           }
         }
       }
@@ -3603,16 +3647,16 @@
     "hidKey.brightnessUp" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "亮度 +"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Brightness Up"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "亮度 +"
           }
         }
       }
@@ -3620,16 +3664,16 @@
     "hidKey.mute" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "静音"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mute"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "静音"
           }
         }
       }
@@ -3637,16 +3681,16 @@
     "hidKey.nextTrack" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "下一首"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Next Track"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "下一首"
           }
         }
       }
@@ -3654,16 +3698,16 @@
     "hidKey.playPause" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "播放 / 暂停"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Play / Pause"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "播放 / 暂停"
           }
         }
       }
@@ -3671,16 +3715,16 @@
     "hidKey.previousTrack" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "上一首"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Previous Track"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "上一首"
           }
         }
       }
@@ -3688,16 +3732,16 @@
     "hidKey.volumeDown" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "音量 −"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Volume Down"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "音量 −"
           }
         }
       }
@@ -3705,16 +3749,16 @@
     "hidKey.volumeUp" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "音量 +"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Volume Up"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "音量 +"
           }
         }
       }
@@ -6829,16 +6873,16 @@
     "search.keyRemapping.keyboard" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "改键,映射,源键,目标键"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "remap,mapping,source key,target key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "改键,映射,源键,目标键"
           }
         }
       }
@@ -7196,6 +7240,40 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "触发角"
+          }
+        }
+      }
+    },
+    "search.launchpad.frequent" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "常用,最近,经常,使用次数"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "frequent,recent,most used,usage"
+          }
+        }
+      }
+    },
+    "search.launchpad.hidden" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "隐藏,显示,不显示,去掉"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "hide,show,hidden,remove"
           }
         }
       }
@@ -13567,6 +13645,16 @@
         }
       }
     },
+    "关掉的 App 不在启动台的网格里，在启动台里打字照样搜得到；再打开就排到最后一页末尾。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apps you turn off aren’t in the Launchpad grid, but you can still find them by typing in Launchpad. Turn one back on and it goes to the end of the last page."
+          }
+        }
+      }
+    },
     "关掉的功能不出现在快捷键、菜单栏和启动器里，也不在后台运行；它的数据和设置都留着，打开就回来。" : {
       "localizations" : {
         "en" : {
@@ -17975,6 +18063,16 @@
         }
       }
     },
+    "启动台里的 App 都显示着" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All apps show in Launchpad"
+          }
+        }
+      }
+    },
     "启动器" : {
       "localizations" : {
         "en" : {
@@ -19157,6 +19255,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Download updates in the background and install on quit"
+          }
+        }
+      }
+    },
+    "在启动台里显示" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show in Launchpad"
+          }
+        }
+      }
+    },
+    "在启动台里显示「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show “%@” in Launchpad"
           }
         }
       }
@@ -24397,6 +24515,16 @@
         }
       }
     },
+    "常用：%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frequent: %@"
+          }
+        }
+      }
+    },
     "平滑,平滑滚动,滚动,滚轮,鼠标,顺滑,惯性,反向,方向,自然滚动,滚动方向,速度,距离,停用,游戏,虚拟机,远程桌面,smooth,scroll" : {
       "localizations" : {
         "en" : {
@@ -28426,6 +28554,16 @@
         }
       }
     },
+    "按应用名找" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search by app name"
+          }
+        }
+      }
+    },
     "按快捷键后立即开始录音" : {
       "localizations" : {
         "en" : {
@@ -28544,6 +28682,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pressed “%@”"
+          }
+        }
+      }
+    },
+    "按这段时间用得多的排，网格往下让一排" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apps you’ve used most lately, with the grid moved down one row"
           }
         }
       }
@@ -35639,6 +35787,16 @@
         }
       }
     },
+    "没有" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "None"
+          }
+        }
+      }
+    },
     "没有「日历」授权，读不了日程" : {
       "localizations" : {
         "en" : {
@@ -35745,6 +35903,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No matching notes"
+          }
+        }
+      }
+    },
+    "没有匹配的应用，试试其它名字" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No matching apps. Try another name."
           }
         }
       }
@@ -48210,6 +48378,16 @@
         }
       }
     },
+    "隐藏的 App" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hidden Apps"
+          }
+        }
+      }
+    },
     "需要「屏幕录制」授权" : {
       "localizations" : {
         "en" : {
@@ -48467,6 +48645,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Keeps pages, folders and order; skips uninstalled apps"
+          }
+        }
+      }
+    },
+    "顶上一排常用的 App" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frequent Apps Row"
           }
         }
       }

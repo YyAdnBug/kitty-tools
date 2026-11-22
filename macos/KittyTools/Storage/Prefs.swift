@@ -432,6 +432,11 @@ enum Prefs {
   nonisolated static let launchpadUndoGrid = "launchpadUndoGrid"
   /// 认到捏合、却因为系统的捏合手势开着让给了系统的那一下，刘海岛说过没有（第四轮体检 U5，只说一次）。不注册默认值
   nonisolated static let launchpadPinchYieldTold = "launchpadPinchYieldTold"
+  /// 不在启动台网格里的 App（issue #44，2026-11-22）：App 的 id（bundle id，没有的是路径）一行一个，空串 = 都显示。
+  /// 排布时当成没装（LaunchpadLayout 的不变式不用改），搜索里照样搜得到；取消隐藏的接在最后一页末尾（同新装）
+  nonisolated static let launchpadHiddenApps = "launchpadHiddenApps"
+  /// 网格上面多一排常用的 App（issue #44，默认关 = 照 macOS 15 原样）：按系统记的使用（Spotlight 按天）+ 在 Kitty 里打开的次数排
+  nonisolated static let launchpadFrequentRow = "launchpadFrequentRow"
   nonisolated static let launchpadColumnChoices = 5...10
   nonisolated static let launchpadRowChoices = 4...8
   /// 触控板手势（PinchFingers 的 rawValue：off / four / five，默认四指；系统的捏合还开着时我们认到也不打开，
@@ -664,6 +669,8 @@ enum Prefs {
       launchpadColumns: 7,
       launchpadRows: 5,
       launchpadLayout: "",
+      launchpadHiddenApps: "",
+      launchpadFrequentRow: false,
       launchpadPinchGesture: PinchFingers.four.rawValue,
       launchpadPinchSense: PinchRecognizer.Sensitivity.standard.rawValue,
       launchpadCorner: LaunchpadCornerOption.off.rawValue,

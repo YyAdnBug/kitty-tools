@@ -158,6 +158,8 @@ enum SettingsItem: String, CaseIterable, Identifiable {
   case launchpadKeys = "launchpad.keys"
   case launchpadColumns = "launchpad.columns"
   case launchpadRows = "launchpad.rows"
+  case launchpadFrequent = "launchpad.frequent"
+  case launchpadHidden = "launchpad.hidden"
   case launchpadCorner = "launchpad.corner"
   case launchpadImport = "launchpad.import"
   case launchpadReset = "launchpad.reset"
@@ -908,6 +910,16 @@ enum SettingsItem: String, CaseIterable, Identifiable {
       Self.row(
         .launchpad, "一页几行", LocalizedStringResource("search.launchpad.rows", defaultValue: "行,排列"),
         keys: [Prefs.launchpadRows])
+    case .launchpadFrequent:
+      Self.row(
+        .launchpad, "顶上一排常用的 App",
+        LocalizedStringResource("search.launchpad.frequent", defaultValue: "常用,最近,经常,使用次数"),
+        keys: [Prefs.launchpadFrequentRow])
+    case .launchpadHidden:
+      Self.row(
+        .launchpad, "隐藏的 App",
+        LocalizedStringResource("search.launchpad.hidden", defaultValue: "隐藏,显示,不显示,去掉"),
+        keys: [Prefs.launchpadHiddenApps])
     case .launchpadCorner:
       Self.row(
         .launchpad, "屏幕角", LocalizedStringResource("search.launchpad.corner", defaultValue: "触发角"),

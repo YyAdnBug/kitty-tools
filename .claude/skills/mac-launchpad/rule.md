@@ -8,7 +8,7 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
 - `LaunchpadLayout`：页数组 → 格子数组 → App（`bundleID` 优先，没有就按解开链接后的路径）或文件夹（名字 + 内部的页）。
   文件夹内部固定 7 × 5 = 35 个一页（`folderColumns = 7`，`folderCapacity = 35`），不跟顶层行列数走。`Codable`，整份 JSON 存进 `Prefs.launchpadLayout`（注册空串默认值：
   SettingsArchive 的「设置」一类据此知道它是字符串，用户存过才跟着导出；空串 = 还没存过）。
-- **不变式**（`LaunchpadFuzzTests` 随机操作锁住）：每个本机 App 恰好出现一次；没有空页（整份为空除外）、空文件夹、
+- **不变式**（`LaunchpadFuzzTests` 随机操作锁住）：每个本机 App（去掉设置里隐藏的，见 §2）恰好出现一次；没有空页（整份为空除外）、空文件夹、
   只剩一个 App 的文件夹；顺序稳定。加新 App 追加到最后一页末尾；卸掉的拿掉；文件夹剩一个当场解散、空了消失。
 - 挪格子、建 / 加 / 拖出 / 解散文件夹、改名、按行列数重新分页、默认排法、合并本机 App 全在 `LaunchpadLayout` 的纯函数里，
   界面和总控不许自己拼页数组。拖动传的是**格子的 id**（`LaunchpadTile.id`，`app\n<id>` / `folder\n<uuid>`）。
@@ -51,6 +51,12 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
   `LauncherUsage.boost`（`LauncherMatch.rank` 同一个公式，同分按 `LauncherItem.systemUse`——系统记的使用——再标题短的在前）；
   打开 App **成功后**记一次（`Launchpad.open(_:query:)`：搜着时连输入一起记，直接点格子只记全局，会进启动器的「常用」）。
   单测、截图自检不接，只按匹配分。
+- **隐藏的 App**（issue #44，`Prefs.launchpadHiddenApps`）：只在排布时去掉——`Launchpad.layoutApps` 是目录减隐藏的，打开时合并、默认排法、
+  导入后合并都用它（等于没装，布局纯函数不用知道隐藏这回事）；**目录本身不减**：搜索、按 id 打开、图标照旧用整个目录（隐藏的照样搜得到），
+  导入读旧库给的也是整个目录（不然隐藏的被算进「已经卸掉」）。全隐藏了时 `merged(apps: [])` 当「还不知道」原样返回，布局不动。
+- **常用的一排**（issue #44，`Prefs.launchpadFrequentRow`，默认关）：打开时总控按 `systemUse` + `LauncherUsage` 全局分排好塞进 `model.frequent`
+  （`Launchpad.frequent` 纯函数，0 分的不上、隐藏的不上、最多列数个），这次开着时不变；`model.metrics` 跟着它多留一排（`LaunchpadMetrics.frequentRow`），
+  落点、格子中心都走同一份尺寸。这一排不在布局里、不能拖、方向键不进，点了走 `model.open(app:)`（照样记使用）。
 - 背景的壁纸（`LaunchpadWallpaper`）只读 `NSWorkspace.desktopImageURL` 那个文件，后台缩着读、裁、模糊，缓存一张；不截屏、不要权限。
 - 第一次自动导入、设置里重新导入时，岛上先挂「正在按原来的启动台排列…」（`.progress`），排好换成结果（第一次自动导入先看旧库的文件在不在：系统里根本没有就直接按默认排法、不挂进行中也不出结果提示，第四轮体检 U13⑦）；导入期间用户动过布局就不覆盖、换成「已保留你刚才的排列」。打开到第一帧、翻页每帧的时间要量（R11），写进 PLAN。
 

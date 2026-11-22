@@ -40,6 +40,8 @@ struct LaunchpadView: View {
           ZStack(alignment: .top) {
             searchField(metrics)
               .padding(.top, metrics.searchTop)
+            frequentRow(metrics)
+              .padding(.top, metrics.frequentTop)
             pager(proxy.size, metrics: metrics)
               .padding(.top, metrics.gridTop)
             pageDots
@@ -312,6 +314,56 @@ struct LaunchpadView: View {
     }
     .frame(width: metrics.gridWidth, height: metrics.gridHeight, alignment: .topLeading)
     .animation(reduceMotion ? nil : Self.reflow, value: gap)
+  }
+
+  /// 网格上面那一排常用的 App（issue #44，设置里开着才有）：和网格同样的格子宽、同一套图标位图，底下一条发丝线和网格隔开；
+  /// 只能点开（不能拖、键盘方向键不进这一排）。搜索、开文件夹、抖动时淡掉，地方留着、网格不跳
+  @ViewBuilder private func frequentRow(_ metrics: LaunchpadMetrics) -> some View {
+    if !model.frequent.isEmpty {
+      ZStack(alignment: .topLeading) {
+        ForEach(Array(model.frequent.prefix(max(model.columns, 1)).enumerated()), id: \.element) {
+          index, ref in
+          frequentCell(ref, metrics: metrics)
+            .position(x: (CGFloat(index) + 0.5) * metrics.cellWidth, y: metrics.cellHeight / 2)
+        }
+        Rectangle()
+          .fill(.white.opacity(contrast == .increased ? 0.3 : 0.18))
+          .frame(width: metrics.gridWidth, height: Style.hairlineWidth(contrast))
+          .offset(y: metrics.cellHeight - Style.hairlineWidth(contrast))
+          .allowsHitTesting(false)
+          .accessibilityHidden(true)
+      }
+      .frame(width: metrics.gridWidth, height: metrics.cellHeight, alignment: .topLeading)
+      .opacity(model.showsFrequent ? 1 : 0)
+      .allowsHitTesting(model.showsFrequent)
+      .accessibilityHidden(!model.showsFrequent)
+      .animation(reduceMotion ? nil : Style.Motion.settle.animation(), value: model.showsFrequent)
+    }
+  }
+
+  private func frequentCell(_ ref: LaunchpadAppRef, metrics: LaunchpadMetrics) -> some View {
+    let name = model.app(ref)?.name ?? ""
+    return VStack(spacing: 6) {
+      icon(for: .app(ref), size: metrics.icon, jiggles: false)
+        .frame(width: metrics.icon * 1.22, height: metrics.icon * 1.22)
+        .contentShape(Rectangle().inset(by: metrics.icon * 0.11))
+        .onTapGesture { model.open(app: ref) }
+      Text(name)
+        .font(.system(size: LaunchpadMetrics.labelSize, weight: .regular))
+        .foregroundStyle(.white.opacity(0.96))
+        .lineLimit(1)
+        .truncationMode(.middle)
+        .frame(width: metrics.labelWidth)
+        .shadow(color: .black.opacity(0.4), radius: 1.5, y: 0.5)
+        .allowsHitTesting(false)
+    }
+    .frame(width: metrics.cellWidth, height: metrics.cellHeight)
+    .help(name)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(Text("常用：\(name)"))
+    .accessibilityHint("打开")
+    .accessibilityAddTraits(.isButton)
+    .accessibilityAction { model.open(app: ref) }
   }
 
   /// 按下：记下按的是哪一格（挪 / 松手两边都喂：这一份、最外层那份，模型按同一个指针位置算）。搜索时也记下按下：单击打开结果，但不许拖（F5）

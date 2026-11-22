@@ -1,6 +1,7 @@
 // 设置 › 启动台（第八族，SPEC R10；2026-10-18）。五组：
 // 「启动台」——总开关（关掉后快捷键、菜单栏、触发角、捏合都不打开）、按键速查；
-// 「排列」——一页几列几行（变少时挤不下的顺到下一页开头、页边界不动，岛上能撤销；E12）；
+// 「排列」——一页几列几行（变少时挤不下的顺到下一页开头、页边界不动，岛上能撤销；E12）、顶上一排常用的 App（默认关）、
+//   推进去的「隐藏的 App」（LaunchpadHiddenPage，issue #44）；
 // 「触控板」——手势 关闭 / 四指捏合 / 五指捏合、灵敏度三档，页脚说清怎么认（系统的开着时让给系统、唤醒后自己接上）；
 //   系统的捏合手势还开着时给一行提示：macOS 26 给「复制命令」让用户自己在终端里关，其他版本给「打开触控板设置」（只读系统设置，不改）；
 //   私有框架加载不了时这一行灰掉写明；
@@ -45,6 +46,16 @@ struct LaunchpadTab: View {
   /// 闭包不可观察），能不能撤仍以 canUndo 为准
   @AppStorage(Prefs.launchpadUndoLayout) private var undoLayout: String?
   @State private var systemPinch = false
+  @AppStorage(Prefs.launchpadFrequentRow) private var frequentRow = false
+  @AppStorage(Prefs.launchpadHiddenApps) private var hiddenText = ""
+  /// 推进去的「隐藏的 App」在 navigation.path（主菜单「返回」也要读写它）
+  @Environment(SettingsNavigation.self) private var navigation
+
+  /// 「隐藏的 App」那一行的状态（先算好再传：可选参数里写三元式，抽字时第二个分支会漏掉）
+  private var hiddenValue: LocalizedStringResource {
+    let count = Launchpad.hiddenIDs(hiddenText).count
+    return count == 0 ? "没有" : "\(count) 个 App"
+  }
 
   /// 系统手势的开关读出来变了没有（变了才重起监听，G8；纯函数）
   nonisolated static func shouldReapply(old: Bool, new: Bool) -> Bool { old != new }
@@ -52,12 +63,15 @@ struct LaunchpadTab: View {
   @State private var confirmsImport = false
 
   var body: some View {
-    NavigationStack {
+    NavigationStack(path: Bindable(navigation).path) {
       VStack(spacing: 0) {
         PageHeader(page: .launchpad)
         form
       }
       .navigationTitle(SettingsPage.launchpad.title)
+      .navigationDestination(for: String.self) { id in
+        if id == LaunchpadHiddenPage.route { LaunchpadHiddenPage() }
+      }
     }
   }
 
@@ -103,6 +117,15 @@ struct LaunchpadTab: View {
             Text("大屏可以多放几行")
           }
           .settingsAnchor(.launchpadRows)
+          Toggle(isOn: $frequentRow) {
+            Text("顶上一排常用的 App")
+            Text("按这段时间用得多的排，网格往下让一排")
+          }
+          .settingsAnchor(.launchpadFrequent)
+          SettingsPushRow(title: "隐藏的 App", value: hiddenValue) {
+            navigation.path = [LaunchpadHiddenPage.route]
+          }
+          .settingsAnchor(.launchpadHidden)
         } header: {
           InfoHeader("排列", info: "新装的 App 自动追加到最后一页末尾；卸掉的从布局里拿掉。拖动排序、建文件夹、删 App 都在启动台里做。")
         }

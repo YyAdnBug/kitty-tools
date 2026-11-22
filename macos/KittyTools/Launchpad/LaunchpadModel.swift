@@ -190,8 +190,13 @@ final class LaunchpadModel {
   }
 
   var metrics: LaunchpadMetrics {
-    LaunchpadMetrics(size: screenSize, columns: columns, rows: rows)
+    LaunchpadMetrics(size: screenSize, columns: columns, rows: rows, frequentRow: !frequent.isEmpty)
   }
+
+  /// 网格上面那一排常用的 App（issue #44；设置里开着才有，总控打开时排好，这次开着的期间不变）。空 = 不占地方
+  var frequent: [LaunchpadAppRef] = []
+  /// 常用那一排这一刻露不露：搜索、开着文件夹、抖动时收起（地方留着，网格不跳）
+  var showsFrequent: Bool { !frequent.isEmpty && !isSearching && openFolderID == nil && !jiggling }
 
   var capacity: Int { max(1, columns * rows) }
 

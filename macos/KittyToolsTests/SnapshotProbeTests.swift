@@ -5439,6 +5439,18 @@ struct SnapshotProbeTests {
       try snapshot(
         LaunchpadView(model: jiggle), size: size, dark: dark,
         to: "\(out)/launchpad-jiggle\(suffix).png")
+      // 顶上一排常用的（issue #44）：网格往下让一排；搜着时那一排淡掉、地方留着
+      let frequent = board()
+      frequent.frequent = [apps[8].ref, apps[1].ref, apps[9].ref, apps[5].ref, apps[0].ref]
+      try snapshot(
+        LaunchpadView(model: frequent), size: size, dark: dark,
+        to: "\(out)/launchpad-frequent\(suffix).png")
+      if !dark {
+        frequent.query = apps[0].name
+        try snapshot(
+          LaunchpadView(model: frequent), size: size, dark: dark,
+          to: "\(out)/launchpad-frequent-search.png")
+      }
       let drag = board()
       drag.beginDrag(
         tile: .app(apps[1].ref), appID: apps[1].ref.id, folder: nil,
@@ -5515,6 +5527,16 @@ struct SnapshotProbeTests {
         AnyView(EmptyView())
       },
       size: NSSize(width: 780, height: 1120), dark: false, to: "\(out)/launchpad-settings.png")
+    let name = "kitty-snapshot-launchpad-hidden-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: name))
+    defer { prefs.removePersistentDomain(forName: name) }
+    prefs.set([apps[1].id, apps[4].id].joined(separator: "\n"), forKey: Prefs.launchpadHiddenApps)
+    for dark in [false, true] {
+      try snapshot(
+        NavigationStack { LaunchpadHiddenPage(apps: Array(apps)) }.defaultAppStorage(prefs),
+        size: NSSize(width: 590, height: 720), dark: dark,
+        to: "\(out)/launchpad-hidden\(dark ? "-dark" : "").png")
+    }
   }
 
   /// 功能开关（Shell/Feature.swift，2026-10-21）：设置 › 通用最上面的「功能」一组（全开、关了剪贴板和翻译；浅 / 深），

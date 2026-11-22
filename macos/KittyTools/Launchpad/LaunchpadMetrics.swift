@@ -11,13 +11,18 @@ nonisolated struct LaunchpadMetrics {
   let size: CGSize
   let columns: Int
   let rows: Int
+  /// 网格上面有没有「常用」那一排（issue #44）：有的话那一排占原来网格区域最上面一格高，网格往下挪、格子跟着矮一点，
+  /// 网格加常用一共还是原来那块面积（页点位置不变）
+  var frequentRow = false
 
   var gridWidth: CGFloat { size.width * 0.80 }
-  var gridHeight: CGFloat { size.height * 0.79 }
+  var gridHeight: CGFloat { cellHeight * CGFloat(max(rows, 1)) }
   /// 网格左右各留多少（网格在页容器里居中）
   var side: CGFloat { (size.width - gridWidth) / 2 }
   var cellWidth: CGFloat { gridWidth / CGFloat(max(columns, 1)) }
-  var cellHeight: CGFloat { gridHeight / CGFloat(max(rows, 1)) }
+  var cellHeight: CGFloat {
+    size.height * 0.79 / CGFloat(max(rows, 1) + (frequentRow ? 1 : 0))
+  }
   /// 图标边长：约屏宽的 5.4%，受格子限制（放得下图标 + 一行名字），最小 40、最大 140
   var icon: CGFloat {
     max(40, min(140, size.width * 0.054, cellWidth * 0.62, (cellHeight - 30) * 0.86))
@@ -30,8 +35,10 @@ nonisolated struct LaunchpadMetrics {
   var searchWidth: CGFloat { max(200, size.width / 6) }
   /// 搜索框上沿
   var searchTop: CGFloat { max(12, size.height * 0.067 - Self.searchHeight / 2) }
-  /// 网格上沿（矮屏上让开搜索框）
-  var gridTop: CGFloat { max(size.height * 0.08, searchTop + Self.searchHeight + 8) }
+  /// 常用那一排的上沿 = 没有它时网格的上沿（矮屏上让开搜索框）
+  var frequentTop: CGFloat { max(size.height * 0.08, searchTop + Self.searchHeight + 8) }
+  /// 网格上沿
+  var gridTop: CGFloat { frequentTop + (frequentRow ? cellHeight : 0) }
   /// 页点的中心
   var dotsY: CGFloat { max(size.height * 0.905, gridTop + gridHeight + 8) }
 

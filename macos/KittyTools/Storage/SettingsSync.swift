@@ -28,7 +28,8 @@ import Foundation
   /// 留在本机、不同步的偏好键
   static let localKeys = Set([
     Prefs.launchpadColumns, Prefs.launchpadRows, Prefs.launchpadPinchGesture,
-    Prefs.launchpadPinchSense, Prefs.launchpadCorner,
+    Prefs.launchpadPinchSense, Prefs.launchpadCorner, Prefs.launchpadHiddenApps,
+    Prefs.launchpadFrequentRow,
     Prefs.screenRecordMicrophone, Prefs.audioRecordSource, Prefs.screenRecordShowsKeys,
     Prefs.notesDeckDisplay,
     // 平滑滚动：反不反向跟着这台 Mac 接的鼠标（另一台可能只有触控板；添没添加见 Feature.syncsAddition）
