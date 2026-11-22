@@ -26,6 +26,9 @@ struct SnippetExpanderTests {
     #expect(
       KeyBuffer.classify(code: kVK_ANSI_A, flags: .maskControl, characters: "\u{1}") == .reset)
     #expect(KeyBuffer.classify(code: kVK_Delete, flags: [], characters: "\u{7F}") == .backspace)
+    // ⌥⌫ 删一个词：不知道删了几个字，清空
+    #expect(
+      KeyBuffer.classify(code: kVK_Delete, flags: .maskAlternate, characters: "\u{7F}") == .reset)
     for code in [kVK_LeftArrow, kVK_Return, kVK_Tab, kVK_Escape, kVK_ForwardDelete, kVK_F5] {
       #expect(KeyBuffer.classify(code: code, flags: [], characters: "") == .reset, "\(code)")
     }
@@ -73,6 +76,10 @@ struct SnippetExpanderTests {
     #expect(type(" xmail", into: &buffer, keywords: ["xmail", "mail"]) == ["xmail"])
     buffer.reset()
     #expect(type(";sig", into: &buffer, keywords: [";sig", ";sig2"]) == [";sig"])
+    // 拦截按最长的关键词 + 1 留字：最长的那个前面一个字还在，词首照样认（只留 4 个的话 x;sig 会被当成词首）
+    buffer = KeyBuffer(capacity: 5)
+    #expect(type("x;sig", into: &buffer, keywords: [";sig"]).isEmpty)
+    #expect(type(" ;sig", into: &buffer, keywords: [";sig"]) == [";sig"])
     // 只留 capacity 个字
     buffer = KeyBuffer(capacity: 4)
     _ = type("abcdefgh", into: &buffer, keywords: [])

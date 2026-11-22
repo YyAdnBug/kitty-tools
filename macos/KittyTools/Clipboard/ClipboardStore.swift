@@ -458,8 +458,16 @@ import Observation
           var changed = current
           changed.isSnippet = current.isSnippet || clip.snippet
           changed.note = (current.note ?? "").isEmpty ? clip.note : current.note
-          // 关键词同备注：本机这条没有才用文件里的（别的片段已经用了的不要）
-          changed.keyword = current.keyword ?? (changed.isSnippet ? free(clip.keyword) : nil)
+          // 关键词同备注：本机这条没有才用文件里的（别的片段已经用了的不要）。本机这条原来不是片段、这次被标成片段：它留着的
+          // 关键词也要过一遍（同 markSnippet）
+          changed.keyword =
+            if current.isSnippet {
+              current.keyword ?? free(clip.keyword)
+            } else if changed.isSnippet {
+              free(current.keyword) ?? free(clip.keyword)
+            } else {
+              current.keyword
+            }
           changed.groupID = current.groupID ?? group
           changed.favorite = current.favorite || clip.favorite || changed.groupID != nil
           guard changed != current, let index = items.firstIndex(where: { $0.id == id }) else {

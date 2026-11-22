@@ -51,8 +51,8 @@ nonisolated enum KeywordTap {
     init(shared: Shared) { self.shared = shared }
   }
 
-  /// 起一条拦截线程。线程自己退了（isFinished）就是没建起来或者端口失效了，主线程下次 apply 时看
-  static func start(shared: Shared) -> Thread {
+  /// 起一条拦截线程。建不起来、或者没让它停它自己停了（端口失效）时调 failed（在拦截线程上：调用方自己投回主线程）
+  static func start(shared: Shared, failed: @escaping @Sendable () -> Void) -> Thread {
     let thread = Thread {
       let box = Box(shared: shared)
       let mask =
@@ -65,10 +65,12 @@ nonisolated enum KeywordTap {
         return Unmanaged.passUnretained(event)
       }
       let refcon = Unmanaged.passUnretained(box).toOpaque()
-      // 先只听；建不起来（只有辅助功能、没有输入监控时可能这样）换成不吞键的那种
-      let listening = CGEvent.tapCreate(
-        tap: .cgAnnotatedSessionEventTap, place: .tailAppendEventTap, options: .listenOnly,
-        eventsOfInterest: CGEventMask(mask), callback: callback, userInfo: refcon)
+      // 先只听；没有「输入监控」授权时不试（试了系统可能弹一个没人要的授权框），直接建只要辅助功能、不吞键的那种
+      let listening =
+        CGPreflightListenEventAccess()
+        ? CGEvent.tapCreate(
+          tap: .cgAnnotatedSessionEventTap, place: .tailAppendEventTap, options: .listenOnly,
+          eventsOfInterest: CGEventMask(mask), callback: callback, userInfo: refcon) : nil
       guard
         let port = listening
           ?? CGEvent.tapCreate(
@@ -76,7 +78,7 @@ nonisolated enum KeywordTap {
             eventsOfInterest: CGEventMask(mask), callback: callback, userInfo: refcon)
       else {
         Log.clipboard.error("片段展开：事件拦截建不起来")
-        return
+        return failed()
       }
       Log.clipboard.notice(
         "片段展开：事件拦截是\(listening == nil ? "不吞键的" : "只听的", privacy: .public)")
@@ -91,6 +93,7 @@ nonisolated enum KeywordTap {
       CGEvent.tapEnable(tap: port, enable: false)
       CFMachPortInvalidate(port)
       withExtendedLifetime(box) {}
+      if !Thread.current.isCancelled { failed() }
     }
     thread.name = "kitty.snippet-keywords"
     thread.qualityOfService = .userInteractive
@@ -146,7 +149,7 @@ nonisolated enum KeywordTap {
       code: Int(event.getIntegerValueField(.keyboardEventKeycode)), flags: event.flags,
       characters: String(utf16CodeUnits: units, count: min(length, units.count)))
     let keywords = box.shared.keywords.withLock { $0 }
-    box.buffer.capacity = keywords.map(\.count).max() ?? SnippetKeyword.maxLength
+    box.buffer.capacity = (keywords.map(\.count).max() ?? SnippetKeyword.maxLength) + 1
     guard let keyword = box.buffer.press(key, keywords: keywords) else { return }
     box.shared.matched(Match(keyword: keyword, pid: pid, sequence: sequence))
   }

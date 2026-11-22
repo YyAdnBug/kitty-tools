@@ -150,6 +150,7 @@ enum Paster {
     // 同一个事件源、flags 清空（不然成了 ⌘← 跳到行首）。等粘贴落地再按：网页引擎（WKWebView，Safari、邮件这类；推断
     // Chromium 系同样）的粘贴是异步的，紧跟着按的 ← 会抢在粘贴前面（2026-11-22 片段展开探针：⌘V 后马上按，网页输入框里
     // 4 个 ← 有 1–2 个抢先；等 30 ms 以上全对），等 50 ms（mac-overlay-panel §5）
+    // ponytail: 这 50 ms 里接着打的字会排在 ← 前面，光标差那么几个字；真有人碰到再改成看着粘贴落地（辅助功能读插入点）
     guard (1...maxCaretMoves).contains(moves) else { return true }
     Task {
       try? await Task.sleep(for: .milliseconds(50))

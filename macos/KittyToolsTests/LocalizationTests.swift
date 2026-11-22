@@ -631,7 +631,7 @@ struct LocalizationTests {
       "KittyTools/SnippetExpand/SnippetExpander.swift",
       [
         "关键词之后又打了字", "Kitty 在忙", "安全输入开着", "Kitty 自己的窗口", "名单里的 App", "输入法正在组字", "带填空",
-        "没有辅助功能授权", "便签里没等到关键词",
+        "没有辅助功能授权", "便签里没等到关键词", "不知道收键的进程",
       ], false, "写进日志的没展开的原因"
     ),
     (

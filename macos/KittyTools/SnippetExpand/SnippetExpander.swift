@@ -47,22 +47,25 @@ import Synchronization
   @ObservationIgnored private var thread: Thread?
   /// 授权有、拦截却没建起来过：不每次偏好变化都重试（回到前台、醒来时再试）
   @ObservationIgnored private var gaveUp = false
-  /// 借用剪贴板之前存下的原内容、等着还原的那一下（300 ms 里又展开一次时沿用这份）
+  /// 借用剪贴板之前存下的原内容、借用时写进去后的 changeCount、等着还原的那一下（300 ms 里又展开一次、剪贴板还是我们写的那份时
+  /// 沿用这份）
   @ObservationIgnored private var pendingRestore:
-    (items: [NSPasteboardItem], task: Task<Void, Never>)?
-  /// AppDelegate 接：Kitty 此刻在忙（状态屏、录快捷键、截图框选）就不展开
+    (items: [NSPasteboardItem], written: Int, task: Task<Void, Never>)?
+  /// 起过第几条线程：建不起来的回调晚到时（这期间已经重建过）认得出不是现在这条
+  @ObservationIgnored private var generation = 0
+  /// AppDelegate 接：Kitty 此刻在忙（状态屏里键盘被拦着、录快捷键）就不展开（截图框选、自家面板的键给的是本 App，另外不展开）
   @ObservationIgnored var isBusy: () -> Bool = { false }
   /// 带 {input} 的片段：删掉关键词之后交给剪贴板面板问（第 3 批接）；nil = 这种片段不展开
   @ObservationIgnored var fill: ((ClipItem) -> Void)?
+  // ponytail: 没有给截图自检、单测换掉通知和条目监听的口子：只在 AppDelegate 里建一份（截图自检、内存探针给设置页传 nil）
 
   /// 拦截线程投回主线程时找到这一份（init 里 self 还不能被闭包拿着）
   private final class Relay {
     weak var expander: SnippetExpander?
   }
 
-  /// observes：听回到前台、醒来、辅助功能名单这些通知，并看着剪贴板的条目。截图自检、内存探针传 false：不然测试宿主
-  /// 被激活时会照临时偏好真的建起拦截
-  init(store: ClipboardStore, defaults: UserDefaults = .standard, observes: Bool = true) {
+  /// 听回到前台、醒来、辅助功能名单这些通知，并看着剪贴板的条目
+  init(store: ClipboardStore, defaults: UserDefaults = .standard) {
     self.store = store
     self.defaults = defaults
     let relay = Relay()
@@ -71,7 +74,6 @@ import Synchronization
     }
     super.init()
     relay.expander = self
-    guard observes else { return }
     let centers = [
       (NotificationCenter.default, NSApplication.didBecomeActiveNotification),
       (NSWorkspace.shared.notificationCenter, NSWorkspace.didWakeNotification),
@@ -140,7 +142,11 @@ import Synchronization
       }
     if next == .running {
       if thread == nil {
-        thread = KeywordTap.start(shared: shared)
+        generation += 1
+        let current = generation
+        thread = KeywordTap.start(shared: shared) { [weak self] in
+          Task { @MainActor in self?.tapFailed(generation: current) }
+        }
         Log.clipboard.notice("片段展开：开始听键盘")
       }
     } else {
@@ -154,6 +160,14 @@ import Synchronization
     gaveUp = false
     stop()
     apply()
+  }
+
+  /// 拦截没建起来、或者自己失效了（拦截线程报的）：记成 failed，等下一次 refresh 再试
+  private func tapFailed(generation failed: Int) {
+    guard thread != nil, failed == generation else { return }
+    thread = nil
+    gaveUp = true
+    status = .failed
   }
 
   private func stop() {
@@ -178,6 +192,8 @@ import Synchronization
         $0.isSnippet && $0.kind == .text && $0.keyword == match.keyword
       }), let text = snippet.text
     else { return }
+    // 不知道键给了谁：不动（名单、组字都没法查）
+    guard match.pid > 0 else { return skip("不知道收键的进程") }
     if match.pid == getpid() {
       guard let note = NSApp.keyWindow?.firstResponder as? NoteTextView, note.isEditable else {
         return skip("Kitty 自己的窗口")
@@ -192,13 +208,26 @@ import Synchronization
     guard !Self.isComposing(pid: match.pid) else { return skip("输入法正在组字") }
     if !Snippet.inputs(in: text).isEmpty {
       guard let fill else { return skip("带填空") }
+      // 查组字要跨进程问，这期间又打了字就不删
+      guard shared.sequence.load(ordering: .relaxed) == match.sequence else {
+        return skip("关键词之后又打了字")
+      }
       KeywordTap.deleteBackward(match.keyword.count)
       fill(snippet)
       return
     }
-    // 原来的剪贴板：300 ms 里又展开一次时，此刻剪贴板里是上一段片段，用头一次存下的那份（{clipboard} 也读它）
-    let original = pendingRestore?.items ?? Paster.snapshot()
+    // 原来的剪贴板：300 ms 里又展开一次、剪贴板里还是上一段片段（我们写的那份）时，用头一次存下的那份（{clipboard} 也读它）；
+    // 这期间有人复制过别的，就存那个新的
+    let reusing = pendingRestore.flatMap {
+      NSPasteboard.general.changeCount == $0.written ? $0.items : nil
+    }
+    let original = reusing ?? Paster.snapshot()
     pendingRestore?.task.cancel()
+    pendingRestore = nil
+    // 查组字、存剪贴板（别的 App 承诺的数据要现给）都可能慢：这期间又打了字就不删，不然删掉的是后打的字
+    guard shared.sequence.load(ordering: .relaxed) == match.sequence else {
+      return skip("关键词之后又打了字")
+    }
     let expanded = Snippet.expand(
       text, clipboard: { original.first?.string(forType: .string) }, history: store.historyText)
     KeywordTap.deleteBackward(match.keyword.count)
@@ -219,7 +248,7 @@ import Synchronization
       if NSPasteboard.general.changeCount == written { Paster.restore(original) }
       self?.pendingRestore = nil
     }
-    pendingRestore = (original, task)
+    pendingRestore = (original, written, task)
   }
 
   /// 便签正文里展开：等那段关键词落进正文（最多 0.3 s），换成内容；带 {input} 的先删掉关键词、交给面板问（面板记着这扇窗口，
@@ -289,9 +318,12 @@ import Synchronization
           Unmanaged<CFString>.fromOpaque($0).takeUnretainedValue() as String
         }
       }
-      guard string(kTISPropertyInputSourceType) == kTISTypeKeyboardInputMode as String else {
-        return nil
-      }
+      // 输入法有两种登记法：带模式的（拼音这类）和不带模式的；键盘布局不是
+      let type = string(kTISPropertyInputSourceType)
+      guard
+        type == kTISTypeKeyboardInputMode as String
+          || type == kTISTypeKeyboardInputMethodWithoutModes as String
+      else { return nil }
       return InputMethod(bundleID: string(kTISPropertyBundleID))
     }
   }
@@ -305,6 +337,8 @@ import Synchronization
       AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &focused)
         == .success, let focused, CFGetTypeID(focused) == AXUIElementGetTypeID()
     else { return nil }
+    // 超时是按对象设的：问焦点元素也要 0.1 s 封顶
+    AXUIElementSetMessagingTimeout(focused as! AXUIElement, 0.1)
     var value: CFTypeRef?
     // 上面认过类型
     guard
@@ -319,9 +353,10 @@ import Synchronization
     return range.length
   }
 
-  /// 输入法的候选窗在不在屏上：输入法自己进程的、层级高过普通窗口的窗口（实测微信输入法），或者收键的 App 自己进程里
-  /// 层级 20 的窗口（实测系统拼音的候选窗挂在被打字的 App 下）。只读窗口的属主和层级，不要屏幕录制授权
-  /// ponytail: 层级 20 是 2026-11-22 在 macOS 27 上量的；系统换了候选窗的层级就认不出（那时照常展开，结果也对，只剩「；+拼音」误触）
+  /// 输入法的候选窗在不在屏上：输入法自己进程的、层级不低于弹出菜单（101）的窗口（实测微信输入法的在 2147483629），或者收键的
+  /// App 自己进程里层级 20 的窗口（实测系统拼音的候选窗挂在被打字的 App 下）。只读窗口的属主和层级，不要屏幕录制授权
+  /// ponytail: 层级是 2026-11-22 在 macOS 27 上量的；系统换了候选窗的层级就认不出（那时照常展开，结果也对，只剩「；+拼音」误触）。
+  /// 输入法一直挂着的状态条要是也在弹出菜单以上，辅助功能问不到组字的 App 里就一直不展开——碰到了再按窗口大小、出现的先后分
   static func candidateWindowShown(pid: Int32, method: InputMethod) -> Bool {
     let methodPID = method.bundleID.flatMap {
       NSRunningApplication.runningApplications(withBundleIdentifier: $0).first?.processIdentifier
@@ -333,7 +368,7 @@ import Synchronization
     return windows.contains { window in
       let owner = (window[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value
       let layer = (window[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0
-      return (owner == methodPID && layer > 0) || (owner == pid && layer == 20)
+      return (owner == methodPID && layer >= 101) || (owner == pid && layer == 20)
     }
   }
 }

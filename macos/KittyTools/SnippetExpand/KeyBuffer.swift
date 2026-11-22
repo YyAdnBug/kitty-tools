@@ -1,5 +1,5 @@
 // 片段展开认关键词的那一小段（纯状态，配单测；只在拦截线程上用）：最近打的字、哪些键让它清空、打完一个字时末尾是不是某个关键词。
-// - 只留最长的关键词那么多个字（capacity），多了从前面丢；不存盘、不进日志
+// - 只留最长的关键词再多一个字（capacity），多了从前面丢；不存盘、不进日志
 // - 打字：按键盘布局给的字（拦截读 keyboardGetUnicodeString）往后接；⌫ 去掉最后一个；空的（死键的第一下）不动
 // - 清空：方向键、回车、Tab、Esc、⌦、Home / End / 翻页、F 键、带 ⌘ / ⌃ 的组合、控制字符，鼠标按下、换了收键的进程（KeywordTap 管）
 // - 认：末尾正好是某个关键词，而且它前面一个字不是字母或数字（Q4 只在词首；清空过之后前面是什么不知道，算词首）；
@@ -10,8 +10,8 @@ import CoreGraphics
 import Foundation
 
 nonisolated struct KeyBuffer: Equatable {
-  /// 留多少个字：最长的关键词那么长（SnippetKeyword.maxLength 封顶）
-  var capacity = SnippetKeyword.maxLength
+  /// 留多少个字：最长的关键词再多一个（要看它前面那一个字是不是字母、数字，不然最长的那个永远算在词首）
+  var capacity = SnippetKeyword.maxLength + 1
   private(set) var text = ""
 
   /// 一个按下的键怎么办
@@ -29,7 +29,8 @@ nonisolated struct KeyBuffer: Equatable {
   static func classify(code: Int, flags: CGEventFlags, characters: String) -> Key {
     if !flags.intersection([.maskCommand, .maskControl]).isEmpty { return .reset }
     switch code {
-    case kVK_Delete: return .backspace
+    // ⌥⌫ 在 App 里删一个词：不知道删了几个字，清空
+    case kVK_Delete: return flags.contains(.maskAlternate) ? .reset : .backspace
     case kVK_ForwardDelete, kVK_LeftArrow, kVK_RightArrow, kVK_UpArrow, kVK_DownArrow, kVK_Home,
       kVK_End, kVK_PageUp, kVK_PageDown, kVK_Return, kVK_ANSI_KeypadEnter, kVK_Tab, kVK_Escape,
       kVK_Help:
