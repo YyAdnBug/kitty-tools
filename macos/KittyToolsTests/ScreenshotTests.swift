@@ -1115,7 +1115,11 @@ struct ScreenshotTests {
     #expect(await joined.value)
   }
 
-  @MainActor @Test(.timeLimit(.minutes(1))) func rearmedWatcherRepairsRepeatedCacheDeletion() async throws {
+  /// 时限给 3 分钟，同别的主线程测试：全量并行跑时主线程排着别的测试，这一条开头那次 prepare 就要等一分多钟（2026-11-22 实测，
+  /// 给 1 分钟时三次全量都超时被杀；单跑 1 s）
+  @MainActor @Test(.timeLimit(.minutes(3))) func rearmedWatcherRepairsRepeatedCacheDeletion()
+    async throws
+  {
     let root = modelCacheRoot()
     defer { try? FileManager.default.removeItem(at: root) }
     let marker = root.appending(path: "ocr-prepared")

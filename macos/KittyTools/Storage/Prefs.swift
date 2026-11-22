@@ -286,6 +286,8 @@ enum Prefs {
   /// 面板收起两分钟后放掉进程内的识字模型（默认开，同原来；关掉的模型一直留着，开着截图或翻译时启动就在后台预热，
   /// AppDelegate.warmRecognitionIfKept，PR #39）
   static let ocrReleaseWhenIdle = "ocrReleaseWhenIdle"
+  /// 0.10.2 及以前记「识字模型为哪个系统版本编好了」的键（PR #42 起改看缓存目录里的标记 OCR.preparationMarker）：migrate 删掉
+  static let ocrPreparedSystemLegacy = "ocrPreparedSystem"
 
   /// 状态屏的状态列表（StatusPreset 数组的 JSON）。**不注册默认值**：没存过 / 解不出 / 为空时用自带的三个
   /// （StatusPreset.load）。照样跟着设置的导出 / 导入和每日备份走——SettingsArchive.kinds 里单独登记（文件里写成一组状态，
@@ -904,7 +906,7 @@ enum Prefs {
   /// 保留天数不在新档位里的（旧的 3 / 14 天）挪到下一档，免得弹出菜单显示空白（体检 A4）；
   /// 翻译历史保留条数同理（旧的 100–2000 挪到 1000 / 5000，体检 A18）；
   /// 浏览器书签 / 历史的每家一个开关搬进两个 id 列表（第 12 批，只在新键没存过、旧键改过时，删掉旧键）；
-  /// 去掉了的「标签倾斜」开关（notesDeckTiltLegacy）存过的值删掉；
+  /// 去掉了的「标签倾斜」开关（notesDeckTiltLegacy）、识字模型准备好的系统版本（ocrPreparedSystemLegacy）存过的值删掉；
   /// 启动台原来的总开关 launchpadEnabled 挪进功能开关 feature.launchpad（只在新键没存过时，删掉旧键）；
   /// 常驻缩略图的布尔开关 screenshotShelf 升成「截完图放哪」三选一（晾衣绳拍板 B1，只在新键没存过、旧键关着时）；
   /// 截图历史的上限从旧键（字节）换进新键（MB，只在新键没存过时；0 照旧是不限），删掉旧键
@@ -935,6 +937,7 @@ enum Prefs {
     }
     defaults.removeObject(forKey: shotHistoryBytesLegacy)
     defaults.removeObject(forKey: notesDeckTiltLegacy)
+    defaults.removeObject(forKey: ocrPreparedSystemLegacy)
     let launchpad = Feature.launchpad.prefsKey
     if domain[launchpad] == nil, let old = domain[launchpadEnabledLegacy] as? Bool {
       defaults.set(old, forKey: launchpad)

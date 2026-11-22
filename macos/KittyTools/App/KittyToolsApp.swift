@@ -25,7 +25,8 @@ enum Main {
       Task { exit(await OCR.warmForegroundModels() ? 0 : 1) }
       dispatchMain()
     case .usage:
-      FileHandle.standardError.write(Data("用法：\(OCR.helperFlag) <图片路径> | \(OCR.prepareFlag)\n".utf8))
+      FileHandle.standardError.write(
+        Data("用法：\(OCR.helperFlag) <图片路径> | \(OCR.prepareFlag)\n".utf8))
       exit(2)
     case nil:
       // AppKit 会缓存原生提示的初始延迟，创建 NSApplication 前注册；单位毫秒，只在本进程生效。

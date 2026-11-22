@@ -513,7 +513,8 @@ nonisolated enum OCR {
   @MainActor private static var preparing: [URL: Task<Bool, Never>] = [:]
 
   /// 同一个戳同时只起一个子进程。默认不在单测宿主里写用户的缓存；传临时戳可以验整条路径。
-  @MainActor @discardableResult static func prepare(marker: URL? = preparationMarker) async -> Bool {
+  @MainActor @discardableResult static func prepare(marker: URL? = preparationMarker) async -> Bool
+  {
     await prepare(marker: marker, compile: compileInHelper)
   }
 
@@ -560,7 +561,8 @@ nonisolated enum OCR {
   @MainActor private static func compileInHelper() async -> Bool {
     guard let executable = Bundle.main.executablePath else { return false }
     let result = try? await Subprocess.run(
-      executable, [prepareFlag], environment: helperEnvironment(ProcessInfo.processInfo.environment),
+      executable, [prepareFlag],
+      environment: helperEnvironment(ProcessInfo.processInfo.environment),
       timeout: prepareTimeout, quality: .utility)
     if result?.status == 0 { return true }
     Log.clipboard.error("准备识字模型没成（状态 \(result?.status ?? -1)）")
@@ -609,7 +611,9 @@ nonisolated enum OCR {
 
   /// 看命令行（纯函数）：只在第一个参数是自家的子进程参数时分流。
   static func launch(_ arguments: [String]) -> Launch? {
-    if arguments.dropFirst().first == prepareFlag { return arguments.count == 2 ? .prepare : .usage }
+    if arguments.dropFirst().first == prepareFlag {
+      return arguments.count == 2 ? .prepare : .usage
+    }
     guard arguments.dropFirst().first == helperFlag else { return nil }
     guard arguments.count == 3, !arguments[2].isEmpty else { return .usage }
     return .recognize(URL(filePath: arguments[2]))
