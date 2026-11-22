@@ -1416,9 +1416,10 @@ internal sealed class ShellRuntime
         }
         else if (msg == WmDisplayChange)
         {
-            // 显示器插拔、改分辨率：状态屏按现在的屏幕重摆（没在状态屏里什么都不做）；便签屏幕边缘那叠也重摆。
+            // 显示器插拔、改分辨率：状态屏按现在的屏幕重摆（没在状态屏里什么都不做）；便签屏幕边缘那叠也重摆；正在框选的截图退出。
             StatusScreenHost.OnDisplaysChanged();
             NoteDeck.Refresh();
+            ScreenshotSession.DisplaysChanged();
         }
         else if (msg == 0x001A /* WM_SETTINGCHANGE */ && wParam.Value == 0x002F /* SPI_SETWORKAREA */)
         {

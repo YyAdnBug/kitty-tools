@@ -571,7 +571,7 @@ internal sealed partial class SelectionOverlayWindow
         }
     }
 
-    /// <summary>上次区域落在这块屏：这扇遮罩拿键盘（提示、放大镜跟过来）。</summary>
+    /// <summary>这扇遮罩拿键盘（提示、放大镜跟过来）：鼠标挪到这块屏、上次区域落在这块屏。走 ScreenshotSession.GiveKeyboard。</summary>
     internal void TakeKeyboard()
     {
         _key = true;
@@ -579,6 +579,21 @@ internal sealed partial class SelectionOverlayWindow
         DispatcherQueue.TryEnqueue(() => _canvas.Focus(FocusState.Programmatic));
         _canvas.Invalidate();
     }
+
+    /// <summary>键盘换到了别的屏：这块屏不再画提示、放大镜、十字准线。</summary>
+    internal void DropKeyboard()
+    {
+        if (_key)
+        {
+            _key = false;
+            _canvas.Invalidate();
+        }
+    }
+
+    internal bool IsDragging => _drag != DragKind.None;
+
+    /// <summary>光标在不在这块屏上（_cursor 是这块屏里的物理像素，在别的屏上时是负数或超出宽高）。</summary>
+    private bool CursorOnScreen => _cursor.X >= 0 && _cursor.Y >= 0 && _cursor.X < _screen.Width && _cursor.Y < _screen.Height;
 
     /// <summary>Ctrl + 方向键把那条边往外推、Alt + 方向键往里收（Shift 10 DIP，短边不小于 8 DIP；mac ⌘ / ⌥ + 方向键）。</summary>
     private void PushEdge(Windows.System.VirtualKey key, bool outward)

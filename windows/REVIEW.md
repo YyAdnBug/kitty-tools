@@ -8,6 +8,51 @@
 
 条目编号不复用。行号按条目里写的那个提交。
 
+## 多屏截图：只能在光标那块屏上框选、扩展屏过不去（审查方在 Mac 上写、没编译，2026-11-22）
+
+用户反馈：Windows 版截图只能在光标所在的那块屏上框选，框不到扩展屏上，也不能一个选区跨两块屏。
+
+### R113（P1）键盘、放大镜、提示不跟着鼠标换屏；跨屏是设计上不支持 → 待核验
+
+- **根因（读代码确认）**，两层：
+  1. **跨屏 / 「扩展屏过不去」是设计如此**：照 mac「选区只在一块屏上」搬的。`ScreenshotSession` 只记一块屏（`SelectionScreen`）和这块屏里的矩形；
+     拖框时按下那块屏的画布 `CapturePointer`，`UpdateDrag` 把点夹在 `new RectD(0, 0, _screen.Width, _screen.Height)` 里。从主屏往扩展屏拖，选区停在主屏边上。
+     要不要做成能跨屏，写在 `PLAN-v24.md`（**拍板前别动**）。
+  2. **换到扩展屏以后像是用不了**：`_key`（顶部提示、放大镜、十字准线、悬停窗口的尺寸胶囊）只在开遮罩那一下给光标所在的屏，之后从不跟着鼠标走
+     （只有 D 键会换，而且换的时候旧的那块不放下，两块屏都画放大镜）。鼠标挪到扩展屏：那块屏上没放大镜、没提示、没尺寸胶囊，放大镜卡在原来那块屏的边上。
+     另外 `ShowOverlay` 里不带参数的 `AppWindow.Show()` 会激活窗口（[文档](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.windowing.appwindow.show)：
+     `Show()` = 显示并激活），后露出来的遮罩把前台抢走，键盘落在按左上排序的最后一块屏——光标在左边 / 上边那块屏时，Esc 以外的键（D、Tab、方向键）落在另一块屏上。
+- **看代码排除了的**：负坐标（`ReadCursor`、`GlobalRect`、`SelectLastRegion` 都是减 / 加 `Bounds.Left/Top`，没有夹到 0）；冻结帧（`CaptureAll` 每块屏各 BitBlt 一份，
+  物理像素）；DPI（清单 PerMonitorV2，每块屏自己的 `GetDpiForMonitor`，画布 DIP = 物理像素 ÷ 这块屏的缩放，`PlaceAgain` 防 WM_DPICHANGED 改大小）；
+  扩展屏上按下拖动本身（那块屏有自己的遮罩、自己收鼠标，没有哪条路挡着）。
+- **没法在 Mac 上排除的**：要是用户说的是「在扩展屏上按下去拖不出框」（不是「拖不过去」），那是遮罩没盖住那块屏、或者收不到鼠标——代码里看不出来，
+  只能在真机上看。这次加了一行日志对这个（第 2 步）。
+- **改了什么**：
+  - `ScreenshotSession.GiveKeyboard(target)`：给这块屏键盘、别的屏 `DropKeyboard()`；`IsDragging`（哪块屏正按着拖）。D 键（`SelectLastRegion`）也走它。
+  - `SelectionOverlayWindow.PollCursor`（20 ms 一次）：两块屏以上、光标在这块屏上、没有哪块屏正拖着、别的屏上没有选区 → `GiveKeyboard(this)`
+    （同 mac `mouseMoved` 里的 `makeKey`；别的屏有选区时不换，单击不抢那边的选区，拖开了选区到这块屏，下一轮就换过来）。只有一块屏时不走（自检的合成会话不受影响）。
+  - `OnDraw`：放大镜、十字准线只在光标所在的屏上画（拖着时照旧）；挡下操作的那句提示（`RefuseWipe`）不拿键盘的屏上也画。
+  - `ShowOverlay`：`AppWindow.Show(activateWindow: key)`，只有光标那块屏激活。
+  - 每块屏第一帧记一行 `screenshot.overlay-frame screen= key= bounds= window= canvas= xaml= scale=`。
+  - 框选期间 `WM_DISPLAYCHANGE`（插拔显示器、改分辨率）：`ScreenshotSession.DisplaysChanged` 直接退出这次截图、胶囊说一声（冻结帧对不上了；
+    以前拔掉那块屏的遮罩会被系统挪到剩下的屏上盖着）。长截图已经收了遮罩，不动。
+  - 没有新的纯函数，没加单测。
+- **要你们做**：
+  1. 编译零警告（Debug、x64 / ARM64 AOT），`dotnet test` 全过。
+  2. **先用改前的包问清 / 复现用户说的是哪一种**：两块屏，光标在 A 按 Alt+A，到 B 上按下拖。拖得出框 = 根因第 2 层，这次的改动就是修它；
+     **拖不出框**（点下去没反应、或者点到了遮罩下面的桌面 / 软件）= 另有原因，看新包日志里 B 那一行 `screenshot.overlay-frame`：
+     - `window=` 和 `bounds=` 四个数不一样 = 遮罩没摆到 B 上（多半是缩放不同时 WM_DPICHANGED 在 `PlaceAgain` 之后又改了大小），记下来停在这里；
+     - `canvas=` × `xaml=` 不等于 B 的宽高 = XAML 的缩放和 `FrozenScreen.Scale` 对不上，画布只盖了 B 的一部分（右下角点不到）；
+     - 都对 = 遮罩在、画布也对，那就是收不到鼠标，用 Spy++ 看点 B 时消息到了哪扇窗。
+     这三种都别硬改，照实记进这里，审查方再看。
+  3. HANDTEST 1769–1777（B 在 A 右边、左边各一遍；有条件加上下放、缩放不同）。
+  4. 只有一块屏的机器上走 1777（改动只在两块屏以上起作用，单屏回归一遍）。
+- **风险 / 退路**：
+  - 鼠标在两块屏之间来回挪会反复 `Activate()` 两扇遮罩（都是本进程的窗口，前台是我们的，不会被系统拦）。要是看到闪烁、任务栏冒出来、或者焦点丢了（按键都没反应），
+    退回：`GiveKeyboard` 只换 `_key`（提示和放大镜），不调 `Activate()`，键盘等点了那块屏再过去（点一下系统本来就会激活它）。
+  - 截图期间开着的菜单（存储 ▾、比例）、输入框（文字、宽高）都要有选区才有；选区在别的屏时不换键盘，所以不会被换屏打断。
+  - 更新日志（下一版）：fix「多屏时截图的放大镜和按键跟着鼠标换屏」/ "On multiple monitors, the screenshot magnifier and keys now follow the pointer to the screen it is on"。
+
 ## issue #38：双屏时状态屏「清洁屏幕」副屏边上一道白边（审查方在 Mac 上写、没编译，2026-11-20）
 
 报告人 lixiao0618：Windows 11、两台显示器，进「清洁屏幕」后副屏右侧有一条白边。照片是两台横放的屏贴在一起那一段：

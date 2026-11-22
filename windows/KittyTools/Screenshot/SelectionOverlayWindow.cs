@@ -907,7 +907,8 @@ internal sealed partial class SelectionOverlayWindow : Window
             _screen.Bounds.Left, _screen.Bounds.Top, _screen.Bounds.Width, _screen.Bounds.Height));
         DisableRoundCorners();
         PlaceAgain();
-        AppWindow.Show();
+        // 不带参数的 AppWindow.Show() 会激活窗口：多屏时后露出来的那块屏把前台抢走，键盘落在排在最后的那块屏，不在光标那块屏
+        AppWindow.Show(activateWindow: key);
         if (key)
         {
             Activate();
@@ -1633,6 +1634,12 @@ internal sealed partial class SelectionOverlayWindow : Window
             _framesUntilUncloak = 4;
             _firstDrawAt = Environment.TickCount64;
             CompositionTarget.Rendering += OnRenderingWhileCloaked;
+            // 多屏核对（2026-11-22）：每块屏的遮罩摆到哪、画布多大、XAML 按几倍缩放。window 和 bounds 一样、canvas × xaml ≈ 屏幕像素才对
+            PInvoke.GetWindowRect(_hwnd, out var frame);
+            var b = _screen.Bounds;
+            Log.Info($"screenshot.overlay-frame screen={_screen.Index} key={_key} bounds={b.Left},{b.Top},{b.Right},{b.Bottom} " +
+                     $"window={frame.left},{frame.top},{frame.right},{frame.bottom} canvas={width:0}x{height:0} " +
+                     $"xaml={_canvas.XamlRoot?.RasterizationScale:0.##} scale={_scale:0.##}");
         }
 
         var selection = _session.SelectionScreen == _screen ? _session.Selection : (RectD?)null;
@@ -1671,9 +1678,15 @@ internal sealed partial class SelectionOverlayWindow : Window
             DrawCrop(ds, own);
         }
 
-        if (_key)
+        // 不拿键盘的屏也要看得见挡下操作的那句（RefuseWipe：别的屏有标注时在这块屏拖框）
+        if (_key || (_flash is not null && Environment.TickCount64 < _flashUntil))
         {
             DrawHint(ds, width, height);
+        }
+
+        // 放大镜、十字准线只在光标所在的屏上（以前光标到了别的屏，它们还卡在这块屏的边上）；拖着时照旧画
+        if (_key && (CursorOnScreen || _drag != DragKind.None))
+        {
             if (ShowsCrosshair)
             {
                 DrawCrosshair(ds, width, height);
@@ -2266,6 +2279,14 @@ internal sealed partial class SelectionOverlayWindow : Window
         var previousCursor = _cursor;
         var previousHover = _hover;
         ReadCursor();
+        // 多屏：鼠标挪到这块屏，这块屏拿键盘（提示、放大镜、Esc / D / 数字键跟过来，mac mouseMoved 里 makeKey）。
+        // 别的屏有选区、哪块屏正拖着时不换：单击不抢走那边的选区，拖开了才算在这块屏开始（拖开后选区在这块屏，下一轮就换过来）
+        if (!_key && _session.Screens.Count > 1 && CursorOnScreen && !_session.IsDragging &&
+            (!_session.HasSelection || _session.SelectionScreen == _screen))
+        {
+            _session.GiveKeyboard(this);
+        }
+
         var crosshair = ShowsCrosshair;
         var crosshairChanged = crosshair != _crosshair;
         _crosshair = crosshair;
