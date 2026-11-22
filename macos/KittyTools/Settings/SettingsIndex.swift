@@ -191,6 +191,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
   case appShortcutsHold = "appShortcuts.hold"
   case appShortcutsKey = "appShortcuts.key"
   case appShortcutsDelay = "appShortcuts.delay"
+  case keyRemappingKeyboard = "keyRemapping.keyboard"
   // 刘海岛
   case islandNowPlaying = "island.nowPlaying"
   case islandTrackPeek = "island.trackPeek"
@@ -1015,6 +1016,8 @@ enum SettingsItem: String, CaseIterable, Identifiable {
       Self.row(
         .smoothScroll, "在这些 App 里停用",
         LocalizedStringResource("search.smoothScroll.excluded", defaultValue: "停用,游戏,虚拟机,远程桌面"))
+    case .keyRemappingKeyboard:
+      Self.row(.keyRemapping, "键盘", keys: [Prefs.keyRemappingRules])
     case .appShortcutsHold:
       Self.row(
         .appShortcuts, "按住一个键叫出来",

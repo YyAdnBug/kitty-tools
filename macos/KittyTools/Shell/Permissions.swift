@@ -17,7 +17,7 @@ enum Permissions {
   /// 提示里「去系统设置授权」按钮要打开的那一项
   enum Kind {
     case accessibility, screenRecording, filesAndFolders, automation, fullDiskAccess, microphone
-    case calendar, bluetooth, finderExtension
+    case calendar, bluetooth, finderExtension, inputMonitoring
 
     var settingsTitle: String { String(localized: settingsTitleResource) }
 
@@ -32,6 +32,7 @@ enum Permissions {
       case .calendar: "打开日历设置"
       case .bluetooth: "打开蓝牙设置"
       case .finderExtension: "打开访达扩展设置"
+      case .inputMonitoring: "打开输入监听设置"
       }
     }
 
@@ -46,6 +47,7 @@ enum Permissions {
       case .microphone: anchor = "Privacy_Microphone"
       case .calendar: anchor = "Privacy_Calendars"
       case .bluetooth: anchor = "Privacy_Bluetooth"
+      case .inputMonitoring: anchor = "Privacy_ListenEvent"
       // 系统设置 › 登录项与扩展 里访达扩展那一页。15.0、15.1 的系统设置里没有这个入口（点了没反应）：
       // 访达右键页另给一条终端命令（FinderMenuTab.settingsHaveEntry）
       case .finderExtension: return FIFinderSyncController.showExtensionManagementInterface()
@@ -63,6 +65,7 @@ enum Permissions {
       case .calendar: NextEvent.isAuthorized
       case .bluetooth: BluetoothSnooze.isAuthorized
       case .finderExtension: FIFinderSyncController.isExtensionEnabled
+      case .inputMonitoring: CGPreflightListenEventAccess()
       case .automation, .filesAndFolders, .fullDiskAccess: nil
       }
     }

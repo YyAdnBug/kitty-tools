@@ -1,6 +1,366 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "%@ 已有其他映射" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ already has another mapping"
+          }
+        }
+      }
+    },
+    "%@（未连接）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (disconnected)"
+          }
+        }
+      }
+    },
+    "Globe / Fn 组合键需要辅助功能权限" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Globe / Fn combinations require Accessibility permission"
+          }
+        }
+      }
+    },
+    "HID 用法编号" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HID usage code"
+          }
+        }
+      }
+    },
+    "macOS 未应用映射。请检查输入监听权限。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS didn’t apply the mapping. Check Input Monitoring permission."
+          }
+        }
+      }
+    },
+    "macOS 未应用键位映射" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS didn’t apply the key mapping"
+          }
+        }
+      }
+    },
+    "为指定键盘设置系统级键位映射，支持 🌐 Globe / Fn" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remap keys on a selected keyboard, including 🌐 Globe / Fn"
+          }
+        }
+      }
+    },
+    "为每把键盘分别选择源键和目标键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose source and target keys for each keyboard"
+          }
+        }
+      }
+    },
+    "功能键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Function Keys"
+          }
+        }
+      }
+    },
+    "在选定键盘上把一个键改成另一个键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Map one key to another on the selected keyboard"
+          }
+        }
+      }
+    },
+    "字母、数字和符号" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Letters, Numbers, and Symbols"
+          }
+        }
+      }
+    },
+    "导航键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Navigation Keys"
+          }
+        }
+      }
+    },
+    "打开输入监听设置" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Input Monitoring Settings"
+          }
+        }
+      }
+    },
+    "数字小键盘" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Numeric Keypad"
+          }
+        }
+      }
+    },
+    "无法保存键位映射" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t save key mappings"
+          }
+        }
+      }
+    },
+    "无法读取保存的键位映射" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t load saved key mappings"
+          }
+        }
+      }
+    },
+    "映射规则" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mapping Rules"
+          }
+        }
+      }
+    },
+    "更新映射" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update Mapping"
+          }
+        }
+      }
+    },
+    "添加映射" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Mapping"
+          }
+        }
+      }
+    },
+    "源键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Source key"
+          }
+        }
+      }
+    },
+    "目标键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Target key"
+          }
+        }
+      }
+    },
+    "移除映射" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove Mapping"
+          }
+        }
+      }
+    },
+    "移除后撤销此插件应用的映射，保留规则以便再次添加" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Removing the plugin undoes its mappings and keeps the rules for next time"
+          }
+        }
+      }
+    },
+    "自定义 HID 用法" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Custom HID Usage"
+          }
+        }
+      }
+    },
+    "支持 F20–F24 和苹果的 🌐 Globe / Fn" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supports F20–F24 and Apple’s 🌐 Globe / Fn"
+          }
+        }
+      }
+    },
+    "修饰键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modifier Keys"
+          }
+        }
+      }
+    },
+    "媒体键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Media Keys"
+          }
+        }
+      }
+    },
+    "请输入有效的十六进制 HID 用法编号" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter a valid hexadecimal HID usage code"
+          }
+        }
+      }
+    },
+    "输入监听" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Input Monitoring"
+          }
+        }
+      }
+    },
+    "选择键位" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select a Key"
+          }
+        }
+      }
+    },
+    "选择键盘" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select a Keyboard"
+          }
+        }
+      }
+    },
+    "选中键盘，再添加一条映射规则" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select a keyboard and add a mapping rule"
+          }
+        }
+      }
+    },
+    "键位映射" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Key Remapping"
+          }
+        }
+      }
+    },
+    "键位映射,改键,键盘,源键,目标键,Globe,Fn,F24" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "key remapping,remap,keyboard,source key,target key,Globe,Fn,F24"
+          }
+        }
+      }
+    },
+    "键盘" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keyboard"
+          }
+        }
+      }
+    },
+    "键盘连上后应用映射。需要处理 Globe / Fn 组合键时，会用到辅助功能权限" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Applies mappings when the keyboard connects. Globe / Fn combinations use Accessibility permission."
+          }
+        }
+      }
+    },
     "" : {
       "shouldTranslate" : false
     },
