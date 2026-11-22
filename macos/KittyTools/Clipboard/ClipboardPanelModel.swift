@@ -61,6 +61,8 @@ import Observation
     case edit(UUID)
     case newSnippet, manageGroups
     case newGroup(Set<UUID>)
+    /// 片段的关键词（片段展开插件添加着时）
+    case keyword(UUID)
     /// 片段里有 {input}：粘贴 / 复制前一个个填（X20）
     case fill(Fill)
 
@@ -979,8 +981,9 @@ import Observation
       y: (visible.midY - height / 2 - offset).rounded(), width: width, height: height)
   }
 
-  /// 新建片段（名称存成备注，搜索时能搜到；体检 C2）：被当前范围、筛选、搜索挡住看不见时（像没存上），用刘海说一声
-  func saveSnippet(_ text: String, name: String = "") {
+  /// 新建片段（名称存成备注，搜索时能搜到；体检 C2）：被当前范围、筛选、搜索挡住看不见时（像没存上），用刘海说一声。
+  /// keyword：片段展开的关键词（对话框里查过存得了；空的不动已有的）
+  func saveSnippet(_ text: String, name: String = "", keyword: String = "") {
     store.saveSnippet(text)
     // 刚存的那条按正文找：store.record 按复制时间插，不保证在最前（同 ClipboardStore.saveSnippet）
     guard let saved = store.items.first(where: { $0.kind == .text && $0.text == text }) else {
@@ -988,6 +991,11 @@ import Observation
     }
     let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
     if !name.isEmpty { store.update([saved.id]) { $0.note = name } }
+    if let keyword = SnippetKeyword.normalized(keyword),
+      keywordCheck(keyword, editing: saved.id).problem == nil
+    {
+      store.update([saved.id]) { $0.keyword = keyword }
+    }
     guard !visibleItems.contains(where: { $0.id == saved.id }) else { return }
     island?.show("已存为片段", detail: "\(Island.excerpt(text))", symbol: "text.badge.star")
   }
@@ -1207,6 +1215,24 @@ import Observation
     showUndo("已删除收藏夹「\(group.name)」", symbol: "folder.badge.minus")
   }
 
+  /// 关键词框里打的这个怎么样（editing：正在编的这一条，不和自己比；新建时 nil）。只和别的片段比
+  func keywordCheck(_ keyword: String, editing id: UUID?) -> SnippetKeyword.Check {
+    let others = store.items.compactMap { item -> SnippetKeyword.Other? in
+      guard item.isSnippet, item.id != id, let keyword = item.keyword else { return nil }
+      return SnippetKeyword.Other(
+        keyword: keyword, title: SnippetKeyword.title(note: item.note, text: item.text))
+    }
+    return SnippetKeyword.check(keyword, others: others)
+  }
+
+  /// 存关键词（「关键词…」对话框）：空的就是去掉；存不了的不存（对话框里已经拦着）
+  func setKeyword(_ raw: String, of id: UUID) {
+    let keyword = SnippetKeyword.normalized(raw)
+    guard keyword == nil || keywordCheck(raw, editing: id).problem == nil else { return }
+    store.update([id]) { $0.keyword = keyword }
+    noteActivity()
+  }
+
   /// 编辑正文（按条目缓存的形态、链接、美化结果连正文一起记，换了正文自己就不认了：体检 B18）
   func edit(_ id: UUID, text: String) {
     store.update([id]) { $0.text = text }
@@ -1375,6 +1401,10 @@ import Observation
     if let single {
       // 备注：所有条目都能写（体检 A3），不设快捷键（⌘R 给了在访达中显示）
       add("备注…", "note.text", section: 2) { [unowned self] in dialog = .note(single.id) }
+      // 片段的关键词：片段展开插件添加着才有（关键词只在它那里有用）
+      if single.isSnippet, Feature.snippetExpand.isOn {
+        add("关键词…", "keyboard", section: 2) { [unowned self] in dialog = .keyword(single.id) }
+      }
       if single.kind == .text {
         add("编辑内容…", "pencil", "⌘E", section: 2) { [unowned self] in
           dialog = .edit(single.id)

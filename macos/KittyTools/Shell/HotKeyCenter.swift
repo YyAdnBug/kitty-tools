@@ -865,6 +865,15 @@ enum HotKeyAction: String, CaseIterable {
     var holder: String?
     var bundleID: String? = nil
 
+    /// 此刻开着安全输入的那个 App（不管挡没挡着快捷键；片段展开的设置页也用）；没开 nil
+    static func current() -> SecureInputBlock? {
+      guard IsSecureEventInputEnabled() else { return nil }
+      let session = CGSessionCopyCurrentDictionary() as? [String: Any]
+      let app = ((session?["kCGSSessionSecureInputPID"] as? NSNumber)?.int32Value)
+        .flatMap { NSRunningApplication(processIdentifier: $0) }
+      return SecureInputBlock(holder: app?.localizedName, bundleID: app?.bundleIdentifier)
+    }
+
     /// 「「Google Chrome」开着安全输入，⌥ 快捷键暂时不响应」
     var summary: String {
       holder.map { String(localized: "「\($0)」开着安全输入，⌥ 快捷键暂时不响应") }
@@ -921,14 +930,11 @@ enum HotKeyAction: String, CaseIterable {
 
   /// 有进程开着安全输入、生效的快捷键里又有只带 ⌥ 的出字的键（这时它们按了没反应）才有
   func secureInputBlock() -> SecureInputBlock? {
-    guard IsSecureEventInputEnabled(),
+    guard
       bindings.values.contains(where: \.yieldsToSecureInput)
         || commandBindings.values.contains(where: \.yieldsToSecureInput)
     else { return nil }
-    let session = CGSessionCopyCurrentDictionary() as? [String: Any]
-    let app = ((session?["kCGSSessionSecureInputPID"] as? NSNumber)?.int32Value)
-      .flatMap { NSRunningApplication(processIdentifier: $0) }
-    return SecureInputBlock(holder: app?.localizedName, bundleID: app?.bundleIdentifier)
+    return .current()
   }
 
   /// 看一眼安全输入挡没挡着快捷键，和上次不一样就交给 onSecureInputChange（菜单栏图标的小锁）。挡着时 3 秒后再看一次，

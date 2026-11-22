@@ -29,6 +29,9 @@ struct ClipItem: Identifiable, Hashable, Sendable {
   var note: String?
   /// 所在的收藏夹（命名收藏夹，体检 A1）。不变式：有 groupID 的条目一定 favorite = true
   var groupID: UUID?
+  /// 片段的关键词（片段展开插件，2026-11-22）：在任何 App 里打出它就换成这条片段（SnippetKeyword 管规矩）。只有片段的才算数；
+  /// 移出片段时留着不清（同备注），再存成片段就回来
+  var keyword: String?
 
   struct ImageInfo: Hashable, Sendable {
     var width: Int

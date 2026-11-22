@@ -965,6 +965,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       case .smoothScroll: AnyView(SmoothScrollTab(smoothScroll: smoothScroll))
       case .appShortcuts: AnyView(AppShortcutsTab())
       case .keyRemapping: AnyView(KeyRemappingTab(remapping: keyRemapping))
+      case .snippetExpand: AnyView(SnippetExpandTab(store: clipboardStore))
       case .translate:
         AnyView(
           TranslateTab(services: serviceStore, history: historyStore, speaker: speaker)

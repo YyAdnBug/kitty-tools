@@ -38,7 +38,7 @@ struct PluginTests {
     #expect(
       local == [
         .launchpad, .dockPreview, .finderMenu, .bluetoothSnooze, .smoothScroll, .appShortcuts,
-        .keyRemapping,
+        .keyRemapping, .snippetExpand,
       ])
     for plugin in Feature.plugins {
       #expect(
@@ -72,6 +72,7 @@ struct PluginTests {
     #expect(Feature.statusScreen.pluginPermissions.map(\.kind) == [.accessibility])
     #expect(Feature.smoothScroll.pluginPermissions.map(\.kind) == [.accessibility])
     #expect(Feature.appShortcuts.pluginPermissions.map(\.kind) == [.accessibility])
+    #expect(Feature.snippetExpand.pluginPermissions.map(\.kind) == [.accessibility])
     for plugin in [Feature.notes, .reminders, .launchpad, .keepAwake] {
       #expect(plugin.pluginPermissions.isEmpty, "\(plugin)")
     }

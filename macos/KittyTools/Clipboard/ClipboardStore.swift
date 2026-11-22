@@ -62,9 +62,10 @@ import Observation
   /// 只给变了的重编，每次整个换成这次的）
   @ObservationIgnored private var syncEncoded: [String: (clip: SyncedClip, text: String?)] = [:]
 
+  /// keyword（片段展开，2026-11-22）排在最后：旧版本（0.10.x）的读写都写明列名、碰不到它，打开新库照常能用
   private static let columns = """
     id, kind, text, file_paths, image_width, image_height, image_bytes, image_sha256, ocr_text,
-    rich_type, source_name, source_bundle_id, copied_at, favorite, snippet, note, group_id
+    rich_type, source_name, source_bundle_id, copied_at, favorite, snippet, note, group_id, keyword
     """
 
   init(db: Database, images: ImageStore) throws {
@@ -78,7 +79,7 @@ import Observation
         ocr_text TEXT, rich_type TEXT, rich_data BLOB, source_name TEXT, source_bundle_id TEXT,
         copied_at REAL NOT NULL, -- Date.timeIntervalSinceReferenceDate，读写无精度损失
         favorite INTEGER NOT NULL DEFAULT 0,
-        snippet INTEGER NOT NULL DEFAULT 0, note TEXT, group_id TEXT)
+        snippet INTEGER NOT NULL DEFAULT 0, note TEXT, group_id TEXT, keyword TEXT)
       """)
     try db.execute("CREATE INDEX IF NOT EXISTS clips_copied_at ON clips(copied_at DESC)")
     try db.execute(
@@ -92,8 +93,13 @@ import Observation
   }
 
   /// 旧库升级（幂等，每次启动都跑）：clip_groups 补 position 列（按创建时间排好）；
-  /// 分组并进收藏（体检 A1）：已归组的条目都是收藏
+  /// 分组并进收藏（体检 A1）：已归组的条目都是收藏；clips 补 keyword 列（片段展开，2026-11-22；不升 user_version，
+  /// 旧版本打开照常读写，它的 UPDATE、同步的 ON CONFLICT 都只动写明的列，关键词留着）
   static func migrate(_ db: Database) throws {
+    let clipColumns = try db.query("PRAGMA table_info(clips)") { $0.text(1) }
+    if !clipColumns.contains("keyword") {
+      try db.execute("ALTER TABLE clips ADD COLUMN keyword TEXT")
+    }
     let columns = try db.query("PRAGMA table_info(clip_groups)") { $0.text(1) }
     if !columns.contains("position") {
       try db.transaction {
@@ -280,7 +286,7 @@ import Observation
     return nil
   }
 
-  /// 改条目的可编辑字段并落库（正文、收藏、备注、片段、收藏夹）。正文改了就丢掉格式
+  /// 改条目的可编辑字段并落库（正文、收藏、备注、片段、收藏夹、关键词）。正文改了就丢掉格式
   /// 几条一起改时一个事务写下去（全选后批量收藏、移到收藏夹：逐条提交的话每条落一次盘，第四轮体检 F4①）
   func update(_ ids: Set<UUID>, _ change: (inout ClipItem) -> Void) {
     var changed: [ClipItem] = []
@@ -300,11 +306,11 @@ import Observation
   private func saveEdits(_ item: ClipItem) throws {
     try db.execute(
       """
-      UPDATE clips SET text = ?, favorite = ?, note = ?, snippet = ?, group_id = ?, rich_type = ?,
-        rich_data = CASE WHEN ? IS NULL THEN NULL ELSE rich_data END WHERE id = ?
+      UPDATE clips SET text = ?, favorite = ?, note = ?, snippet = ?, group_id = ?, keyword = ?,
+        rich_type = ?, rich_data = CASE WHEN ? IS NULL THEN NULL ELSE rich_data END WHERE id = ?
       """,
       [
-        item.text, item.favorite, item.note, item.isSnippet, item.groupID?.uuidString,
+        item.text, item.favorite, item.note, item.isSnippet, item.groupID?.uuidString, item.keyword,
         item.richType?.rawValue, item.richType?.rawValue, item.id.uuidString,
       ])
   }
@@ -370,7 +376,7 @@ import Observation
 
   /// 导入片段和文字收藏（设置的导出 / 导入，SettingsArchive）。收藏夹按名字对（去首尾空白）：已有同名的用它，没有的
   /// 新建在最后（names 是文件里收藏夹的顺序，空的也建）。条目按正文对：已有同样正文的（普通历史里的也算）只补标记——
-  /// 收藏、片段取并集，原来没备注、没归收藏夹的才用导入的——时间和位置不动；没有的新建，时间用导入的（不晚于 now）、
+  /// 收藏、片段取并集，原来没备注、没关键词、没归收藏夹的才用导入的——时间和位置不动；没有的新建，时间用导入的（不晚于 now）、
   /// 按时间插到该在的位置，没有来源。文件里正文重复的几条并成一条。先提交撤销栈：删了还没提交的同文条目不该被导入
   /// 变成两条，导入本身也不能 ⌘Z。写库放在一个事务里（几千条也只落一次盘）。返回新建了几条、给几条已有的补了标记
   @discardableResult
@@ -387,6 +393,7 @@ import Observation
         merged[index].snippet = merged[index].snippet || clip.snippet
         merged[index].note = merged[index].note ?? clip.note
         merged[index].group = merged[index].group ?? clip.group
+        merged[index].keyword = merged[index].keyword ?? clip.keyword
       } else {
         position[clip.text] = merged.count
         merged.append(clip)
@@ -411,6 +418,7 @@ import Observation
             item.text = clip.text
             item.note = clip.note
             item.isSnippet = clip.snippet
+            item.keyword = clip.keyword
             item.groupID = group
             // 不变式：归了收藏夹的一定是收藏
             item.favorite = clip.favorite || group != nil
@@ -427,6 +435,8 @@ import Observation
           var changed = current
           changed.isSnippet = current.isSnippet || clip.snippet
           changed.note = (current.note ?? "").isEmpty ? clip.note : current.note
+          // 关键词同备注：本机这条没有才用文件里的
+          changed.keyword = current.keyword ?? clip.keyword
           changed.groupID = current.groupID ?? group
           changed.favorite = current.favorite || clip.favorite || changed.groupID != nil
           guard changed != current, let index = items.firstIndex(where: { $0.id == id }) else {
@@ -666,7 +676,7 @@ import Observation
       item.image?.width, item.image?.height, item.image?.byteCount, item.image?.sha256,
       item.ocrText, item.richType?.rawValue, item.sourceName, item.sourceBundleID,
       item.copiedAt.timeIntervalSinceReferenceDate, item.favorite, item.isSnippet, item.note,
-      item.groupID?.uuidString,
+      item.groupID?.uuidString, item.keyword,
     ]
   }
 
@@ -695,6 +705,7 @@ import Observation
     item.isSnippet = row.int(14) == 1
     item.note = row.text(15)
     item.groupID = row.text(16).flatMap(UUID.init(uuidString:))
+    item.keyword = row.text(17)
     return item
   }
 }
@@ -711,11 +722,15 @@ extension ClipboardStore: SyncSource {
     var note: String?
     /// 所在的收藏夹（编号）
     var group: String?
+    /// 片段的关键词（片段展开，2026-11-22）。没有时不写这一项：没设关键词的那几条编出来和 0.10.x 一字不差（账本的哈希不变、
+    /// 不会被当成本机改了）；有关键词的那条旧版本解出来再编回去不一样（decodeExact），那一类整个不落、说先更新——
+    /// 不会把关键词冲掉
+    var keyword: String? = nil
 
     /// 一样吗（正文、备注按字节比：只换了写法也要重编、发出去）
     func same(as other: SyncedClip) -> Bool {
       favorite == other.favorite && snippet == other.snippet && group == other.group
-        && SyncRecords.sameBytes(text, other.text)
+        && keyword == other.keyword && SyncRecords.sameBytes(text, other.text)
         && (note.map { mine in other.note.map { SyncRecords.sameBytes(mine, $0) } ?? false }
           ?? (other.note == nil))
     }
@@ -761,7 +776,7 @@ extension ClipboardStore: SyncSource {
       let id = item.id.uuidString
       let clip = SyncedClip(
         text: text, favorite: item.favorite, snippet: item.isSnippet, note: item.note,
-        group: item.groupID?.uuidString)
+        group: item.groupID?.uuidString, keyword: item.keyword)
       let cached = syncEncoded[id]
       let value = cached?.clip.same(as: clip) == true ? cached?.text : Self.encoded(clip)
       encoded[id] = (clip, value)
@@ -944,6 +959,8 @@ extension ClipboardStore: SyncSource {
       item.text = synced.text
       item.isSnippet = synced.snippet
       item.note = synced.note
+      // 文件夹里来的按不可信对待：不合规的关键词只是不带（下一轮本机这份会把它写回合规的样子）
+      item.keyword = synced.keyword.flatMap { SnippetKeyword.isValid($0) ? $0 : nil }
       item.groupID = resolved(synced.group.flatMap(UUID.init(uuidString:)))
       item.favorite = synced.favorite || item.groupID != nil
       // 正文一样的格子里还在的、不是这一条的第一个（格子里的正文不会变：改了正文的都换到了新的格子）
@@ -954,6 +971,7 @@ extension ClipboardStore: SyncSource {
         keeper.favorite = keeper.favorite || loser.favorite
         keeper.isSnippet = keeper.isSnippet || loser.isSnippet
         keeper.note = keeper.note ?? loser.note
+        keeper.keyword = keeper.keyword ?? loser.keyword
         keeper.groupID = keeper.groupID ?? loser.groupID
         keeper.favorite = keeper.favorite || keeper.groupID != nil
         keeper.copiedAt = max(keeper.copiedAt, loser.copiedAt)
@@ -993,9 +1011,10 @@ extension ClipboardStore: SyncSource {
         for item in touched.values where !removedItems.contains(item.id) {
           try db.execute(
             """
-            INSERT INTO clips(\(Self.columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO clips(\(Self.columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET text = excluded.text, favorite = excluded.favorite,
               snippet = excluded.snippet, note = excluded.note, group_id = excluded.group_id,
+              keyword = excluded.keyword,
               copied_at = excluded.copied_at, rich_type = excluded.rich_type,
               rich_data = CASE WHEN excluded.rich_type IS NULL THEN NULL ELSE rich_data END
             """, Self.encode(item))

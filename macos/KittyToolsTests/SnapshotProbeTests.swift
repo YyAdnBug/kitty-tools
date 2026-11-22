@@ -588,6 +588,12 @@ struct SnapshotProbeTests {
       case .appShortcuts: AnyView(AppShortcutsTab(trusted: false))
       // 没 start()：不列键盘、不碰系统的键位
       case .keyRemapping: AnyView(KeyRemappingTab(remapping: KeyRemapping(rulesKey: "unused")))
+      // 授权、名单、安全输入按固定的画
+      case .snippetExpand:
+        AnyView(
+          SnippetExpandTab(
+            store: store, authorized: false, excluded: ClipboardFilter.defaultExcluded,
+            secure: .some(nil)))
       case .translate:
         AnyView(TranslateTab(services: services, history: history, speaker: speaker))
       case .hotkeys: AnyView(HotkeysTab(center: hotKeys))

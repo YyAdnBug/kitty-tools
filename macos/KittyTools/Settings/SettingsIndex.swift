@@ -194,6 +194,8 @@ enum SettingsItem: String, CaseIterable, Identifiable {
   case appShortcutsKey = "appShortcuts.key"
   case appShortcutsDelay = "appShortcuts.delay"
   case keyRemappingKeyboard = "keyRemapping.keyboard"
+  // 片段展开
+  case snippetExpandExcluded = "snippetExpand.excluded"
   // 刘海岛
   case islandNowPlaying = "island.nowPlaying"
   case islandTrackPeek = "island.trackPeek"
@@ -1047,6 +1049,10 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         .appShortcuts, "按住多久",
         LocalizedStringResource("search.appShortcuts.delay", defaultValue: "多久"),
         keys: [Prefs.appShortcutsDelay])
+    case .snippetExpandExcluded:
+      Self.row(
+        .snippetExpand, "在这些 App 里不展开",
+        LocalizedStringResource("search.snippetExpand.excluded", defaultValue: "不展开,停用,密码管理器,终端"))
     case .islandNowPlaying:
       Self.row(
         .island, "在刘海上显示正在播放",

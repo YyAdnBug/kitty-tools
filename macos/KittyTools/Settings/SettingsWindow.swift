@@ -21,7 +21,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   // 2026-11-17 插件页改版（A1）：插件组第一行固定是「全部插件」（plugins，不是哪个功能的页）
   case general, clipboard, launcher, translate, screenshot, record, plugins, notes, reminders,
     statusScreen, launchpad, dockPreview, finderMenu, keepAwake, bluetoothSnooze, smoothScroll,
-    appShortcuts, keyRemapping,
+    appShortcuts, keyRemapping, snippetExpand,
     island,
     hotkeys, about
 
@@ -37,7 +37,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     [.general], [.clipboard, .launcher, .translate], [.screenshot, .record],
     [
       .plugins, .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu,
-      .keepAwake, .bluetoothSnooze, .smoothScroll, .appShortcuts, .keyRemapping, .island,
+      .keepAwake, .bluetoothSnooze, .smoothScroll, .appShortcuts, .keyRemapping, .snippetExpand,
+      .island,
     ],
     [.hotkeys, .about],
   ]
@@ -70,7 +71,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .clipboard, .launcher, .translate: .text
     case .screenshot, .record: .capture
     case .plugins, .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu,
-      .keepAwake, .bluetoothSnooze, .smoothScroll, .appShortcuts, .keyRemapping, .island:
+      .keepAwake, .bluetoothSnooze, .smoothScroll, .appShortcuts, .keyRemapping, .snippetExpand,
+      .island:
       .plugins
     case .general, .hotkeys, .about: nil
     }
@@ -133,6 +135,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .smoothScroll: "平滑滚动"
     case .appShortcuts: "App 快捷键"
     case .keyRemapping: "键位映射"
+    case .snippetExpand: "片段展开"
     case .translate: "翻译"
     case .hotkeys: "快捷键"
     case .about: "关于"
@@ -160,6 +163,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .smoothScroll: "kitty.smooth.scroll"
     case .appShortcuts: "kitty.app.shortcuts"
     case .keyRemapping: "keyboard"
+    case .snippetExpand: "kitty.snippet.expand"
     case .translate: "kitty.translate"
     case .hotkeys: "kitty.hotkeys"
     case .about: "kitty.about"  // 品牌页：猫头
@@ -185,6 +189,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .bluetoothSnooze: Style.Family.bluetoothSnooze
     case .smoothScroll: Style.Family.smoothScroll
     case .appShortcuts, .keyRemapping: Style.Family.keyboard
+    // 片段是剪贴板里的东西：用剪贴板的家族色
+    case .snippetExpand: Style.Family.clipboard
     case .translate: Style.Family.translate
     case .hotkeys: Style.Family.keyboard
     case .about: Color(nsColor: AccentPalette.brandPink)  // 关于是品牌页，不随强调色变
@@ -212,6 +218,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .smoothScroll: "让鼠标滚轮滑着滚"
     case .appShortcuts: "按住一个键，看当前 App 的全部快捷键"
     case .keyRemapping: "在选定键盘上把一个键改成另一个键"
+    case .snippetExpand: "打出片段的关键词，换成片段的内容"
     case .translate: "翻成什么语言、用哪些服务、怎么弹出来"
     case .hotkeys: "所有全局快捷键"
     case .about: "版本与更新内容"
@@ -260,6 +267,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
       "按住,长按,⌘,Command,菜单,菜单栏,快捷键列表,快捷键提示,当前 App,多久,辅助功能"
     case .keyRemapping:
       "键位映射,改键,键盘,源键,目标键,Globe,Fn,F24"
+    case .snippetExpand:
+      "片段,关键词,展开,自动展开,替换,缩写,文本扩展,文字替换,邮箱,签名,模板,占位符,停用,密码,密码管理器,输入法,snippet,expand"
     case .translate:
       "语言,第一语言,第二语言,字号,换行,自动复制,复制即译,历史,导出,CSV,Anki,位置,浮窗位置,鼠标,清空,服务,密钥,查词,词典,单词,音标,例句,生词本,收藏,智谱,OpenAI,Anthropic,DeepL,Google,百度,有道,微软,火山,腾讯,AI,模型"
     case .hotkeys:

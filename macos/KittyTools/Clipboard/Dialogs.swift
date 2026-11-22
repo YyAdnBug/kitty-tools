@@ -1,4 +1,5 @@
-// 剪贴板面板内的对话框：备注、编辑正文、新建片段、新建 / 管理收藏夹、片段填空（X20）（mac-whisker §6 剪贴板）。
+// 剪贴板面板内的对话框：备注、编辑正文、新建片段、片段的关键词（片段展开插件添加着时）、新建 / 管理收藏夹、片段填空（X20）
+// （mac-whisker §6 剪贴板）。
 // 直接画在面板里、不开 sheet 窗口：非激活浮层的 sheet 拿不稳键盘焦点。一张宽 708、圆角 card 的卡从搜索栏下沿落下
 // （settle，y −8→0 + 淡入；关掉淡出），只压暗列表区；输入框焦点环品牌粉，保存是品牌粉主按钮。
 // 输入框用 isDialogField：出现时抢焦点，关闭后焦点回到它之前的输入框（搜索框，或管理收藏夹下面的新建框）；Esc 关对话框。
@@ -65,7 +66,7 @@ struct DialogOverlay: View {
             nil
           }
         TextDialog(title: "编辑内容", note: note, initial: item.text ?? "", onCancel: close) {
-          text, _ in
+          text, _, _ in
           model.edit(id, text: text)
           close()
         }
@@ -73,10 +74,21 @@ struct DialogOverlay: View {
     case .newSnippet:
       TextDialog(
         title: "新建片段", note: Snippet.placeholderHelp, initial: "",
-        asksName: true, onCancel: close
-      ) { text, name in
-        model.saveSnippet(text, name: name)
-        close()
+        asksName: true, asksKeyword: Feature.snippetExpand.isOn,
+        checkKeyword: { model.keywordCheck($0, editing: nil) }, onCancel: close,
+        onSave: { text, name, keyword in
+          model.saveSnippet(text, name: name, keyword: keyword)
+          close()
+        })
+    case .keyword(let id):
+      if let item = item(id) {
+        KeywordDialog(
+          initial: item.keyword ?? "", check: { model.keywordCheck($0, editing: id) },
+          onCancel: close,
+          onSave: { keyword in
+            model.setKeyword(keyword, of: id)
+            close()
+          })
       }
     case .newGroup(let ids):
       NewGroupDialog(model: model, onCancel: close) { group in
@@ -103,39 +115,51 @@ struct DialogOverlay: View {
 
 /// 多行文本对话框（编辑 / 新建片段）：⌘↩ 保存。正文去掉空白后为空、或和原文一样时「保存」置灰、⌘↩ 不生效（体检 C2）。
 /// asksName（新建片段）：顶上一行可选的名称（存成备注，搜索时能搜到），焦点先在这里，Tab 切到正文。
+/// asksKeyword（新建片段、片段展开插件添加着）：名称下面一行可选的关键词（只收英文类输入法），Tab 依次是名称 → 关键词 → 正文；
+/// 关键词存不了（太短、有打不出来的字、和别的片段一样）时红字、「保存」置灰，要提醒的（撞前缀、全是字母）橙字。
 /// 输入框下面一行：「保存 ⌘↩」的键位提示，后面接和这条有关的说明（note，没有就只有键位）
 private struct TextDialog: View {
   let title: LocalizedStringResource
   let note: LocalizedStringResource?
   let initial: String
   var asksName = false
+  var asksKeyword = false
+  var checkKeyword: (String) -> SnippetKeyword.Check = { _ in .init() }
   let onCancel: () -> Void
-  /// 正文、名称
-  let onSave: (String, String) -> Void
+  /// 正文、名称、关键词
+  let onSave: (String, String, String) -> Void
   @State private var text: String
   @State private var name = ""
+  @State private var keyword = ""
   /// 名称框里按 Tab 加一：正文框拿焦点
   @State private var bodyFocus = 0
+  /// 名称框里按 Tab 加一：关键词框拿焦点
+  @State private var keywordFocus = 0
+  @State private var keywordFocused = false
   /// 有名称框时两个框轮流拿焦点：焦点环只画在拿着焦点的那个上（名称框出现时就抢焦点）
   @State private var nameFocused = true
   @State private var bodyFocused = false
 
   init(
     title: LocalizedStringResource, note: LocalizedStringResource?, initial: String,
-    asksName: Bool = false,
-    onCancel: @escaping () -> Void, onSave: @escaping (String, String) -> Void
+    asksName: Bool = false, asksKeyword: Bool = false,
+    checkKeyword: @escaping (String) -> SnippetKeyword.Check = { _ in .init() },
+    onCancel: @escaping () -> Void, onSave: @escaping (String, String, String) -> Void
   ) {
     self.title = title
     self.note = note
     self.initial = initial
     self.asksName = asksName
+    self.asksKeyword = asksKeyword
+    self.checkKeyword = checkKeyword
     self.onCancel = onCancel
     self.onSave = onSave
     _text = State(initialValue: initial)
   }
 
   var body: some View {
-    let canSave = ClipboardPanelModel.canSave(text, initial: initial)
+    let check = asksKeyword ? checkKeyword(keyword) : SnippetKeyword.Check()
+    let canSave = ClipboardPanelModel.canSave(text, initial: initial) && check.problem == nil
     VStack(alignment: .leading, spacing: 10) {
       Text(plain: title).dialogTitle()
       if asksName {
@@ -144,7 +168,7 @@ private struct TextDialog: View {
           onCommand: { selector in
             switch selector {
             case #selector(NSResponder.insertTab(_:)), #selector(NSResponder.insertNewline(_:)):
-              bodyFocus += 1
+              if asksKeyword { keywordFocus += 1 } else { bodyFocus += 1 }
             case #selector(NSResponder.cancelOperation(_:)): onCancel()
             default: return false
             }
@@ -152,6 +176,24 @@ private struct TextDialog: View {
           }, onFocusChange: { nameFocused = $0 }
         )
         .dialogField(focused: nameFocused)
+      }
+      if asksKeyword {
+        CommandTextField(
+          text: $keyword, placeholder: String(localized: "关键词（可选，如 ;mail：在任何 App 里打出它就换成这段）"),
+          isDialogField: true, romanOnly: true, maxLength: SnippetKeyword.maxLength,
+          focusRequest: keywordFocus,
+          onCommand: { selector in
+            switch selector {
+            case #selector(NSResponder.insertTab(_:)), #selector(NSResponder.insertNewline(_:)):
+              bodyFocus += 1
+            case #selector(NSResponder.cancelOperation(_:)): onCancel()
+            default: return false
+            }
+            return true
+          }, onFocusChange: { keywordFocused = $0 }
+        )
+        .dialogField(focused: keywordFocused)
+        KeywordCheckLines(check: check)
       }
       // 框的左右内边距改在文字上（6 + 2）：滚动条贴框的右边。有名称框时焦点先给名称框，Tab 过来
       SourceTextView(
@@ -172,11 +214,81 @@ private struct TextDialog: View {
       HStack {
         Spacer()
         Button("取消", action: onCancel)
-        Button("保存") { onSave(text, name) }
+        Button("保存") { onSave(text, name, keyword) }
           .keyboardShortcut(.return, modifiers: .command)
           .buttonStyle(BrandButtonStyle())
           .disabled(!canSave)
       }
+    }
+  }
+}
+
+/// 片段的关键词（片段展开插件添加着时，⌘K / 右键「关键词…」）：单行，只收英文类输入法，↩ 保存、Esc 取消，空着保存就是清除。
+/// 存不了的红字、「保存」置灰；要提醒的橙字
+private struct KeywordDialog: View {
+  let check: (String) -> SnippetKeyword.Check
+  let onCancel: () -> Void
+  let onSave: (String) -> Void
+  @State private var text: String
+
+  init(
+    initial: String, check: @escaping (String) -> SnippetKeyword.Check,
+    onCancel: @escaping () -> Void, onSave: @escaping (String) -> Void
+  ) {
+    self.check = check
+    self.onCancel = onCancel
+    self.onSave = onSave
+    _text = State(initialValue: initial)
+  }
+
+  var body: some View {
+    let result = check(text)
+    VStack(alignment: .leading, spacing: 10) {
+      Text("关键词").dialogTitle()
+      CommandTextField(
+        text: $text, placeholder: String(localized: "如 ;mail：在任何 App 里打出它就换成这段"),
+        isDialogField: true, romanOnly: true, maxLength: SnippetKeyword.maxLength
+      ) { selector in
+        switch selector {
+        case #selector(NSResponder.insertNewline(_:)): if result.problem == nil { onSave(text) }
+        case #selector(NSResponder.cancelOperation(_:)): onCancel()
+        default: return false
+        }
+        return true
+      }
+      .dialogField()
+      KeywordCheckLines(check: result)
+      HStack(alignment: .firstTextBaseline, spacing: 12) {
+        KeyHint("保存", "↩")
+        Text("·").foregroundStyle(.tertiary)
+        Text("打完最后一个字就展开；空着保存就是不要关键词")
+      }
+      .dialogHint()
+      HStack {
+        Spacer()
+        Button("取消", action: onCancel)
+        Button("保存") { onSave(text) }
+          .buttonStyle(BrandButtonStyle())
+          .disabled(result.problem != nil)
+      }
+    }
+  }
+}
+
+/// 关键词框下面的一两行：存不了的红字，要提醒的橙字（没有就不占地方）
+private struct KeywordCheckLines: View {
+  let check: SnippetKeyword.Check
+
+  var body: some View {
+    if let problem = check.problem {
+      Text(verbatim: SnippetKeyword.message(problem))
+        .font(.system(size: 11))
+        .foregroundStyle(Color(nsColor: .systemRed))
+    }
+    ForEach(check.warnings, id: \.self) { warning in
+      Text(verbatim: SnippetKeyword.message(warning))
+        .font(.system(size: 11))
+        .foregroundStyle(Color(nsColor: .systemOrange))
     }
   }
 }

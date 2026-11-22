@@ -62,6 +62,8 @@ struct SettingsArchive: Codable, Equatable {
     /// 所在收藏夹的名字
     var group: String?
     var copiedAt: Date
+    /// 片段的关键词（片段展开，2026-11-22）：没有时不写这一项；旧版本不认识它、照常读文件（同便签的 tint，不升格式号）
+    var keyword: String? = nil
   }
 
   /// 生词本的一条（收藏的翻译）
@@ -679,6 +681,10 @@ struct SettingsArchive: Codable, Equatable {
             ? name : nil
         }
         if let note = clip.note, note.isEmpty || note.count > 10_000 { clip.note = nil }
+        // 关键词只给片段、只收合规的（SnippetKeyword）；不合规的只是不带关键词
+        clip.keyword = clip.keyword.flatMap { keyword in
+          clip.snippet && SnippetKeyword.isValid(keyword) ? keyword : nil
+        }
         return clip
       }
     }
@@ -959,7 +965,8 @@ extension SettingsArchive.Clip {
     }
     self.init(
       text: text, note: item.note, favorite: item.favorite, snippet: item.isSnippet,
-      group: groups.first { $0.id == item.groupID }?.name, copiedAt: item.copiedAt)
+      group: groups.first { $0.id == item.groupID }?.name, copiedAt: item.copiedAt,
+      keyword: item.isSnippet ? item.keyword : nil)
   }
 }
 

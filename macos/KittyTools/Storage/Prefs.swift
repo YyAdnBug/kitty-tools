@@ -480,6 +480,9 @@ enum Prefs {
   /// 键位映射插件（PR #43）：每把键盘的规则（KeyRemapping.Profile 数组的 JSON，键盘按「厂商:产品:连接方式:序列号」认）。
   /// 跟着这台 Mac 接的键盘走，**不注册默认值**：不跟着导出 / 导入、同步走（别人给的设置文件不该能改你的键）；没存过 = 没有规则
   nonisolated static let keyRemappingRules = "keyRemappingRules"
+  /// 片段展开（插件，2026-11-22，SnippetExpand/）：在这些 App 里不展开（bundle id 的数组，默认同剪贴板「不记录」的那几个密码
+  /// 管理器和钥匙串访问、「密码」；密码框不用放进来，系统本来就不让看按键）。跟着导出、同步
+  nonisolated static let snippetExpandExcluded = "snippetExpandExcluded"
 
   /// 访达右键（第十一族，2026-11-08，FinderLink）：扩展把动作交过来时带的凭证（App 第一次启动时生成，FinderLink.ensureKey；
   /// 扩展从 App 的偏好里读）。这台电脑自己的、**不注册默认值**：不跟着导出 / 导入、同步走
@@ -686,6 +689,7 @@ enum Prefs {
       appShortcutsHold: true,
       appShortcutsDelay: 1000,
       appShortcutsHoldKey: ModifierTaps.Key.command.rawValue,
+      snippetExpandExcluded: ClipboardFilter.defaultExcluded,
       finderOpenWithApps: finderOpenWithDefault,
       panelSqueezeEntrance: false,
       floatingPinned: false,
