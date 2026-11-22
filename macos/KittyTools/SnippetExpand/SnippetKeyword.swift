@@ -3,7 +3,8 @@
 // - 只收键盘能直接打出来的字：英文字母、数字、符号（可见的 ASCII，不含空格）。拦截认字是按键盘布局给的字（实测：中文输入法
 //   下按 ; 拿到的也是 ;），输入法上屏的汉字不经过按键，写进关键词也永远对不上
 // - 2–32 个字；大小写严格
-// - 两条片段的关键词一样：不让存（Q12）；一个是另一个的开头：提示「打不出那一条」，照样能存（打完立刻展开，短的先展开）
+// - 两条片段的关键词一样：不让存（Q12）；一个是另一个的开头：提示「打不出那一条」，照样能存（打完立刻展开，短的先展开）。
+//   同步来的、重新存成片段的还是可能撞上：展开时用列表里最前（最近用过）的那条，设置页那一行标出来（duplicates）
 // - 全是字母或数字的：提示「打普通单词时可能误展开，建议用 ; 开头」（Q5：不强制前缀）
 
 import Foundation
@@ -27,6 +28,7 @@ nonisolated enum SnippetKeyword {
   /// 存不了的原因
   enum Problem: Equatable {
     case tooShort
+    case tooLong
     /// 有键盘打不出来的字（汉字、空格、全角符号……）
     case untypeable
     /// 和另一条片段的一样（那一条的叫法）
@@ -61,6 +63,7 @@ nonisolated enum SnippetKeyword {
       return Check(problem: .untypeable)
     }
     if keyword.count < minLength { return Check(problem: .tooShort) }
+    if keyword.count > maxLength { return Check(problem: .tooLong) }
     if let same = others.first(where: { $0.keyword == keyword }) {
       return Check(problem: .duplicate(same.title))
     }
@@ -79,6 +82,7 @@ nonisolated enum SnippetKeyword {
   static func message(_ problem: Problem) -> String {
     switch problem {
     case .tooShort: String(localized: "关键词至少 \(minLength) 个字")
+    case .tooLong: String(localized: "关键词最多 \(maxLength) 个字")
     case .untypeable: String(localized: "关键词只能用英文字母、数字和符号，不能有空格")
     case .duplicate(let title): String(localized: "和「\(title)」的关键词一样")
     }
@@ -91,6 +95,12 @@ nonisolated enum SnippetKeyword {
     case .hiddenBy(let title): String(localized: "「\(title)」的关键词是它的开头，打到那里就先展开了")
     case .plainWord: String(localized: "打普通单词时可能误展开，建议用 ; 开头")
     }
+  }
+
+  /// 一组片段的关键词里撞上了的（出现不止一次的）：设置页标出来，展开时只有列表里最前那条算数
+  static func duplicates(_ keywords: [String]) -> Set<String> {
+    var seen = Set<String>()
+    return Set(keywords.filter { !seen.insert($0).inserted })
   }
 
   /// 片段的叫法（提示里说「和「…」重复」）：名称（存在备注里），没有就是正文开头一行

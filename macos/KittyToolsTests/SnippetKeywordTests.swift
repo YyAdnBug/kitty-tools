@@ -34,6 +34,10 @@ struct SnippetKeywordTests {
     #expect(SnippetKeyword.check("", others: others) == .init())
     #expect(SnippetKeyword.check("  ", others: others) == .init())
     #expect(SnippetKeyword.check(";", others: []).problem == .tooShort)
+    #expect(
+      SnippetKeyword.check(String(repeating: "a", count: SnippetKeyword.maxLength + 1), others: [])
+        .problem == .tooLong)
+    #expect(SnippetKeyword.duplicates([";a", ";b", ";a", ";a"]) == [";a"])
     #expect(SnippetKeyword.check("；邮", others: []).problem == .untypeable)
     #expect(SnippetKeyword.check("a b", others: []).problem == .untypeable)
     #expect(SnippetKeyword.check(" ;mail ", others: others).problem == .duplicate("邮箱"))
@@ -99,18 +103,24 @@ struct SnippetKeywordTests {
     #expect(keyedValue.contains(";mail"))
     #expect(SyncRecords.decodeExact(OldSyncedClip.self, from: keyedValue) == nil)
 
-    // 另一台新版本落下来：关键词跟着来；不合规的（文件夹里改坏的）只是不带
+    // 另一台新版本落下来：关键词跟着来
     let other = try makeStore()
-    let broken = UUID()
+    #expect(
+      other.applySync([keyed.uuidString: keyedValue], ledger: .init(), library: "lib") == .saved)
+    #expect(other.items.first { $0.id == keyed }?.keyword == ";mail")
+    // 不合这一版规矩的关键词（更新的版本放宽了？）：同解不出来，整个不落，不收拾（收拾了会当成本机改的发出去、抹掉每一台的）
     let brokenValue = keyedValue.replacingOccurrences(of: ";mail", with: "邮 箱")
       .replacingOccurrences(of: "邮箱地址", with: "另一段")
-    let applied = other.applySync(
-      [keyed.uuidString: keyedValue, broken.uuidString: brokenValue], ledger: .init(),
-      library: "lib")
-    #expect(applied == .saved)
-    #expect(other.items.first { $0.id == keyed }?.keyword == ";mail")
-    let arrived = try #require(other.items.first { $0.id == broken })
-    #expect(arrived.isSnippet && arrived.keyword == nil)
+    let third = try makeStore()
+    #expect(
+      third.applySync([UUID().uuidString: brokenValue], ledger: .init(), library: "lib") == .newer)
+    #expect(third.items.isEmpty)
+    // 不再是片段的收藏：留着的关键词不发出去（不起作用，发出去只会让旧版本那一类白停下）
+    store.update([keyed]) {
+      $0.isSnippet = false
+      $0.favorite = true
+    }
+    #expect(store.syncValues()[keyed.uuidString]?.contains("keyword") == false)
   }
 
   /// 导出文件：只有片段带关键词；读文件时不合规的、不是片段的丢掉关键词；导入时本机这条没有关键词才用文件里的
@@ -146,5 +156,32 @@ struct SnippetKeywordTests {
       groups: [])
     #expect(target.items.first { $0.id == mine }?.keyword == ";mine")
     #expect(target.items.first { $0.id == none }?.keyword == ";d1")
+    // 文件里的关键词撞上本机已有片段的：不带；两条用同一个的只有一条拿到（读文件时 sanitize 已经只留第一条的）
+    target.adopt(
+      [
+        .init(text: "片段戊", favorite: false, snippet: true, copiedAt: .now, keyword: ";mine"),
+        .init(text: "片段己", favorite: false, snippet: true, copiedAt: .now, keyword: ";f1"),
+        .init(text: "片段庚", favorite: false, snippet: true, copiedAt: .now, keyword: ";f1"),
+      ], groups: [])
+    let keyword = { (text: String) in target.items.first { $0.text == text }?.keyword }
+    #expect(keyword("片段戊") == nil)
+    #expect([keyword("片段己"), keyword("片段庚")].compactMap { $0 } == [";f1"])
+  }
+
+  /// 移出片段时关键词留着；再存成片段时它已经被别的片段用了：去掉，不让两条片段一个关键词
+  @Test func resnippetDropsTakenKeyword() throws {
+    let store = try makeStore()
+    let first = try snippet("甲", in: store, keyword: ";a1")
+    store.removeFromSnippets([first])
+    #expect(store.items.first { $0.id == first }?.keyword == ";a1")
+    _ = try snippet("乙", in: store, keyword: ";a1")
+    store.markSnippet(first)
+    #expect(store.items.first { $0.id == first }?.isSnippet == true)
+    #expect(store.items.first { $0.id == first }?.keyword == nil)
+    // 没撞上的照样回来
+    let third = try snippet("丙", in: store, keyword: ";c1")
+    store.removeFromSnippets([third])
+    store.saveSnippet("丙")
+    #expect(store.items.first { $0.id == third }?.keyword == ";c1")
   }
 }

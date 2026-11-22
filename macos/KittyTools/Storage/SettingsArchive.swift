@@ -13,7 +13,8 @@
 // - hotkeys：存过的全局快捷键（动作 → 组合，null = 清除了）；没存过的不写，跟默认。截图时能改的键（2026-11-06，ShotKeys）
 //   也在这里，键名是「shot.<名字>」（旧版本只认动作名，原样忽略它们；不升 format）；
 // - translateServices / searchEngines：两张列表现在的样子；
-// - clips + clipGroups：片段和文字类的收藏（正文、备注、所在收藏夹的名字、复制时间），收藏夹的名字按顺序；
+// - clips + clipGroups：片段和文字类的收藏（正文、备注、所在收藏夹的名字、复制时间；片段的关键词（2026-11-22 片段展开，
+//   旧版本不认识它、原样忽略，不升 format）），收藏夹的名字按顺序；
 // - vocabulary：生词本（收藏的翻译）；
 // - notes：便签（没删的，含归档；每条带编号、标题、正文、颜色、建于、改于、修订号、归档、固定、顺序）；这三类是明文；
 // - secrets：翻译服务的密钥，默认不带；要带就用密码加密（PBKDF2-HMAC-SHA256 → AES-256-GCM），文件里没有明文密钥。
@@ -669,6 +670,8 @@ struct SettingsArchive: Codable, Equatable {
     if clips == nil { clean.clipGroups = nil }
     // 片段 / 收藏：要有正文、不超过剪贴板单条文字的上限、确实是留下的；收藏夹的名字不合规、收藏夹已经够多的只是不归进去，
     // 备注长得离谱的只是不带备注
+    // 关键词：一个文件里两条片段用了同一个的，只留第一条的
+    var keywords = Set<String>()
     clean.clips = clips.map { clips in
       clips.prefix(Self.maxClips).compactMap { clip in
         guard !clip.text.isEmpty, clip.text.utf8.count <= ClipboardWatcher.maxTextBytes,
@@ -683,7 +686,8 @@ struct SettingsArchive: Codable, Equatable {
         if let note = clip.note, note.isEmpty || note.count > 10_000 { clip.note = nil }
         // 关键词只给片段、只收合规的（SnippetKeyword）；不合规的只是不带关键词
         clip.keyword = clip.keyword.flatMap { keyword in
-          clip.snippet && SnippetKeyword.isValid(keyword) ? keyword : nil
+          clip.snippet && SnippetKeyword.isValid(keyword) && keywords.insert(keyword).inserted
+            ? keyword : nil
         }
         return clip
       }

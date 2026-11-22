@@ -8353,16 +8353,16 @@
     "search.snippetExpand.excluded" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "不展开,停用,密码管理器,终端"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Don’t Expand,Turn Off,Password Manager,Terminal"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "不展开,停用,密码管理器,终端"
           }
         }
       }
@@ -8935,6 +8935,23 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "转成 GIF"
+          }
+        }
+      }
+    },
+    "snippetExpand.duplicate" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "重复"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duplicate"
           }
         }
       }
@@ -9927,16 +9944,16 @@
     },
     "「%@」开着安全输入，这会儿哪里都不展开：%@。" : {
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "「%1$@」开着安全输入，这会儿哪里都不展开：%2$@。"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "“%1$@” has Secure Input on, so nothing expands right now: %2$@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "「%1$@」开着安全输入，这会儿哪里都不展开：%2$@。"
           }
         }
       }
@@ -13840,6 +13857,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Same keyword as “%@”; the one higher in the list is used"
+          }
+        }
+      }
+    },
+    "关键词最多 %lld 个字" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A keyword can have at most %lld characters"
           }
         }
       }
@@ -29255,6 +29282,16 @@
         }
       }
     },
+    "授权显示给了，却听不到键盘：到 系统设置 › %@ › 辅助功能 里把它关掉再打开。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Access shows as granted, but the keyboard can’t be watched: turn Kitty Tools off and on again in System Settings › %@ › Accessibility."
+          }
+        }
+      }
+    },
     "授权显示给了，却接不住滚轮：到 系统设置 › %@ › 辅助功能 里把它关掉再打开。" : {
       "localizations" : {
         "en" : {
@@ -33521,6 +33558,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Apps with unsaved changes will ask you first"
+          }
+        }
+      }
+    },
+    "有片段的关键词重复：打出来时用最近用过的那条。在剪贴板面板里给其中一条换个关键词。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some snippets share a keyword: typing it uses the one used most recently. Give one of them a different keyword in Clipboard History."
           }
         }
       }

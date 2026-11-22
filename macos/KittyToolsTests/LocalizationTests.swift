@@ -628,6 +628,13 @@ struct LocalizationTests {
     ),
     ("KittyTools/Shell/Island+Notch.swift", ["系统灵动岛", "胶囊", "刘海"], false, "写进日志的屏幕类型"),
     (
+      "KittyTools/SnippetExpand/SnippetExpander.swift",
+      [
+        "关键词之后又打了字", "Kitty 在忙", "安全输入开着", "Kitty 自己的窗口", "名单里的 App", "输入法正在组字", "带填空",
+        "没有辅助功能授权",
+      ], false, "写进日志的没展开的原因"
+    ),
+    (
       "KittyTools/Translate/Providers/AIService.swift",
       ["硅基", "深度求索", "月之暗面", "通义", "千问", "百炼", "豆包", "火山方舟", "海螺", "智谱"],
       false, "服务名里认厂商的中文叫法"

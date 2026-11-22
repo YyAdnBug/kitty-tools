@@ -1107,13 +1107,8 @@ import Observation
     .joined(separator: "\n")
   }
 
-  /// 片段 {clipboard:N}：历史第 N 条文本（按全部历史、不看筛选，跳过图片、文件和片段：
-  /// 片段是模板不是复制来的字，刚粘过的片段排在最前，不跳过的话 {clipboard:1} 会取到它自己）
-  private func historyText(_ n: Int) -> String? {
-    guard n > 0 else { return nil }
-    return store.items.lazy.filter { $0.kind == .text && !$0.isSnippet }.dropFirst(n - 1).first?
-      .text
-  }
+  /// 片段 {clipboard:N}（ClipboardStore.historyText）
+  private func historyText(_ n: Int) -> String? { store.historyText(n) }
 
   private func plainItem(_ text: String) -> NSPasteboardItem {
     let item = NSPasteboardItem()
@@ -1388,7 +1383,7 @@ import Observation
     }
     if let single, single.kind == .text, !single.isSnippet {
       add("存为片段", "text.badge.star", section: 2) { [unowned self] in
-        store.update([single.id]) { $0.isSnippet = true }
+        store.markSnippet(single.id)
       }
     }
     // 移出片段（体检 C1）：多选时有片段就给

@@ -140,6 +140,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 平滑滚动（插件，SmoothScroll/）：起停跟着插件添没添加和辅助功能授权（apply），滚动那条线程由它管
   private(set) lazy var smoothScroll = SmoothScroll()
   lazy var keyRemapping = KeyRemapping(rulesKey: Prefs.keyRemappingRules)
+  /// 片段展开插件（2026-11-22）：起停在 apply（启动、偏好变了、剪贴板条目变了）
+  private(set) lazy var snippetExpander = SnippetExpander(store: clipboardStore)
   /// 应用内更新（读本仓库的 GitHub release）
   let updater = Updater()
   /// CleanShot 式常驻缩略图（截图飞入右下角后留在那里）
@@ -965,7 +967,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       case .smoothScroll: AnyView(SmoothScrollTab(smoothScroll: smoothScroll))
       case .appShortcuts: AnyView(AppShortcutsTab())
       case .keyRemapping: AnyView(KeyRemappingTab(remapping: keyRemapping))
-      case .snippetExpand: AnyView(SnippetExpandTab(store: clipboardStore))
+      case .snippetExpand:
+        AnyView(SnippetExpandTab(store: clipboardStore, expander: snippetExpander))
       case .translate:
         AnyView(
           TranslateTab(services: serviceStore, history: historyStore, speaker: speaker)

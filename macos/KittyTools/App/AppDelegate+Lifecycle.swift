@@ -220,6 +220,9 @@ extension AppDelegate {
     mediaKeys.apply()
     smoothScroll.apply()
     finderKeys.apply()
+    // 状态屏里键盘被拦着、录快捷键时按的是要录的组合：都不展开
+    snippetExpander.isBusy = { [unowned self] in statusScreen.isActive || hotKeys.recording != nil }
+    snippetExpander.apply()
     showWelcomeIfNeeded()
     // 有快捷键没注册上（15.0 / 15.1 上只带 ⌥ 的组合）：按了没反应又不知道为什么，启动时说一次
     // （放在「已更新」之后：同一座岛原地换内容，警告不能被盖掉）
@@ -267,6 +270,7 @@ extension AppDelegate {
         self.smoothScroll.apply()
         if Feature.keyRemapping.isOn { self.keyRemapping.defaultsChanged() }
         self.finderKeys.apply()
+        self.snippetExpander.apply()
         // 命令的快捷键跟着「命令和别名」的开关和别名、脚本命令总开关、⌘K「关掉这条命令」走（第 4 批评审：只在那一页的
         // onChange 里跟，别处改的不注销）；没变不动
         self.hotKeys.reloadCommandsIfChanged()
@@ -448,6 +452,13 @@ extension AppDelegate {
           "「\(other)」也在处理鼠标滚轮", detail: "两边一起开会平滑两次、反向两次：留一边就好", tone: .warning,
           symbol: "computermouse")
       }
+    }
+
+    // 片段展开：起停在 snippetExpander.apply（偏好监听里调）。运行中添加时缺授权就当场要（同平滑滚动；启动时、欢迎引导里不问）
+    if turnedOn.contains(.snippetExpand), !launching, !settingsNavigation.showsOnboarding,
+      !Permissions.isAccessibilityTrusted
+    {
+      Permissions.requestAccessibility()
     }
 
     guard !launching else { return }

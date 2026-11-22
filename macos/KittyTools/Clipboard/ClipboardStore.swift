@@ -202,6 +202,13 @@ import Observation
     record(item)
   }
 
+  /// 片段 {clipboard:N}：历史第 N 条文本（按全部历史、不看筛选，跳过图片、文件和片段：片段是模板不是复制来的字，刚粘过的
+  /// 片段排在最前，不跳过的话 {clipboard:1} 会取到它自己）。剪贴板面板的粘贴、片段展开都用它
+  func historyText(_ n: Int) -> String? {
+    guard n > 0 else { return nil }
+    return items.lazy.filter { $0.kind == .text && !$0.isSnippet }.dropFirst(n - 1).first?.text
+  }
+
   /// 粘贴过的条目挪到最前
   func bump(_ id: UUID) {
     guard let index = items.firstIndex(where: { $0.id == id }) else { return }
@@ -357,10 +364,20 @@ import Observation
     }
   }
 
+  /// 标成片段（存为片段、新建片段碰上已有的同文条目）：移出片段时留着的关键词要是已经被别的片段用了，去掉它（它那时不起作用；
+  /// 留着就成了两条片段一个关键词）
+  func markSnippet(_ id: UUID) {
+    let taken = Set(items.filter { $0.isSnippet && $0.id != id }.compactMap(\.keyword))
+    update([id]) { item in
+      item.isSnippet = true
+      if let keyword = item.keyword, taken.contains(keyword) { item.keyword = nil }
+    }
+  }
+
   /// 存成片段：已有同样正文的条目就把它标成片段并置顶，否则新建
   func saveSnippet(_ text: String) {
     if let existing = items.first(where: { $0.kind == .text && $0.text == text }) {
-      update([existing.id]) { $0.isSnippet = true }
+      markSnippet(existing.id)
       bump(existing.id)
     } else {
       var item = ClipItem(kind: .text)
@@ -369,7 +386,7 @@ import Observation
       record(item)
       // 删了还没提交的同一段被 record 拿回来了：它原来不是片段（record 按时间插，不一定在最前，按正文找）
       if let saved = items.first(where: { $0.kind == .text && $0.text == text }), !saved.isSnippet {
-        update([saved.id]) { $0.isSnippet = true }
+        markSnippet(saved.id)
       }
     }
   }
@@ -401,6 +418,12 @@ import Observation
     }
     var existing: [String: UUID] = [:]
     for item in items.reversed() where item.kind == .text { existing[item.text ?? ""] = item.id }
+    /// 已经被片段用了的关键词：文件里的撞上了就不带（本机的不动）
+    var taken = Set(items.filter(\.isSnippet).compactMap(\.keyword))
+    func free(_ keyword: String?) -> String? {
+      guard let keyword, taken.insert(keyword).inserted else { return nil }
+      return keyword
+    }
     let trimmed = { (name: String) in name.trimmingCharacters(in: .whitespacesAndNewlines) }
     var (added, updated) = (0, 0)
     write {
@@ -418,7 +441,7 @@ import Observation
             item.text = clip.text
             item.note = clip.note
             item.isSnippet = clip.snippet
-            item.keyword = clip.keyword
+            item.keyword = clip.snippet ? free(clip.keyword) : nil
             item.groupID = group
             // 不变式：归了收藏夹的一定是收藏
             item.favorite = clip.favorite || group != nil
@@ -435,8 +458,8 @@ import Observation
           var changed = current
           changed.isSnippet = current.isSnippet || clip.snippet
           changed.note = (current.note ?? "").isEmpty ? clip.note : current.note
-          // 关键词同备注：本机这条没有才用文件里的
-          changed.keyword = current.keyword ?? clip.keyword
+          // 关键词同备注：本机这条没有才用文件里的（别的片段已经用了的不要）
+          changed.keyword = current.keyword ?? (changed.isSnippet ? free(clip.keyword) : nil)
           changed.groupID = current.groupID ?? group
           changed.favorite = current.favorite || clip.favorite || changed.groupID != nil
           guard changed != current, let index = items.firstIndex(where: { $0.id == id }) else {
@@ -776,7 +799,8 @@ extension ClipboardStore: SyncSource {
       let id = item.id.uuidString
       let clip = SyncedClip(
         text: text, favorite: item.favorite, snippet: item.isSnippet, note: item.note,
-        group: item.groupID?.uuidString, keyword: item.keyword)
+        // 关键词只给片段（同导出）：不再是片段的收藏留着的那个不起作用，发出去只会让旧版本那一类白停下
+        group: item.groupID?.uuidString, keyword: item.isSnippet ? item.keyword : nil)
       let cached = syncEncoded[id]
       let value = cached?.clip.same(as: clip) == true ? cached?.text : Self.encoded(clip)
       encoded[id] = (clip, value)
@@ -837,7 +861,11 @@ extension ClipboardStore: SyncSource {
         }
         groupChanges.append((id, group))
       } else {
-        guard let clip = SyncRecords.decodeExact(SyncedClip.self, from: value) else {
+        // 关键词不合这一版的规矩（更新的版本放宽了？）：同解不出来，整个不落——不收拾掉它，免得这台把收拾过的当成自己
+        // 改的发出去、在每一台上抹掉
+        guard let clip = SyncRecords.decodeExact(SyncedClip.self, from: value),
+          clip.keyword.map(SnippetKeyword.isValid) ?? true
+        else {
           return .newer
         }
         clipChanges.append((id, clip))
@@ -959,8 +987,7 @@ extension ClipboardStore: SyncSource {
       item.text = synced.text
       item.isSnippet = synced.snippet
       item.note = synced.note
-      // 文件夹里来的按不可信对待：不合规的关键词只是不带（下一轮本机这份会把它写回合规的样子）
-      item.keyword = synced.keyword.flatMap { SnippetKeyword.isValid($0) ? $0 : nil }
+      item.keyword = synced.keyword
       item.groupID = resolved(synced.group.flatMap(UUID.init(uuidString:)))
       item.favorite = synced.favorite || item.groupID != nil
       // 正文一样的格子里还在的、不是这一条的第一个（格子里的正文不会变：改了正文的都换到了新的格子）

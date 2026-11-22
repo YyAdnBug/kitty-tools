@@ -10,6 +10,8 @@ import SwiftUI
 
 struct SnippetExpandTab: View {
   let store: ClipboardStore
+  /// 截图自检传 nil（不建拦截）
+  var expander: SnippetExpander?
   /// 截图自检传固定的；正常是 nil = 现读
   private let authorized: Bool?
   private let fixedExcluded: [String]?
@@ -23,10 +25,11 @@ struct SnippetExpandTab: View {
   @State private var secure: HotKeyCenter.SecureInputBlock?
 
   init(
-    store: ClipboardStore, authorized: Bool? = nil, excluded: [String]? = nil,
-    secure: HotKeyCenter.SecureInputBlock?? = nil
+    store: ClipboardStore, expander: SnippetExpander? = nil, authorized: Bool? = nil,
+    excluded: [String]? = nil, secure: HotKeyCenter.SecureInputBlock?? = nil
   ) {
     self.store = store
+    self.expander = expander
     self.authorized = authorized
     fixedExcluded = excluded
     fixedSecure = secure
@@ -44,9 +47,11 @@ struct SnippetExpandTab: View {
     .formStyle(.grouped)
     .settingsScrollTarget()
     .onAppear { readSecureInput() }
+    // 从系统设置授权回来、设置窗再当 key：刷新授权和安全输入；授权刚给了的话拦截这会儿接上
     .onSettingsBecameKey {
       accessChecks += 1
       readSecureInput()
+      expander?.refresh()
     }
   }
 
@@ -54,10 +59,22 @@ struct SnippetExpandTab: View {
     secure = fixedSecure ?? HotKeyCenter.SecureInputBlock.current()
   }
 
+  /// 「权限」组（辅助功能）；缺授权时画在最上面。授权有却听不到键盘时页脚橙字说
   private func permissions(at placement: PluginPermissionPlacement) -> some View {
     PluginPermissionSection(
       plugin: .snippetExpand, at: placement, checks: accessChecks,
-      granted: authorized.map { value in { (_: Permissions.Kind) -> Bool? in value } })
+      granted: authorized.map { value in { (_: Permissions.Kind) -> Bool? in value } }
+    ) {
+      if expander?.status == .failed {
+        Text(
+          "授权显示给了，却听不到键盘：到 系统设置 › \(Permissions.privacyPane) › 辅助功能 里把它关掉再打开。"
+        )
+        .font(.caption)
+        .foregroundStyle(Color(nsColor: .systemOrange))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+      }
+    }
   }
 
   // MARK: 关键词
@@ -69,17 +86,25 @@ struct SnippetExpandTab: View {
   }
 
   private var keywordsSection: some View {
-    Section {
-      let items = keyworded
+    let items = keyworded
+    let duplicates = SnippetKeyword.duplicates(items.compactMap(\.keyword))
+    return Section {
       if items.isEmpty {
         Text("还没有片段设关键词").foregroundStyle(.secondary)
       }
       ForEach(items) { item in
         LabeledContent {
-          Text(verbatim: SnippetKeyword.title(note: item.note, text: item.text))
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .foregroundStyle(.secondary)
+          HStack(spacing: 6) {
+            if duplicates.contains(item.keyword ?? "") {
+              // 「重复」在提醒里是 Repeat：显式 key
+              Text(String(localized: "snippetExpand.duplicate", defaultValue: "重复"))
+                .foregroundStyle(Color(nsColor: .systemOrange))
+            }
+            Text(verbatim: SnippetKeyword.title(note: item.note, text: item.text))
+              .lineLimit(1)
+              .truncationMode(.tail)
+              .foregroundStyle(.secondary)
+          }
         } label: {
           Text(verbatim: item.keyword ?? "")
             .font(.body.monospaced())
@@ -92,7 +117,9 @@ struct SnippetExpandTab: View {
           "在剪贴板面板里新建片段时填上关键词，已有的片段在 ⌘K 里选「关键词…」。在任何 App 里打完关键词的最后一个字，它就换成片段的内容；关键词前面紧挨着字母或数字时不展开。"
       )
     } footer: {
-      if let warning = Self.warning(clipboardOn: Feature.clipboard.isOn, secure: secure) {
+      if let warning = Self.warning(
+        clipboardOn: Feature.clipboard.isOn, secure: secure, duplicated: !duplicates.isEmpty)
+      {
         Text(verbatim: warning)
           .font(.caption)
           .foregroundStyle(Color(nsColor: .systemOrange))
@@ -102,9 +129,14 @@ struct SnippetExpandTab: View {
     }
   }
 
-  /// 「关键词」页脚的橙字：剪贴板关着、有 App 开着安全输入（纯函数，配单测）
-  static func warning(clipboardOn: Bool, secure: HotKeyCenter.SecureInputBlock?) -> String? {
+  /// 「关键词」页脚的橙字：剪贴板关着、有 App 开着安全输入、有关键词重复（同步来的、导入的可能撞上；纯函数，配单测）
+  static func warning(
+    clipboardOn: Bool, secure: HotKeyCenter.SecureInputBlock?, duplicated: Bool = false
+  ) -> String? {
     var lines: [String] = []
+    if duplicated {
+      lines.append(String(localized: "有片段的关键词重复：打出来时用最近用过的那条。在剪贴板面板里给其中一条换个关键词。"))
+    }
     if !clipboardOn {
       lines.append(String(localized: "剪贴板关着：片段在剪贴板里，打开剪贴板才会展开。"))
     }
@@ -171,14 +203,19 @@ struct SnippetExpandTab: View {
     UserDefaults.standard.stringArray(forKey: Prefs.snippetExpandExcluded) ?? []
   }
 
+  /// 改名单都从偏好里现读的那份改（同剪贴板「不记录」，第四轮体检 E19）：页面上的这份可能还没跟上刚同步来的
   private func add(_ bundleID: String) {
-    guard !excluded.contains(bundleID) else { return }
-    save(excluded + [bundleID])
+    let stored = Self.stored
+    guard !stored.contains(bundleID) else {
+      excluded = stored
+      return
+    }
+    save(stored + [bundleID])
   }
 
   private func removeSelected() {
     guard let selection else { return }
-    save(excluded.filter { $0 != selection })
+    save(Self.stored.filter { $0 != selection })
     self.selection = nil
   }
 

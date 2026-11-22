@@ -1,5 +1,6 @@
 // 自家写剪贴板与模拟粘贴的唯一出口（mac-native §5）。写入后记下 changeCount 让 watcher 跳过；
 // 划词取词后还原剪贴板时加 nspasteboard.org 的 TransientType（transient），别的剪贴板工具不会把还原记成新条目。
+// 片段展开借用剪贴板（2026-11-22）也加：写进去的片段内容、过后还原的原内容都带它（snapshot / restore）。
 // 用户主动的复制不加，照常进别的剪贴板工具。
 // 本 App 生成的新文字（译文、原文、计算结果、路径 / 网址、替换原文、识字、取色…）用 write(string:record: true)
 // 写并同时记进剪贴板历史（recordText）；从历史取出的已有条目、划词还原、剪贴板面板里的色值块不记。
@@ -49,6 +50,28 @@ enum Paster {
     promised = provider
   }
   private static var promised: (any NSPasteboardItemDataProvider)?
+
+  /// 剪贴板此刻的全部内容（每个 item 的每种表示拷一份）：片段展开借用剪贴板之前存下，粘完再 restore。
+  /// ponytail: 别的 App 承诺了、还没给的数据（文件承诺这类）这一下会去要；读得慢的 App 会让展开慢一点，真碰到再只存常见的几种
+  static func snapshot() -> [NSPasteboardItem] {
+    (NSPasteboard.general.pasteboardItems ?? []).map { item in
+      let copy = NSPasteboardItem()
+      for type in item.types {
+        if let data = item.data(forType: type) { copy.setData(data, forType: type) }
+      }
+      return copy
+    }
+  }
+
+  /// 把 snapshot 存下的放回去（带 transient：别的剪贴板工具不把还原记成新的一条）；存下时是空的就清空
+  static func restore(_ items: [NSPasteboardItem]) {
+    guard !items.isEmpty else {
+      NSPasteboard.general.clearContents()
+      ownChangeCount = NSPasteboard.general.changeCount
+      return
+    }
+    write(items, transient: true)
+  }
 
   /// 文件写进剪贴板的样子（剪贴板历史里的文件条目还原时也用它）
   static func items(files: [URL]) -> [NSPasteboardItem] {
@@ -111,7 +134,7 @@ enum Paster {
   }
 
   /// 向前台 App 发 ⌘V。浮层不激活本 App，前台一直是原 App，所以不用等待、不用切前台。
-  /// movingLeft：片段 {cursor}，⌘V 之后紧接着按这么多次 ←，把光标挪回占位符处（超过 maxCaretMoves 不挪）。
+  /// movingLeft：片段 {cursor}，⌘V 之后等 50 ms 按这么多次 ←，把光标挪回占位符处（超过 maxCaretMoves 不挪）。
   /// 未授权返回 false，内容仍留在剪贴板里
   static func pasteToFrontmost(movingLeft moves: Int = 0) -> Bool {
     guard Permissions.isAccessibilityTrusted else { return false }
@@ -124,15 +147,19 @@ enum Paster {
       event?.flags = .maskCommand
       event?.post(tap: .cgSessionEventTap)
     }
-    // 同一个事件源、flags 清空（不然成了 ⌘← 跳到行首）；事件按顺序排队，不加等待。
-    // 某个 App 实测光标挪错时再为它加延迟，并注明是哪个 App（mac-overlay-panel §5）
+    // 同一个事件源、flags 清空（不然成了 ⌘← 跳到行首）。等粘贴落地再按：网页引擎（WKWebView，Safari、邮件这类；推断
+    // Chromium 系同样）的粘贴是异步的，紧跟着按的 ← 会抢在粘贴前面（2026-11-22 片段展开探针：⌘V 后马上按，网页输入框里
+    // 4 个 ← 有 1–2 个抢先；等 30 ms 以上全对），等 50 ms（mac-overlay-panel §5）
     guard (1...maxCaretMoves).contains(moves) else { return true }
-    for _ in 0..<moves {
-      for keyDown in [true, false] {
-        let event = CGEvent(
-          keyboardEventSource: source, virtualKey: CGKeyCode(kVK_LeftArrow), keyDown: keyDown)
-        event?.flags = []
-        event?.post(tap: .cgSessionEventTap)
+    Task {
+      try? await Task.sleep(for: .milliseconds(50))
+      for _ in 0..<moves {
+        for keyDown in [true, false] {
+          let event = CGEvent(
+            keyboardEventSource: source, virtualKey: CGKeyCode(kVK_LeftArrow), keyDown: keyDown)
+          event?.flags = []
+          event?.post(tap: .cgSessionEventTap)
+        }
       }
     }
     return true

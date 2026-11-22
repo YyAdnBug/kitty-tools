@@ -226,6 +226,8 @@ struct CommandTextField: NSViewRepresentable {
     override func viewDidMoveToWindow() {
       super.viewDidMoveToWindow()
       if isDialogField {
+        // 对话框里第二个起的框（给了 focusRequest：新建片段的关键词框）出现时不抢，等 focusRequest 变了再拿
+        guard claimsInitialFocus else { return }
         // 正在编辑的是字段编辑器，它的代理才是那个输入框
         let current = window?.firstResponder
         previousField = ((current as? NSTextView)?.delegate as? NSView) ?? (current as? NSView)
