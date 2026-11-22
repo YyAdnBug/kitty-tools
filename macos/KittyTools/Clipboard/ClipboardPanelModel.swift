@@ -1022,6 +1022,15 @@ import Observation
     island.show(text, symbol: pinning ? "pin.fill" : "pin")
   }
 
+  /// 片段展开插件添加着没有（新建片段那一行关键词、⌘K「关键词…」看它）；截图自检换成固定的，不读宿主 App 的偏好
+  @ObservationIgnored var keywordsOn: () -> Bool = { Feature.snippetExpand.isOn }
+
+  /// 片段展开里带 {input} 的片段（关键词已经删掉）：选中这一条，走粘贴，粘贴前照常一个个问（面板已经呼出来了）
+  func fillSnippet(_ item: ClipItem) {
+    select(item)
+    paste([item])
+  }
+
   /// 片段里有 {input} 要填（X20）：开填空对话框、这次先不粘，填完由 finishFill 接着做；没有要填的返回 false
   private func asksInputs(_ items: [ClipItem], copies: Bool, plainText: Bool?) -> Bool {
     var seen = Set<String>()
@@ -1397,7 +1406,7 @@ import Observation
       // 备注：所有条目都能写（体检 A3），不设快捷键（⌘R 给了在访达中显示）
       add("备注…", "note.text", section: 2) { [unowned self] in dialog = .note(single.id) }
       // 片段的关键词：片段展开插件添加着才有（关键词只在它那里有用）
-      if single.isSnippet, Feature.snippetExpand.isOn {
+      if single.isSnippet, keywordsOn() {
         add("关键词…", "keyboard", section: 2) { [unowned self] in dialog = .keyword(single.id) }
       }
       if single.kind == .text {

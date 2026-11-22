@@ -74,7 +74,7 @@ struct DialogOverlay: View {
     case .newSnippet:
       TextDialog(
         title: "新建片段", note: Snippet.placeholderHelp, initial: "",
-        asksName: true, asksKeyword: Feature.snippetExpand.isOn,
+        asksName: true, asksKeyword: model.keywordsOn(),
         checkKeyword: { model.keywordCheck($0, editing: nil) }, onCancel: close,
         onSave: { text, name, keyword in
           model.saveSnippet(text, name: name, keyword: keyword)

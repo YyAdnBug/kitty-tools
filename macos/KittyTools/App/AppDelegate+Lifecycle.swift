@@ -222,6 +222,11 @@ extension AppDelegate {
     finderKeys.apply()
     // 状态屏里键盘被拦着、录快捷键时按的是要录的组合：都不展开
     snippetExpander.isBusy = { [unowned self] in statusScreen.isActive || hotKeys.recording != nil }
+    // 带 {input} 的片段：关键词删掉了，叫出剪贴板面板问（面板不激活本 App，填完粘回原来那个 App / 那条便签）
+    snippetExpander.fill = { [unowned self] item in
+      if !(clipboardPanel.isVisible && clipboardPanel.isKeyWindow) { toggleClipboard() }
+      clipboardModel.fillSnippet(item)
+    }
     snippetExpander.apply()
     showWelcomeIfNeeded()
     // 有快捷键没注册上（15.0 / 15.1 上只带 ⌥ 的组合）：按了没反应又不知道为什么，启动时说一次

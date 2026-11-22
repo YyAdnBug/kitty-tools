@@ -144,6 +144,7 @@ struct SnapshotProbeTests {
     snippet.text = "您好 {cursor}，\n附件是本周的周报，请查收。"
     snippet.isSnippet = true
     snippet.note = "邮件开头"
+    snippet.keyword = ";hi"
     store.record(snippet)
     // 屏外渲染时 .task 来不及跑：先把行图标、透镜、放大卡要用的缩略图放进缓存
     for maxPixel in [72, 720, 2400] {
@@ -283,6 +284,23 @@ struct SnapshotProbeTests {
       // 编辑（没改动时「保存」置灰、不带格式的不提丢格式）、新建片段（顶上可选的名称，体检 C2）
       ("dialog-edit", { m in m.dialog = .edit(code.id) }),
       ("dialog-new-snippet", { m in m.dialog = .newSnippet }),
+      // 片段展开插件添加着（2026-11-22）：新建片段多一行关键词；已有片段的「关键词…」
+      (
+        "dialog-new-snippet-keyword",
+        { m in
+          m.keywordsOn = { true }
+          m.dialog = .newSnippet
+        }
+      ),
+      (
+        "dialog-keyword",
+        { m in
+          m.keywordsOn = { true }
+          if let item = m.store.items.first(where: { $0.keyword == ";hi" }) {
+            m.dialog = .keyword(item.id)
+          }
+        }
+      ),
       ("dialog-new-group", { m in m.dialog = .newGroup([link.id]) }),
       // 片段填空（X20）：第 2 / 2 个空，下面有「上一个」；只有一个空时没有 1/1
       (
@@ -317,6 +335,7 @@ struct SnapshotProbeTests {
       for (name, configure) in states {
         model.reset()
         model.isRecordingPaused = false  // 不归 reset 管（App 级的开关）
+        model.keywordsOn = { false }  // 片段展开没添加：别的图和以前一样
         configure(model)
         try snapshot(
           ClipboardPanelView(model: model),
@@ -5713,6 +5732,53 @@ struct SnapshotProbeTests {
         ).defaultAppStorage(prefs),
         size: NSSize(width: 640, height: 1100), dark: dark,
         to: "\(out)/smooth-settings-any\(dark ? "-dark" : "").png")
+    }
+  }
+
+  /// 设置 › 片段展开（插件，2026-11-22）：没授权、还没有关键词（浅 / 深）；授权了、三条关键词里两条重复、有 App 开着安全输入
+  /// （橙字），浅 / 深。几秒，图以 snippet- 开头：-only-testing:'KittyToolsTests/SnapshotProbeTests/snippetExpandSettings()'。
+  /// 偏好读临时偏好域；授权、名单、安全输入传固定的
+  @Test(.enabled(if: directory != nil)) func snippetExpandSettings() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    Prefs.registerDefaults()
+    let name = "kitty-snapshot-snippet-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: name))
+    defer { prefs.removePersistentDomain(forName: name) }
+    prefs.set(true, forKey: Feature.snippetExpand.prefsKey)
+    let dir = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let store = try ClipboardStore(
+      db: Database(path: ":memory:"), images: ImageStore(directory: dir))
+    for dark in [false, true] {
+      try snapshot(
+        SnippetExpandTab(
+          store: store, authorized: false, excluded: ClipboardFilter.defaultExcluded,
+          secure: .some(nil)
+        ).defaultAppStorage(prefs),
+        size: NSSize(width: 640, height: 900), dark: dark,
+        to: "\(out)/snippet-settings\(dark ? "-dark" : "").png")
+    }
+    for (text, note, keyword) in [
+      ("yy@example.com", "邮箱", ";mail"), ("祝好，\n{cursor}", "签名", ";sig"),
+      ("北京市海淀区…", nil, ";sig"),
+    ] {
+      store.saveSnippet(text)
+      if let id = store.items.first(where: { $0.text == text })?.id {
+        store.update([id]) {
+          $0.note = note
+          $0.keyword = keyword
+        }
+      }
+    }
+    for dark in [false, true] {
+      try snapshot(
+        SnippetExpandTab(
+          store: store, authorized: true, excluded: ["com.apple.Terminal"],
+          secure: .init(holder: "终端", bundleID: "com.apple.Terminal")
+        ).defaultAppStorage(prefs),
+        size: NSSize(width: 640, height: 900), dark: dark,
+        to: "\(out)/snippet-settings-any\(dark ? "-dark" : "").png")
     }
   }
 

@@ -6,7 +6,8 @@
 // - 授权：要「辅助功能」（只查不弹框，运行中添加时 AppDelegate 当场要一次）。授权显示有、拦截却建不起来：记成 failed，等下一次
 //   refresh（回到前台、醒来、系统设置里辅助功能的名单变了）
 // - 展开前依次看（任何一样成立就不动，打的字原样留着）：认出来之后又打了别的键；Kitty 在忙（状态屏、录快捷键、截图框选，
-//   AppDelegate 给的 isBusy）；安全输入开着；收键的是 Kitty 自己（第 3 批：便签里展开）；那个 App 在「不展开」名单里；
+//   AppDelegate 给的 isBusy）；安全输入开着；收键的是 Kitty 自己、又不是便签的正文（Q9：启动器、剪贴板面板的搜索框里打的是在搜）；
+//   那个 App 在「不展开」名单里；
 //   **输入法正在组字**（Q7）——当前输入源是输入法时，先问收键的那个元素的辅助功能属性 AXTextInputMarkedRange（公开的
 //   NSAccessibilityTextInputMarkedRangeAttribute，系统文本框、网页输入框实测都有），问不到再看输入法的候选窗在不在屏上；
 //   都看不出来就照常展开（实测照常删再填结果也是对的：退格先删组字里的字母）
@@ -14,7 +15,9 @@
 //   → ⌘V（Paster.pasteToFrontmost，{cursor} 在它里面等 50 ms 再按 ←）→ 300 ms 后剪贴板没被别人动过就把原来的放回去（同样带
 //   transient）。0 ms 就还原的话目标 App 读到的是原来的内容（探针实测），50 ms 实测就够，300 ms 留余量。300 ms 里又展开一次：
 //   沿用头一次存下的那份，不把中间那份当成原来的
-// - 带 {input} 的片段：删掉关键词后交给剪贴板面板问（fill，第 3 批接；没接时不展开）
+// - 带 {input} 的片段：删掉关键词后交给剪贴板面板问（fill，AppDelegate 接：打开面板、选中这条、走面板现成的填空，填完粘回去）
+// - 便签的正文（NoteTextView）里：不发合成按键，等打的最后一个字落进正文（键先过拦截、后到本 App 的主线程，最多等 0.3 s），
+//   直接把那段关键词换成内容（insertText(_:replacementRange:)，能 ⌘Z），不借剪贴板；{cursor} 照样挪光标
 // - 日志只记没展开的原因和拦截是哪一种，不记关键词、不记打的字
 
 import AppKit
@@ -175,8 +178,12 @@ import Synchronization
         $0.isSnippet && $0.kind == .text && $0.keyword == match.keyword
       }), let text = snippet.text
     else { return }
-    // ponytail: 收键的是 Kitty 自己（便签、启动器、剪贴板面板的输入框）时不展开；第 3 批接上便签
-    guard match.pid != getpid() else { return skip("Kitty 自己的窗口") }
+    if match.pid == getpid() {
+      guard let note = NSApp.keyWindow?.firstResponder as? NoteTextView, note.isEditable else {
+        return skip("Kitty 自己的窗口")
+      }
+      return expand(snippet, keyword: match.keyword, in: note)
+    }
     if let id = NSRunningApplication(processIdentifier: match.pid)?.bundleIdentifier,
       Set(defaults.stringArray(forKey: Prefs.snippetExpandExcluded) ?? []).contains(id)
     {
@@ -213,6 +220,48 @@ import Synchronization
       self?.pendingRestore = nil
     }
     pendingRestore = (original, task)
+  }
+
+  /// 便签正文里展开：等那段关键词落进正文（最多 0.3 s），换成内容；带 {input} 的先删掉关键词、交给面板问（面板记着这扇窗口，
+  /// 填完粘回这条便签）
+  private func expand(_ snippet: ClipItem, keyword: String, in view: NoteTextView) {
+    Task {
+      for attempt in 0..<16 {
+        if let range = Self.typedRange(
+          of: keyword, in: view.string, selection: view.selectedRange())
+        {
+          let text = snippet.text ?? ""
+          if !Snippet.inputs(in: text).isEmpty {
+            guard let fill else { return skip("带填空") }
+            view.insertText("", replacementRange: range)
+            return fill(snippet)
+          }
+          let expanded = Snippet.expand(
+            text, clipboard: { NSPasteboard.general.string(forType: .string) },
+            history: store.historyText)
+          view.insertText(expanded.text, replacementRange: range)
+          let after = String(expanded.text.suffix(expanded.charactersAfterCursor)).utf16.count
+          if after > 0 {
+            let end = view.selectedRange().location
+            view.setSelectedRange(NSRange(location: max(end - after, 0), length: 0))
+          }
+          store.bump(snippet.id)
+          return
+        }
+        if attempt < 15 { try? await Task.sleep(for: .milliseconds(20)) }
+      }
+      skip("便签里没等到关键词")
+    }
+  }
+
+  /// 插入点紧前面那段是不是刚打的关键词（选中了一段的不算）：是的话给它在正文里的范围（UTF-16，NSTextView 的口径）
+  static func typedRange(of keyword: String, in text: String, selection: NSRange) -> NSRange? {
+    let length = keyword.utf16.count
+    guard selection.length == 0, selection.location >= length,
+      selection.location <= text.utf16.count
+    else { return nil }
+    let range = NSRange(location: selection.location - length, length: length)
+    return (text as NSString).substring(with: range) == keyword ? range : nil
   }
 
   private func skip(_ reason: StaticString) {

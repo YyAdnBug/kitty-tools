@@ -92,6 +92,26 @@ struct SnippetExpanderTests {
     #expect(SnippetExpander.keywords(in: [snippet, removed, plain]) == [";a1"])
   }
 
+  /// 便签正文里：插入点紧前面是刚打的关键词才换（UTF-16 的范围；有选中的、前面不是它的不换）
+  @Test func typedRangeInNotes() {
+    #expect(
+      SnippetExpander.typedRange(
+        of: ";mail", in: "你好 ;mail", selection: NSRange(location: 8, length: 0))
+        == NSRange(location: 3, length: 5))
+    #expect(
+      SnippetExpander.typedRange(
+        of: ";mail", in: "你好 ;mail", selection: NSRange(location: 7, length: 0))
+        == nil)
+    #expect(
+      SnippetExpander.typedRange(
+        of: ";mail", in: ";mail", selection: NSRange(location: 0, length: 5))
+        == nil)
+    #expect(
+      SnippetExpander.typedRange(
+        of: ";mail", in: "mail", selection: NSRange(location: 4, length: 0))
+        == nil)
+  }
+
   @Test func settingsWarnings() {
     #expect(SnippetExpandTab.warning(clipboardOn: true, secure: nil) == nil)
     #expect(SnippetExpandTab.warning(clipboardOn: false, secure: nil)?.contains("剪贴板关着") == true)
@@ -99,6 +119,9 @@ struct SnippetExpanderTests {
       clipboardOn: true, secure: .init(holder: "终端", bundleID: "com.apple.Terminal"))
     #expect(warning?.contains("「终端」开着安全输入") == true)
     #expect(warning?.contains("安全键盘输入") == true)
+    #expect(
+      SnippetExpandTab.warning(clipboardOn: true, secure: nil, duplicated: true)?.contains("重复")
+        == true)
   }
 
   /// 按需：测试宿主（Dev 版的授权）建不建得起只听的拦截（只有辅助功能、没有输入监控时可能不行），建了马上撤

@@ -197,6 +197,12 @@ TEST_RUNNER_KITTY_LIVE_FINDER_KEYS=1 xcodebuild -project macos/KittyTools.xcodep
 TEST_RUNNER_KITTY_LIVE_SMOOTH_SCROLL=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/SmoothScrollTests/liveProbe()'
 
+# 片段展开插件：测试宿主（= Dev 版的授权）建得起哪一种事件拦截（只听的 / 不吞键的），建了马上撤、不发键，打印辅助功能和输入监控
+# 给没给（按需，不到 1 秒）。真的打字展开在 macos/build/research/snippet-expand-2026-11-22/run.sh（探针自己的窗口，约 40 秒，
+# 会临时切 ABC / 系统拼音再切回；跑之前先跟用户说）
+TEST_RUNNER_KITTY_LIVE_SNIPPET_TAP=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:'KittyToolsTests/SnippetExpanderTests/liveTapKind()'
+
 # 刘海岛动画的掉帧探针（按需；**屏幕顶部正中会出现岛约 8 秒**，不动鼠标、不抢键盘）：measure() 挂显示链量主线程每拍的间隔，
 # 分阶段（出现、悬停展开、收起、开 / 收那一张、进行中换成结果）报掉了几帧，grep「island-frames」；recording() 要 Dev 版有
 # 「屏幕录制」授权，岛背后垫一块浅灰窗口逐帧抓刘海那一块，量形体的宽高（收起前停没停、换内容有没有先宽后窄、中途卡没卡），
