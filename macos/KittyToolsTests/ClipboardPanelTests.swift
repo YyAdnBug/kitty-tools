@@ -646,8 +646,14 @@ struct ClipboardPanelTests {
   }
 
   /// 搜索框的空格接到 onSpace：框原来空着、打了一个空格 → 交给它，它接了框退回空的、绑定不变；它不接、或框里原来有字，
-  /// 空格照常进框
-  @Test func spaceReachesHandlerOnlyFromEmptyField() {
+  /// 空格照常进框。按下的那一下（不带修饰键的空格）传进去：controlTextDidChange 读 NSApp.currentEvent，全量跑时那是
+  /// 别的测试留下的事件，带 ⌘ 的按键会让三条都不过
+  @Test func spaceReachesHandlerOnlyFromEmptyField() throws {
+    let space = try #require(
+      NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+        context: nil, characters: " ", charactersIgnoringModifiers: " ", isARepeat: false,
+        keyCode: UInt16(kVK_Space)))
     final class Box { var text = "" }
     let box = Box()
     var handled = true
@@ -662,8 +668,7 @@ struct ClipboardPanelTests {
     ).makeCoordinator()
     func type(_ text: String) {
       field.stringValue = text
-      coordinator.controlTextDidChange(
-        Notification(name: NSControl.textDidChangeNotification, object: field))
+      coordinator.textChanged(in: field, event: space)
     }
     type(" ")
     #expect(calls == 1 && field.stringValue.isEmpty && box.text.isEmpty)

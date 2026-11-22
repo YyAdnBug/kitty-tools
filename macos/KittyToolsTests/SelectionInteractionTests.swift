@@ -709,26 +709,34 @@ struct SelectionInteractionTests {
       }
       return (h, fake)
     }
+    /// 等排好的那次重问跑完（到点时先把 pid 摘出 rechecking、同一拍里问完）。按轮数等，不按墙上时间：全量跑时主线程挤，
+    /// 到点的那一拍可能排在几秒以后
+    func settle(_ h: Harness) async throws {
+      for _ in 0..<500 where !h.view.rechecking.isEmpty {
+        try await Task.sleep(for: .milliseconds(10))
+      }
+      #expect(h.view.rechecking.isEmpty)
+    }
     var (h, fake) = woken(views: true)
     h.move(point)
     #expect(h.view.accessibilityLabel() == "待选，窗口 600 × 500 像素")
+    #expect(h.view.rechecking == [4242])
     var before = fake.asked
     fake.ready = true
-    try await Task.sleep(for: .milliseconds(600))
+    try await settle(h)
     #expect(fake.asked > before)
     #expect(h.view.accessibilityLabel() == "待选，组 300 × 30 像素")
     // 遮罩已经收了（finish 清掉 views）：到点不问
     (h, fake) = woken(views: false)
     h.move(point)
+    #expect(h.view.rechecking == [4242])
     before = fake.asked
-    try await Task.sleep(for: .milliseconds(600))
+    try await settle(h)
     #expect(fake.asked == before)
     // 本来就认得细：不排
     (h, fake) = woken(views: true, ready: true)
     h.move(point)
-    before = fake.asked
-    try await Task.sleep(for: .milliseconds(600))
-    #expect(fake.asked == before)
+    #expect(h.view.rechecking.isEmpty)
     // 刚叫醒时问超时：这次只给窗口，不记成卡住；叫醒很久以前的照旧记
     h = Harness(windows: [window], owners: [[4242]], findsElements: true)
     h.session.hits.woken[4242] = .now

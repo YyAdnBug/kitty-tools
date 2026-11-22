@@ -113,11 +113,17 @@ struct CommandTextField: NSViewRepresentable {
 
     func controlTextDidChange(_ notification: Notification) {
       guard let field = notification.object as? NSTextField else { return }
+      textChanged(in: field)
+    }
+
+    /// 框里的字变了。event：改字时正在派发的那一下（默认 NSApp.currentEvent）；单测传进来，不读别的测试留下的全局状态——
+    /// currentEvent 是最后一个从事件队列取出来的事件、取完一直留着（实测），留下的是带 ⌘ 的按键时空格就不算了
+    func textChanged(in field: NSTextField, event: NSEvent? = NSApp.currentEvent) {
       if let onSpace = parent.onSpace, parent.text.isEmpty,
         CommandTextField.isLoneSpace(
           field.stringValue,
           composing: (field.currentEditor() as? NSTextView)?.hasMarkedText() == true,
-          modifiers: NSApp.currentEvent.flatMap { $0.type == .keyDown ? $0.modifierFlags : nil }),
+          modifiers: event.flatMap { $0.type == .keyDown ? $0.modifierFlags : nil }),
         onSpace()
       {
         field.stringValue = ""
