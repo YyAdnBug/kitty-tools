@@ -663,6 +663,64 @@ struct ScreenshotTests {
     #expect(await OCR.barcodes(in: try Self.render(["no code here"])).isEmpty)
   }
 
+  @MainActor @Test(arguments: [false, true])
+  func copyPrefersBarcodesToText(joined: Bool) async {
+    let result = await AppDelegate.fastTextForCopy(
+      codes: ["https://example.com/kitty", "12345"], joined: joined
+    ) {
+      Issue.record("有条码就不用分析旁边的文字")
+      return "caption"
+    }
+    guard case .codes(let text)? = result else {
+      Issue.record("有条码应直接拷码，不该要求准备 Vision 文字模型")
+      return
+    }
+    #expect(text == "https://example.com/kitty\n12345")
+  }
+
+  @MainActor @Test(arguments: [
+    (" first line\nsecond line\n", " first line\nsecond line\n"), ("", ""), (" \t\n", ""),
+  ])
+  func successfulTranscriptDoesNotRequireVision(transcript: String, expected: String) async {
+    let result = await AppDelegate.fastTextForCopy(codes: [], joined: false) { transcript }
+    guard case .text(let text)? = result else {
+      Issue.record("实况文本成功（包括空白图）不该再走 Vision")
+      return
+    }
+    #expect(text == expected)
+  }
+
+  @MainActor @Test func joinedCopyRequestsVisionWithoutTranscript() async {
+    let result = await AppDelegate.fastTextForCopy(codes: [], joined: true) {
+      Issue.record("按段接行需要原来的行框，不用实况文本")
+      return "no line boxes"
+    }
+    #expect(result == nil)
+  }
+
+  @MainActor @Test(arguments: [false, true])
+  func unavailableOrFailedTranscriptRequestsVision(failed: Bool) async {
+    let result = await AppDelegate.fastTextForCopy(codes: [], joined: false) {
+      if failed { throw CocoaError(.featureUnsupported) }
+      return nil
+    }
+    #expect(result == nil)
+  }
+
+  @MainActor @Test(arguments: [false, true])
+  func cancelledAnalysisNeverRequestsFallbackOrCopiesLateText(throwsCancellation: Bool) async {
+    let cancelled = await Task { @MainActor in
+      let result = await AppDelegate.fastTextForCopy(codes: [], joined: false) {
+        if throwsCancellation { throw CancellationError() }
+        withUnsafeCurrentTask { $0?.cancel() }
+        return "late transcript"
+      }
+      if case .cancelled? = result { return true }
+      return false
+    }.value
+    #expect(cancelled)
+  }
+
   @Test func joiningLinesKeepsCJKTight() {
     #expect(OCR.joiningLines("第一行文字\n接着第二行") == "第一行文字接着第二行")
     #expect(OCR.joiningLines("hello\nworld") == "hello world")

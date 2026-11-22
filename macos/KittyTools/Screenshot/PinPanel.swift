@@ -442,8 +442,6 @@ private final class PinView: NSView {
   private var textLayer: ImageAnalysisOverlayView?
   /// 认字（一张钉图只认一次，关钉图时取消）
   private var analyzing: Task<Void, Never>?
-  /// 所有钉图共用一个识别器（系统建议复用）
-  private static let analyzer = ImageAnalyzer()
 
   init(image: CGImage, size: CGSize, board: PinBoard, window: Bool = false) {
     self.image = image
@@ -865,10 +863,8 @@ extension PinView: ImageAnalysisOverlayViewDelegate {
     return textLayer.selectedText
   }
 
-  /// 认出图里的字、挂上选字层：鼠标第一次停上来时（mouseEntered 那 0.3 秒之后），一张钉图只认一次（认不出、出错也不再认）。
+  /// 鼠标停上来 0.3 秒后认字，认出字才挂选字层。成功后即使没字也不再认；出错则下次重试。
   /// 设置关掉后再停上来：摘掉选字层，下次打开再认。
-  /// ponytail: 语种跟系统的首选语言（实测给提示两头难：只给中英会整行丢韩文，不给时一行粗体中文标题偶尔认成拉丁字母），
-  /// 认错了的那几个字用 O 识字（Vision）拷
   @discardableResult func startText() -> Task<Void, Never>? {
     guard Self.selectsText else {
       stopText()
@@ -887,9 +883,9 @@ extension PinView: ImageAnalysisOverlayViewDelegate {
     let image = image
     let task = Task { [weak self] in
       do {
-        let analysis = try await Self.analyzer.analyze(
-          image, orientation: .up, configuration: ImageAnalyzer.Configuration([.text]))
-        guard !Task.isCancelled, analysis.hasResults(for: .text) else { return }
+        guard let analysis = try await LiveText.analysis(of: image),
+          !Task.isCancelled, analysis.hasResults(for: .text)
+        else { return }
         self?.attach(analysis)
       } catch {
         // 出错（系统服务刚起来、偶尔不答）：下次停上来再认；认出来没字的不再认

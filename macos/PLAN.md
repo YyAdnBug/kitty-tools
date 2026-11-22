@@ -431,6 +431,8 @@ https://claude.ai/artifact/NQLWKFVipMqoqDabJ2ZQTf 当时没回，11-18 拍板页
 - 构成、量法、分批，描边换画法、空闲回收、空闲时放掉识字模型、链接预览的头图，以及便签接进空闲回收（调优 T2）的实现记录和实测数已归档到 `docs/archive/PLAN-batches-2026-10.md`（§10「常驻内存」）；规矩在 mac-whisker §8、mac-clipboard §5「链接预览」、mac-native「测量与诊断」。
 - **PR #39（2026-11-20，外部 PR，作者 DCDYSMRZ）**：设置 › 截图 › 高级 加「空闲时释放识字模型」，**默认开 = 原来的行为**；关掉的模型不放，开着截图或翻译时启动（和刚打开时）就在进程内预热（作者原提交默认关，修正提交改回默认开、只在关掉时预热）。实测（27.0.1）：省第一次识字 0.1–0.3 s；27 上模型在 footprint 的 neural 一类、不计入 phys_footprint，放掉对 phys_footprint 基本没影响（mac-clipboard §1）。下一版更新日志写一句：「设置 › 截图 › 高级 新增「空闲时释放识字模型」，关掉后识字模型一直留着、第一次识字更快」。
 - **下一版更新日志（修复）**：清理 Kitty Tools 的缓存目录后，开着识字相关功能时会在后台重新准备模型，不必重启或等下一次截图识字。 / After Kitty Tools’ cache folder is cleared, the app prepares the model in the background when a text recognition feature is enabled, without waiting for a restart or the next capture.
+- **下一版更新日志（性能）**：截图、钉图和访达拷贝图中文字时，有码仍先拷码；没有码且不接行时，支持的 Mac 优先用实况文本，不必先等 Vision 文字模型准备好。 / When copying text from a capture, a pin, or images in Finder, barcodes still take priority. With line joining off, supported Macs use Live Text without first waiting for the Vision text model.
+- 实况文本成功但结果为空或全是空白，就当作没有文字，不为可能的漏识别再跑 Vision。打开按段接行（需要行框）、设备不支持实况文本、分析报错时才走原来的 Vision 文字识别；取消不算报错重试。条码检测和实况文本服务也有首次开销；重启 App 或删掉 `ocr-ready` 不等于系统服务和模型全冷，不能据此保证首次识别耗时。截图翻译、打码、剪贴板后台索引不改，#39 的预热与空闲释放、#42 的磁盘标记与缓存恢复仍各自生效，不依赖拷贝这次走哪条路。
 - 等用户定（原「链接预览的头图」那条末尾）：头图分档（透镜只要 320 × 180 像素，按它解一张画过才约 0.5 MB，12 条都看过从约 70 MB 降到约 6 MB；代价是 ⌘Y 大卡要另解一张 1200 的，从透镜长出来的头几帧先糊后清）；把 12 条调小。
 - 不做：字形缓存（系统封顶，公开接口清不了）；进程内 Metal（符号动效就会带起来，单把棋盘格 Canvas 换成形状实测省不到 1 MB）；主面板用完放掉（描边改完后三块加起来只再还约 10 MB，每次呼出却要重建）；设置窗的一次性开销（系统控件的堆）；缩略图上限不改（改成空闲时清）；识字全走子进程（现成的 `--ocr` 子进程每次 0.51–0.70 s，进程内热的是 0.22 s，每次都过 0.3 s、都会闪「识别中」）。
 
