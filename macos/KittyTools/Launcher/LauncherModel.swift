@@ -38,11 +38,27 @@ import UniformTypeIdentifiers
 @Observable final class LauncherModel {
   var query = "" {
     didSet {
+      typedAt = (ProcessInfo.processInfo.systemUptime, typedAt.last)
       forgotten = nil  // 打字就不能再撤销移除
       review = nil
       if output != nil { closeOutput() }
       search()
     }
+  }
+  /// 最近两次改 query 的时刻（开机以来的秒数）
+  @ObservationIgnored private var typedAt: (last: TimeInterval, previous: TimeInterval) = (0, 0)
+  /// 两下之间不到这么久算连着打字
+  static let typingGap: TimeInterval = 0.2
+  /// 正在连着打字（这一下离上一下、离现在都不到 typingGap）：面板高度直接到位、不做动画（Whisker §1「每次按键后的结果刷新
+  /// 0 ms」；2026-11-23 美化与提速 P4 量的：连着打字时每个字都起一段窗口帧动画，动画的每一帧 SwiftUI 都重排一遍）。
+  /// 停下来之后的改动（后到的菜单项、外网地址、汇率）和停了一会儿再打的第一个字照常动画
+  var isTyping: Bool { Self.isTyping(typedAt, now: ProcessInfo.processInfo.systemUptime) }
+
+  /// isTyping 的纯函数（单测）
+  static func isTyping(_ typed: (last: TimeInterval, previous: TimeInterval), now: TimeInterval)
+    -> Bool
+  {
+    typed.last - typed.previous < typingGap && now - typed.last < typingGap
   }
   var results: [LauncherItem] = []
   var selection = 0

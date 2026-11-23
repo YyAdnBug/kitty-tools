@@ -895,6 +895,35 @@ struct LauncherLanguageTests {
     #expect(Calculator.result(for: "1 mu to m2")?.payload == "666.6667 m²")
   }
 
+  /// 连着打字时面板高度直接到位（P4）：这一下离上一下、离现在都不到 typingGap 才算连着打；停了一会儿再打的第一个字、
+  /// 停下来以后后到的结果照常动画
+  @Test func typingBurstSkipsHeightAnimation() throws {
+    let gap = LauncherModel.typingGap
+    #expect(!LauncherModel.isTyping((last: 100, previous: 0), now: 100))
+    #expect(LauncherModel.isTyping((last: 100, previous: 100 - gap / 2), now: 100.01))
+    #expect(!LauncherModel.isTyping((last: 100, previous: 100 - gap / 2), now: 100 + gap))
+    #expect(!LauncherModel.isTyping((last: 100, previous: 100 - gap * 2), now: 100.01))
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    #expect(!model.isTyping)
+    model.query = "s"
+    #expect(!model.isTyping)  // 第一个字
+    model.query = "sa"
+    #expect(model.isTyping)
+  }
+
+  /// 单位换算、进制先看有没有数字 / 进制的字，没有就不跑正则（P4）：全角的、大写的照样认，没写的照旧不算
+  @Test func calculatorSkipsWithoutDigitsOrRadix() {
+    #expect(Calculator.result(for: "１０ km to mi") == Calculator.result(for: "10 km to mi"))
+    #expect(Calculator.result(for: "10 km to mi")?.display == "6.2137 mi")
+    #expect(Calculator.result(for: "255 in ＨＥＸ") == Calculator.result(for: "255 in hex"))
+    #expect(Calculator.result(for: "255 IN HEX") == Calculator.result(for: "255 in hex"))
+    #expect(Calculator.result(for: "255 转 十六进制") == Calculator.result(for: "255 in hex"))
+    #expect(Calculator.result(for: "255 in hex") != nil)
+    for query in ["safari", "km to mi", "系统设置", "hex"] {
+      #expect(Calculator.convert(query) == nil && Calculator.convertRadix(query) == nil, "\(query)")
+    }
+  }
+
   @Test func currencyExampleWorksInBothLanguages() {
     let resource = LocalizedStringResource(
       "launcher.currencyExample", defaultValue: "100 美元 转 日元", comment: "汇率换算的示例，要能算出来")

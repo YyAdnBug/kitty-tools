@@ -17,6 +17,9 @@ import Testing
 // 设置窗（每页第一次 / 第二次打开）。偏好用临时域，库在内存里，图片在临时目录。
 // 要看主线程忙在哪：另加 TEST_RUNNER_KITTY_POLISH_LOOP=clip-down / clip-search / clip-scroll / launcher-type / settings，
 // 只把那一件来回做 10 秒，pid 写在 <目录>/pid，这时 `sample <pid> 7`。
+// 只量其中几块：TEST_RUNNER_KITTY_POLISH_ONLY=launcher,clip,translate,settings（逗号隔开）。
+// 第一次呼出预排过的（P7，OverlayPanel.prewarm）：另加 TEST_RUNNER_KITTY_POLISH_PREWARM=1（再屏外画一遍：=display），启动器、剪贴板
+// 面板建好后先预排、闲 1 秒再量第一次呼出，报告里多一行预排花了多久、phys_footprint 多了多少；和不加的那一遍对比。
 // capture()：ScreenCapture.freeze() 连做 6 次各多久（要「屏幕录制」授权，只在内存里截、不存图）。
 // glass()：屏上真玻璃（屏外截图画不出玻璃）——三块主面板各摆在一扇背景窗口上，两扇都放在所有窗口后面（屏幕左下角，
 // 不当 key），ScreenCaptureKit 只合成这两扇抓出来，图在 <目录>/glass/。要 TEST_RUNNER_KITTY_POLISH_GLASS=1；
@@ -202,7 +205,7 @@ struct PolishProbeTests {
 @MainActor final class PolishProbe {
   nonisolated static let onscreen =
     ProcessInfo.processInfo.environment["KITTY_POLISH_PROBE_ONSCREEN"] == "1"
-  /// 给 sample 用：只把这一件来回做 10 秒（clip-down / clip-search / clip-scroll / launcher-type / settings / translate-stream），
+  /// 给 sample 用：只把这一件来回做 10 秒（clip-down / clip-search / clip-scroll / launcher-type / settings / settings-pair / translate-stream），
   /// pid 写进 <目录>/pid
   nonisolated static let loop = ProcessInfo.processInfo.environment["KITTY_POLISH_LOOP"]
 
@@ -288,10 +291,15 @@ struct PolishProbeTests {
     warm.hide()
     spin(0.3)
 
-    let wants: (String) -> Bool = { Self.loop == nil || Self.loop!.hasPrefix($0) }
+    // TEST_RUNNER_KITTY_POLISH_ONLY=launcher,settings：只量这几块
+    let only = ProcessInfo.processInfo.environment["KITTY_POLISH_ONLY"]?.split(separator: ",")
+    let wants: (String) -> Bool = { name in
+      (Self.loop == nil || Self.loop!.hasPrefix(name))
+        && (only?.contains { name.hasPrefix($0) || $0.hasPrefix(name) } ?? true)
+    }
     if wants("launcher") { try launcher(prefs) }
     if wants("clip") { try clipboard(prefs, count: Self.loop == nil ? 5000 : 300) }
-    if Self.loop == nil { try clipboard(prefs, count: 300) }
+    if Self.loop == nil, wants("clip") { try clipboard(prefs, count: 300) }
     if wants("translate") { try translate(prefs) }
     if wants("settings") { try settings(prefs) }
   }
@@ -347,6 +355,40 @@ struct PolishProbeTests {
         panel.present(makingKey: false, keepsPlace: true)
       }
     }
+  }
+
+  /// TEST_RUNNER_KITTY_POLISH_PREWARM=1（=display：预排完再屏外画一遍，比较用）：面板建好后先屏外预排（OverlayPanel.prewarm，P7），记它花了多久、
+  /// footprint 多了多少，再闲 1 秒；返回闲完的时刻（第一次呼出从这里算）。没开就 nil
+  private func prewarmIfAsked(_ panel: OverlayPanel) -> CFTimeInterval? {
+    guard let mode = ProcessInfo.processInfo.environment["KITTY_POLISH_PREWARM"] else { return nil }
+    let before = Self.footprint()
+    let start = CACurrentMediaTime()
+    if mode == "display" {
+      panel.prewarm()
+      panel.displayIfNeeded()
+    } else {
+      panel.prewarm()
+    }
+    let cost = (CACurrentMediaTime() - start) * 1000
+    spin(1)
+    Self.log(
+      String(
+        format: "预排（%@）%.1f ms，phys_footprint +%.1f MB", mode == "display" ? "排版 + 画" : "只排版",
+        cost, Self.footprint() - before))
+    return CACurrentMediaTime()
+  }
+
+  /// phys_footprint（活动监视器的口径），MB
+  static func footprint() -> Double {
+    var info = task_vm_info_data_t()
+    var count = mach_msg_type_number_t(
+      MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+    let status = withUnsafeMutablePointer(to: &info) {
+      $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+        task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+      }
+    }
+    return status == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576 : 0
   }
 
   private func fmt(_ value: (sync: Double, busy: Double, longest: Double)) -> String {
@@ -489,11 +531,23 @@ struct PolishProbeTests {
       content: LauncherPanelView(model: model).defaultAppStorage(prefs))
     panel.onHide = { [unowned model] in model.didHide() }
     model.hidePanel = { [weak panel] in panel?.hide() }
-    model.resize = { [weak panel] in panel?.setContentHeight($0, animated: true) }
+    // 同 AppDelegate：⌘K 菜单开着、连着打字时直接到位（P4）
+    var resizes = (all: 0, animated: 0)
+    model.resize = { [weak panel, unowned model] in
+      let animated = !model.showsActions && !model.isTyping
+      resizes.all += 1
+      resizes.animated += animated ? 1 : 0
+      panel?.setContentHeight($0, animated: animated)
+    }
     built = panel
-    let cold = show(panel)
+    // 预排（P7，同 AppDelegate.prewarmPanels）：之后第一次呼出照真 App 再 prepareForShow 一次
+    let prewarmed = prewarmIfAsked(panel)
+    // 第一次呼出 = 显示之前花的（建面板、prepareForShow；预排过的从闲完那一刻算，是 0）+ 显示那一下同步的；之后 0.4 s 跑环里的
+    // 另记（原来把那 0.4 s 的空转也算了进去，比真的多 400 ms 左右）
+    let beforeShow = (CACurrentMediaTime() - (prewarmed ?? start)) * 1000
+    let cold = show(panel, before: { if prewarmed != nil { model.prepareForShow() } })
     Self.log(
-      "第一次呼出（建面板 + 排版 + 首帧）\(String(format: "%.1f", (CACurrentMediaTime() - start) * 1000 - cold.busy)) ms；"
+      "第一次呼出（\(prewarmed == nil ? "建面板 + 排版 + 首帧" : "预排过：prepareForShow + 首帧")）\(String(format: "%.1f", beforeShow + cold.sync)) ms；"
         + fmt(cold))
     if looping(
       "launcher-type",
@@ -521,16 +575,20 @@ struct PolishProbeTests {
       var keys: [Double] = []
       var works: [Double] = []
       var longest: [Double] = []
+      var busy: [Double] = []
       var typed = ""
+      resizes = (0, 0)
       for character in word {
         typed.append(character)
         let value = settle(panel, after: 0.12) { model.query = typed }
         keys.append(value.sync)
         works.append(lastWork)
         longest.append(value.longest)
+        busy.append(value.busy)
       }
       Self.log(
-        "打字（\(label)「\(word)」逐字）：同步 \(Self.stats(keys))；其中改 query（搜索本身）\(Self.stats(works))；之后最长一下 \(Self.stats(longest))"
+        "打字（\(label)「\(word)」逐字）：同步 \(Self.stats(keys))；其中改 query（搜索本身）\(Self.stats(works))；之后最长一下 \(Self.stats(longest))；"
+          + "之后 0.12 s 合计忙 \(Self.stats(busy))；改高度 \(resizes.all) 次（带动画 \(resizes.animated) 次）"
       )
     }
     // ↓ 连按
@@ -631,9 +689,11 @@ struct PolishProbeTests {
     panel.onHide = { [unowned model] in model.reset() }
     model.hidePanel = { [weak panel] in panel?.hide() }
     model.resize = { [weak panel] in panel?.setContentHeight($0, animated: true) }
+    let prewarmed = prewarmIfAsked(panel)
+    let beforeShow = (CACurrentMediaTime() - (prewarmed ?? open)) * 1000
     let cold = show(panel)
     Self.log(
-      "第一次呼出（建面板 + 首帧）\(String(format: "%.1f", (CACurrentMediaTime() - open) * 1000 - cold.busy)) ms；\(fmt(cold))"
+      "第一次呼出（\(prewarmed == nil ? "建面板 + 首帧" : "预排过：首帧")）\(String(format: "%.1f", beforeShow + cold.sync)) ms；\(fmt(cold))"
     )
     if looping(
       "clip-down",
@@ -892,12 +952,23 @@ struct PolishProbeTests {
     Self.log("打开（通用页）：\(fmt(open))")
     let pages: [SettingsPage] = [
       .clipboard, .translate, .screenshot, .record, .notes, .hotkeys, .statusScreen, .plugins,
-      .island, .dockPreview, .about, .general,
+      .island, .dockPreview, .about, .general, .bluetoothSnooze, .smoothScroll, .appShortcuts,
+      .snippetExpand, .finderMenu,
     ]
+    let opened = Self.footprint()
     if looping(
       "settings",
       { index in
         if index % 12 == 0 { navigation.page = pages[index / 12 % pages.count] }
+      })
+    {
+      return
+    }
+    // settings-pair：通用 ↔ 快捷键来回切
+    if looping(
+      "settings-pair",
+      { index in
+        if index % 12 == 0 { navigation.page = index / 12 % 2 == 0 ? .general : .hotkeys }
       })
     {
       return
@@ -918,8 +989,34 @@ struct PolishProbeTests {
       )
     }
     Self.log("再换到各页：\(seconds.joined(separator: "，"))")
+    // 来回切两页（真用的时候最常见：在两三页之间改来改去）
+    for pair in [(SettingsPage.general, SettingsPage.hotkeys), (.statusScreen, .translate)] {
+      var back: [Double] = []
+      settle(window, after: 0.3) { navigation.page = pair.0 }
+      settle(window, after: 0.3) { navigation.page = pair.1 }
+      for step in 0..<10 {
+        back.append(
+          settle(window, after: 0.3) { navigation.page = step % 2 == 0 ? pair.0 : pair.1 }.sync)
+      }
+      Self.log("来回切 \(pair.0.rawValue) ↔ \(pair.1.rawValue)（10 次）：同步 \(Self.stats(back))")
+    }
+    let visited = Self.footprint()
+    // 拖窗口改大小
+    var resizes: [Double] = []
+    for step in 0..<10 {
+      resizes.append(
+        settle(window, after: 0) {
+          window.setContentSize(NSSize(width: 780 + CGFloat(step % 2) * 60, height: 600))
+        }.sync)
+      spin(0.05)
+    }
+    Self.log(
+      String(
+        format: "各页都看过两遍后 phys_footprint 比刚打开时 +%.1f MB；改窗口大小（10 次）：同步 %@",
+        visited - opened, Self.stats(resizes)))
     window.close()
-    spin(0.3)
+    spin(1)
+    Self.log(String(format: "关窗后 phys_footprint 比刚打开时 +%.1f MB", Self.footprint() - opened))
   }
 
   private static let english =

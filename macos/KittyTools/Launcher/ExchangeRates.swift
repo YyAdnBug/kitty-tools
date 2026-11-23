@@ -60,8 +60,37 @@ enum ExchangeRates {
   }
 
   /// 「100 usd」「100美元转人民币」「$100 in jpy」「美元兑人民币」「100万日元是多少人民币」；不是汇率换算就 nil。
-  /// 没写金额（只问汇率）按 1 算，但两边都要是确定的货币（见 confident）
+  /// 没写金额（只问汇率）按 1 算，但两边都要是确定的货币（见 confident）。
+  /// 启动器每打一个字要问三四遍（搜索、计算行、占位行；2026-11-23 美化与提速 P4）：同一个查询只解析一次（按去掉首尾空格的
+  /// 认，解析本身也不看首尾空格）；没提到任何货币的（打 App 名、算式）不跑下面那些正则
   static func request(for query: String) -> Request? {
+    let query = query.trimmingCharacters(in: .whitespaces)
+    if let parsed, parsed.query == query { return parsed.request }
+    let request = mentionsCurrency(query) ? parseRequest(query) : nil
+    parsed = (query, request)
+    return request
+  }
+
+  /// 上一次问的查询和结果
+  private static var parsed: (query: String, request: Request?)?
+
+  /// 提到了某种货币（ISO 代码、names 里的名字、符号、口语叫法）：每种换算写法都要有一种货币的叫法原样出现在 clean 之后的
+  /// 字里，所以没提到的一定不是汇率换算。照 clean 先去掉问法里的字（去掉之后才挨在一起的也算），不分大小写、全角半角
+  static func mentionsCurrency(_ query: String) -> Bool {
+    var text = query.folding(options: .widthInsensitive, locale: nil).lowercased()
+    for filler in fillers { text = text.replacing(filler, with: "") }
+    let characters = Array(text)
+    return characters.indices.contains { index in
+      nameIndex[characters[index]]?.contains { characters[index...].starts(with: $0) } ?? false
+    }
+  }
+
+  /// 货币的每种叫法（小写的 ISO 代码和 names 的键）按第一个字分好，mentionsCurrency 用
+  private static let nameIndex: [Character: [[Character]]] =
+    Dictionary(grouping: isoCodes.map { $0.lowercased() } + names.keys) { $0.first! }
+    .mapValues { $0.map(Array.init) }
+
+  private static func parseRequest(_ query: String) -> Request? {
     let (text, asksRate) = clean(query)
     guard !text.isEmpty else { return nil }
     for match in text.matches(of: connector) {
@@ -94,13 +123,14 @@ enum ExchangeRates {
     return token == code || common.contains(code)
   }
 
+  /// 问法里不影响意思的字（clean、mentionsCurrency 都先去掉）
+  private static let fillers = ["请问", "可以", "大概", "大约", "现在", "今天", "能", "的", "呢", "吗", "?"]
+
   /// 问法里不影响意思的字（请问、能、可以、大概、大约、现在、今天、的、呢、吗、？），开头的「汇率」、结尾的「汇率 / rate」和
   /// 「多少钱 / 是多少 / 等于多少 / 多少 / 等于 / =」去掉；后两种说明是在问汇率（没写金额也行）
   private static func clean(_ query: String) -> (text: String, asksRate: Bool) {
     var text = Calculator.normalize(query)
-    for filler in ["请问", "可以", "大概", "大约", "现在", "今天", "能", "的", "呢", "吗", "?"] {
-      text = text.replacing(filler, with: "")
-    }
+    for filler in fillers { text = text.replacing(filler, with: "") }
     text = text.trimmingCharacters(in: .whitespaces)
     let before = text
     text = text.replacing(/^(?:汇率|匯率)\s*/, with: "")
@@ -291,6 +321,8 @@ enum ExchangeRates {
   /// recents：用过的货币，排在同一档的最前面。调用方只在没有计算结果时用它（「10 km to m」是单位换算，不出候选）
   static func suggestions(for query: String, recents: [String] = []) -> [LauncherItem] {
     let raw = query.trimmingCharacters(in: .whitespaces)
+    // 下面两条路，连接词后面要左边有一种货币、金额后面要有数字：都没有的（打 App 名）不跑正则（P4）
+    guard raw.contains(where: \.isNumber) || mentionsCurrency(raw) else { return [] }
     let text = Calculator.normalize(raw)
     var partial: String?
     var exclude: String?

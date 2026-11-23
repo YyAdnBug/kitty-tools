@@ -19,15 +19,22 @@ struct SearchEngine: Codable, Hashable, Identifiable {
 
   /// 显示的名字：自带的预设、名字还是存的那个中文名（没改过）时按界面语言翻（「百度」→ Baidu）；改过的、自己加的照存的写。
   /// 存的照旧是中文（拍板 D6：存过就固定，只翻显示；默认列表全 App 一套，不按语言变）
-  var displayName: String {
-    WebSearch.presetTitle(id: id, name: name).map { String(localized: $0) } ?? name
-  }
+  var displayName: String { labels.display }
 
   /// 搜索用的名字：显示的、存的和中文名的全拼（英文界面里打「百度」「baidu」都找得到）
-  var searchNames: [String] {
-    let pinyin = AppCatalog.pinyin(name)?.full
-    return [displayName, name, pinyin].compactMap { $0 }.map(LauncherMatch.fold)
-      .reduce(into: []) { if !$0.contains($1) { $0.append($1) } }
+  var searchNames: [String] { labels.search }
+
+  /// 显示的名字和搜索用的名字只跟 id、名字有关（界面语言这次运行里不变）：启动器每打一个字都要问每个搜索一遍（查预设的中文名、
+  /// 转拼音），按 id + 名字记下来（2026-11-23 美化与提速 P4）。ponytail: 不清，条数 = 用过的不同名字，涨到上千再改成跟着列表算
+  private var labels: (display: String, search: [String]) {
+    let key = id + "\u{1}" + name
+    if let cached = WebSearch.labels[key] { return cached }
+    let display = WebSearch.presetTitle(id: id, name: name).map { String(localized: $0) } ?? name
+    let search = [display, name, WebSearch.pinyin(name)?.full].compactMap { $0 }
+      .map(LauncherMatch.fold)
+      .reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
+    WebSearch.labels[key] = (display, search)
+    return (display, search)
   }
 }
 
@@ -90,6 +97,17 @@ enum WebSearch {
     SearchEngine(id: id, name: name, keyword: keyword, urlTemplate: url, enabled: fallback)
   }
 
+  /// 搜索名字的拼音（全拼和首字母）：转拼音（ICU）记下来，同一个名字只转一次（P4，同 SearchEngine.labels，不清）
+  static func pinyin(_ name: String) -> (full: String, initials: String)? {
+    if let cached = pinyins[name] { return cached }
+    let pinyin = AppCatalog.pinyin(name)
+    pinyins[name] = pinyin
+    return pinyin
+  }
+  private static var pinyins: [String: (full: String, initials: String)?] = [:]
+  /// SearchEngine.labels 记下的
+  fileprivate static var labels: [String: (display: String, search: [String])] = [:]
+
   static var engines: [SearchEngine] {
     get { engines(in: .standard) }
     set { setEngines(newValue, in: .standard) }
@@ -132,7 +150,7 @@ enum WebSearch {
   /// 快捷链接：和 App、书签一起参与匹配排序（↩ 打开）
   static func quicklinkItems(engines: [SearchEngine] = engines) -> [LauncherItem] {
     engines.filter(\.isQuicklink).map { engine in
-      let pinyin = AppCatalog.pinyin(engine.name)
+      let pinyin = Self.pinyin(engine.name)
       let target = engine.urlTemplate.trimmingCharacters(in: .whitespaces)
       let isPath = target.hasPrefix("/") || target.hasPrefix("~")
       return LauncherItem(

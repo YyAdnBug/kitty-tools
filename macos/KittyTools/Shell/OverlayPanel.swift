@@ -226,6 +226,14 @@ final class OverlayPanel: NSPanel {
   /// 现在粘得进哪个文本视图（记着的窗口在屏上、第一响应者是能编辑的 NSTextView）；nil = 照旧发给前台 App
   func pasteTarget() -> NSTextView? { Paster.pasteTarget(in: pasteTargetWindow) }
 
+  /// 屏外预排（2026-11-23 美化与提速 P7）：开机闲下来以后先把 SwiftUI 的树建好、排一遍，第一次呼出就不用当场做。
+  /// **不显示**：不 orderFront、不 makeKey、不装鼠标监听，窗口还是 defer 着的（窗口服务器那边的窗口第一次 order 时才建）。
+  /// 只排版、不画：屏外先画一遍（displayIfNeeded）实测不省第一次呼出的时间（窗口第一次上屏时照样重画），白花 CPU。开着时什么都不做
+  func prewarm() {
+    guard !isVisible else { return }
+    contentView?.layoutSubtreeIfNeeded()
+  }
+
   /// makingKey = false：只露出来、不抢键盘（复制即译），此时靠点外关闭。
   /// anchor：新出现时放在这一点（鼠标位置）的右下 12 pt（翻译浮窗、剪贴板面板、启动器「跟随鼠标」）；已经开着就不挪。
   /// atTop：新出现时放在鼠标所在屏的上方正中（翻译浮窗「屏幕上方」，同启动器的位置）；已经开着就不挪。

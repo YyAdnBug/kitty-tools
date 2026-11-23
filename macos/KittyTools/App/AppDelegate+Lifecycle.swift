@@ -286,6 +286,8 @@ extension AppDelegate {
     // 访达右键把 App 冷启动时交过来的动作：剪贴板历史、偏好都起来了再做（拷贝的路径才记得进历史）
     for url in pendingLinks { FinderLink.perform(url, island: island) }
     pendingLinks = []
+    // 闲下来以后在屏外预排启动器和剪贴板面板（P7）
+    panelPrewarm.schedule()
   }
 
   /// 设置 › 刘海岛的「停在刘海上自动展开」「触感反馈」跟上（启动时、偏好变了时）
