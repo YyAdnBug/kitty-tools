@@ -24,8 +24,10 @@ enum HIDKeyMapping {
     let id: UInt64
     let keyboard: RemapKeyboard
     let handle: IOHIDServiceClient
+    /// 服务句柄只记着创建它的 client 的裸指针、不持有它，client 放掉以后再读写就是野指针（PR #46）：跟着句柄一起拿着
+    private let client: IOHIDEventSystemClient
 
-    init?(_ handle: IOHIDServiceClient) {
+    init?(_ handle: IOHIDServiceClient, client: IOHIDEventSystemClient) {
       func get(_ key: String) -> CFTypeRef? {
         IOHIDServiceClientCopyProperty(handle, key as CFString)
       }
@@ -40,6 +42,7 @@ enum HIDKeyMapping {
       id = registryID
       keyboard = RemapKeyboard(id: "\(vendor):\(product):\(transport):\(serial)", name: name)
       self.handle = handle
+      self.client = client
     }
 
     func read() throws -> [UInt64: UInt64] {

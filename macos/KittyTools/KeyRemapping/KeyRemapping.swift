@@ -195,7 +195,7 @@ import Observation
     let client = IOHIDEventSystemClientCreateSimpleClient(kCFAllocatorDefault)
     guard let services = IOHIDEventSystemClientCopyServices(client) as? [IOHIDServiceClient]
     else { return nil }
-    return services.compactMap(HIDKeyMapping.Service.init)
+    return services.compactMap { HIDKeyMapping.Service($0, client: client) }
   }
 
   func refresh(recheck: Bool = false) {
