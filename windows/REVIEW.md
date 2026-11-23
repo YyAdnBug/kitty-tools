@@ -11,10 +11,11 @@
 ## PLAN-v25：启动器搜不到文件（外部用户反馈，审查方在 Mac 上查的，2026-11-23）
 
 反馈原话：「我用 Windows 搜索文件，搜不到文件，我也不清楚我的 Windows 是不是设置了搜索文件的什么配置。是不是自己做一套索引，或者借用 Everything 等工具会好点。」
-方案和拍板题在 `PLAN-v25.md`（F1–F16，拍板页 https://claude.ai/artifact/BKs4h3CJ4C7QFbnVkt7SKE）。**拍板前别动**；拍板后审查方先写 Core 那一半，交接写在本节下面。
+方案和拍板题在 `PLAN-v25.md`（F1–F16，拍板页 https://claude.ai/artifact/BKs4h3CJ4C7QFbnVkt7SKE）。**2026-11-23 用户「就按推荐来，做完了我用 windows 测试一下」**：
+三批审查方在 Mac 上全写了、**没编译**，交接在本节末尾。
 R114 编号跳过了 R113（`claude/win-multiscreen-shot` 分支上已经用了）；手测 1800 起（1778–1799 留给 PLAN-v24）。
 
-### R114（P1）文件搜索只查七个写死的文件夹、常见词截在最新 100 条、索引服务关着时的退路搜不到东西、没有任何提示 → 等拍板
+### R114（P1）文件搜索只查七个写死的文件夹、常见词截在最新 100 条、索引服务关着时的退路搜不到东西、没有任何提示 → 待核验（审查方写的、没编译）
 
 行号按 `563a9c3b`。
 
@@ -31,13 +32,72 @@ R114 编号跳过了 R113（`claude/win-multiscreen-shot` 分支上已经用了�
 7. **顺手**：`OleDbFileSearch.ReleaseRows`（`Launcher/OleDbFileSearch.cs:366`）传的是 `&rows`（本地变量的地址），应当传 `rows`（`GetNextRows` 给的 HROW 数组）。
    现在放掉的是栈上读出来的几个错句柄，真的句柄到 rowset 释放时才一起放；没出过事，第 1 批顺手改。
 
-**要你们做（拍板后）**：照 PLAN-v25 §5 三批，每批照 `AGENTS.md`「每一批的流程」和自查清单。Core 的四个纯函数审查方写（没编译），编不过直接改它和单测、交接里写一句。
-COM（`ISearchManager` 那一串）、服务、`HiddenWindow` 收 `WM_COPYDATA`、提示行和设置页你们写、在真机上验：停服务、改索引位置、装 Everything 都用测试机或测完恢复，
-**别动用户自己的那台的索引设置和 Everything**（AGENTS 红线：不碰用户真实的数据和设置）。
+**停服务、改索引位置、挪文档、装 Everything 都用测试机或测完恢复，别动用户自己那台的索引设置和 Everything**（AGENTS 红线：不碰用户真实的数据和设置）。
 
-#### 交接
+#### 交接（2026-11-23，审查方在 Mac 上写的，**都没编译**）
 
-（拍板后写）
+**改了哪些**（PLAN-v25 §5 三批一起写的）：
+
+- Core：`FileSearchSql`（整个索引 `SCOPE='file:'`、`TOP 500`，删了 `RootFilter`）、新 `FileSearchFilter`（排除哪些路径、查询词清洗、去掉被包含的根、`CrawlUrl`）、
+  新 `FileSearchHints`（最后一行出哪条、设置页的状态文字、日志行、兜底行；`IndexService` / `FileSearchSource` / `FileIndexStatus` 也在这个文件）、
+  新 `EverythingIpc`（拼查询、解回包）、`PanelFooterText`（新行的种类名「文件」和动词「搜文件 / 启用 / 打开设置 / 知道了」）。
+- 单测：改 `FileSearchSqlTests`（范围变了是本意：去掉根目录参数和 `RootFilter` 那条，加整个索引的一条）；新 `FileSearchFilterTests`、`FileSearchHintsTests`、`EverythingIpcTests`。
+- App：
+  - `Launcher/LookupServices.cs`：`FileSearch.SearchAsync(query, useEverything, ct)` 返回 `FileSearchOutcome`（路径、来源、最后一行）；
+    `KnownFolders()`（`SHGetKnownFolderPath` + OneDrive 三个环境变量）；`Walk` 重写成边扫边比（`FileSystemEnumerable`，8 层、1 秒、5 万条目、200 条）；删了 WinRT 那条路。
+  - `Launcher/OleDbFileSearch.cs`：`Search(tokens)` 不收根目录；`ReleaseRows` 传 `rows`（第 7 条）。
+  - 新 `Launcher/SearchIndexStatus.cs`：服务状态（SCM）、索引目录（`ISearchManager` → `GetCatalog` → 状态、项数、`GetCrawlScopeManager` → `IncludedInCrawlScope` / `HasChildScopeRule`），缓存 60 秒；
+    `EnableServiceAsync`（UAC 跑 `cmd /c sc config … && sc start …`，然后每 0.5 秒看一次服务、最多 5 秒）。
+  - 新 `Launcher/EverythingSearch.cs`：找窗口、`WM_USER` 401 问数据库、`WM_COPYDATA` 发查询、等回包（1.5 秒）、`OnCopyData` 收包；`RunningVersion()` 给设置页和自检。
+  - `Shell/HiddenWindow.cs`：窗口过程里 `WM_COPYDATA` 先给 `EverythingSearch.OnCopyData`，认下了答 TRUE，别的照旧 `DefWindowProc`。
+  - `Launcher/LauncherModel.cs`：文件结果最后一行接 `outcome.Hint`；兜底那一组第一行加「在文件里找「词」」（`open` 命令关着、输入太短不加）；
+    `Execute` 里说明行的 ↩（`RunFileHint`）；Ctrl+K 里「服务没开」那一行多「打开服务管理器」。
+  - `App/Settings.cs` 新 `LauncherUseEverything`（默认 true）；`Storage/ArchiveService.cs` 导出导入 `launcherUseEverything`（没进设置同步的对照表）。
+  - `Settings/SettingsWindow.cs`：启动器 ›「文件搜索」：「建了索引的位置」说明换成状态（线程池里读、回来填）、Everything 开关 + 找没找到、脚注照实写。
+  - `Shell/ShellRuntime.cs`：`--file-search=` 多记 `source` / `hint`；新 `--file-search-status`、`--everything-probe`。
+- 文档：`MAC-DIFF.md` 启动器那一条；`AGENTS.md` 第 25 条；`PLAN-v25.md` 写上拍板和分工。
+
+**替用户定的**（方案没写到、写的时候定的）：
+
+1. 索引用不了、但服务在跑（或读不出服务状态）时，最后一行说「Windows 搜索的索引现在用不了，只找了桌面、文档这几个文件夹」，↩ 打开搜索设置（F9 只写了服务没开那种）。
+   这台电脑根本没有搜索服务（LTSC / 服务器版）：说「这台电脑没有 Windows 搜索服务…」，↩ 只响一声。
+2. 「暂停了」只在还有 1000 项以上没建时才说（`FileSearchHints.BusyThreshold`）：索引器在用户用电脑时会暂停（原因 8），没什么要建时说了只是噪音；增量建索引同样 1000 项以上才算「还在建」。
+3. 「在文件里找」的长度门槛用的是文件搜索现成的 `IsTooShort`（一个汉字就够，拉丁字母要两个），不是字面的「≥ 2 个字」。
+4. `launcherUseEverything` 跟着导出导入，**没进设置同步**（`SettingsSyncMap.WindowsOnly` 有单测数个数，同类的「有本地结果时也显示兜底搜索」也没进导出）。
+5. Everything 回包除了认编号（随机的 32 位），还认发送窗口：等于刚才查的那扇窗口、或者属于同一个进程才收。
+6. 扫目录每次查询都重扫（停手 180 ms 后），不缓存，`ponytail:` 写了上限；`KITTY_FS_FORCE_FALLBACK=1` 现在同时跳过 Everything 和索引。
+
+**先核对再跑**（Mac 上核不了，对不上就改常量）：
+
+1. **`SearchIndexStatus` 的 vtable 序号**：打开 Windows SDK 的 `Include\<版本>\um\searchapi.h`，数 `ISearchManager`、`ISearchCatalogManager`、`ISearchCrawlScopeManager`
+   的方法顺序（IUnknown 占 0–2），对一遍文件里的常量：`GetCatalog` 10、`GetCatalogStatus` 6、`NumberOfItems` 15、`NumberOfItemsToIndex` 16、`GetCrawlScopeManager` 28、
+   `HasChildScopeRule` 12、`IncludedInCrawlScope` 13。**数错了会调到别的方法上、可能直接崩**，所以第一次跑之前先对。参数类型也看一眼（`CatalogStatus` / `CatalogPausedReason` 是 int 大小的枚举、BOOL 是 int）。
+   CLSID `7D096C5F-AC08-4F1F-BEB7-5C22C517CE39`、IID `AB310581-AC80-11D1-8DF3-00C04FB6EF69` 也对一下。
+2. **`CatalogStatus` / `CatalogPausedReason` 的值**（`FileSearchHints` 里按 0 空闲、1 暂停、2 恢复中、3 全量建、4 增量建；原因 4 用电池、8 用户在用……）对 searchapi.h。
+3. **Everything 项的 flags**：`EverythingIpc.ItemFolder = 0x1`、`ItemDrive = 0x2` 是照记忆写的 `everything_ipc.h`（第三方实现没写），装了 Everything 后
+   搜一个文件夹名，看结果行右边写不写「文件夹」。
+4. **Everything 回包的发送窗口**：`OnCopyData` 拒收时日志有 `everything.reply-sender`。要是 Everything 回包时 `wParam` 是 0 或者别的进程的窗口，这一条会让它永远用不上——
+   看到这行日志就把发送方检查放宽成只认编号，交接里写一句。
+5. **`HasChildScopeRule`**：经典模式下 `C:\` 要算「部分在」（底下收了 `C:\Users`），没收的 `D:\` 要算「不在」。要是排除规则也让它返回 true（`D:\` 被当成在），
+   `--file-search-status` 里 `drives-out` 会是空的——那就换成 `IncludedInCrawlScopeEx` 看原因，或者只认 `IncludedInCrawlScope`、系统盘单独当「在」。
+
+**要你们做**：
+
+1. 编译零警告（Debug、x64 / ARM64 AOT），`dotnet test` 全过。
+2. 照上面「先核对再跑」五条对完，再跑 `--file-search-status`（日志 `files.status …` 和 `files.status-debug …` 各一行），和 `--file-search=jpg`、`--file-search=报告`、
+   `--file-search=<只有一两个文件的词>` 各 5 次：记 `source=oledb` 的 ms（F4：P50 < 150 ms 就留 500，超了降 300 再量，再超换 `CONTAINS … OR LIKE`）。
+3. 服务关着（测试机停掉 WSearch）跑一次 `--file-search=<桌面上有的词>`：`source=walk`、多久、`visited=` 多少；结果里有桌面那个文件。
+4. 测试机装 Everything 1.4 跑 `--everything-probe`：`version=1.4.1.xxxx`、`query=ok`、`hits=` 和 ms；再跑 `--file-search=jpg` 看 `source=everything`。有 1.5 beta 再试一次，能不能用都记下来。测完卸掉。
+5. 手测 HANDTEST 1800–1829。
+6. 内存探针和上一版比（应该不涨：没有常驻缓存，Everything 的回包用完就丢）。
+7. 更新日志等发版时加（PLAN-v25 §6 那四条）；`STATUS.md` 文件搜索那几行（第 33、73、112–114 行附近）照实改。
+
+**风险 / 退路**：
+
+- `SearchIndexStatus` 读不出来（COM 失败）只是没有提示，不影响搜；真要关掉它，`FileSearch.SearchAsync` 里不调 `SearchIndexStatus.Get()`、传 `null` 给 `Pick` 就行（F7 那段扫目录也跟着不做）。
+- 整个索引范围下 `LIKE '%词%'` 碰上生僻词要扫整个索引，开了增强模式的机器上可能慢（量了再说，见第 2 步）。
+- Everything 以管理员身份运行时，我们（普通权限）发过去的 `WM_COPYDATA` 可能被系统挡住（UIPI）：`everything.send-failed` 日志，退回索引，不卡。
+- 「在文件里找」是 Windows 先加的，mac 没有，已记 `MAC-DIFF.md`；mac 要不要跟另议。
 
 ## issue #38：双屏时状态屏「清洁屏幕」副屏边上一道白边（审查方在 Mac 上写、没编译，2026-11-20）
 

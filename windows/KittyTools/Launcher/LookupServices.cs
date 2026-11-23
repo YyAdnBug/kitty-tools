@@ -1,157 +1,158 @@
-// 启动器的文件搜索（第三版 §6）：桌面 / 文档 / 下载 / 图片 / 视频 / 音乐 / OneDrive，先走 Windows 搜索的索引，
-// 最多跑 1.2 秒或 6000 个候选；只输关键词时列最近打开的文件（「最近使用」里的快捷方式解析成真文件）。
-// 后台取、结果回 UI 线程再显示。进程、端口在 RunningProcesses，书签和历史在 BrowserData（PLAN-v9-launcher）。
+// 启动器的文件搜索（第三版 §6；PLAN-v25 改了范围、退路，加了 Everything 和最后一行的说明）：
+// - 装了 Everything 并且它在运行（设置里能关）：用它搜（EverythingSearch，所有本地硬盘）；
+// - 否则查 Windows 搜索的整个索引（OleDbFileSearch，按修改时间最多 500 条），去掉系统文件夹这些（FileSearchFilter），
+//   常用文件夹里不在索引里的（比如桌面挪到了 D 盘、没加进索引）另外限时扫一遍并进来；
+// - 索引用不了（服务没开）：限时扫常用文件夹（桌面、文档、下载、图片、视频、音乐、OneDrive 的真实位置），边扫边比；
+// - 只输关键词时列最近打开的文件（「最近使用」里的快捷方式解析成真文件）。
+// 最后一行的说明（FileSearchHints.Pick）跟着结果一起回去。都在线程池里跑，结果回 UI 线程再显示。
+// 进程、端口在 RunningProcesses，书签和历史在 BrowserData（PLAN-v9-launcher）。
 using System.Diagnostics;
-using System.Runtime.InteropServices.WindowsRuntime;
-using System.Text.Json;
+using System.IO.Enumeration;
+using System.Runtime.InteropServices;
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 
 namespace KittyTools;
 
-internal static class FileSearch
+/// <summary>一次文件搜索的结果：路径（排好了，最多 20 条）、从哪来的、最后一行的说明（不用出是 null）。</summary>
+internal sealed record FileSearchOutcome(List<string> Paths, FileSearchSource Source, LauncherItem? Hint);
+
+internal static partial class FileSearch
 {
-    private const int MaxCandidates = 6000;
+    /// <summary>扫目录最多看这么多个条目、找到这么多条就停、最多扫这么久（PLAN-v25 F6）。</summary>
+    private const int MaxWalkEntries = 50_000;
 
-    private static readonly TimeSpan Budget = TimeSpan.FromMilliseconds(1200);
+    private const int MaxWalkMatches = 200;
 
-    public static List<string> Roots()
+    private static readonly TimeSpan WalkBudget = TimeSpan.FromSeconds(1);
+
+    // KnownFolders.h 的 FOLDERID_Desktop、Documents、Downloads、Pictures、Videos、Music
+    private static readonly Guid[] KnownFolderIds =
     {
-        var roots = new List<string>();
-        void Add(string? path)
+        new("B4BFCC3A-DB2C-424C-B029-7FE99A87C641"),
+        new("FDD39AD0-238F-46AF-ADB4-6C85480369C7"),
+        new("374DE290-123F-4565-9164-39C4925E467B"),
+        new("33E28130-4E1E-4676-835A-98395C3BC3BB"),
+        new("18989B1D-99B5-455B-841C-AB7C74E4DDFC"),
+        new("4BD8D571-6D19-48D3-BE97-422220080E43"),
+    };
+
+    /// <summary>
+    /// 常用文件夹的真实位置（PLAN-v25 F5）：已知文件夹（挪到 D 盘、OneDrive 备份了的都按挪过去的位置）+ OneDrive 的根
+    /// （个人版、工作 / 学校版）。去掉被别的包含的、不存在的。线程池里调。
+    /// </summary>
+    public static List<string> KnownFolders()
+    {
+        var folders = new List<string>();
+        foreach (var id in KnownFolderIds)
         {
-            if (!string.IsNullOrEmpty(path) && Directory.Exists(path))
+            var copy = id;
+            if (SHGetKnownFolderPath(ref copy, 0, IntPtr.Zero, out var pointer) != 0 || pointer == IntPtr.Zero)
             {
-                roots.Add(path);
+                continue;
+            }
+
+            try
+            {
+                if (Marshal.PtrToStringUni(pointer) is { Length: > 0 } path)
+                {
+                    folders.Add(path);
+                }
+            }
+            finally
+            {
+                Marshal.FreeCoTaskMem(pointer);
             }
         }
 
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        Add(Path.Combine(home, "Desktop"));
-        Add(Path.Combine(home, "Documents"));
-        Add(Path.Combine(home, "Downloads"));
-        Add(Path.Combine(home, "Pictures"));
-        Add(Path.Combine(home, "Videos"));
-        Add(Path.Combine(home, "Music"));
-        Add(Path.Combine(home, "OneDrive"));
-        return roots;
+        foreach (var name in new[] { "OneDrive", "OneDriveConsumer", "OneDriveCommercial" })
+        {
+            if (Environment.GetEnvironmentVariable(name) is { Length: > 0 } path)
+            {
+                folders.Add(path);
+            }
+        }
+
+        return FileSearchFilter.TopmostFolders(folders).Where(Directory.Exists).ToList();
     }
 
-    public static async Task<List<string>> SearchAsync(string query, CancellationToken cancellationToken)
+    /// <summary>
+    /// 搜一次。useEverything：设置里的「装了 Everything 并且它在运行时用它搜」（调用方在 UI 线程读好传进来）。
+    /// 查询词全是文件名里不可能有的字符时返回空。
+    /// </summary>
+    public static async Task<FileSearchOutcome> SearchAsync(string query, bool useEverything, CancellationToken cancellationToken)
     {
-        var tokens = query.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (tokens.Length == 0)
+        var tokens = FileSearchFilter.Tokens(query);
+        if (tokens.Count == 0)
         {
-            return Recent(20);
+            return new FileSearchOutcome(new List<string>(), FileSearchSource.Index, null);
         }
 
         var started = Stopwatch.GetTimestamp();
-        var results = new List<(int Score, string Path)>();
-        var usedIndexer = false;
         var forceFallback = Environment.GetEnvironmentVariable("KITTY_FS_FORCE_FALLBACK") == "1";
-        var roots = Roots();
-
-        // PLAN-v6 第 4 批：先走 OLE DB 直查 SYSTEMINDEX（毫秒级）；索引服务不可用时才退回
-        // R17 的 WinRT 查询 / 扫目录。退路保留，是为了在没装搜索服务或索引被关掉的机器上还能用。
-        if (!forceFallback && !cancellationToken.IsCancellationRequested)
+        var systemDrive = Path.GetPathRoot(Environment.SystemDirectory) ?? "C:\\";
+        var results = new List<(int Score, string Path)>();
+        var excluded = 0;
+        void Add(string path)
         {
-            try
+            if (FileSearchFilter.IsExcluded(path, systemDrive))
             {
-                var indexed = await Task.Run(() => OleDbFileSearch.Search(tokens, roots), cancellationToken);
-                if (indexed is not null)
-                {
-                    foreach (var path in indexed)
-                    {
-                        var score = LauncherCommands.ScoreFileName(Path.GetFileName(path), tokens);
-                        if (score != int.MinValue)
-                        {
-                            results.Add((score, path));
-                        }
-                    }
-
-                    Log.Info($"files.search source=oledb ms={Elapsed(started):F0} hits={results.Count}");
-                    return Rank(results);
-                }
+                excluded++;
+                return;
             }
-            catch (OperationCanceledException)
+
+            var score = LauncherCommands.ScoreFileName(Path.GetFileName(path.TrimEnd('\\')), tokens);
+            if (score != int.MinValue)
             {
-                return new List<string>();
+                results.Add((score, path));
             }
         }
 
-        foreach (var root in roots)
+        if (useEverything && !forceFallback)
         {
-            if (forceFallback)
+            var hits = await EverythingSearch.SearchAsync(tokens, cancellationToken);
+            if (hits is not null)
             {
-                break;
-            }
-            if (cancellationToken.IsCancellationRequested || Elapsed(started) > Budget.TotalMilliseconds)
-            {
-                break;
-            }
-
-            try
-            {
-                // R17：只走 Windows 搜索索引（非打包桌面程序也能用），不自己递归目录。
-                var folder = await Windows.Storage.StorageFolder.GetFolderFromPathAsync(root);
-                var options = new Windows.Storage.Search.QueryOptions
+                foreach (var hit in hits)
                 {
-                    FolderDepth = Windows.Storage.Search.FolderDepth.Deep,
-                    IndexerOption = Windows.Storage.Search.IndexerOption.OnlyUseIndexer,
-                    UserSearchFilter = BuildFilter(tokens),
-                };
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                timeout.CancelAfter(TimeSpan.FromMilliseconds(900));
-                var files = await folder.CreateFileQueryWithOptions(options)
-                    .GetFilesAsync().AsTask(timeout.Token);
-                usedIndexer = true;
-                foreach (var file in files)
-                {
-                    var score = LauncherCommands.ScoreFileName(file.Name, tokens);
-                    if (score != int.MinValue)
+                    if (hit.Folder.Length > 0)
                     {
-                        results.Add((score, file.Path));
+                        Add(hit.Path);
                     }
                 }
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                Log.Warn($"files.index-failed {ex.GetType().Name}");
-                break;
-            }
-            catch (OperationCanceledException)
-            {
-                break;
+
+                var found = Rank(results);
+                Log.Info($"files.search source=everything ms={Elapsed(started):F0} hits={found.Count} excluded={excluded}");
+                return new FileSearchOutcome(found, FileSearchSource.Everything, null);
             }
         }
 
-        if (!usedIndexer && !cancellationToken.IsCancellationRequested)
+        cancellationToken.ThrowIfCancellationRequested();
+        return await Task.Run(() =>
         {
-            // 索引服务关着：退回扫目录，但只给 300 ms、最多 6 层。
-            Log.Info("files.index-fallback");
-            var candidates = 0;
-            var fallbackStart = Stopwatch.GetTimestamp();
-            foreach (var root in roots)
+            // 状态缓存 60 秒（第一次要几十毫秒：服务、索引目录、哪些位置在索引里）
+            var status = SearchIndexStatus.Get();
+            var indexed = forceFallback ? null : OleDbFileSearch.Search(tokens);
+            if (indexed is not null)
             {
-                foreach (var file in Walk(root, maxDepth: 6, ref candidates, cancellationToken))
+                foreach (var path in indexed)
                 {
-                    if (cancellationToken.IsCancellationRequested ||
-                        Elapsed(fallbackStart) > 300 || candidates > 2000)
-                    {
-                        break;
-                    }
-
-                    var score = LauncherCommands.ScoreFileName(Path.GetFileName(file), tokens);
-                    if (score != int.MinValue)
-                    {
-                        results.Add((score, file));
-                    }
+                    Add(path);
                 }
-            }
-        }
 
-        Log.Info($"files.search indexed={usedIndexer} ms={Elapsed(started):F0} hits={results.Count}");
-        return Rank(results);
+                // F7：常用文件夹里不在索引里的，限时扫一遍并进来
+                var walked = status is { UncoveredFolders.Count: > 0 } ? Walk(status.UncoveredFolders, tokens, Add, cancellationToken) : 0;
+                var ranked = Rank(results);
+                Log.Info($"files.search source=oledb ms={Elapsed(started):F0} hits={ranked.Count} excluded={excluded} walked={walked}");
+                return new FileSearchOutcome(ranked, FileSearchSource.Index, FileSearchHints.Pick(status, FileSearchSource.Index, ranked.Count));
+            }
+
+            // F6：索引用不了，扫常用文件夹
+            var visited = Walk(KnownFolders(), tokens, Add, cancellationToken);
+            var fallback = Rank(results);
+            Log.Info($"files.search source=walk ms={Elapsed(started):F0} hits={fallback.Count} visited={visited}");
+            return new FileSearchOutcome(fallback, FileSearchSource.Walk, FileSearchHints.Pick(status, FileSearchSource.Walk, fallback.Count));
+        }, cancellationToken);
     }
 
     private static List<string> Rank(List<(int Score, string Path)> results)
@@ -162,13 +163,6 @@ internal static class FileSearch
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(20)
             .ToList();
-
-    private static string BuildFilter(IReadOnlyList<string> tokens)
-    {
-        static string Escape(string value) => value.Replace("\"", string.Empty, StringComparison.Ordinal);
-        return string.Join(" AND ",
-            tokens.Select(token => $"System.FileName:*{Escape(token)}*"));
-    }
 
     /// <summary>
     /// 最近打开的文件（mac「最近打开和下载的文件」）：%APPDATA%\Microsoft\Windows\Recent 里的快捷方式，解析成它指着的
@@ -215,63 +209,62 @@ internal static class FileSearch
         }
     }
 
-    private static IEnumerable<string> Walk(
-        string root, int maxDepth, ref int candidates, CancellationToken cancellationToken)
+    /// <summary>
+    /// 扫目录、边扫边比（PLAN-v25 F6）：最多 8 层，跳过隐藏 / 系统的（默认的 AttributesToSkip）、点开头的和 node_modules 这类文件夹，
+    /// 没权限的跳过；总共 WalkBudget、MaxWalkEntries 个条目、MaxWalkMatches 条，先到哪个算哪个。返回看了多少个条目。
+    /// ponytail: 每打一个字（停 180 ms 后）都重扫；要更快就在一次呼出里缓存扫过的名字。
+    /// </summary>
+    private static int Walk(IReadOnlyList<string> roots, IReadOnlyList<string> tokens, Action<string> add, CancellationToken cancellationToken)
     {
-        var pending = new Stack<(string Path, int Depth)>();
-        pending.Push((root, 0));
-        var found = new List<string>();
-        while (pending.Count > 0 && !cancellationToken.IsCancellationRequested)
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        budget.CancelAfter(WalkBudget);
+        var token = budget.Token;
+        var visited = 0;
+        var matches = 0;
+        var options = new EnumerationOptions { RecurseSubdirectories = true, MaxRecursionDepth = 8, IgnoreInaccessible = true };
+        foreach (var root in roots)
         {
-            var (directory, depth) = pending.Pop();
-            string[] files;
-            try
+            var entries = new FileSystemEnumerable<string>(root, static (ref FileSystemEntry entry) => entry.ToFullPath(), options)
             {
-                files = Directory.GetFiles(directory);
-            }
-            catch
-            {
-                continue;
-            }
-
-            foreach (var file in files)
-            {
-                found.Add(file);
-                candidates++;
-                if (candidates >= MaxCandidates)
+                ShouldIncludePredicate = (ref FileSystemEntry entry) =>
                 {
-                    break;
-                }
-            }
-
-            if (depth >= maxDepth)
-            {
-                continue;
-            }
-
-            try
-            {
-                foreach (var child in Directory.GetDirectories(directory))
-                {
-                    var name = Path.GetFileName(child);
-                    if (name.StartsWith('.') || name.Equals("node_modules", StringComparison.OrdinalIgnoreCase) ||
-                        name.Equals("$Recycle.Bin", StringComparison.OrdinalIgnoreCase))
+                    if (++visited > MaxWalkEntries)
                     {
-                        continue;
+                        throw new OperationCanceledException();
                     }
 
-                    pending.Push((child, depth + 1));
+                    token.ThrowIfCancellationRequested();
+                    return LauncherCommands.ScoreFileName(entry.FileName.ToString(), tokens) != int.MinValue;
+                },
+                ShouldRecursePredicate = static (ref FileSystemEntry entry) => !FileSearchFilter.SkipsFolder(entry.FileName.ToString()),
+            };
+            try
+            {
+                foreach (var path in entries)
+                {
+                    add(path);
+                    if (++matches >= MaxWalkMatches)
+                    {
+                        return visited;
+                    }
                 }
             }
-            catch
+            catch (OperationCanceledException)
             {
-                // 没权限的目录跳过。
+                return visited;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            {
+                Log.Warn($"files.walk-failed {ex.GetType().Name}");
             }
         }
 
-        return found;
+        return visited;
     }
 
     private static double Elapsed(long started)
         => (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency;
+
+    [LibraryImport("shell32.dll", EntryPoint = "SHGetKnownFolderPath")]
+    private static partial int SHGetKnownFolderPath(ref Guid id, uint flags, IntPtr token, out IntPtr path);
 }

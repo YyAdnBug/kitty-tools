@@ -44,6 +44,8 @@ public static class PanelFooterText
         LauncherKind.Prompt when target.StartsWith(ExchangeRates.SuggestionPrefix, StringComparison.Ordinal) => "货币",
         LauncherKind.Prompt when KeepAwakeLauncher.IsKeepAwake(target) => "保持唤醒",
         LauncherKind.Prompt when target.StartsWith(PluginOffers.Prefix, StringComparison.Ordinal) => "插件",
+        // 文件搜索的说明行、普通搜索兜底里的「在文件里找」（PLAN-v25 F9、F15）
+        LauncherKind.Prompt when target == FileSearchHints.FallbackTarget || FileSearchHints.IsHint(target) => "文件",
         LauncherKind.Prompt => "搜索",
         _ => string.Empty,
     };
@@ -72,6 +74,10 @@ public static class PanelFooterText
             // 汇率的用法提示「填进示例」、货币候选「补全货币」（mac primaryAction，REVIEW R92）
             LauncherKind.Prompt when target == ExchangeRates.PromptTarget => "填进示例",
             LauncherKind.Prompt when target.StartsWith(ExchangeRates.SuggestionPrefix, StringComparison.Ordinal) => "补全货币",
+            LauncherKind.Prompt when target == FileSearchHints.FallbackTarget => "搜文件",
+            LauncherKind.Prompt when target == FileSearchHints.ServiceTarget => "启用",
+            LauncherKind.Prompt when target == FileSearchHints.SettingsTarget => "打开设置",
+            LauncherKind.Prompt when target == FileSearchHints.NoneTarget => "知道了",
             LauncherKind.Prompt => "补全关键词",
             LauncherKind.Process => "结束",
             _ => "打开",

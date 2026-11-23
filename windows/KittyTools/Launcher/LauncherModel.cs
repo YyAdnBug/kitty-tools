@@ -472,6 +472,11 @@ internal sealed partial class LauncherModel
         var fallback = keywordItem is null && wantsFallback && !isExplicit
             ? WebSearch.FallbackItems(trimmed, engines)
             : new List<LauncherItem>();
+        // 兜底那一组的第一行「在文件里找「词」」（PLAN-v25 F15）：Enter 换成「空格 + 词」进文件搜索；open 命令关掉了就不出
+        if (keywordItem is null && wantsFallback && !isExplicit && CommandOn("builtin:open") && !LauncherCommands.IsTooShort(trimmed))
+        {
+            fallback.Insert(0, FileSearchHints.FallbackItem(trimmed));
+        }
 
         // 直达项和书签 / 用过的网址可能是同一项：按 id 去重，留靠前的。
         // 在这个输入下选过的本地结果排到固定行前面（第四轮体检 E8）。
@@ -864,6 +869,7 @@ internal sealed partial class LauncherModel
         var cts = new CancellationTokenSource();
         _filesCts = cts;
         var mode = Mode;
+        var useEverything = SettingsService.Current.LauncherUseEverything;
         var dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
         _ = Task.Run(async () =>
         {
@@ -872,8 +878,20 @@ internal sealed partial class LauncherModel
             {
                 // 打字时别每个字都查一遍。
                 await Task.Delay(180, cts.Token);
-                var paths = terms.Length == 0 ? FileSearch.Recent(20) : await FileSearch.SearchAsync(terms, cts.Token);
-                items = paths.Select(FileItem).ToList();
+                if (terms.Length == 0)
+                {
+                    items = FileSearch.Recent(20).Select(FileItem).ToList();
+                }
+                else
+                {
+                    // 最后一行是说明（服务没开、还在建索引、哪些盘不在索引里；PLAN-v25 F9），不算文件结果
+                    var outcome = await FileSearch.SearchAsync(terms, useEverything, cts.Token);
+                    items = outcome.Paths.Select(FileItem).ToList();
+                    if (outcome.Hint is { } hint)
+                    {
+                        items.Add(hint);
+                    }
+                }
             }
             catch (OperationCanceledException)
             {
@@ -1124,6 +1142,10 @@ internal sealed partial class LauncherModel
                 {
                     // 「认不出时间」那一行：只响一声，改一下再建。
                     Beep();
+                }
+                else if (FileSearchHints.IsHint(item.Target))
+                {
+                    RunFileHint(item.Target);
                 }
                 else if (KeepAwakeLauncher.IsKeepAwake(item.Target))
                 {
@@ -1489,6 +1511,42 @@ internal sealed partial class LauncherModel
         LauncherOpeners.SearchInExplorer(text);
     }
 
+    /// <summary>
+    /// 文件搜索最后一行的 Enter（PLAN-v25 F9、F10）：服务没开 → 以管理员身份启用（系统弹 UAC，点「否」什么都不变）；
+    /// 正在建 / 暂停 / 有盘不在索引里 → 打开 设置 › 隐私和安全性 › 搜索 Windows；没有搜索服务的电脑 → 只响一声。
+    /// 先收起（UAC 和设置都会抢前台，启动器反正要收）。
+    /// </summary>
+    private void RunFileHint(string target)
+    {
+        switch (target)
+        {
+            case FileSearchHints.ServiceTarget:
+                Close();
+                _ = EnableWindowsSearchAsync();
+                break;
+            case FileSearchHints.SettingsTarget:
+                Close();
+                LauncherOpeners.Start("ms-settings:cortana-windowssearch");
+                break;
+            default:
+                Beep();
+                break;
+        }
+    }
+
+    private static async Task EnableWindowsSearchAsync()
+    {
+        var result = await SearchIndexStatus.EnableServiceAsync();
+        if (result == true)
+        {
+            NoticeHost.Show("Windows 搜索已启用", "索引要过一会儿才建好，建好之前结果可能不全", NoticeTone.Normal);
+        }
+        else if (result == false)
+        {
+            NoticeHost.Show("没能启用 Windows 搜索", "可以在服务管理器里把「Windows Search」设成「自动（延迟启动）」再启动", NoticeTone.Warning);
+        }
+    }
+
     /// <summary>Shift+Enter（mac ⌃↩）：不管有没有本地结果，用第一个兜底搜索搜当前的词。</summary>
     public void SearchWeb()
     {
@@ -1814,6 +1872,16 @@ internal sealed partial class LauncherModel
         if (item.Kind == LauncherKind.App && !IsStoreApp(item))
         {
             actions.Add(new PaletteItem("以管理员身份运行", Glyphs.App, 0, () => RunAsAdmin(item), "Ctrl+Shift+Enter"));
+        }
+
+        // 文件搜索最后一行「服务没开」（PLAN-v25 F10）：自己去服务管理器里改
+        if (item.Kind == LauncherKind.Prompt && item.Target == FileSearchHints.ServiceTarget)
+        {
+            actions.Add(new PaletteItem("打开服务管理器", Glyphs.Settings, 1, () =>
+            {
+                Close();
+                LauncherOpeners.Start("services.msc");
+            }));
         }
 
         // 1 用别的程序打开：网址是默认浏览器以外的浏览器（第一个是 Ctrl+Enter），文件是系统的「打开方式」。

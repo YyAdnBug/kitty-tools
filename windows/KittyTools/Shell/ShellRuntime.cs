@@ -702,8 +702,35 @@ internal sealed class ShellRuntime
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
             {
                 var watch = System.Diagnostics.Stopwatch.StartNew();
-                var hits = await FileSearch.SearchAsync(word, CancellationToken.None);
-                Log.Info($"files.search-debug hits={hits.Count} ms={watch.ElapsedMilliseconds}");
+                var outcome = await FileSearch.SearchAsync(word, SettingsService.Current.LauncherUseEverything, CancellationToken.None);
+                Log.Info($"files.search-debug source={outcome.Source} hits={outcome.Paths.Count} hint={outcome.Hint?.Target ?? "none"} ms={watch.ElapsedMilliseconds}");
+            });
+        }
+
+        // 自检（PLAN-v25）：Windows 搜索的状态（服务、索引目录、哪些常用文件夹 / 本地盘不在索引里）记一行日志；
+        // Everything 找没找到、版本、一次查询的耗时和条数。都不弹界面。
+        if (Environment.GetCommandLineArgs().Contains("--file-search-status", StringComparer.OrdinalIgnoreCase))
+        {
+            _ = Task.Run(() =>
+            {
+                SearchIndexStatus.Forget();
+                var status = SearchIndexStatus.Get();
+                Log.Info($"files.status-debug {FileSearchHints.Status(status).Text}");
+            });
+        }
+
+        if (Environment.GetCommandLineArgs().Contains("--everything-probe", StringComparer.OrdinalIgnoreCase))
+        {
+            _ = Task.Run(async () =>
+            {
+                var version = EverythingSearch.RunningVersion();
+                Log.Info($"everything.probe version={version ?? "none"}");
+                if (version is not null)
+                {
+                    var watch = System.Diagnostics.Stopwatch.StartNew();
+                    var hits = await EverythingSearch.SearchAsync(new[] { "jpg" }, CancellationToken.None);
+                    Log.Info($"everything.probe query={(hits is null ? "failed" : "ok")} hits={hits?.Count ?? 0} ms={watch.ElapsedMilliseconds}");
+                }
             });
         }
 

@@ -1,4 +1,4 @@
-// 隐藏的顶层窗口：收 WM_HOTKEY、WM_CLIPBOARDUPDATE 和托盘回调。
+// 隐藏的顶层窗口：收 WM_HOTKEY、WM_CLIPBOARDUPDATE、托盘回调和 Everything 查询的回包（WM_COPYDATA，EverythingSearch）。
 // 不用 HWND_MESSAGE（消息专用窗口收不到 TaskbarCreated 广播）。
 // 窗口过程用 [UnmanagedCallersOnly] + 函数指针，不用委托封送。
 using System.Runtime.CompilerServices;
@@ -88,6 +88,12 @@ internal static unsafe class HiddenWindow
             if (msg == TaskbarCreatedMessage && TaskbarCreatedMessage != 0)
             {
                 Tray.ReAdd();
+            }
+
+            // Everything 的回包（PLAN-v25 第 3 批）：是正在等的那次就收下、答 TRUE；别的 WM_COPYDATA 照旧交给 DefWindowProc
+            if (msg == EverythingSearch.WmCopyData && EverythingSearch.OnCopyData(wParam.Value, lParam.Value))
+            {
+                return new LRESULT(1);
             }
 
             Message?.Invoke(msg, wParam, lParam);

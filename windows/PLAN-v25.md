@@ -3,12 +3,11 @@
 2026-11-23。外部用户反馈：「我用 Windows 搜索文件，搜不到文件，我也不清楚我的 Windows 是不是设置了搜索文件的什么配置。
 是不是自己做一套索引，或者借用 Everything 等工具会好点。」说的是启动器里的文件搜索（`open 词` / `find 词` / 空格开头）。
 
-**拍板前别动。** §4 的 F1–F16 每条带推荐答案；用户说「全部按推荐」后照 §5 分三批做。拍板页：https://claude.ai/artifact/BKs4h3CJ4C7QFbnVkt7SKE （附给反馈人的回复稿，只起草没发）。
+**拍板：2026-11-23 用户「可以，就按推荐来，做完了我用 windows 测试一下」**，§4 F1–F16 全部按推荐。拍板页：https://claude.ai/artifact/BKs4h3CJ4C7QFbnVkt7SKE （附给反馈人的回复稿，只起草没发）。
 
-**分工**（同 PLAN-v10 D5）：拍板后审查方在 Mac 上写 Core 纯函数和单测（**没编译**）：`FileSearchSql` 改范围、新 `FileSearchFilter`（排除哪些路径、
-查询词清洗）、`FileSearchHints`（该出哪条提示）、`EverythingIpc`（拼查询、解回包）。COM、服务、窗口消息、界面那一半 Windows agent 自己写、自己编译、
-在真机上验（要停服务、改索引位置、装 Everything，Mac 上做不了）。交接写在 `REVIEW.md`「PLAN-v25」，手测 `HANDTEST.md` 1800 起
-（1778–1799 留给 PLAN-v24 跨屏框选，那条分支已经用到 1777）。
+**分工（拍板时改了）**：用户要做完直接在 Windows 上测，所以 §5 三批**审查方在 Mac 上全写了**（Core 纯函数 + 单测、COM、服务、窗口消息、启动器、设置页、自检），
+**都没编译**。Windows 这边编译、跑单测、照 `REVIEW.md`「PLAN-v25」的交接先核对几处（vtable 序号、Everything 的项标志），再在真机上测；
+编不过、对不上直接改，交接里写一句改了什么。手测 `HANDTEST.md` 1800–1829（1778–1799 留给 PLAN-v24 跨屏框选，那条分支已经用到 1777）。
 
 ## 1. 现在怎么搜的（`windows` = `563a9c3b`）
 
