@@ -629,7 +629,7 @@ final class ScrollCapture {
 
 /// 选区边框：2 pt 品牌粉线画在选区外 1 pt（不压内容），外发光 1.2 s 呼吸；自动滚动时换成虚线 [8, 6] 0.5 s 走一轮
 /// （呼吸停在中间值：同一表面同时只有一个循环动画）；对不上时变橙。录屏用静止的一份（animates: false，发光停在中间值，
-/// 同减弱动态效果）：录制表面的 ambient 留给第 2 批 HUD 的红点
+/// 同减弱动态效果）：录制表面的 ambient 留给第 2 批 HUD 的红点。录屏暂停（issue #48）：灰色、静止的虚线、不发光
 final class ScrollBorderView: NSView {
   /// 窗口比选区每边大这么多：线 2 pt + 发光
   static let margin: CGFloat = 14
@@ -637,6 +637,7 @@ final class ScrollBorderView: NSView {
   private let animates: Bool
   private var lost = false
   private var marching = false
+  private(set) var isPaused = false
 
   init(animates: Bool = true) {
     self.animates = animates
@@ -669,6 +670,14 @@ final class ScrollBorderView: NSView {
     CATransaction.commit()
   }
 
+  /// 录屏暂停 / 继续（issue #48，拍板 Q4）：暂停时一眼看出「现在没在录」，又不挡用户干别的
+  func setPaused(_ paused: Bool) {
+    guard paused != isPaused else { return }
+    isPaused = paused
+    applyColor()
+    applyAmbient()
+  }
+
   func update(lost: Bool, marching: Bool) {
     if lost != self.lost {
       self.lost = lost
@@ -686,10 +695,10 @@ final class ScrollBorderView: NSView {
     let reduced = Style.reduceMotion || !animates
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    line.lineDashPattern = marching ? [8, 6] : nil
-    line.shadowOpacity = reduced || marching ? 0.4 : 0.25
+    line.lineDashPattern = marching ? [8, 6] : isPaused ? [6, 4] : nil
+    line.shadowOpacity = isPaused ? 0 : reduced || marching ? 0.4 : 0.25
     CATransaction.commit()
-    guard !reduced else { return }
+    guard !reduced, !isPaused else { return }
     if marching {
       let march = CABasicAnimation(keyPath: "lineDashPhase")
       march.fromValue = 0
@@ -710,7 +719,7 @@ final class ScrollBorderView: NSView {
   }
 
   private func applyColor() {
-    let color = (lost ? NSColor.systemOrange : Style.Shot.accent).cgColor
+    let color = (isPaused ? NSColor.systemGray : lost ? .systemOrange : Style.Shot.accent).cgColor
     CATransaction.begin()
     CATransaction.setAnimationDuration(0.2)
     line.strokeColor = color

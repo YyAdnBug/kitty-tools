@@ -84,6 +84,7 @@ struct SettingsArchiveTests {
     for key in [
       Prefs.lastSeenVersion, Prefs.settingsPage, Prefs.screenshotLastRegion,
       Prefs.folderAccessRequested, Prefs.screenRecordingInProgress, Prefs.updateNotifiedVersion,
+      Prefs.screenRecordingParts, Prefs.audioRecordingParts,
       Prefs.screenshotSaveDirectory, Prefs.statusScreenLastPreset,
       Prefs.launcherWebSearchEngines, HotKeyAction.clipboard.prefsKey, "translateServices",
       Prefs.onboardingScreen, Prefs.accessibilityRequested, Prefs.screenRecordingRequested,

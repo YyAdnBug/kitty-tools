@@ -247,6 +247,10 @@ enum Prefs {
   static let screenRecordingInProgress = "screenRecordingInProgress"
   /// 正在录的音的文件路径（录音第 5 批，AudioRecorder 开录时写、收尾时删；闪退后同样由 ScreenRecorder.recover 接手）
   static let audioRecordingInProgress = "audioRecordingInProgress"
+  /// 暂停过的录屏 / 录音所有段的路径（数组，issue #48；继续时写、收尾时删）：闪退后 ScreenRecorder.recover 先把它们拼成一个。
+  /// 没有默认值，不进设置导出和同步
+  static let screenRecordingParts = "screenRecordingParts"
+  static let audioRecordingParts = "audioRecordingParts"
   /// 正在压缩的录屏的隐藏临时文件路径（数组；VideoExport.compress 开始时记、做完 / 失败 / 取消时划掉）：启动时还在 =
   /// 上次压到一半退出了，VideoExport.removePartials 删掉那几个文件（第四轮体检 E24）。没有默认值，不进设置导出和同步
   static let compressingFiles = "compressingFiles"

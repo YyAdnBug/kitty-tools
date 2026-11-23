@@ -382,7 +382,7 @@ struct AudioRecorderTests {
     defer { try? FileManager.default.removeItem(at: folder) }
     let broken = folder.appending(path: "录音 \(UUID()).mp4")
     try Data("not a movie".utf8).write(to: broken)
-    #expect(await ScreenRecorder.extractAudio(from: broken) == nil)
+    #expect(await ScreenRecorder.extractAudio(from: [broken]) == nil)
     #expect(FileManager.default.fileExists(atPath: broken.path))
     #expect(
       !FileManager.default.fileExists(

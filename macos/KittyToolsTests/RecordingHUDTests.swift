@@ -131,10 +131,9 @@ struct RecordingHUDTests {
     #expect(hud.screenFrame.maxX == barFrame.maxX && hud.screenFrame.minY == barFrame.minY)
     #expect(hud.screenFrame.width < barFrame.width)
     #expect(fromRight(try #require(hud.button(for: .cancel)), in: hud) == barClose)
-    // 录制态：右边线不动，✕ 还在原地，■ 落在 ● 上
+    // 录制态：右边线不动，✕ 还在原地，■ 落在 ● 上（issue #48 加了 ⏸ 之后带声音图标的比录制条宽，往左多出来）
     hud.update(.recording(0))
     #expect(hud.screenFrame.maxX == barFrame.maxX && hud.screenFrame.minY == barFrame.minY)
-    #expect(hud.screenFrame.width < barFrame.width)
     #expect(fromRight(try #require(hud.button(for: .discard)), in: hud) == barClose)
     #expect(fromRight(try #require(hud.button(for: .stop)), in: hud) == barStart)
     // 计时按位数留宽：9:59 以内不变，10:00、1:00:00 各变宽一次——往左长，右边线不动
@@ -375,7 +374,10 @@ struct RecordingHUDTests {
       var found: [NSImageView] = []
       var queue: [NSView] = [hud]
       while let view = queue.popLast() {
-        if let image = view as? NSImageView, !(view.superview is NSButton) { found.append(image) }
+        // 藏着的（暂停时才顶替红点的暂停符号）不算
+        if let image = view as? NSImageView, !(view.superview is NSButton), !image.isHidden {
+          found.append(image)
+        }
         queue += view.subviews
       }
       return found.sorted {
@@ -457,14 +459,22 @@ struct RecordingHUDTests {
     #expect(hud.frame.width == width)
     hud.updateMeter([-60, -20, -0.5])  // 只画，不改布局
     #expect(hud.frame.width == width)
-    // 录屏的 HUD 没有暂停钮，暂停 / 没听到声音对它不起作用
-    let screen = RecordingHUD(state: .recording(0), stopKey: nil)
-    #expect(screen.button(for: .pause) == nil && screen.accessibilityLabel() == "录屏控制")
+    // 录屏的 HUD 也有暂停钮（issue #48）：在 ✕ 前面，暂停时换成「继续录屏」、读数说已暂停、宽度不变；没听到声音对它不起作用
+    let screen = RecordingHUD(state: .recording(5), stopKey: nil)
+    #expect(screen.accessibilityLabel() == "录屏控制")
+    let screenPause = try #require(screen.button(for: .pause))
+    let screenClose = try #require(screen.button(for: .discard))
+    #expect(screenPause.accessibilityLabel() == "暂停录屏" && screenPause.toolTip == "暂停录屏")
+    #expect(
+      screenPause.convert(screenPause.bounds, to: screen).minX
+        < screenClose.convert(screenClose.bounds, to: screen).minX)
     let screenWidth = screen.frame.width
     screen.setPaused(true)
+    #expect(screen.isPaused && screenPause.accessibilityLabel() == "继续录屏")
+    #expect(screen.accessibilityValue() as? String == "已暂停，已录 5 秒")
     screen.setSilent(true)
-    #expect(!screen.isPaused && screen.frame.width == screenWidth)
-    #expect(try #require(screen.button(for: .discard)).accessibilityLabel() == "放弃录制")
+    #expect(screen.frame.width == screenWidth)
+    #expect(screenClose.accessibilityLabel() == "放弃录制")
   }
 
   /// 计时是图层排的（Shell/Ticker.swift；不用 numericText：它每秒逐帧重画，录制期间一直占着 CPU）：字就是 ScreenRecorder.clock，

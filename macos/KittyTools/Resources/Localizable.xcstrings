@@ -7247,16 +7247,16 @@
     "search.launchpad.frequent" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "常用,最近,经常,使用次数"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "frequent,recent,most used,usage"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "常用,最近,经常,使用次数"
           }
         }
       }
@@ -7264,16 +7264,16 @@
     "search.launchpad.hidden" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "隐藏,显示,不显示,去掉"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "hide,show,hidden,remove"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "隐藏,显示,不显示,去掉"
           }
         }
       }
@@ -8942,16 +8942,16 @@
     "snippetExpand.duplicate" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "重复"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Duplicate"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "重复"
           }
         }
       }
@@ -10667,6 +10667,16 @@
         }
       }
     },
+    "上次录屏没有正常结束，分成了 %lld 段保存" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last screen recording didn’t finish properly. It was saved as %lld files."
+          }
+        }
+      }
+    },
     "上次录屏没有正常结束，已保存" : {
       "localizations" : {
         "en" : {
@@ -10693,6 +10703,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Last audio recording didn’t finish properly"
+          }
+        }
+      }
+    },
+    "上次录音没有正常结束，分成了 %lld 段保存" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last audio recording didn’t finish properly. It was saved as %lld files."
           }
         }
       }
@@ -20938,6 +20958,16 @@
         }
       }
     },
+    "存成了 %lld 个文件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved as %lld files"
+          }
+        }
+      }
+    },
     "存进脚本文件夹" : {
       "localizations" : {
         "en" : {
@@ -25627,6 +25657,16 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "录屏已保存到「%1$@」，%2$@"
+          }
+        }
+      }
+    },
+    "录屏已暂停" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Screen Recording Paused"
           }
         }
       }
@@ -32658,6 +32698,16 @@
         }
       }
     },
+    "暂停录屏" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pause Screen Recording"
+          }
+        }
+      }
+    },
     "暂停录音" : {
       "localizations" : {
         "en" : {
@@ -34948,6 +34998,16 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "正在复制 %1$lld 项到「%2$@」…"
+          }
+        }
+      }
+    },
+    "正在存储录屏…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saving recording…"
           }
         }
       }
@@ -37461,6 +37521,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn’t end “%@”"
+          }
+        }
+      }
+    },
+    "没能继续录制" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t resume recording"
           }
         }
       }
@@ -41990,6 +42060,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Continue"
+          }
+        }
+      }
+    },
+    "继续录屏" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resume Screen Recording"
           }
         }
       }

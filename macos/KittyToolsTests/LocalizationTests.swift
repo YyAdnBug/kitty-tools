@@ -601,6 +601,13 @@ struct LocalizationTests {
     ),
     ("KittyTools/Screenshot/ScrollCapture.swift", ["一\n二"], false, "量两行字高用的字，不显示"),
     (
+      "KittyTools/Screenshot/RecordingJoin.swift",
+      [
+        "写不了", "写入失败", "写入没有进展", "几段的视频格式不一样", "加不上视频轨", "加不上音轨", "声道太多", "声音写不进去",
+        "没写完", "视频写不进去", "读不出声音", "读不出视频", "编不了声音",
+      ], false, "拼接失败的原因只进日志（界面上只说「没能合成一个文件」）"
+    ),
+    (
       "KittyTools/Screenshot/ShotShelf.swift", ["Kitty Tools 截图"], false,
       "拖出用的临时目录名：启动时按名字清空，换了语言也得认得上次的"
     ),

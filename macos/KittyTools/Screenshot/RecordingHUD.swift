@@ -3,7 +3,7 @@
 // 都比录制条窄，按中线摆的话 ✕ 和主圆钮三态来回漂；倒数没有圆钮，它的位置空着），整屏录制时在那块屏可见区底部居中、离底
 // 24 pt；拖过的位置按屏记在内存里（这次运行有效，不存偏好）。摆好之后宽度再变（换状态、计时多一位、出橙字）一律右边线不动。
 // - 倒数：[3 秒后开始] ｜ [✕ 取消]，数字 22 pt 圆体、每跳一个数 pop（0.85 → 1），点数字马上开始；
-// - 录制中：[● 0:12] ｜ [✕ 放弃][■ 停止]：红点 8 pt systemRed（语义色「录制中」）呼吸 1 ↔ 0.45（同一表面唯一的 ambient，
+// - 录制中：[● 0:12] ｜ [⏸] ｜ [✕ 放弃][■ 停止]（⏸ 是 issue #48 加的：暂停时红点换成暂停符号、计时变灰，同录音）：红点 8 pt systemRed（语义色「录制中」）呼吸 1 ↔ 0.45（同一表面唯一的 ambient，
 //   只在录制态挂、HUD 一收就摘；放在 CALayer 上由渲染服务跑，不占主线程）；计时和菜单栏停止项同一个时钟
 //   （ScreenRecorder.clock；按当前读数的位数留宽，到 10 分钟、1 小时各变宽一次、HUD 往左长），每秒变了的那几位数字滚过去
 //   ——图层自己排（Shell/Ticker.swift），
@@ -74,7 +74,7 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   /// 录屏还是录音的 HUD（录音第 5 批：没有倒数，多电平和暂停）
   let medium: ScreenRecorder.Medium
   private(set) var state: State
-  /// 录音暂停着
+  /// 暂停着（录音、录屏，issue #48）
   private(set) var isPaused = false
   private var discard = Discard()
   private let reading = Reading()
@@ -101,11 +101,11 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   private let microphoneIcon = SoundIcon()
   private lazy var sound = makeSound()
   private let dot = Dot()
-  /// 录音：电平、暂停钮、暂停时顶替红点的暂停符号、「没听到声音」
+  /// 录音：电平、「没听到声音」；录音和录屏（issue #48）：暂停钮、暂停时顶替红点的暂停符号
   private lazy var meter = LevelMeter()
   private lazy var pauseButton = barButton(
-    NSImage(systemSymbolName: "pause.fill", accessibilityDescription: String(localized: "暂停录音"))!,
-    tip: String(localized: "暂停录音"), label: String(localized: "暂停录音"),
+    NSImage(systemSymbolName: "pause.fill", accessibilityDescription: pauseName(false))!,
+    tip: pauseName(false), label: pauseName(false),
     action: #selector(pauseClicked(_:)), size: CGSize(width: 32, height: 32))
   private lazy var pauseSeparator = barSeparator()
   private lazy var pauseMark = makePauseMark()
@@ -315,7 +315,8 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
       case (.recording, .audio):
         [clock, meter, separator, pauseButton, pauseSeparator, closeButton, stopButton]
       case (.recording, .screen):
-        [clock] + (systemAudio || microphone ? [sound] : []) + [separator, closeButton, stopButton]
+        [clock] + (systemAudio || microphone ? [sound] : [])
+          + [separator, pauseButton, pauseSeparator, closeButton, stopButton]
       }
     views.forEach(stack.addArrangedSubview)
     // 右端是强调色圆钮（● / ■）：多留一点边、和 ✕ 隔开一点（同录制条）。倒数没有圆钮，把它的位置空出来——
@@ -408,22 +409,32 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   func setPausable(_ pausable: Bool) {
     guard medium == .audio else { return }
     pauseButton.isEnabled = pausable
-    pauseButton.toolTip =
-      pausable ? String(localized: "暂停录音") : String(localized: "录系统声音时不能暂停")
+    pauseButton.toolTip = pausable ? pauseName(false) : String(localized: "录系统声音时不能暂停")
+  }
+
+  /// 暂停钮的名字（提示、旁白）：录屏「暂停录屏 / 继续录屏」，录音「暂停录音 / 继续录音」
+  private func pauseName(_ paused: Bool) -> String {
+    switch (medium, paused) {
+    case (.screen, false): String(localized: "暂停录屏")
+    case (.screen, true): String(localized: "继续录屏")
+    case (.audio, false): String(localized: "暂停录音")
+    case (.audio, true): String(localized: "继续录音")
+    }
   }
 
   /// 电平（最近 3 s，旧 → 新，dB）：每帧直接换（instant），减弱动态效果时照样更新
   func updateMeter(_ levels: [Float]) { meter.levels = levels }
 
-  /// 暂停 / 继续：红点换成暂停符号（再次文字色）、红点不呼吸，计时变灰、电平冻结变灰；暂停钮换成 ▶「继续录音」
+  /// 暂停 / 继续：红点换成暂停符号（再次文字色）、红点不呼吸，计时变灰、电平冻结变灰（录音）；暂停钮换成 ▶「继续录音 /
+  /// 继续录屏」
   func setPaused(_ paused: Bool) {
-    guard medium == .audio, paused != isPaused else { return }
+    guard paused != isPaused else { return }
     isPaused = paused
     dot.isHidden = paused
     pauseMark.isHidden = !paused
     if paused { dot.stop() } else { dot.start() }
-    meter.isPaused = paused
-    let name = paused ? String(localized: "继续录音") : String(localized: "暂停录音")
+    if medium == .audio { meter.isPaused = paused }
+    let name = pauseName(paused)
     pauseButton.image = NSImage(
       systemSymbolName: paused ? "play.fill" : "pause.fill", accessibilityDescription: name)
     pauseButton.toolTip = name
@@ -493,7 +504,7 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     case .startNow: countdownButton
     case .cancel, .discard: closeButton
     case .stop: stopButton
-    case .pause: medium == .audio ? pauseButton : nil
+    case .pause: pauseButton
     case .start: medium == .audio ? startButton : nil
     case .systemAudio: medium == .audio ? systemButton : nil
     case .microphone: medium == .audio ? microphoneButton : nil
@@ -629,7 +640,7 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     return button
   }
 
-  /// 录制中的读数：红点 + 计时（录音另有暂停时顶替红点的暂停符号、计时后面的「没听到声音」，平时藏着、不占宽度）
+  /// 录制中的读数：红点 + 计时（暂停时顶替红点的暂停符号、录音计时后面的「没听到声音」，平时藏着、不占宽度）
   private func makeClock() -> NSView {
     // 宽度跟着当前读数的位数走（applyClock 设），高是一行
     clockWidth.isActive = true
@@ -638,7 +649,7 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     ).isActive = true
     clockText.setAccessibilityElement(false)  // 读数在 HUD 的值里
     let row = NSStackView(
-      views: medium == .audio ? [dot, pauseMark, clockText, silence] : [dot, clockText])
+      views: [dot, pauseMark, clockText] + (medium == .audio ? [silence] : []))
     row.spacing = 6
     row.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 6)
     row.detachesHiddenViews = true

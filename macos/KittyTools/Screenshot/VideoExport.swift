@@ -210,8 +210,9 @@ enum VideoExport {
   /// 只按偏好里记的路径删（removePartials），不按名字认
   nonisolated static func partialName() -> String { ".Kitty 压缩中 \(UUID().uuidString).mp4" }
 
-  /// 正在压的临时文件记上 / 划掉（几段可以同时压：存成路径的数组）
-  private static func noteCompressing(_ path: String, _ busy: Bool, in defaults: UserDefaults) {
+  /// 正在写的临时文件记上 / 划掉（几段可以同时压：存成路径的数组）：压缩，和暂停过的录制停止时拼成的那个文件
+  /// （ScreenRecorder.joined，issue #48：拼到一半退出的下次启动删掉，各段还在、recover 重新拼）
+  static func noteCompressing(_ path: String, _ busy: Bool, in defaults: UserDefaults) {
     var paths = defaults.stringArray(forKey: Prefs.compressingFiles) ?? []
     paths.removeAll { $0 == path }
     if busy { paths.append(path) }

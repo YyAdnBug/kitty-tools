@@ -34,6 +34,12 @@
 // 不画边框、不出录屏 HUD 和停止项、不防睡眠（这些归 AudioRecorder：录音 HUD，防睡眠同录屏连显示器一起防——这里显示器睡眠
 // 就停），开始 / 停下 / 每块声音样本的电平 / 两者的麦克风断开交给它（onStarted / onHalted / onLevel / onMicrophoneLost）。麦克风授权（两者）、开流、中断、写完后把音轨无损导出成 m4a（extractAudio）、挪文件、「进行中」
 // 记录都照录屏走这里，medium 是 .audio（录音的偏好键、「录音 <开录时刻>.m4a」）。
+// 暂停 / 继续（issue #48，拍板页 VTDuHoPgFhX3Q4sCqrgaCH「全部按推荐」，PLAN §10「录制暂停」）：SCRecordingOutput 没有暂停，
+// 暂停 = 停流、这一段写完落盘（不录屏幕、不占麦克风、不防睡眠，菜单栏的录制指示灭），继续 = 写到新的工作文件、新开一条流
+// （同一条流停了不能再开，实录 -3812；新建到开始录 0.09 s），不倒数。暂停中锁屏、睡眠、显示器睡眠不结束（回来接着录），
+// 被录的屏变了、再按快捷键、放弃照常收尾。计时和时长不算暂停的时间。停止时几段由 RecordingJoin 拼成一个 mp4（只录声音的
+// 直接导出成一个 m4a），超过 1 s 出「正在存储…」岛；拼不成各段分开存、结果岛说一声。「进行中」另记所有段（partsKey），
+// 闪退后下次启动同样先拼。从没暂停过的录制只有一段，走原来的路。
 
 import AVFoundation
 import AppKit
@@ -61,6 +67,8 @@ nonisolated final class RecordingEvents: NSObject, SCRecordingOutputDelegate, SC
     case startTimedOut, finishTimedOut
     /// 倒数：过了一秒、点了数字马上开始
     case tick, startNow
+    /// 暂停 / 继续（录制中才认，暂停中、继续到一半的再点不算）
+    case togglePause
     /// 只录声音：一块声音样本的电平（dBFS）、是不是麦克风那一路
     case level(Float, microphone: Bool)
   }
@@ -172,6 +180,10 @@ final class ScreenRecorder: NSObject {
     var inProgressKey: String {
       self == .screen ? Prefs.screenRecordingInProgress : Prefs.audioRecordingInProgress
     }
+    /// 暂停过的录制：所有段的路径（按顺序，第一段就是 inProgressKey 那个）
+    var partsKey: String {
+      self == .screen ? Prefs.screenRecordingParts : Prefs.audioRecordingParts
+    }
   }
 
   /// 为什么停（第一个为准）
@@ -237,6 +249,8 @@ final class ScreenRecorder: NSObject {
     /// 开着显示按键、但没有辅助功能授权（这段没显示按键）：AppDelegate 收尾时打开系统设置的辅助功能页
     /// （microphoneDenied 也在时只开麦克风页）
     var keysDenied = false
+    /// 存成了几个文件：暂停过的几段没能拼成一个时各段分开存、有打不开的段时它单独存（file 是第一个），平常是 1
+    var pieces = 1
   }
 
   /// 录制条的四个开关（第 4 批，偏好记住上次；显示按键是手测反馈第 2 批加的）：录不录系统声音、麦克风，画不画点按圈、
@@ -348,6 +362,8 @@ final class ScreenRecorder: NSObject {
   private var microphoneID: String?
   private var microphoneLost = false
   private var microphoneDenied = false
+  /// 选的麦克风不在的提示说过了（继续时 makeStream 会再核一遍，不每次继续都弹）
+  private var warnedMicrophoneMissing = false
   /// 正在等麦克风授权框（屏幕上还没有边框和 HUD）；这期间要停就记下，框返回后当取消
   private var askingMicrophone = false
   private var stoppedWhileAsking = false
@@ -363,13 +379,23 @@ final class ScreenRecorder: NSObject {
   var onHalted: () -> Void = {}
   var onLevel: (Float, Bool) -> Void = { _, _ in }
   var onMicrophoneLost: () -> Void = {}
+  /// 只录声音时暂停了 / 继续录起来了（录音 HUD、计时、防睡眠归 AudioRecorder）
+  var onPaused: (Bool) -> Void = { _ in }
   /// 这次真录不录麦克风（开关开着且有授权；开始写了之后才定）
   var capturesMicrophone: Bool { options.microphone }
   /// 倒数期间临时注册 Esc 用（单测 / 实录自检里是 nil：没有 Esc，只能点 ✕）
   private weak var hotKeys: HotKeyCenter?
   /// 快速保存目录；进行中的文件在和它同一个卷的 workFile
   private let directory: URL
+  /// 第一段写到的工作文件（「进行中」记的就是它）
   private let temp: URL
+  /// 所有段（按顺序，最后一个是正在写 / 最后写的那段；没暂停过就只有 temp）
+  private var parts: [URL]
+  /// 暂停中（从点暂停到继续的那一段真开始写；继续到一半还算暂停，HUD 不提前说在录）
+  private(set) var isPaused = false
+  /// 暂停之前录了多久、这一段从什么时候开始写（计时不算暂停的时间）
+  private var recordedBefore: Duration = .zero
+  private var resumedAt: ContinuousClock.Instant?
   /// 正在看剩余空间（主线程外，第五轮体检 P2）：上一次还没回来（网络盘卡住）就不再起，免得一次次堆着占线程
   private var diskCheck: Task<Void, Never>?
   /// 「进行中」记在哪（单测换成临时偏好域）
@@ -379,9 +405,10 @@ final class ScreenRecorder: NSObject {
   private let delegate: RecordingEvents
   private var stream: SCStream?
   private var output: SCRecordingOutput?
-  /// 计时零点（recordingOutputDidStartRecording）和停止的那一刻
+  /// 第一段开始写的那一刻（开始过没有）和停止的那一刻
   private var startedAt: ContinuousClock.Instant?
   private var endedAt: ContinuousClock.Instant?
+  private var startDeadline: Task<Void, Never>?
   private var finishDeadline: Task<Void, Never>?
   /// 用户放弃 / 取消了（第一个为准）：之后不管怎么收尾（写完超时、没开起来、流先停了），结果都按它——删文件、不出失败岛
   private var abandoned: Reason?
@@ -447,6 +474,7 @@ final class ScreenRecorder: NSObject {
       options = Options(defaults)
       temp = Self.workFile(for: directory)
     }
+    parts = [temp]
     self.hotKeys = hotKeys
     self.island = island
     self.directory = directory
@@ -489,9 +517,26 @@ final class ScreenRecorder: NSObject {
     delegate.feed.yield(.stop(reason))
   }
 
+  /// 暂停 / 继续（HUD 的 ⏸ / ▶、刘海岛、全局快捷键）：录制中才认，倒数、停到一半、暂停或继续到一半时不算
+  func togglePause() {
+    delegate.feed.yield(.togglePause)
+  }
+
   // MARK: 录制
 
-  /// 倒数 → 开流 → 等开始 → 等停止 → 停流、等文件写完；返回停的原因（第一个为准）
+  /// 录制循环走到哪了（暂停、继续都要等流的回调，期间再来的事件按这个分）
+  private enum Phase {
+    /// 第一段：开了流，等开始写
+    case starting
+    case recording
+    /// 停了流，等这一段写完
+    case pausing
+    case paused
+    /// 新开了流，等新的一段开始写
+    case resuming
+  }
+
+  /// 倒数 → 开流 → 等开始 → 等停止（中间可以暂停、继续几次）→ 停流、等文件写完；返回停的原因（第一个为准）
   /// ponytail: 取窗口表和 startCapture 的 await 不罩超时（5 s 开始超时从它们返回后算）：SCK 这两个调用都会返回或抛错、
   /// 没见过卡住；要罩住得把开流挪进子任务、处理超时后才开起来的流，真遇到了再做
   private func record() async -> Reason {
@@ -511,88 +556,141 @@ final class ScreenRecorder: NSObject {
       border?.contentView = ScrollBorderView(animates: false)
       hud?.update(.recording(0))
     }
-    // 点按圈 / 按键提示：窗口要赶在 makeStream 取窗口表之前建好、露出来，才列得进过滤器的例外。开流时才建（倒数不进
-    // 文件，倒数时不用画）；万一这次的窗口表里还没有它，每秒比一次的 refreshFilterIfNeeded 会把它补上。没开起来的由
-    // tearDown 收
-    if medium == .screen, options.showsClicks || options.showsKeys {
-      let visible =
-        NSScreen.screens.first { $0.displayID == displayID }?.visibleFrame ?? screenFrame
-      let overlay = InputOverlay(
-        frame: region, clicks: options.showsClicks,
-        keysBottom: options.showsKeys
-          ? InputOverlay.keysBottom(
-            region: region, screen: screenFrame, visible: visible, isFullScreen: isFullScreen)
-          : nil, shortcutsOnly: shortcutsOnly)
-      overlay.present()
-      inputOverlay = overlay
-    }
-    let stream: SCStream
+    var stream: SCStream
     do {
-      stream = try await makeStream()
-      try await stream.startCapture()
+      stream = try await openStream()
     } catch {
       return Self.reason(startFailed: error)
     }
-    self.stream = stream
-    let feed = delegate.feed
-    let startDeadline = Task {
-      try? await Task.sleep(for: .seconds(5))
-      feed.yield(.startTimedOut)
-    }
     defer {
-      startDeadline.cancel()
+      startDeadline?.cancel()
       finishDeadline?.cancel()
     }
+    var phase = Phase.starting
     var reason: Reason?
-    /// 还没开始就要停（启动途中点了停止）：开始了再停
+    /// 还没开始写就要停（启动途中、继续到一半点了停止）：开始了再停
     var pending: Reason?
     /// 没人要停文件就写完了 = 流自己停了；流停止的原因（另一个后台回调）可能还在路上
     var finished = false
+    /// 暂停到一半（等这一段写完）时又点了继续：写完马上继续
+    var resumesWhenPaused = false
+    /// 继续到一半时锁屏、睡眠了：新的一段一开始写就再停（回到暂停，不录锁屏界面）
+    var pausesWhenStarted = false
     for await event in events {
       switch event {
       case .started:
-        guard startedAt == nil else { continue }
-        startDeadline.cancel()
-        startedAt = .now
-        showChrome()
+        guard phase == .starting || phase == .resuming else { continue }
+        startDeadline?.cancel()
+        resumedAt = .now
+        if phase == .starting {
+          startedAt = .now
+          showChrome()
+        } else if pending == nil, pausesWhenStarted {
+          pausesWhenStarted = false
+          phase = .pausing
+          pause(stream)
+          continue
+        } else {
+          showPaused(false)
+        }
+        phase = .recording
         if let pending {
           reason = pending
           halt(stream)
+        }
+      case .togglePause:
+        switch phase {
+        case .recording where reason == nil && !finished:
+          phase = .pausing
+          pause(stream)
+        case .paused:
+          phase = .resuming
+          do {
+            stream = try await resume()
+          } catch {
+            Log.record.error("录制继续不了：\(error)")
+            return .failed(String(localized: "没能继续录制"))
+          }
+        // 暂停到一半又点了继续（HUD 已经是暂停的样子）：写完这一段再继续；再点一下就是不继续了
+        case .pausing:
+          resumesWhenPaused.toggle()
+        default:
+          continue
         }
       case .stop(let why):
         // 放弃 / 取消（倒数刚结束才到的）：结果按它（outcome），不留闪退记录（文件写完就删，这期间闪退也不该被 recover 捡回来）
         if why == .discarded || why == .cancelled {
           abandoned = abandoned ?? why
           defaults.removeObject(forKey: medium.inProgressKey)
+          defaults.removeObject(forKey: medium.partsKey)
         }
-        if startedAt == nil {
+        switch phase {
+        // 继续到一半锁屏、睡眠：还是暂停（新的一段一开始就停），别的原因开始了再停
+        case .resuming where Self.keepsPaused(why):
+          pausesWhenStarted = true
+        case .starting, .resuming:
           pending = pending ?? why
-        } else if reason == nil, !finished {
+        case .recording:
+          if reason == nil, !finished {
+            reason = why
+            halt(stream)
+          }
+        case .pausing, .paused:
+          // 暂停中什么都不录：锁屏、睡眠、显示器睡眠不结束，回来接着录（拍板 Q2）
+          guard !Self.keepsPaused(why), reason == nil else { continue }
           reason = why
-          halt(stream)
+          endedAt = endedAt ?? .now
+          hideChrome()
+          // 暂停中的流已经停了、这一段已经写完；停到一半的等它写完（.finished / 超时）
+          if phase == .paused { return why }
         }
       case .startTimedOut:
-        guard startedAt == nil else { continue }
+        guard phase == .starting || phase == .resuming else { continue }
         stopCapture(stream)
-        return .failed(String(localized: "没能开始录制"))
+        return .failed(
+          phase == .starting ? String(localized: "没能开始录制") : String(localized: "没能继续录制"))
       case .stopped(let domain, let code, let text):
         let why = Self.reason(streamStopped: domain, code: code, text: text)
         Log.record.notice("录屏的流停了：\(domain) \(code) \(text)")
-        guard startedAt != nil, !finished else { return why }
-        if reason == nil {
-          reason = why
-          halt(stream, running: false)
+        switch phase {
+        // 暂停时是我们自己停的流，它这时报的停不算
+        case .pausing, .paused: continue
+        case .starting: return why
+        // 继续时新开的那条：停掉它再收尾（万一是迟到的旧事件，新流别在收尾后还开着）
+        case .resuming:
+          stopCapture(stream)
+          return why
+        case .recording:
+          guard !finished else { return why }
+          if reason == nil {
+            reason = why
+            halt(stream, running: false)
+          }
         }
       case .failed(let text):
         Log.record.error("录屏写入失败：\(text)")
-        if reason == nil, !finished { halt(stream) }
+        if reason == nil, !finished, phase != .pausing, phase != .paused { halt(stream) }
         return Self.reason(writeFailed: text, stopping: reason)
       case .finished:
+        if phase == .pausing {
+          // 这一段写完了：暂停中（停到一半时叫停的，现在收尾）；暂停到一半点过继续的，接着继续
+          if let reason { return reason }
+          finishDeadline?.cancel()
+          phase = .paused
+          if resumesWhenPaused {
+            resumesWhenPaused = false
+            delegate.feed.yield(.togglePause)
+          }
+          continue
+        }
+        // 已暂停、继续到一半时不该有（这一段早写完了 / 新的一段还没开始）：迟到的、重复的不认
+        guard phase == .starting || phase == .recording else { continue }
         if let reason { return reason }
         // 等一小会儿流停止的原因（控制中心「停止共享」算正常停），没等到才算意外结束
         finished = true
         halt(stream, running: false, wait: .milliseconds(500))
       case .finishTimedOut:
+        guard phase != .paused else { continue }
         return .failed(
           finished ? String(localized: "录制意外结束") : String(localized: "文件没有按时写完"))
       case .level(let power, let microphone):
@@ -602,6 +700,75 @@ final class ScreenRecorder: NSObject {
       }
     }
     return reason ?? .user
+  }
+
+  /// 开流写 parts 的最后一段：点按圈 / 按键提示的窗口要赶在 makeStream 取窗口表之前建好、露出来，才列得进过滤器的例外
+  /// （开流时才建：倒数不进文件，倒数时不用画；万一这次的窗口表里还没有它，每秒比一次的 refreshFilterIfNeeded 会补上；
+  /// 没开起来的由 tearDown 收）。开起来了从这时起算 5 s 开始超时
+  private func openStream() async throws -> SCStream {
+    presentOverlay()
+    let stream = try await makeStream()
+    try await stream.startCapture()
+    self.stream = stream
+    let feed = delegate.feed
+    startDeadline?.cancel()
+    startDeadline = Task {
+      try? await Task.sleep(for: .seconds(5))
+      // 取消了也会马上醒（try? 吞了取消）：别把取消当成超时投出去
+      guard !Task.isCancelled else { return }
+      feed.yield(.startTimedOut)
+    }
+    return stream
+  }
+
+  /// 暂停：计时停住、停流（这一段写完，等 .finished；10 s 没写完按失败收尾，已录的照样保住），换成暂停的样子
+  private func pause(_ stream: SCStream) {
+    recordedBefore = recorded(until: .now)
+    resumedAt = nil
+    self.stream = nil
+    armFinishDeadline(.seconds(10))
+    stopCapture(stream)
+    showPaused(true)
+  }
+
+  /// 继续：新的一段写到新的工作文件（先记进「进行中」：开到一半闪退也找得回前面几段），新开一条流（同一条停了的流不能再
+  /// startCapture，实录 -3812）。开起来了等 .started 再算在录
+  private func resume() async throws -> SCStream {
+    let part =
+      medium == .audio
+      ? Self.workFile(for: directory, medium: .audio).deletingPathExtension()
+        .appendingPathExtension("mp4")
+      : Self.workFile(for: directory)
+    parts.append(part)
+    defaults.set(parts.map(\.path), forKey: medium.partsKey)
+    return try await openStream()
+  }
+
+  /// 暂停中这些原因不结束录制：什么都不录，回来接着录（纯函数，配单测）
+  nonisolated static func keepsPaused(_ reason: Reason) -> Bool {
+    [.locked, .sleep, .displaySleep].contains(reason)
+  }
+
+  /// 录了多久（不算暂停的时间）：暂停前的几段 + 这一段从开始写到 end
+  private func recorded(until end: ContinuousClock.Instant) -> Duration {
+    recordedBefore + (resumedAt.map { end - $0 } ?? .zero)
+  }
+
+  /// 点按圈 / 按键提示（显示点按 / 显示按键任一开着的录屏才有；只录声音没有）：开流前建、停或暂停的那一刻收
+  private func presentOverlay() {
+    guard medium == .screen, inputOverlay == nil, options.showsClicks || options.showsKeys else {
+      return
+    }
+    let visible =
+      NSScreen.screens.first { $0.displayID == displayID }?.visibleFrame ?? screenFrame
+    let overlay = InputOverlay(
+      frame: region, clicks: options.showsClicks,
+      keysBottom: options.showsKeys
+        ? InputOverlay.keysBottom(
+          region: region, screen: screenFrame, visible: visible, isFullScreen: isFullScreen)
+        : nil, shortcutsOnly: shortcutsOnly)
+    overlay.present()
+    inputOverlay = overlay
   }
 
   /// 倒数（拍板 R9-a）：数完才开流（倒数不进文件）。选区边框走蚂蚁线（整屏没有）、HUD 数秒；点数字马上开始，✕ / Esc /
@@ -667,7 +834,8 @@ final class ScreenRecorder: NSObject {
     // 选的麦克风（X18）开流这一刻才核对（倒数中拔掉的也算）；不在了这次跟随系统输入，说一声（只是提示，录屏照常）
     if options.microphone, options.chosenMicrophone != nil {
       options.resolveMicrophone(connected: Self.microphones().map(\.id))
-      if options.microphoneMissing {
+      if options.microphoneMissing, !warnedMicrophoneMissing {
+        warnedMicrophoneMissing = true
         island?.show(
           "选的麦克风不在", detail: "这次用系统默认的输入；设置 › 录制 里能换", tone: .warning,
           symbol: "mic.badge.xmark")
@@ -679,7 +847,8 @@ final class ScreenRecorder: NSObject {
       options.microphone
       ? options.microphoneDevice ?? AVCaptureDevice.default(for: .audio)?.uniqueID : nil
     let recording = SCRecordingOutputConfiguration()
-    recording.outputURL = temp
+    // 写到最后一段（第一段是 temp，继续时 resume 先加一段新的工作文件）
+    recording.outputURL = parts.last ?? temp
     recording.videoCodecType = codec.type
     recording.outputFileType = .mp4
     let output = SCRecordingOutput(configuration: recording, delegate: delegate)
@@ -799,13 +968,20 @@ final class ScreenRecorder: NSObject {
     endedAt = endedAt ?? .now
     hideChrome()
     self.stream = nil
+    armFinishDeadline(wait)
+    if running { stopCapture(stream) }
+  }
+
+  /// 等这一段写完的超时（停止、暂停共用）：到点投 .finishTimedOut
+  private func armFinishDeadline(_ wait: Duration) {
     let feed = delegate.feed
     finishDeadline?.cancel()
     finishDeadline = Task {
       try? await Task.sleep(for: wait)
+      // 取消了也会马上醒（try? 吞了取消）：别把取消当成超时投出去（暂停时这一段写完就取消它）
+      guard !Task.isCancelled else { return }
       feed.yield(.finishTimedOut)
     }
-    if running { stopCapture(stream) }
   }
 
   /// 停流不等它回来：被录的屏正被拔掉时它可能迟迟不回，收尾交给事件和上面的超时，别让会话卡在这里（再按快捷键停不了、
@@ -847,8 +1023,9 @@ final class ScreenRecorder: NSObject {
     case .cancel: stop(.cancelled)
     case .discard: stop(.discarded)
     case .stop: stop()
-    // 录屏第一期不暂停；暂停钮、待录的开始钮和来源开关只有录音的 HUD 有
-    case .pause, .start, .systemAudio, .microphone: break
+    case .pause: togglePause()
+    // 待录的开始钮和来源开关只有录音的 HUD 有
+    case .start, .systemAudio, .microphone: break
     }
   }
 
@@ -867,17 +1044,58 @@ final class ScreenRecorder: NSObject {
     RunLoop.main.add(timer, forMode: .common)
     self.timer = timer
     updateClock()
+    beginActivity()
+    // 刘海岛的耳朵：左边红色的录制记号、右边计时（刘海岛扩展 C1；岛不进录屏，挂在那里录不进去）。HUD 和停止项照旧
+    island?.setActivity(islandState())
+    Island.announce("开始录屏")
+  }
+
+  /// 录制中不让系统闲置睡眠、显示器闲置熄屏（暂停时放开）
+  private func beginActivity() {
+    guard activity == nil else { return }
     activity = ProcessInfo.processInfo.beginActivity(
       options: [.idleSystemSleepDisabled, .idleDisplaySleepDisabled, .userInitiated],
       reason: "录屏")
-    // 刘海岛的耳朵：左边红色的录制记号、右边计时（刘海岛扩展 C1；岛不进录屏，挂在那里录不进去）。HUD 和停止项照旧
-    island?.setActivity(
-      Island.Activity(
-        id: Self.islandActivity, kind: .record, title: String(localized: "录屏中"),
-        symbol: "record.circle.fill",
-        tone: .error, trailing: .elapsed(since: .now),
-        actions: [Island.Action("停止") { [weak self] in self?.stop() }]))
-    Island.announce("开始录屏")
+  }
+
+  /// 暂停 / 继续录起来了（issue #48）：计时停住 / 接着走（HUD、停止项、刘海岛同一个时钟），防睡眠放开 / 再拿，
+  /// 点按圈和按键提示收起（继续时开流之前已经重建），刘海岛换「录屏已暂停」和「继续」，旁白播报。
+  /// 只录声音时这些归 AudioRecorder（onPaused）
+  private func showPaused(_ paused: Bool) {
+    isPaused = paused
+    guard medium == .screen else { return onPaused(paused) }
+    if paused {
+      if let activity { ProcessInfo.processInfo.endActivity(activity) }
+      activity = nil
+      inputOverlay?.close()
+      inputOverlay = nil
+    } else {
+      beginActivity()
+    }
+    hud?.setPaused(paused)
+    (border?.contentView as? ScrollBorderView)?.setPaused(paused)
+    island?.setActivity(islandState())
+    updateClock()
+    Island.announce(paused ? "已暂停" : "已继续")
+  }
+
+  /// 刘海岛耳朵上的录屏：左边红色的录制记号、右边计时（不算暂停的时间）；暂停时停在那一刻，按钮「停止」「暂停 / 继续」
+  /// （同录音的 AudioRecorder.islandState）
+  private func islandState() -> Island.Activity {
+    let seconds = Double(recorded(until: .now).components.seconds)
+    // 暂停后的「继续」（Resume）和欢迎引导的「继续」（Continue）英文不同：显式 key（和录音同一条）
+    let resume = LocalizedStringResource(
+      "record.resume", defaultValue: "继续", comment: "录音暂停后接着录")
+    return Island.Activity(
+      id: Self.islandActivity, kind: .record,
+      title: isPaused ? String(localized: "录屏已暂停") : String(localized: "录屏中"),
+      symbol: "record.circle.fill", tone: .error,
+      trailing: isPaused
+        ? .text(Self.clock(Int(seconds))) : .elapsed(since: .now - seconds),
+      actions: [
+        Island.Action("停止") { [weak self] in self?.stop() },
+        Island.Action(isPaused ? resume : "暂停") { [weak self] in self?.togglePause() },
+      ])
   }
 
   /// 刘海岛上录屏那个活动的编号（录音的是 AudioRecorder.islandActivity）
@@ -905,8 +1123,8 @@ final class ScreenRecorder: NSObject {
     ticks += 1
     updateClock()
     refreshFilterIfNeeded()
-    // 每 5 s 看一次临时文件所在卷还剩多少（主线程外：临时文件可能在网络盘上的保存目录里，P2）
-    if ticks % 5 == 0, diskCheck == nil {
+    // 每 5 s 看一次临时文件所在卷还剩多少（主线程外：临时文件可能在网络盘上的保存目录里，P2）；暂停中不写，不看
+    if ticks % 5 == 0, diskCheck == nil, !isPaused {
       diskCheck = Task { [weak self, temp] in
         let low = await ScreenRecorder.isLowOnDisk(temp)
         self?.diskCheck = nil
@@ -915,12 +1133,12 @@ final class ScreenRecorder: NSObject {
     }
   }
 
-  /// 菜单栏停止项和 HUD 同一个时钟
+  /// 菜单栏停止项和 HUD 同一个时钟（不算暂停的时间）
   private func updateClock() {
-    guard stopItem != nil, let startedAt else { return }
-    let seconds = Int((ContinuousClock.now - startedAt).components.seconds)
+    guard stopItem != nil, startedAt != nil else { return }
+    let seconds = Int(recorded(until: .now).components.seconds)
     hud?.update(.recording(seconds))
-    Self.showClock(seconds, on: stopItem)
+    Self.showClock(seconds, on: stopItem, paused: isPaused)
   }
 
   /// 菜单栏另起的停止项「■ 0:12」（录屏、录音共用）：stop.fill 模板图 + 12 pt 等宽数字，左键即停，主图标不动；
@@ -941,11 +1159,14 @@ final class ScreenRecorder: NSObject {
     return item
   }
 
-  /// 停止项的计时「0:12」和读屏值「已录 12 秒」
-  static func showClock(_ seconds: Int, on item: NSStatusItem?) {
+  /// 停止项的计时「0:12」和读屏值「已录 12 秒」；暂停中「已暂停，已录 12 秒」（同录音 HUD 的读屏值）
+  static func showClock(_ seconds: Int, on item: NSStatusItem?, paused: Bool = false) {
     guard let button = item?.button else { return }
     button.title = clock(seconds)
-    button.setAccessibilityValue(String(localized: "已录 \(spoken(seconds))"))
+    button.setAccessibilityValue(
+      paused
+        ? String(localized: "已暂停，已录 \(spoken(seconds))")
+        : String(localized: "已录 \(spoken(seconds))"))
   }
 
   /// file 所在卷剩余不到 1 GB（录制中每 5 s 查一次，录屏、录音共用）。主线程外（第五轮体检 P2：快速保存目录和 App 的数据
@@ -1055,7 +1276,9 @@ final class ScreenRecorder: NSObject {
   /// 录制中（开始了、还没停）断开的是开录时那个设备：HUD 的麦克风变橙（只录声音时是录音 HUD 的橙字，onMicrophoneLost）、
   /// 播报，结果岛补一句（只算一次）
   private func microphoneDisconnected(_ id: String?) {
-    guard let id, id == microphoneID, startedAt != nil, endedAt == nil, !microphoneLost else {
+    // 暂停中不录麦克风：断开的不算（继续时新开的流按那时的设备录）
+    guard let id, id == microphoneID, startedAt != nil, endedAt == nil, !isPaused, !microphoneLost
+    else {
       return
     }
     microphoneLost = true
@@ -1077,36 +1300,93 @@ final class ScreenRecorder: NSObject {
     observers = []
   }
 
-  /// 挪文件（settle）：开始过、文件在就挪进快速保存目录，挪不过去的留在原地；放弃的（倒数刚结束时按到的取消也算）删掉。
-  /// 只录声音的先把音轨导出成 m4a（extractAudio；录音 HUD 在停的那一刻已收起，导出超过 1 s 出岛「正在存储录音…」，减弱动态
-  /// 效果时照出），导出不了就存 mp4（结果岛说一声）。挪完都删「进行中」记录：这次是正常收尾，下次启动不该说「没有正常结束」
+  /// 挪文件（settle）：开始过、文件在就挪进快速保存目录，挪不过去的留在原地；放弃的（倒数刚结束时按到的取消也算）删掉所有段。
+  /// 暂停过的几段先拼成一个（joined：录屏 RecordingJoin，只录声音直接导出成一个 m4a），拼不成各段分开挪（Result.pieces）；
+  /// 只录声音的单段也先把音轨导出成 m4a，导出不了就存 mp4（结果岛说一声）。要拼 / 导出时（录音 HUD、录制 HUD 在停的那一刻
+  /// 已收起）超过 1 s 出岛「正在存储…」（减弱动态效果时照出）。挪完都删「进行中」记录：这次是正常收尾，下次启动不该说
+  /// 「没有正常结束」
   private func finalize(_ reason: Reason) async -> Result {
-    let duration = startedAt.map { (endedAt ?? .now) - $0 } ?? .zero
+    let duration = startedAt == nil ? .zero : recorded(until: endedAt ?? .now)
     let keeps = startedAt != nil && reason != .discarded && reason != .cancelled
-    var file = temp
-    if medium == .audio, keeps, FileManager.default.fileExists(atPath: temp.path) {
+    var files = parts.filter { FileManager.default.fileExists(atPath: $0.path) }
+    /// 暂停过、却有打不开的段（继续时没开起来、停止时最后一段没按时写完）：不拼它（读不出来会整个拼不成），单独存，
+    /// 结果里算一个文件；空文件（什么都没写进去）直接删
+    var unplayable: [URL] = []
+    if keeps, files.count > 1 {
+      var playable: [URL] = []
+      for file in files {
+        if (try? await AVURLAsset(url: file).load(.isPlayable)) ?? false {
+          playable.append(file)
+        } else if Self.isEmpty(file) {
+          await RecordingJoin.remove([file])
+        } else {
+          unplayable.append(file)
+        }
+      }
+      files = playable
+    }
+    if keeps, !files.isEmpty, files.count > 1 || medium == .audio {
       let island = self.island
-      let saving: LocalizedStringResource = "正在存储录音…"
+      let saving: LocalizedStringResource = medium == .screen ? "正在存储录屏…" : "正在存储录音…"
+      let symbol = medium == .screen ? "video.circle.fill" : "waveform.circle.fill"
       let progress = Task {
         try? await Task.sleep(for: .seconds(1))
         guard !Task.isCancelled else { return false }
-        island?.show(saving, tone: .progress, symbol: "waveform.circle.fill")
+        island?.show(saving, tone: .progress, symbol: symbol)
         return true
       }
-      file = await Self.extractAudio(from: temp) ?? temp
-      // 导出成了 m4a（mp4 已删）：「进行中」改记它，挪到一半退出的话下次启动挪的是它
-      if file != temp { defaults.set(file.path, forKey: medium.inProgressKey) }
+      if let joined = await Self.joined(
+        files, medium: medium, directory: directory, defaults: defaults)
+      {
+        // 拼成了：「进行中」改记它（挪到一半退出的话下次启动挪的是它），再删各段
+        defaults.set(joined.path, forKey: medium.inProgressKey)
+        defaults.removeObject(forKey: medium.partsKey)
+        await RecordingJoin.remove(files)
+        files = [joined]
+      }
       progress.cancel()
       // 结果岛（出的话）随后由 AppDelegate 弹；飞了卡片的正常停只播报，进度岛得自己收
       if await progress.value { island?.dismiss(ifShowing: saving) }
     }
-    let (saved, moved, denied) = await Self.settle(
-      file, into: directory, medium: medium, keeps: keeps)
+    var saved: [URL] = []
+    var moved = true
+    var denied = false
+    for file in keeps ? files + unplayable : parts {
+      let settled = await Self.settle(file, into: directory, medium: medium, keeps: keeps)
+      if let file = settled.file { saved.append(file) }
+      moved = moved && settled.moved
+      denied = denied || settled.denied
+    }
     // 挪完才删「进行中」记录（第五轮体检 P2 评审 5）：挪到一半退出 / 闪退的，下次启动照样由 recover 接手
     defaults.removeObject(forKey: medium.inProgressKey)
-    return Result(
-      file: saved, moved: moved, moveDenied: denied, duration: duration, reason: reason,
-      region: region)
+    defaults.removeObject(forKey: medium.partsKey)
+    var result = Result(
+      file: saved.first, moved: !saved.isEmpty && moved, moveDenied: denied, duration: duration,
+      reason: reason, region: region)
+    result.pieces = max(1, saved.count)
+    return result
+  }
+
+  /// 几段拼成一个文件（issue #48）：录屏由 RecordingJoin 写到和各段同一个文件夹的新工作文件；只录声音的音轨导出成第一段
+  /// 旁边的 m4a（单段也走这里）。成功返回它，各段留给调用方删（先改「进行中」记录再删）；不成 nil。
+  /// 拼的时候把成品记进「正在写的临时文件」（VideoExport.noteCompressing）：拼到一半退出（退出只等 5 s）的半截下次启动删掉，
+  /// 各段还在、「进行中」还记着，recover 重新拼
+  static func joined(
+    _ parts: [URL], medium: Medium, directory: URL, defaults: UserDefaults
+  ) async -> URL? {
+    let target =
+      medium == .audio
+      ? parts[0].deletingPathExtension().appendingPathExtension(Medium.audio.ext)
+      : workFile(for: directory)
+    VideoExport.noteCompressing(target.path, true, in: defaults)
+    defer { VideoExport.noteCompressing(target.path, false, in: defaults) }
+    if medium == .audio { return await extractAudio(from: parts) }
+    return await RecordingJoin.join(parts, to: target) ? target : nil
+  }
+
+  /// 文件是空的（继续时开流失败留下的）；读不到大小的不算空
+  private static func isEmpty(_ file: URL) -> Bool {
+    (try? file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize == 0
   }
 
   /// 收尾挪文件（录屏、录音共用）：不留的（放弃、取消、没开始录）和不在的删掉；否则挪进快速保存目录（「录屏 / 录音 <开录时刻>」，
@@ -1204,19 +1484,60 @@ final class ScreenRecorder: NSObject {
   /// 启动时（AppDelegate，单测宿主不跑；录屏、录音各查一次）：偏好里还记着进行中的文件 = 上次没正常收尾（闪退、断电）。
   /// 文件不在了只删记录；能播（常见：本 App 被 kill -9 后 replayd 自己收尾）就挪进快速保存目录——只录声音的（录音第 6 批，
   /// 进行中的是 mp4）先把音轨导出成 m4a，导出不了就原样挪 mp4 并说明；打不开（系统崩溃 / 断电）留在原地、说路径和大小。
+  /// 暂停过的（issue #48，partsKey 记着所有段）：能播的几段先拼成一个再挪，拼不成各段分开挪（打不开的那段留在原地）。
   /// 都删记录（只提示一次）；返回要弹的岛
   static func recover(
     into directory: URL, defaults: UserDefaults = .standard, medium: Medium = .screen
   ) async -> (title: String, detail: String, tone: Island.Tone)? {
     let key = medium.inProgressKey
     guard let path = defaults.string(forKey: key) else { return nil }
+    let paths = defaults.stringArray(forKey: medium.partsKey) ?? [path]
     defaults.removeObject(forKey: key)
+    defaults.removeObject(forKey: medium.partsKey)
     let manager = FileManager.default
-    guard manager.fileExists(atPath: path) else { return nil }
-    var file = URL(filePath: path)
-    let playable = (try? await AVURLAsset(url: file).load(.isPlayable)) ?? false
+    let found = paths.map { URL(filePath: $0) }.filter { manager.fileExists(atPath: $0.path) }
+    guard let first = found.first else { return nil }
+    var playable: [URL] = []
+    for file in found where (try? await AVURLAsset(url: file).load(.isPlayable)) ?? false {
+      playable.append(file)
+    }
+    if playable.count > 1 {
+      if let joined = await joined(
+        playable, medium: medium, directory: directory, defaults: defaults)
+      {
+        // 先挪成品再删各段：中间退出的话各段还在（成品挪不过去就留在原地、岛上说路径）
+        let result = await recoverOne(joined, playable: true, into: directory, medium: medium)
+        await RecordingJoin.remove(playable)
+        return result
+      }
+      var saved: [URL] = []
+      for part in playable {
+        let target = savedURL(for: part, in: directory, medium: medium)
+        if (try? manager.moveItem(at: part, to: target)) != nil { saved.append(target) }
+      }
+      if !saved.isEmpty {
+        return (
+          medium == .screen
+            ? String(localized: "上次录屏没有正常结束，分成了 \(saved.count) 段保存")
+            : String(localized: "上次录音没有正常结束，分成了 \(saved.count) 段保存"),
+          saved.map(\.lastPathComponent).joined(separator: " · "), .warning
+        )
+      }
+    }
+    return await recoverOne(
+      playable.first ?? first, playable: !playable.isEmpty, into: directory, medium: medium)
+  }
+
+  /// 恢复一个文件（recover）：能播就挪进快速保存目录（只录声音的 mp4 先导出成 m4a），挪不了 / 打不开留在原地、说路径和大小
+  private static func recoverOne(
+    _ found: URL, playable: Bool, into directory: URL, medium: Medium
+  ) async -> (title: String, detail: String, tone: Island.Tone) {
+    let manager = FileManager.default
+    var file = found
     if playable {
-      if medium == .audio, file.pathExtension == "mp4", let audio = await extractAudio(from: file) {
+      if medium == .audio, file.pathExtension == "mp4", let audio = await extractAudio(from: [file])
+      {
+        try? manager.removeItem(at: file)
         file = audio
       }
       let target = savedURL(for: file, in: directory, medium: medium)
@@ -1249,24 +1570,32 @@ final class ScreenRecorder: NSObject {
     )
   }
 
-  /// 只录声音的 mp4（1 fps 的小方块视频轨 + 一条 AAC 音轨，录音第 6 批）→ 旁边同名的 .m4a：只含音轨的 composition，先
-  /// Passthrough（不重新编码，第 0 批实测 3 s 的 31 ms），不行再 AppleM4A（重新编码）。成功删掉 mp4、m4a 的创建时间改成 mp4 的
-  /// （存盘名按开录时刻，savedURL）；读不出音轨、两种都失败返回 nil，mp4 原样留着。系统的 async API，主线程直接 await
-  static func extractAudio(from mp4: URL) async -> URL? {
-    let target = mp4.deletingPathExtension().appendingPathExtension(Medium.audio.ext)
+  /// 只录声音的 mp4（1 fps 的小方块视频轨 + 一条 AAC 音轨，录音第 6 批；暂停过的是几段，issue #48）→ 第一段旁边同名的 .m4a：
+  /// 几段的音轨首尾相接排进一个只含音轨的 composition，先 Passthrough（不重新编码，第 0 批实测 3 s 的 31 ms；每段开头的 AAC
+  /// 预热靠编辑表），不行再 AppleM4A（重新编码）。成功返回 m4a（创建时间改成第一段的：存盘名按开录时刻，savedURL），各段留给
+  /// 调用方删；读不出音轨、两种都失败返回 nil。系统的 async API，主线程直接 await
+  static func extractAudio(from parts: [URL]) async -> URL? {
+    guard let first = parts.first else { return nil }
+    let target = first.deletingPathExtension().appendingPathExtension(Medium.audio.ext)
     // 留住 asset 到导出完：音轨对它是弱引用（AVAssetTrack.asset），asset 一放掉音轨就读不出来、插不进 composition
     // （实录踩到过：写成临时的 AVURLAsset(url:).loadTracks 时两种导出都失败）
-    let asset = AVURLAsset(url: mp4)
-    defer { withExtendedLifetime(asset) {} }
+    let assets = parts.map { AVURLAsset(url: $0) }
+    defer { withExtendedLifetime(assets) {} }
     let composition = AVMutableComposition()
-    guard let source = try? await asset.loadTracks(withMediaType: .audio).first,
-      let range = try? await source.load(.timeRange),
+    guard
       let track = composition.addMutableTrack(
-        withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid),
-      (try? track.insertTimeRange(range, of: source, at: .zero)) != nil
-    else {
-      Log.record.error("录音的音轨读不出来：\(mp4.lastPathComponent)")
-      return nil
+        withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
+    else { return nil }
+    var cursor = CMTime.zero
+    for asset in assets {
+      guard let source = try? await asset.loadTracks(withMediaType: .audio).first,
+        let range = try? await source.load(.timeRange),
+        (try? track.insertTimeRange(range, of: source, at: cursor)) != nil
+      else {
+        Log.record.error("录音的音轨读不出来：\(asset.url.lastPathComponent)")
+        return nil
+      }
+      cursor = cursor + range.duration
     }
     let manager = FileManager.default
     for preset in [AVAssetExportPresetPassthrough, AVAssetExportPresetAppleM4A] {
@@ -1280,10 +1609,9 @@ final class ScreenRecorder: NSObject {
         Log.record.error("录音导出 m4a 失败（\(preset)）：\(error)")
         continue
       }
-      if let created = (try? mp4.resourceValues(forKeys: [.creationDateKey]))?.creationDate {
+      if let created = (try? first.resourceValues(forKeys: [.creationDateKey]))?.creationDate {
         try? manager.setAttributes([.creationDate: created], ofItemAtPath: target.path)
       }
-      try? manager.removeItem(at: mp4)
       return target
     }
     try? manager.removeItem(at: target)
@@ -1484,6 +1812,9 @@ final class ScreenRecorder: NSObject {
     }
     let length = clock(Int(result.duration.components.seconds))
     var notes = result.microphoneLost ? [String(localized: "后半段没有麦克风声音")] : []
+    if result.pieces > 1 {
+      notes.append(String(localized: "存成了 \(result.pieces) 个文件"))
+    }
     if file.pathExtension != medium.ext {
       notes.append(String(localized: "没能转成 \(medium.ext)，存的是 mp4"))
     }
