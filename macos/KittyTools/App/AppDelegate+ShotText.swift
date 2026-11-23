@@ -2,6 +2,7 @@
 
 import AppKit
 import SwiftUI
+import VisionKit
 
 extension AppDelegate {
   /// 本机识别文字 → 原文记进剪贴板历史 → 现有的多服务翻译浮窗（钉图上的翻译走这里）。
@@ -204,47 +205,115 @@ extension AppDelegate {
   }
 
   /// 识字模型还没加载：刘海岛上说一声、按秒报已等多久，等它加载好（第一次要一分钟左右）
-  private func prepareRecognition() async {
-    if !OCR.isPrepared() {
+  private func prepareRecognition(showingProgress: Bool = true) async {
+    guard !OCR.isPrepared() else { return }
+    var ticker: Task<Void, Never>?
+    if showingProgress {
       let note = String(localized: "第一次识字要等一分钟左右，以后就快了")
       island.show(
         Self.preparingTitle, detail: "\(note)", tone: .progress, symbol: "text.viewfinder")
       let started = ContinuousClock.now
-      let ticker = Task { [island] in
+      ticker = Task { [island] in
         while !Task.isCancelled {
           try? await Task.sleep(for: .seconds(1))
           let seconds = (ContinuousClock.now - started).components.seconds
           island.progress(Self.preparingTitle, detail: "\(note) · 已等 \(seconds) 秒")
         }
       }
-      if await OCR.prepare() { ocrMarkerWatcher?.preparationSucceeded() }
-      ticker.cancel()
     }
+    if await OCR.prepare() { ocrMarkerWatcher?.preparationSucceeded() }
+    ticker?.cancel()
+  }
+
+  enum CopyResult: Equatable {
+    case codes(String)
+    case text(String)
+    case unreadable
+    case cancelled
+  }
+
+  /// 拷贝图中文字用不用实况文本（PR #45）：它的 transcript 自己就按段接好了（同一段的折行接起来，标题、标签各占一行；
+  /// 实测分段比按行框接的好、字也认得准），所以「接起来」开着时用它；关着要一行一行原样，只有 Vision 给得出，
+  /// 除非 Vision 还没准备好（新装、系统更新后、缓存刚被清的那一分钟）——先用实况文本，不让人干等
+  static func usesLiveText(joined: Bool, visionPrepared: Bool) -> Bool {
+    joined || !visionPrepared
+  }
+
+  /// 有码拷码；nil = 走 Vision（不用实况文本、机器不支持、它报错）。实况文本成功但没字就到此为止，不再跑 Vision
+  static func fastTextForCopy(
+    codes: [String], liveText: Bool, transcript: () async throws -> String?
+  ) async -> CopyResult? {
+    guard !Task.isCancelled else { return .cancelled }
+    if !codes.isEmpty { return .codes(codes.joined(separator: "\n")) }
+    guard liveText else { return nil }
+    do {
+      let text = try await transcript()
+      guard !Task.isCancelled else { return .cancelled }
+      return text.map { .text($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+    } catch {
+      return error is CancellationError || Task.isCancelled ? .cancelled : nil
+    }
+  }
+
+  /// 每张图只走一次。有整批进度时不弹单张的岛；单张先结束查码 / 实况文本的慢提示，再进入 Vision 的准备提示。
+  private func recognizeForCopy(
+    _ image: CGImage, joined: Bool, liveText: Bool, prepareBatchVision: (() async -> Void)? = nil
+  ) async -> CopyResult {
+    func fastRead() async -> CopyResult? {
+      guard !Task.isCancelled else { return .cancelled }
+      let codes = await OCR.barcodes(in: image)
+      return await Self.fastTextForCopy(codes: codes, liveText: liveText) {
+        try await LiveText.analysis(of: image)?.transcript
+      }
+    }
+
+    func readLines() async -> [OCR.Line]? {
+      guard !Task.isCancelled else { return nil }
+      return await OCR.recognizeLines(in: image)
+    }
+
+    let lines: [OCR.Line]?
+    if let prepareBatchVision {
+      if let result = await fastRead() { return result }
+      guard !Task.isCancelled else { return .cancelled }
+      await prepareBatchVision()
+      lines = await readLines()
+    } else {
+      let fast = await island.showIfSlow(Self.recognizingTitle, fastRead)
+      if let result = Task.isCancelled ? .cancelled : fast {
+        idleReclaim.schedule()  // 查码也会留下模型；下面的 Vision 分支由 recognizing 安排回收
+        return result
+      }
+      lines = await recognizing(readLines)
+    }
+    guard !Task.isCancelled else { return .cancelled }
+    guard let lines else { return .unreadable }
+    return .text(OCR.text(lines, joined: joined))
   }
 
   /// 有二维码 / 条码就复制它的内容，否则复制识别出的文字（设置里开了就把换行合成一段）；记进剪贴板历史
   func copyRecognizedText(in image: CGImage) async {
-    let (codes, lines) = await recognizing { () -> ([String], [OCR.Line]?) in
-      let codes = await OCR.barcodes(in: image)
-      // 有码就不用再识字
-      return (codes, codes.isEmpty ? await OCR.recognizeLines(in: image) : [])
-    }
-    var text = codes.joined(separator: "\n")
-    if text.isEmpty {
-      guard let lines else {
-        return island.show("文字识别失败", detail: "请重试", tone: .error)
-      }
-      // 设置 › 截图开着「接起来」：同一段的行接起来、段间换行（体检 A32）；关着一行一行原样
-      text = OCR.text(lines, joined: UserDefaults.standard.bool(forKey: Prefs.ocrJoinLines))
+    let joined = UserDefaults.standard.bool(forKey: Prefs.ocrJoinLines)
+    let result = await recognizeForCopy(
+      image, joined: joined,
+      liveText: Self.usesLiveText(joined: joined, visionPrepared: OCR.isPrepared()))
+    let text: String
+    let isCode: Bool
+    switch Task.isCancelled ? .cancelled : result {
+    case .codes(let codes): (text, isCode) = (codes, true)
+    case .text(let transcript): (text, isCode) = (transcript, false)
+    case .unreadable: return island.show("文字识别失败", detail: "请重试", tone: .error)
+    case .cancelled:
+      return
     }
     guard !text.isEmpty else {
       return island.show("没有识别到文字", tone: .warning)
     }
     Paster.write(string: text, record: true)
     island.show(
-      codes.isEmpty ? "已复制" : "已复制二维码",
+      isCode ? "已复制二维码" : "已复制",
       detail: "\(Island.excerpt(text))",
-      symbol: codes.isEmpty ? nil : "qrcode")
+      symbol: isCode ? "qrcode" : nil)
   }
 
   /// 访达右键「拷贝图中文字」（2026-11-17 拍板 C1）：一张张认，每张同截图识字（有二维码 / 条码拷它的内容，没有就识字、
@@ -257,9 +326,17 @@ extension AppDelegate {
     FileMoves.enqueue("正在识别图里的文字…", detail: "0/\(urls.count)", island: island) {
       [unowned self] report in
       defer { idleReclaim.schedule() }
-      let warmup = OCR.foreground.beginUse()
-      await prepareRecognition()
-      await warmup?.value
+      // 整批按开始时定的走（中途 Vision 在后台准备好了也不换，一批的格式一样）
+      let liveText = Self.usesLiveText(joined: joined, visionPrepared: OCR.isPrepared())
+      // 真有一张图要走 Vision 才准备；整批只等一次（准备没成也不为下一张图重来一遍）。
+      var startedVision = false
+      @MainActor func prepareBatchVision() async {
+        guard !startedVision else { return }
+        startedVision = true
+        let warmup = OCR.foreground.beginUse()
+        await prepareRecognition(showingProgress: false)
+        if !Task.isCancelled { await warmup?.value }
+      }
       var texts: [String] = []
       var codesOnly = true
       var unreadable = 0
@@ -276,24 +353,25 @@ extension AppDelegate {
           unreadable += 1
           continue
         }
-        let codes = await OCR.barcodes(in: image)
-        if !codes.isEmpty {
-          texts.append(codes.joined(separator: "\n"))
-          continue
-        }
-        codesOnly = false
-        guard let lines = await OCR.recognizeLines(in: image) else {
+        switch await recognizeForCopy(
+          image, joined: joined, liveText: liveText, prepareBatchVision: prepareBatchVision)
+        {
+        case .codes(let codes): texts.append(codes)
+        case .text(let text):
+          codesOnly = false
+          if !text.isEmpty { texts.append(text) }
+        case .unreadable:
+          codesOnly = false
           unreadable += 1
-          continue
+        case .cancelled:
+          return (texts: [String](), codesOnly: false, unreadable: unreadable, stopped: true)
         }
-        let text = OCR.text(lines, joined: joined)
-        if !text.isEmpty { texts.append(text) }
       }
       return (
         texts: texts, codesOnly: codesOnly, unreadable: unreadable, stopped: Task.isCancelled
       )
     } finish: { [unowned self] result in
-      guard !result.stopped else {
+      guard !result.stopped, !Task.isCancelled else {
         return island.show("已停止识别", detail: "什么都没拷", tone: .info)
       }
       let text = result.texts.joined(separator: "\n\n")
