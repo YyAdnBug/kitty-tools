@@ -664,9 +664,9 @@ struct ScreenshotTests {
   }
 
   @MainActor @Test(arguments: [false, true])
-  func copyPrefersBarcodesToText(joined: Bool) async {
+  func copyPrefersBarcodesToText(liveText: Bool) async {
     let result = await AppDelegate.fastTextForCopy(
-      codes: ["https://example.com/kitty", "12345"], joined: joined
+      codes: ["https://example.com/kitty", "12345"], liveText: liveText
     ) {
       Issue.record("有条码就不用分析旁边的文字")
       return "caption"
@@ -678,11 +678,12 @@ struct ScreenshotTests {
     #expect(text == "https://example.com/kitty\n12345")
   }
 
-  @MainActor @Test(arguments: [
-    (" first line\nsecond line\n", " first line\nsecond line\n"), ("", ""), (" \t\n", ""),
+  @MainActor
+  @Test(arguments: [
+    (" first line\nsecond line\n", "first line\nsecond line"), ("", ""), (" \t\n", ""),
   ])
   func successfulTranscriptDoesNotRequireVision(transcript: String, expected: String) async {
-    let result = await AppDelegate.fastTextForCopy(codes: [], joined: false) { transcript }
+    let result = await AppDelegate.fastTextForCopy(codes: [], liveText: true) { transcript }
     guard case .text(let text)? = result else {
       Issue.record("实况文本成功（包括空白图）不该再走 Vision")
       return
@@ -690,17 +691,25 @@ struct ScreenshotTests {
     #expect(text == expected)
   }
 
-  @MainActor @Test func joinedCopyRequestsVisionWithoutTranscript() async {
-    let result = await AppDelegate.fastTextForCopy(codes: [], joined: true) {
-      Issue.record("按段接行需要原来的行框，不用实况文本")
-      return "no line boxes"
+  @MainActor @Test func visionCopySkipsTranscript() async {
+    let result = await AppDelegate.fastTextForCopy(codes: [], liveText: false) {
+      Issue.record("一行一行原样拷只有 Vision 给得出，不用实况文本")
+      return "joined paragraphs"
     }
     #expect(result == nil)
   }
 
+  /// 接起来开着用实况文本（它自己按段接好）；关着一行一行原样走 Vision，Vision 还没准备好时也先用实况文本（PR #45）
+  @Test func liveTextOnlyWhenJoinedOrVisionNotPrepared() {
+    #expect(AppDelegate.usesLiveText(joined: true, visionPrepared: true))
+    #expect(AppDelegate.usesLiveText(joined: true, visionPrepared: false))
+    #expect(AppDelegate.usesLiveText(joined: false, visionPrepared: false))
+    #expect(!AppDelegate.usesLiveText(joined: false, visionPrepared: true))
+  }
+
   @MainActor @Test(arguments: [false, true])
   func unavailableOrFailedTranscriptRequestsVision(failed: Bool) async {
-    let result = await AppDelegate.fastTextForCopy(codes: [], joined: false) {
+    let result = await AppDelegate.fastTextForCopy(codes: [], liveText: true) {
       if failed { throw CocoaError(.featureUnsupported) }
       return nil
     }
@@ -710,7 +719,7 @@ struct ScreenshotTests {
   @MainActor @Test(arguments: [false, true])
   func cancelledAnalysisNeverRequestsFallbackOrCopiesLateText(throwsCancellation: Bool) async {
     let cancelled = await Task { @MainActor in
-      let result = await AppDelegate.fastTextForCopy(codes: [], joined: false) {
+      let result = await AppDelegate.fastTextForCopy(codes: [], liveText: true) {
         if throwsCancellation { throw CancellationError() }
         withUnsafeCurrentTask { $0?.cancel() }
         return "late transcript"

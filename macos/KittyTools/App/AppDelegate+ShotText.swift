@@ -226,20 +226,30 @@ extension AppDelegate {
   }
 
   enum CopyResult: Equatable {
-    case codes(String), text(String), unreadable, cancelled
+    case codes(String)
+    case text(String)
+    case unreadable
+    case cancelled
   }
 
-  /// nil 才需要 Vision 行框：接行要用几何位置；实况文本不可用或出错也走老路。成功但没字就到此为止。
+  /// 拷贝图中文字用不用实况文本（PR #45）：它的 transcript 自己就按段接好了（同一段的折行接起来，标题、标签各占一行；
+  /// 实测分段比按行框接的好、字也认得准），所以「接起来」开着时用它；关着要一行一行原样，只有 Vision 给得出，
+  /// 除非 Vision 还没准备好（新装、系统更新后、缓存刚被清的那一分钟）——先用实况文本，不让人干等
+  static func usesLiveText(joined: Bool, visionPrepared: Bool) -> Bool {
+    joined || !visionPrepared
+  }
+
+  /// 有码拷码；nil = 走 Vision（不用实况文本、机器不支持、它报错）。实况文本成功但没字就到此为止，不再跑 Vision
   static func fastTextForCopy(
-    codes: [String], joined: Bool, transcript: () async throws -> String?
+    codes: [String], liveText: Bool, transcript: () async throws -> String?
   ) async -> CopyResult? {
     guard !Task.isCancelled else { return .cancelled }
     if !codes.isEmpty { return .codes(codes.joined(separator: "\n")) }
-    guard !joined else { return nil }
+    guard liveText else { return nil }
     do {
       let text = try await transcript()
       guard !Task.isCancelled else { return .cancelled }
-      return text.map { .text($0.allSatisfy(\.isWhitespace) ? "" : $0) }
+      return text.map { .text($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
     } catch {
       return error is CancellationError || Task.isCancelled ? .cancelled : nil
     }
@@ -247,12 +257,12 @@ extension AppDelegate {
 
   /// 每张图只走一次。有整批进度时不弹单张的岛；单张先结束查码 / 实况文本的慢提示，再进入 Vision 的准备提示。
   private func recognizeForCopy(
-    _ image: CGImage, joined: Bool, prepareBatchVision: (() async -> Void)? = nil
+    _ image: CGImage, joined: Bool, liveText: Bool, prepareBatchVision: (() async -> Void)? = nil
   ) async -> CopyResult {
     func fastRead() async -> CopyResult? {
       guard !Task.isCancelled else { return .cancelled }
       let codes = await OCR.barcodes(in: image)
-      return await Self.fastTextForCopy(codes: codes, joined: joined) {
+      return await Self.fastTextForCopy(codes: codes, liveText: liveText) {
         try await LiveText.analysis(of: image)?.transcript
       }
     }
@@ -283,8 +293,10 @@ extension AppDelegate {
 
   /// 有二维码 / 条码就复制它的内容，否则复制识别出的文字（设置里开了就把换行合成一段）；记进剪贴板历史
   func copyRecognizedText(in image: CGImage) async {
+    let joined = UserDefaults.standard.bool(forKey: Prefs.ocrJoinLines)
     let result = await recognizeForCopy(
-      image, joined: UserDefaults.standard.bool(forKey: Prefs.ocrJoinLines))
+      image, joined: joined,
+      liveText: Self.usesLiveText(joined: joined, visionPrepared: OCR.isPrepared()))
     let text: String
     let isCode: Bool
     switch Task.isCancelled ? .cancelled : result {
@@ -314,6 +326,8 @@ extension AppDelegate {
     FileMoves.enqueue("正在识别图里的文字…", detail: "0/\(urls.count)", island: island) {
       [unowned self] report in
       defer { idleReclaim.schedule() }
+      // 整批按开始时定的走（中途 Vision 在后台准备好了也不换，一批的格式一样）
+      let liveText = Self.usesLiveText(joined: joined, visionPrepared: OCR.isPrepared())
       // 真有一张图要走 Vision 才准备；整批只等一次（准备没成也不为下一张图重来一遍）。
       var startedVision = false
       @MainActor func prepareBatchVision() async {
@@ -339,7 +353,9 @@ extension AppDelegate {
           unreadable += 1
           continue
         }
-        switch await recognizeForCopy(image, joined: joined, prepareBatchVision: prepareBatchVision) {
+        switch await recognizeForCopy(
+          image, joined: joined, liveText: liveText, prepareBatchVision: prepareBatchVision)
+        {
         case .codes(let codes): texts.append(codes)
         case .text(let text):
           codesOnly = false
