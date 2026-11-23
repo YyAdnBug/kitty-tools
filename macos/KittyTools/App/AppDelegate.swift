@@ -749,7 +749,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     panel.squeezesIn = { Self.squeezesIn() }
     model.hidePanel = { [unowned panel] in panel.hide() }
     model.pasteTargetView = { [unowned panel] in panel.pasteTarget() }
-    model.resize = { [unowned panel] in panel.setContentHeight($0, animated: true) }
+    // 打字带来的高度变化直接到位（isTyping，美化与提速 P3）
+    model.resize = { [unowned panel, unowned model] in
+      panel.setContentHeight($0, animated: !model.isTyping)
+    }
     panel.maxSize = NSSize(
       width: Style.listPanelWidths.upperBound, height: .greatestFiniteMagnitude)
     panel.widthKey = Prefs.clipboardPanelWidth

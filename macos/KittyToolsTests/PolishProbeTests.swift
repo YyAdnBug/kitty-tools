@@ -13,9 +13,9 @@ import Testing
 // 不当 key，同 MemoryProbeTests），系统真的画图层；不加就摆在屏外。量的都是主线程：
 //   - 同步那一下：改状态 → layoutSubtreeIfNeeded → displayIfNeeded → CATransaction.flush（「其中改 xx」是改模型本身）
 //   - 之后一小段里跑环每一轮忙了多久（CFRunLoopObserver：醒来 → 要睡之间，含 CA 提交），记合计和最长一下
-// 场景：启动器（呼出、打字、↓）、剪贴板（5000 / 300 条：呼出、↑↓、滚动、打字搜）、翻译浮窗（出结果、三张卡流式出字）、
+// 场景：启动器（呼出、打字、↓）、剪贴板（5000 / 300 条：呼出、↑↓、只换透镜不滚动的 ↓↑、滚动、打字搜）、翻译浮窗（出结果、三张卡流式出字）、
 // 设置窗（每页第一次 / 第二次打开）。偏好用临时域，库在内存里，图片在临时目录。
-// 要看主线程忙在哪：另加 TEST_RUNNER_KITTY_POLISH_LOOP=clip-down / clip-search / clip-scroll / launcher-type / settings，
+// 要看主线程忙在哪：另加 TEST_RUNNER_KITTY_POLISH_LOOP=clip-down / clip-swap / clip-search / clip-narrow / clip-scroll / launcher-type / settings，
 // 只把那一件来回做 10 秒，pid 写在 <目录>/pid，这时 `sample <pid> 7`。
 // 只量其中几块：TEST_RUNNER_KITTY_POLISH_ONLY=launcher,clip,translate,settings（逗号隔开）。
 // 第一次呼出预排过的（P7，OverlayPanel.prewarm）：另加 TEST_RUNNER_KITTY_POLISH_PREWARM=1（再屏外画一遍：=display），启动器、剪贴板
@@ -688,7 +688,10 @@ struct PolishProbeTests {
       content: ClipboardPanelView(model: model).defaultAppStorage(prefs))
     panel.onHide = { [unowned model] in model.reset() }
     model.hidePanel = { [weak panel] in panel?.hide() }
-    model.resize = { [weak panel] in panel?.setContentHeight($0, animated: true) }
+    // 同 AppDelegate：打字带来的高度变化直接到位
+    model.resize = { [weak panel, unowned model] in
+      panel?.setContentHeight($0, animated: !model.isTyping)
+    }
     let prewarmed = prewarmIfAsked(panel)
     let beforeShow = (CACurrentMediaTime() - (prewarmed ?? open)) * 1000
     let cold = show(panel)
@@ -705,9 +708,28 @@ struct PolishProbeTests {
       return
     }
     if looping(
+      "clip-swap",
+      { index in
+        if index == 0 { model.select(model.visibleItems[2]) }
+        _ = model.handleCommand(
+          index % 2 == 0 ? #selector(NSResponder.moveDown(_:)) : #selector(NSResponder.moveUp(_:)))
+      })
+    {
+      return
+    }
+    if looping(
       "clip-search",
       { index in
         let words = ["s", "sw", "swi", "swif", "swift", "swif", "swi", "sw", "s", ""]
+        model.query = words[index / 4 % words.count]
+      })
+    {
+      return
+    }
+    if looping(
+      "clip-narrow",
+      { index in
+        let words = ["第", "第 1", "第 12", "第 1", "第", ""]
         model.query = words[index / 4 % words.count]
       })
     {
@@ -767,6 +789,19 @@ struct PolishProbeTests {
           .sync)
     }
     Self.log("↑ 60 下：同步 \(Self.stats(ups))")
+    // 透镜只在屏上几行之间换（不带出滚动）：选中第 3 条后 ↓↑ 交替，看换透镜本身多贵（↓ 60 下里大半带着滚动、跨段补行）
+    settle(panel, after: 0.3) { model.select(model.visibleItems[2]) }
+    var swaps: [Double] = []
+    var swapLongest: [Double] = []
+    for index in 0..<60 {
+      let value = settle(panel, after: 0.03) {
+        _ = model.handleCommand(
+          index % 2 == 0 ? #selector(NSResponder.moveDown(_:)) : #selector(NSResponder.moveUp(_:)))
+      }
+      swaps.append(value.sync)
+      swapLongest.append(value.longest)
+    }
+    Self.log("↓↑ 不滚动 60 下：同步 \(Self.stats(swaps))；之后最长一下 \(Self.stats(swapLongest))")
 
     // 滚动：找列表那个滚动视图，每步 24 pt（像触控板一帧的量），往下 300 步再回来
     let scrolls = scrollViews(in: panel.contentView).sorted {
@@ -802,6 +837,7 @@ struct PolishProbeTests {
         list.contentView.scroll(to: .zero)
         list.reflectScrolledClipView(list.contentView)
       }
+      flingGaps(panel, list)
     } else {
       Self.log("没找到列表的滚动视图")
     }
@@ -827,6 +863,63 @@ struct PolishProbeTests {
     // ⌘Y / 空格大卡不量（TransientPanel 要照 AppDelegate 接线）；透镜跟着选中换在 ↓ 里
     panel.hide()
     spin(0.3)
+  }
+
+  /// 快甩露不露白：每步滚 step pt（一帧滚这么多），每步排完画完立刻、再跑一帧之后各看一次可见区里最长的一截「空的」
+  /// （左边 16–300 pt 这一溜里一整行像素颜色都一样：行的图标、标题、分组标题、透镜的字都落在这里，没画出来的地方是空的），
+  /// 超过 30 pt 才算露白（两行图标之间最多空 16 pt、隔着分组标题 40 pt 的空里也有标题字）
+  private func flingGaps(_ panel: NSWindow, _ list: NSScrollView) {
+    func blank() -> CGFloat {
+      let rect = list.contentView.frame
+      guard let rep = list.bitmapImageRepForCachingDisplay(in: rect) else { return -1 }
+      list.cacheDisplay(in: rect, to: rep)
+      let scale = CGFloat(rep.pixelsWide) / rect.width
+      var run = 0
+      var longest = 0
+      for y in 0..<rep.pixelsHigh {
+        var low = 255
+        var high = 0
+        for x in stride(from: Int(16 * scale), to: min(Int(300 * scale), rep.pixelsWide), by: 2) {
+          guard let color = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+          let value = Int(color.redComponent * 255 + color.greenComponent * 255 + color.blueComponent * 255)
+          low = min(low, value)
+          high = max(high, value)
+        }
+        run = high - low < 12 ? run + 1 : 0
+        longest = max(longest, run)
+      }
+      return CGFloat(longest) / scale
+    }
+    var lines: [String] = []
+    for step in [40.0, 120, 240, 400] {
+      var now: [Double] = []
+      var later: [Double] = []
+      var y: CGFloat = 0
+      _ = settle(panel, after: 0.1) {
+        list.contentView.scroll(to: .zero)
+        list.reflectScrolledClipView(list.contentView)
+      }
+      for _ in 0..<30 {
+        y += step
+        _ = settle(panel, after: 0) {
+          list.contentView.scroll(to: NSPoint(x: 0, y: y))
+          list.reflectScrolledClipView(list.contentView)
+        }
+        now.append(Double(blank()))
+        spin(0.017)
+        later.append(Double(blank()))
+      }
+      lines.append(
+        String(
+          format: "每步 %.0f pt：立刻 最长空 %.0f pt（>30 的 %d 步），一帧后 %.0f pt（>30 的 %d 步）", step,
+          now.max() ?? 0, now.filter { $0 > 30 }.count, later.max() ?? 0,
+          later.filter { $0 > 30 }.count))
+    }
+    _ = settle(panel, after: 0.2) {
+      list.contentView.scroll(to: .zero)
+      list.reflectScrolledClipView(list.contentView)
+    }
+    Self.log("快甩露白（30 步）：" + lines.joined(separator: "；"))
   }
 
   // MARK: - 翻译

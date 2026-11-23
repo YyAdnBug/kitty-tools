@@ -5,6 +5,10 @@
 // 不用 ScrollViewReader.scrollTo(id)：LazyVStack 里还没实例化的行滚不准，连按 ↓ 越过可见区后列表就不再跟着走
 // （2026-09-29 用户真机报告启动器，第 10 批）。
 // 按前缀和滚的前提是列表真按前缀和排。剪贴板、翻译历史只画可见区附近（ListWindow，2026-10-03）；启动器结果少，还是 LazyVStack。
+// 段高、上下多画多少默认 240 / 320（翻译历史、便签）；剪贴板 40 / 240（2026-11-23 美化与提速 P2：一段一行，跨段只在两头
+// 进出一两行。原来 240 一段，一次换六行，滚动时每隔十来帧一下 30–45 ms；改小后跨段更勤，每次的固定开销（列表重排、
+// 焦点链、显示列表）就显出来了，所以剪贴板同时把整列表的重画收到了一个子视图里、行不进焦点链，见 ClipboardPanelView 的 ClipList）。
+// TracksScrollBand 的 height 和 range 的 bandHeight 必须给同一个数。
 
 import SwiftUI
 
@@ -40,11 +44,17 @@ enum ListWindow {
 
   /// 要画的项（下标区间，二分）。tops：每一项的顶（列表坐标），比项数多一个，最后一个是总高；band：可见区的顶
   /// （滚动内容坐标）落在第几段；inset：列表顶上的内缩（滚动内容坐标 − inset = 列表坐标）；viewport：可见区最高多高。
-  /// 列表一下子变短（删了一批）时滚动位置下一帧才夹回来：先按最后一段画，别空一帧
-  static func range(_ tops: [CGFloat], band: Int, inset: CGFloat, viewport: CGFloat) -> Range<Int> {
+  /// bandHeight / overscan 不给就用上面两个（翻译历史、便签）；剪贴板段更短、多画得更少（一段一行，跨段只换一两行，
+  /// 和 TracksScrollBand 的 height 给同一个数）。列表一下子变短（删了一批、滚到底时搜索）时滚动位置下一帧才夹回来：
+  /// 顶夹在「总高 − 可见区」，先按滚到底的样子画，别空一帧（同 NotesWallView.visible；原来夹在最后一段的开头，
+  /// 段高 240 时上面多画的 320 正好盖住，剪贴板段高 40 时顶上空一截）
+  static func range<Tops: RandomAccessCollection<CGFloat>>(
+    _ tops: Tops, band: Int, inset: CGFloat, viewport: CGFloat,
+    bandHeight: CGFloat = ListWindow.bandHeight, overscan: CGFloat = ListWindow.overscan
+  ) -> Range<Int> where Tops.Index == Int {
     let count = max(tops.count - 1, 0)
     let total = tops.last ?? 0
-    let top = CGFloat(min(band, Int(max(total - 1, 0) / bandHeight))) * bandHeight - inset
+    let top = min(CGFloat(band) * bandHeight, max(total - viewport, 0)) - inset
     let (lower, upper) = (top - overscan, top + bandHeight + viewport + overscan)
     /// 第一个满足的下标（predicate 对下标单调：前面都不满足、后面都满足）
     func first(_ predicate: (Int) -> Bool) -> Int {
@@ -60,13 +70,15 @@ enum ListWindow {
   }
 }
 
-/// 挂在列表的 ScrollView 上：可见区的顶跨段时改 band（ListWindow）。不在动画里改：滚进来的行不播插入过渡
+/// 挂在列表的 ScrollView 上：可见区的顶跨段时改 band（ListWindow；height 是段高，和 range 的 bandHeight 给同一个数）。
+/// 不在动画里改：滚进来的行不播插入过渡
 struct TracksScrollBand: ViewModifier {
   @Binding var band: Int
+  var height = ListWindow.bandHeight
 
   func body(content: Content) -> some View {
-    content.onScrollGeometryChange(for: Int.self) { geometry in
-      Int(max(geometry.visibleRect.minY, 0) / ListWindow.bandHeight)
+    content.onScrollGeometryChange(for: Int.self) { [height] geometry in
+      Int(max(geometry.visibleRect.minY, 0) / height)
     } action: { _, new in
       var transaction = Transaction()
       transaction.disablesAnimations = true

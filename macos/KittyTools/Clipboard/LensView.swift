@@ -120,6 +120,8 @@ struct LensView: View {
   let model: ClipboardPanelModel
   /// 设置「列表里直接显示图片」：图片的图在行头里，这里只画元信息行
   var imageRows = false
+  /// 面板这次呼出的时刻：只当刷新的由头（「今天 14:02」过了午夜要变成日期）
+  var shownAt = Date.distantPast
 
   var body: some View {
     let height = Lens.bodyHeight(for: item, form: form, imageRows: imageRows)
