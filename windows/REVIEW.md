@@ -8,6 +8,37 @@
 
 条目编号不复用。行号按条目里写的那个提交。
 
+## PLAN-v25：启动器搜不到文件（外部用户反馈，审查方在 Mac 上查的，2026-11-23）
+
+反馈原话：「我用 Windows 搜索文件，搜不到文件，我也不清楚我的 Windows 是不是设置了搜索文件的什么配置。是不是自己做一套索引，或者借用 Everything 等工具会好点。」
+方案和拍板题在 `PLAN-v25.md`（F1–F16，拍板页 https://claude.ai/artifact/BKs4h3CJ4C7QFbnVkt7SKE）。**拍板前别动**；拍板后审查方先写 Core 那一半，交接写在本节下面。
+R114 编号跳过了 R113（`claude/win-multiscreen-shot` 分支上已经用了）；手测 1800 起（1778–1799 留给 PLAN-v24）。
+
+### R114（P1）文件搜索只查七个写死的文件夹、常见词截在最新 100 条、索引服务关着时的退路搜不到东西、没有任何提示 → 等拍板
+
+行号按 `563a9c3b`。
+
+1. **范围写死**（`Launcher/LookupServices.cs:30–36`、`Core/FileSearchSql.cs:65`）：只查 `%USERPROFILE%\` 下七个固定名字的文件夹，拼成 `SCOPE=… OR …`。
+   D 盘、自建文件夹、`OneDrive - 公司名` 都不查——用户把它们加进索引、开增强模式也搜不到。桌面 / 文档挪到别的盘的，那个根 `Directory.Exists` 不过、直接没了
+   （没用 `SHGetKnownFolderPath`）。设置页脚注（`Settings/SettingsWindow.cs:2531`）「搜的是 Windows 搜索建了索引的位置」和实际不符。→ PLAN-v25 F2、F5。
+2. **候选太少**（`FileSearchSql.cs:13`、`:42`）：`TOP 100 … ORDER BY System.DateModified DESC` 再按名字打分取 20。词常见时名字最像的老文件排不进来。→ F4。
+3. **服务关着时的扫目录搜不到东西**（`LookupServices.cs:131–151`、`:218–270`）：`Walk` 把一个根下 6 层全部走完才返回（`MaxCandidates` 只截断当前文件夹，
+   超了以后每个文件夹还加一个），调用方拿到之后才看「300 ms / 2000 个」——桌面超过 2000 个文件或走了 300 ms 就一条不比，后面的根同样先走完再 break。
+   零条、还要等几秒。前面那段 WinRT 查询（`:82–126`）在服务关着时抛不抛没验过，不抛的话连扫目录都不走。→ F6（重写 `Walk`、删 WinRT）。
+4. **位置没进索引时零条、不退路**：OLE DB 正常返回空列表就直接 `return`（`:73`）。PLAN-v6 第 4 批第 7 条「某个根不在索引里才退回扫目录、标（没有索引）」没做。→ F7。
+5. **没有提示**：启动器只写「没有匹配的文件」（`Core/LauncherCommands.cs:283`）；服务关着、正在建索引、哪些盘没进索引，用户都看不到。→ F8–F10。
+6. **普通搜索里没有通往文件搜索的路**：直接输文件名只出应用和网页兜底（同 mac，要 `open` / 空格前缀）；不知道前缀的用户以为「搜不到」。→ F15。
+7. **顺手**：`OleDbFileSearch.ReleaseRows`（`Launcher/OleDbFileSearch.cs:366`）传的是 `&rows`（本地变量的地址），应当传 `rows`（`GetNextRows` 给的 HROW 数组）。
+   现在放掉的是栈上读出来的几个错句柄，真的句柄到 rowset 释放时才一起放；没出过事，第 1 批顺手改。
+
+**要你们做（拍板后）**：照 PLAN-v25 §5 三批，每批照 `AGENTS.md`「每一批的流程」和自查清单。Core 的四个纯函数审查方写（没编译），编不过直接改它和单测、交接里写一句。
+COM（`ISearchManager` 那一串）、服务、`HiddenWindow` 收 `WM_COPYDATA`、提示行和设置页你们写、在真机上验：停服务、改索引位置、装 Everything 都用测试机或测完恢复，
+**别动用户自己的那台的索引设置和 Everything**（AGENTS 红线：不碰用户真实的数据和设置）。
+
+#### 交接
+
+（拍板后写）
+
 ## issue #38：双屏时状态屏「清洁屏幕」副屏边上一道白边（审查方在 Mac 上写、没编译，2026-11-20）
 
 报告人 lixiao0618：Windows 11、两台显示器，进「清洁屏幕」后副屏右侧有一条白边。照片是两台横放的屏贴在一起那一段：
