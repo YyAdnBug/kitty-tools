@@ -74,7 +74,7 @@ struct RecordTab: View {
           Text(ScreenRecorder.Medium.screen.nounResource)
         }
         Section {
-          SettingRow(title: "来源", info: "录系统声音时菜单栏会出现屏幕录制指示；锁屏会停止；不能暂停。") {
+          SettingRow(title: "来源", info: "录系统声音时菜单栏会出现屏幕录制指示；录着时锁屏会停止。") {
             Picker("来源", selection: $audioSource) {
               Text("麦克风").tag(AudioRecorder.Source.microphone)
               Text("系统声音").tag(AudioRecorder.Source.system)

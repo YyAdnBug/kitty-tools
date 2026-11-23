@@ -237,7 +237,7 @@ extension AppDelegate {
       if !(section.actions.count == 1 && section.key == section.actions[0].titleResource.key) {
         menu.addItem(.sectionHeader(title: section.title))
       }
-      for action in section.actions {
+      for action in section.actions where state.lists(action) {
         let binding = hotKeys.bindings[action]
         let item = menu.addAction(
           "\(action.title(recording: state.isRunning(action)))", symbol: action.symbol,

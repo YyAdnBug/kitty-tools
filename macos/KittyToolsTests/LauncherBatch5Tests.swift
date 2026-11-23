@@ -247,11 +247,21 @@ struct LauncherBatch5Tests {
         "about",
         "quit",
       ])
-    // 状态屏不是一条：每个状态一条（StatusScreenTests.entries）
-    for action in HotKeyAction.allCases where action != .launcher && action != .statusScreen {
+    // 状态屏不是一条：每个状态一条（StatusScreenTests.entries）；暂停 / 继续录制只在录着时列（下面）
+    for action in HotKeyAction.allCases
+    where action != .launcher && action != .statusScreen && action != .recordPause {
       let item = plain.first { $0.hotKeyAction == action }
       #expect(item?.title == action.title && item?.symbol == action.symbol, "\(action)")
     }
+    // issue #48：没在录时不列；录着时叫「暂停录制」，那一段暂停着叫「继续录制」，排在录音后面
+    #expect(!plain.contains { $0.hotKeyAction == .recordPause })
+    let recording = LauncherItem.actions(.init(recording: .screenRecord), caching: false)
+    let pause = recording.firstIndex { $0.hotKeyAction == .recordPause }
+    #expect(pause.map { recording[$0].title } == "暂停录制")
+    #expect(pause == recording.firstIndex { $0.hotKeyAction == .audioRecord }.map { $0 + 1 })
+    let paused = LauncherItem.actions(
+      .init(recording: .audioRecord, recordPaused: true), caching: false)
+    #expect(paused.first { $0.hotKeyAction == .recordPause }?.title == "继续录制")
     #expect(plain.first { $0.target == "copyToTranslate" }?.subtitle == "已关闭")
     #expect(plain.first { $0.target == "pause-clipboard" }?.subtitle == "正在记录")
     let busy = LauncherItem.actions(

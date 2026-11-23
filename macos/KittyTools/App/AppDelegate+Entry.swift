@@ -162,6 +162,7 @@ extension AppDelegate {
       pinsHidden: pins.panels.isEmpty ? nil : pins.isHidden, checksUpdates: updater.isSupported,
       recording: recorder != nil
         ? .screenRecord : audioRecorder?.isStarted == true ? .audioRecord : nil,
+      recordPaused: recorder?.isPaused ?? audioRecorder?.isPaused ?? false,
       awake: Feature.keepAwake.isOn && keepAwake.sessionEnd != nil,
       statusPresets: StatusPreset.load(),
       statusEntersFirst: UserDefaults.standard.bool(forKey: Prefs.statusScreenHotKeyEntersFirst),
@@ -191,6 +192,7 @@ extension AppDelegate {
     case .recognizeText: recognizeText()
     case .screenRecord: screenRecord()
     case .audioRecord: audioRecord()
+    case .recordPause: toggleRecordingPause()
     case .pinClipboard: pinClipboard()
     case .shotHistory: showShotHistory()
     case .clothesline: toggleClothesline()

@@ -72,7 +72,7 @@ struct FeatureTests {
     let noShots = HotKeyAction.visibleSections(enabled: all.subtracting([.screenshot]))
     let records = noShots.first { $0.actions.contains(.screenRecord) }
     #expect(records?.title == "录制")
-    #expect(records?.actions == [.screenRecord, .audioRecord])
+    #expect(records?.actions == [.screenRecord, .audioRecord, .recordPause])
 
     // 一个功能一节的（翻译）关掉就整节没有
     let noTranslate = HotKeyAction.visibleSections(enabled: all.subtracting([.translate]))

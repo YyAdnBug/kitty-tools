@@ -52,6 +52,13 @@ extension AppDelegate {
     return nil
   }
 
+  /// 暂停 / 继续录制（issue #48 拍板 Q3，全局动作；菜单栏、启动器里只在录着时列）：在录的录屏或录音（录音待录时不算）。
+  /// 没在录时按了快捷键什么都不做
+  func toggleRecordingPause() {
+    if let recorder { return recorder.togglePause() }
+    if let audioRecorder, audioRecorder.isStarted { audioRecorder.togglePause() }
+  }
+
   /// 开不了就出警告岛，返回 true
   private func refusesRecording(_ medium: ScreenRecorder.Medium) -> Bool {
     guard let blocker = recordingBlocker(medium) else { return false }

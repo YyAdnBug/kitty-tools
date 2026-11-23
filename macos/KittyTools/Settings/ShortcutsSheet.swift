@@ -550,7 +550,7 @@ struct ShortcutsSheet: View {
       // 倒数的 Esc 是 ScreenRecorder 临时注册的热键
       Group(
         title: "录屏", symbol: HotKeyAction.screenRecord.symbol, color: Style.Family.screenshot,
-        globals: [.screenRecord],
+        globals: [.screenRecord, .recordPause],
         entries: [
           Entry("↩", text: "开始录制（双击选区同样）"),
           Entry("Esc", text: "框选时逐级退出，最后取消；倒数中取消"),

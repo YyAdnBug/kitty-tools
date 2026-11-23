@@ -678,9 +678,9 @@ struct NotesWindowTests {
   /// 只有「快速记一条」有默认键 ⌥N；「便签」一节在「截图与录制」之后、「提醒」之前（功能管理拍板 M3），三项按这个顺序
   @Test func hotKeyActions() throws {
     #expect(
-      Array(HotKeyAction.allCases.suffix(13)) == [
+      Array(HotKeyAction.allCases.suffix(14)) == [
         .noteCapture, .noteNew, .noteAll, .launchpad, .shotHistory, .island, .clothesline, .home,
-        .reminderNew, .keepAwake, .appShortcuts, .noteDeck, .delayedScreenshot,
+        .reminderNew, .keepAwake, .appShortcuts, .noteDeck, .delayedScreenshot, .recordPause,
       ])
     #expect(
       HotKeyAction.noteCapture.defaultHotKey == HotKey(keyCode: kVK_ANSI_N, modifiers: optionKey))

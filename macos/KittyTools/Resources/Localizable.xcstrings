@@ -25741,22 +25741,12 @@
         }
       }
     },
-    "录系统声音时不能暂停" : {
+    "录系统声音时菜单栏会出现屏幕录制指示；录着时锁屏会停止。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Can’t pause while recording system audio"
-          }
-        }
-      }
-    },
-    "录系统声音时菜单栏会出现屏幕录制指示；锁屏会停止；不能暂停。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "When recording system audio, the menu bar shows the screen recording indicator; locking the screen stops it, and you can’t pause."
+            "value" : "When recording system audio, the menu bar shows the screen recording indicator; locking the screen while recording stops it."
           }
         }
       }
@@ -32658,6 +32648,16 @@
         }
       }
     },
+    "暂停 / 继续录制" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pause / Resume Recording"
+          }
+        }
+      }
+    },
     "暂停全部提醒 1 小时" : {
       "localizations" : {
         "en" : {
@@ -32694,6 +32694,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pause snapping"
+          }
+        }
+      }
+    },
+    "暂停录制" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pause Recording"
           }
         }
       }
@@ -42060,6 +42070,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Continue"
+          }
+        }
+      }
+    },
+    "继续录制" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resume Recording"
           }
         }
       }

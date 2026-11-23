@@ -370,7 +370,7 @@ enum HotKeyAction: String, CaseIterable {
   case clipboard, selectionTranslate, inputTranslate, screenshotTranslate, launcher, screenshot,
     screenshotLastRegion, recognizeText, translateReplace, screenRecord, audioRecord, pinClipboard,
     statusScreen, noteCapture, noteNew, noteAll, launchpad, shotHistory, island, clothesline, home,
-    reminderNew, keepAwake, appShortcuts, noteDeck, delayedScreenshot
+    reminderNew, keepAwake, appShortcuts, noteDeck, delayedScreenshot, recordPause
 
   var title: String { String(localized: titleResource) }
 
@@ -391,6 +391,7 @@ enum HotKeyAction: String, CaseIterable {
     case .translateReplace: "划词翻译并替换"
     case .screenRecord: "录屏"
     case .audioRecord: "录音"
+    case .recordPause: "暂停 / 继续录制"
     case .pinClipboard: "钉住剪贴板内容"
     case .shotHistory: "截图历史"
     case .clothesline: "晾衣绳"
@@ -409,10 +410,12 @@ enum HotKeyAction: String, CaseIterable {
   }
 
   /// 菜单栏、启动器里的标题：recording 是这一项正在录（录屏 / 录音录着时叫「停止录屏」/「停止录音」，再按一次快捷键也是停止；
-  /// 录音控制条待录时不算在录，仍叫「录音」，点它 / 再按一次是开始）。保持唤醒手动开着一段时也算（再按一次是停止）
+  /// 录音控制条待录时不算在录，仍叫「录音」，点它 / 再按一次是开始）。保持唤醒手动开着一段时也算（再按一次是停止）。
+  /// 暂停 / 继续录制（issue #48，只在录着时列）：recording 是那一段暂停着——叫「继续录制」，否则「暂停录制」
   func title(recording: Bool) -> String { String(localized: titleResource(recording: recording)) }
 
   func titleResource(recording: Bool) -> LocalizedStringResource {
+    if self == .recordPause { return recording ? "继续录制" : "暂停录制" }
     guard recording else { return titleResource }
     return switch self {
     case .screenRecord: "停止录屏"
@@ -462,6 +465,8 @@ enum HotKeyAction: String, CaseIterable {
     case .screenRecord: HotKey(keyCode: kVK_ANSI_R, modifiers: optionKey)
     // 录音不设默认键（录音第 5 批：从菜单栏、启动器进，要快捷键到 设置 › 快捷键 里自己设）
     case .audioRecord: nil
+    // 暂停 / 继续录制（issue #48 拍板 Q3）不设默认键：主入口是 HUD 和刘海岛，要快捷键的人自己设
+    case .recordPause: nil
     // 同上（第二轮体检 F1）
     case .pinClipboard: nil
     // 截图历史（2026-10-26 拍板 C2）：不占默认键，要的人自己设
@@ -598,7 +603,7 @@ enum HotKeyAction: String, CaseIterable {
     case .screenshot, .screenshotLastRegion, .delayedScreenshot, .recognizeText, .pinClipboard,
       .shotHistory, .clothesline:
       .screenshot
-    case .screenRecord, .audioRecord: .record
+    case .screenRecord, .audioRecord, .recordPause: .record
     case .noteCapture, .noteNew, .noteAll, .noteDeck: .notes
     case .launchpad: .launchpad
     case .statusScreen: .statusScreen
@@ -626,7 +631,7 @@ enum HotKeyAction: String, CaseIterable {
       "截图与录制",
       [
         .screenshot, .screenshotLastRegion, .delayedScreenshot, .recognizeText, .screenRecord,
-        .audioRecord, .pinClipboard, .shotHistory, .clothesline,
+        .audioRecord, .recordPause, .pinClipboard, .shotHistory, .clothesline,
       ]
     ),
     // 便签（PLAN §10「便签」F②）：菜单栏、启动器、快捷键页、速查表各一节，三项同名同序
@@ -692,6 +697,8 @@ enum HotKeyAction: String, CaseIterable {
     case .recognizeText: "kitty.screenshot.text"
     case .screenRecord: "kitty.record"
     case .audioRecord: "kitty.record.audio"
+    // 自画的那套里没有暂停：用 SF 的
+    case .recordPause: "pause.circle"
     // 同速查表的「钉图」组；菜单里紧挨着的「隐藏全部钉图」是 SF 的 pin
     case .pinClipboard: "kitty.pin"
     case .shotHistory: "kitty.screenshot.history"
@@ -721,7 +728,7 @@ enum HotKeyAction: String, CaseIterable {
     case .selectionTranslate, .inputTranslate, .translateReplace, .screenshotTranslate:
       Style.Family.translate
     case .screenshot, .screenshotLastRegion, .delayedScreenshot, .recognizeText, .screenRecord,
-      .audioRecord, .pinClipboard, .shotHistory, .clothesline:
+      .audioRecord, .recordPause, .pinClipboard, .shotHistory, .clothesline:
       Style.Family.screenshot
     case .statusScreen: Style.Family.statusScreen
     case .noteCapture, .noteNew, .noteAll, .noteDeck: Style.Family.notes

@@ -9,17 +9,19 @@
 // - 授权：开录前看麦克风授权，没问过就问（这里没有遮罩，直接问）；拒绝 / 受限不录，警告岛，之前就拒绝过的打开系统设置。
 // - 文件：先写 ScreenRecorder.workFile（和快速保存目录同卷、系统不清理），停止后挪进快速保存目录「录音 <开录时刻>.m4a」，
 //   挪不进留在原地、在访达里选中；「进行中」记在偏好里，闪退后下次启动由 ScreenRecorder.recover 接手（同录屏）。
-// - 暂停 / 继续：pause() / record() 续写同一个文件（第 0 批实测），计时不算暂停的时间。
+// - 暂停 / 继续：pause() / record() 续写同一个文件（第 0 批实测），计时不算暂停的时间；暂停时不防睡眠、系统睡眠不结束
+//   （issue #48 拍板 Q2：暂停时什么都不录，回来接着录）。系统声音 / 两者交给 engine 分段（见下）。
 // - 电平：20 Hz updateMeters() + averagePower；Levels 留最近 3 s 给 HUD、整段的包络（桶数有上限）给波形 poster。开头 5 s
 //   一直低于 −70 dB（数字静音在 −120，安静房间的底噪约 −41 到 −51，第 0 批实测）时 HUD 出「没听到声音」，有声音就收起。
 // - 中断（C6-a 录音的写法）：只录麦克风，锁屏、显示器睡眠照录；系统睡眠、开录时的输入设备断开、卷剩余不到 1 GB 停止并保存；
-//   录制期间防系统闲置睡眠（不禁显示器睡眠）。
+//   录着时防系统闲置睡眠（不禁显示器睡眠；暂停时放开）。
 // - 界面：RecordingHUD 的录音形态（鼠标所在屏可见区底部居中）+ 菜单栏「■ 0:42」停止项（同录屏）；停止后电平包络画成波形
 //   poster，AppDelegate 从 HUD 的位置按 S1 飞到右下角、交给常驻缩略图的录音卡。
 // - 来源（录音第 6 批，拍板 A2-a，设置 › 录制「录音」）：麦克风走上面的 AVAudioRecorder；系统声音 / 两者复用录屏管线
 //   （ScreenRecorder 的只录声音模式 engine：鼠标所在屏左上角 64 × 64 点、1 fps，写 mp4、录完无损导出成 m4a）。那两种
-//   不能暂停（SCRecordingOutput 没有暂停，HUD 的 ⏸ 置灰）；锁屏、系统睡眠、显示器睡眠、被录的屏变了都停止并保存（同录屏，
-//   在 engine 里），所以录制期间同录屏连显示器闲置睡眠一起防；两者的麦克风授权、麦克风中途断开（不停、播报，HUD 计时后面出橙字
+//   暂停时 engine 停流、继续时新开一段，停止时几段的音轨接成一个 m4a（issue #48；SCRecordingOutput 没有暂停）；
+//   录着时锁屏、系统睡眠、显示器睡眠、被录的屏变了都停止并保存（同录屏，在 engine 里；暂停着时锁屏、睡眠不结束），
+//   所以录着时同录屏连显示器闲置睡眠一起防（暂停时放开）；两者的麦克风授权、麦克风中途断开（不停、播报，HUD 计时后面出橙字
 //   「麦克风断开了」，结果岛补一句）也照录屏；电平由 engine 在样本回调里算好投过来，「没听到声音」只看麦克风那一路（只录系统
 //   声音时不提示）。HUD 出来之前叫停当取消（同只录麦克风）。录音 HUD、停止项、计时、防睡眠、磁盘检查、波形 poster 仍在这里。
 
@@ -28,8 +30,8 @@ import AppKit
 import OSLog
 
 final class AudioRecorder: NSObject {
-  /// 录什么（设置 › 录制「录音」的来源，录音第 6 批）：麦克风能暂停、锁屏照录；系统声音 / 两者走录屏管线——菜单栏有屏幕录制
-  /// 指示、锁屏会停、不能暂停
+  /// 录什么（设置 › 录制「录音」的来源，录音第 6 批）：麦克风锁屏照录；系统声音 / 两者走录屏管线——菜单栏有屏幕录制
+  /// 指示、录着时锁屏会停，暂停是分段（issue #48）
   nonisolated enum Source: String, Sendable {
     case microphone, system, both
 
@@ -151,6 +153,8 @@ final class AudioRecorder: NSObject {
   /// 飞入的起点：收 HUD 那一刻记下（engine 的收尾要等文件写完、导出，那时 HUD 早收了）
   private var region: CGRect = .zero
   private(set) var isPaused = false
+  /// engine 开始写过了（系统声音 / 两者）：之后叫停是停止并保存；之前叫停当取消。不看 resumedAt：暂停时它是 nil
+  private var engineBegan = false
   /// 要停了（第一个原因为准；收尾在下一轮）
   private var stopping: ScreenRecorder.Reason?
   /// 还没开始录就要停（等授权框时再按了一次快捷键、退出）：开始前当取消
@@ -243,8 +247,8 @@ final class AudioRecorder: NSObject {
     if let engine {
       guard stopping == nil else { return }
       stopping = reason
-      if resumedAt == nil { hud?.panel.orderOut(nil) }
-      return engine.stop(resumedAt == nil ? .cancelled : reason)
+      if !engineBegan { hud?.panel.orderOut(nil) }
+      return engine.stop(engineBegan ? reason : .cancelled)
     }
     guard recorder != nil else {
       stoppedEarly = true
@@ -264,37 +268,52 @@ final class AudioRecorder: NSObject {
     tearDown()
   }
 
-  /// 暂停 / 继续（HUD 的 ⏸ / ▶）：续写同一个文件，计时停在暂停那一刻；旁白播报。系统声音 / 两者不能暂停（HUD 的 ⏸ 置灰）
+  /// 暂停 / 继续（HUD 的 ⏸ / ▶、刘海岛、全局快捷键「暂停 / 继续录制」）：只录麦克风时续写同一个文件；系统声音 / 两者交给
+  /// engine 分段（停流、继续时新开一段，issue #48），它停好 / 开起来了经 onPaused 回来换样子（继续要零点几秒）
   func togglePause() {
-    guard let recorder, stopping == nil else { return }
+    guard stopping == nil else { return }
+    if let engine { return engine.togglePause() }
+    guard let recorder else { return }
     if isPaused {
       guard recorder.record() else { return stop(.failed(String(localized: "没能继续录音"))) }
-      resumedAt = .now
     } else {
       recorder.pause()
+    }
+    showPaused(!isPaused)
+  }
+
+  /// 暂停了 / 继续录起来了：计时停在暂停那一刻 / 接着走，防睡眠放开 / 再拿（拍板 Q2：暂停时什么都不录，系统睡眠不结束），
+  /// HUD、刘海岛换样子，旁白播报
+  private func showPaused(_ paused: Bool) {
+    guard paused != isPaused, stopping == nil else { return }
+    if paused {
       recordedBefore = recorded
       resumedAt = nil
+      endActivity()
+    } else {
+      resumedAt = .now
+      beginActivity()
     }
-    isPaused.toggle()
-    hud?.setPaused(isPaused)
+    isPaused = paused
+    hud?.setPaused(paused)
+    ScreenRecorder.showClock(Int(recorded.components.seconds), on: stopItem, paused: paused)
     island?.setActivity(islandState())
-    Island.announce(isPaused ? "已暂停" : "已继续")
+    Island.announce(paused ? "已暂停" : "已继续")
   }
 
   /// 刘海岛上录音那个活动的编号（录屏的是 ScreenRecorder.islandActivity）
   static let islandActivity = "audio-record"
 
-  /// 刘海岛耳朵上的录音（刘海岛扩展 C1）：左边红色的麦克风、右边计时（不算暂停的时间）；暂停时停在那一刻、按钮换成「继续」。
-  /// 只录麦克风才能暂停（同 HUD 的 ⏸）
+  /// 刘海岛耳朵上的录音（刘海岛扩展 C1）：左边红色的麦克风、右边计时（不算暂停的时间）；暂停时停在那一刻、按钮换成「继续」
   private func islandState() -> Island.Activity {
     let seconds = Double(recorded.components.seconds)
-    var actions = [Island.Action("停止") { [weak self] in self?.stop() }]
-    if source == .microphone {
-      // 暂停后的「继续」（Resume）和欢迎引导的「继续」（Continue）英文不同：显式 key
-      let resume = LocalizedStringResource(
-        "record.resume", defaultValue: "继续", comment: "录音暂停后接着录")
-      actions.append(Island.Action(isPaused ? resume : "暂停") { [weak self] in self?.togglePause() })
-    }
+    // 暂停后的「继续」（Resume）和欢迎引导的「继续」（Continue）英文不同：显式 key
+    let resume = LocalizedStringResource(
+      "record.resume", defaultValue: "继续", comment: "录音暂停后接着录")
+    let actions = [
+      Island.Action("停止") { [weak self] in self?.stop() },
+      Island.Action(isPaused ? resume : "暂停") { [weak self] in self?.togglePause() },
+    ]
     return Island.Activity(
       id: Self.islandActivity, kind: .record,
       title: isPaused ? String(localized: "录音已暂停") : String(localized: "录音中"),
@@ -358,6 +377,7 @@ final class AudioRecorder: NSObject {
     engine.onHalted = { [weak self] in self?.tearDown() }
     engine.onLevel = { [weak self] in self?.metered($0, microphone: $1) }
     engine.onMicrophoneLost = { [weak self] in self?.microphoneLost() }
+    engine.onPaused = { [weak self] in self?.showPaused($0) }
     self.engine = engine
     engine.start()
   }
@@ -366,6 +386,7 @@ final class AudioRecorder: NSObject {
   private func engineStarted() {
     guard stopping == nil, let engine else { return }
     listens = engine.capturesMicrophone
+    engineBegan = true
     resumedAt = .now
     showChrome()
   }
@@ -401,7 +422,7 @@ final class AudioRecorder: NSObject {
   private func presentHUD(_ state: RecordingHUD.State) {
     let hud = RecordingHUD(
       state: state, stopKey: HotKeyAction.audioRecord.hotKey?.display, escapes: escapes,
-      medium: .audio, pausable: source == .microphone, defaults: defaults)
+      medium: .audio, defaults: defaults)
     hud.onClick = { [weak self] in self?.clicked($0) }
     if let screen = NSScreen.underMouse {
       hud.present(region: screen.frame, on: screen, isFullScreen: true)
@@ -413,7 +434,6 @@ final class AudioRecorder: NSObject {
   /// 待录的控制条已经在了：同一个 HUD 原地换成录制态（右边线不动、往左长，红点 pop），不先收再出
   private func showChrome() {
     if let hud {
-      hud.setPausable(source == .microphone)
       hud.update(.recording(0))
     } else {
       presentHUD(.recording(0))
@@ -428,16 +448,26 @@ final class AudioRecorder: NSObject {
     RunLoop.main.add(timer, forMode: .common)
     self.timer = timer
     updateClock()
-    // 麦克风：只防系统闲置睡眠（只录声音，显示器照常熄、照录）。系统声音 / 两者同录屏连显示器闲置睡眠一起防：engine 监听
-    // 显示器睡眠就停，不防的话没人碰键鼠的长录音（听播客、网课）会在「关闭显示器」的时间被截断
-    var options: ProcessInfo.ActivityOptions = [.idleSystemSleepDisabled, .userInitiated]
-    if source != .microphone { options.insert(.idleDisplaySleepDisabled) }
-    activity = ProcessInfo.processInfo.beginActivity(options: options, reason: "录音")
+    beginActivity()
     if source == .microphone { observeInterruptions() }
     // 播报「录音开始了」和按钮「开始录音」（Start Recording）英文不同：显式 key
     Island.announce(
       LocalizedStringResource(
         "record.audioStarted", defaultValue: "开始录音", comment: "读屏播报：录音已经开始了"))
+  }
+
+  /// 录着时防睡眠（暂停时放开）。麦克风：只防系统闲置睡眠（只录声音，显示器照常熄、照录）。系统声音 / 两者同录屏连显示器
+  /// 闲置睡眠一起防：engine 监听显示器睡眠就停，不防的话没人碰键鼠的长录音（听播客、网课）会在「关闭显示器」的时间被截断
+  private func beginActivity() {
+    guard activity == nil else { return }
+    var options: ProcessInfo.ActivityOptions = [.idleSystemSleepDisabled, .userInitiated]
+    if source != .microphone { options.insert(.idleDisplaySleepDisabled) }
+    activity = ProcessInfo.processInfo.beginActivity(options: options, reason: "录音")
+  }
+
+  private func endActivity() {
+    if let activity { ProcessInfo.processInfo.endActivity(activity) }
+    activity = nil
   }
 
   private func clicked(_ item: RecordingHUD.Item) {
@@ -456,11 +486,11 @@ final class AudioRecorder: NSObject {
 
   // MARK: 录制中
 
-  /// 20 Hz：每 5 s 查剩余空间（主线程外，P2）；没暂停时看还在不在录、读电平（HUD 电平、「没听到声音」）、走计时
+  /// 20 Hz：没暂停时每 5 s 查剩余空间（主线程外，P2）、看还在不在录、读电平（HUD 电平、「没听到声音」）、走计时
   private func tick() {
     ticks += 1
     guard stopping == nil else { return }
-    if ticks % (5 * Self.meterRate) == 0, diskCheck == nil {
+    if ticks % (5 * Self.meterRate) == 0, diskCheck == nil, !isPaused {
       diskCheck = Task { [weak self, temp] in
         let low = await ScreenRecorder.isLowOnDisk(temp)
         self?.diskCheck = nil
@@ -497,16 +527,19 @@ final class AudioRecorder: NSObject {
     guard seconds != shownSeconds else { return }
     shownSeconds = seconds
     hud?.update(.recording(seconds))
-    ScreenRecorder.showClock(seconds, on: stopItem)
+    ScreenRecorder.showClock(seconds, on: stopItem, paused: isPaused)
   }
 
-  /// 只录麦克风（C6-a）：锁屏、显示器睡眠照录；系统睡眠停止并保存；开录时的输入设备断开（拔了 USB 麦克风、蓝牙耳机走远了）
-  /// 停止并保存
+  /// 只录麦克风（C6-a）：锁屏、显示器睡眠照录；系统睡眠停止并保存（暂停着时不结束，issue #48 拍板 Q2）；开录时的输入设备
+  /// 断开（拔了 USB 麦克风、蓝牙耳机走远了）停止并保存
   private func observeInterruptions() {
     let sleep = NSWorkspace.shared.notificationCenter.addObserver(
       forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
     ) { [weak self] _ in
-      MainActor.assumeIsolated { self?.stop(.sleep) }
+      MainActor.assumeIsolated {
+        guard let self, !self.isPaused else { return }
+        self.stop(.sleep)
+      }
     }
     let unplugged = NotificationCenter.default.addObserver(
       forName: AVCaptureDevice.wasDisconnectedNotification, object: nil, queue: .main
@@ -581,8 +614,7 @@ final class AudioRecorder: NSObject {
     if let stopItem { NSStatusBar.system.removeStatusItem(stopItem) }
     stopItem = nil
     island?.endActivity(Self.islandActivity)
-    if let activity { ProcessInfo.processInfo.endActivity(activity) }
-    activity = nil
+    endActivity()
     for (center, token) in observers { center.removeObserver(token) }
     observers = []
   }

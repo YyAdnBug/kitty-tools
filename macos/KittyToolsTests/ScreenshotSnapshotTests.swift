@@ -729,20 +729,18 @@ struct ScreenshotSnapshotTests {
 
     // 录音 HUD（录音第 5 批）：整屏的摆法（可见区底部居中、离底 24），[● 0:42][电平] ｜ [⏸] ｜ [✕][■]；
     // 录制中（说话的电平）、暂停（暂停符号、计时和电平变灰）、没听到声音（橙字）、最新一根超过 −1 dB（橙）；
-    // 录音第 6 批：录系统声音（⏸ 原位置灰）、「两者」录着时麦克风断开（橙字「麦克风断开了」）
+    // 录音第 6 批：「两者」录着时麦克风断开（橙字「麦克风断开了」）。录系统声音那张（⏸ 原位置灰）issue #48 起去掉：三种来源都能暂停
     let speech = (0..<24).map { index -> Float in -38 + 16 * sin(Float(index) * 0.9) }
-    for (name, levels, paused, silent, pausable) in [
-      ("audio-hud", speech, false, false, true), ("audio-hud-paused", speech, true, false, true),
-      ("audio-hud-silent", [Float](repeating: -120, count: 24), false, true, true),
-      ("audio-hud-loud", speech.dropLast() + [-0.4], false, false, true),
-      ("audio-hud-system", speech, false, false, false),
-      ("audio-hud-mic-lost", speech, false, false, false),
+    for (name, levels, paused, silent) in [
+      ("audio-hud", speech, false, false), ("audio-hud-paused", speech, true, false),
+      ("audio-hud-silent", [Float](repeating: -120, count: 24), false, true),
+      ("audio-hud-loud", speech.dropLast() + [-0.4], false, false),
+      ("audio-hud-mic-lost", speech, false, false),
     ] {
       let root = NSView(frame: bounds)
       root.wantsLayer = true
       root.layer?.contents = desktop
-      let hud = RecordingHUD(
-        state: .recording(42), stopKey: nil, medium: .audio, pausable: pausable)
+      let hud = RecordingHUD(state: .recording(42), stopKey: nil, medium: .audio)
       hud.updateMeter(levels)
       if paused { hud.setPaused(true) }
       if silent { hud.setSilent(true) }

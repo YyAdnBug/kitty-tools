@@ -393,12 +393,13 @@ struct HistoryStoreTests {
     // 打开刘海岛（2026-10-26，不设默认键）再接在后面，晾衣绳（第十族，2026-10-26，不设默认键）接在后面，
     // 打开主界面（2026-10-29，不设默认键）接在后面，新建提醒（2026-11-04，不设默认键）接在后面，
     // 保持唤醒（第一个插件，2026-11-12，不设默认键）接在后面，显示 App 快捷键（2026-11-17，不设默认键）接在后面，
-    // 屏幕边缘的便签（第四轮体检 X16，不设默认键）接在后面，延时截图（第五轮体检 N2，不设默认键）接在最后
+    // 屏幕边缘的便签（第四轮体检 X16，不设默认键）接在后面，延时截图（第五轮体检 N2，不设默认键）接在后面，
+    // 暂停 / 继续录制（issue #48，不设默认键）接在最后
     #expect(
-      Array(HotKeyAction.allCases.suffix(18)) == [
+      Array(HotKeyAction.allCases.suffix(19)) == [
         .translateReplace, .screenRecord, .audioRecord, .pinClipboard, .statusScreen, .noteCapture,
         .noteNew, .noteAll, .launchpad, .shotHistory, .island, .clothesline, .home, .reminderNew,
-        .keepAwake, .appShortcuts, .noteDeck, .delayedScreenshot,
+        .keepAwake, .appShortcuts, .noteDeck, .delayedScreenshot, .recordPause,
       ])
     #expect(HotKeyAction.delayedScreenshot.defaultHotKey == nil)
     #expect(HotKeyAction.reminderNew.defaultHotKey == nil)

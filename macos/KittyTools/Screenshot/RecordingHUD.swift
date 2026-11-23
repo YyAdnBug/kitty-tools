@@ -15,7 +15,7 @@
 // 录音（第 5 批，拍板 A1-a）是它的另一种形态（medium = .audio，会话在 AudioRecorder）：鼠标所在屏可见区底部居中、离底 24，
 // 从底边长出来（pop bounce 0.18，同录制条的长出；窗口四周留 24 pt 透明边、用 HUDBar 自绘的阴影，长出时不被窗口边切掉），[● 0:42][电平] ｜ [⏸] ｜ [✕][■]：电平是最近 3 s 的竖条（每帧直接设值），
 // 超过 −1 dB 的那根 systemOrange；开头 5 s 没听到声音时计时旁边出橙色「没听到声音」；暂停时红点换成暂停符号、计时和电平变灰。
-// 录系统声音（第 6 批，来源是系统声音 / 两者，走录屏管线）不能暂停：⏸ 留在原位置灰（0.35），提示「录系统声音时不能暂停」；
+// 录系统声音（第 6 批，来源是系统声音 / 两者，走录屏管线）也能暂停（issue #48，引擎分段）；
 // 「两者」录着时麦克风断开，「没听到声音」那个位置换成橙字「麦克风断开了」。
 // 录音的待录态（手测反馈第 3 批，State.ready：按录音快捷键先出控制条、还没录）：[系统声音][麦克风] ｜ [✕ 关闭][● 开始]，
 // 两个来源开关是录制条的 ToggleButton（同样的符号、配色、.replace 过渡和提示），读写录音来源的偏好（至少留一个），和
@@ -162,11 +162,10 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
 
   /// stopKey：录屏 / 录音快捷键（停止钮、录音待录时开始钮的提示里写它；没绑定 nil）；escapes：倒数的 Esc 注册上了；
   /// systemAudio / microphone：这次录不录（录屏录制中的声音状态）；medium：录屏还是录音（录音没有倒数，有待录）；
-  /// pausable：录音能不能暂停（录系统声音时不能，⏸ 置灰；从待录开始的到时再 setPausable）；defaults：录音待录时的来源开关
-  /// 读写哪个偏好域（单测 / 截图自检换成临时域）
+  /// defaults：录音待录时的来源开关读写哪个偏好域（单测 / 截图自检换成临时域）
   init(
     state: State, stopKey: String?, escapes: Bool = false, systemAudio: Bool = false,
-    microphone: Bool = false, medium: ScreenRecorder.Medium = .screen, pausable: Bool = true,
+    microphone: Bool = false, medium: ScreenRecorder.Medium = .screen,
     defaults: UserDefaults = .standard
   ) {
     self.state = state
@@ -209,7 +208,6 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     // 录屏不倒数：HUD 一建出来就是录制态、马上接在录制条的位置，■ 落在录制条上刚点过的 ● 那里（同录音的
     // 待录 → 录制，ignoresStop）
     if medium == .screen, case .recording = state { swappedAt = .now }
-    if !pausable { setPausable(false) }
     // 待录时别处改了来源（设置 › 录制）：开关跟着重画，不然画的和按开始时读到的对不上
     if state == .ready {
       sourceObserver = NotificationCenter.default.addObserver(
@@ -402,14 +400,6 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     for button in [systemButton, microphoneButton, startButton] as [NSButton] {
       button.isEnabled = false
     }
-  }
-
-  /// 录音能不能暂停。录屏管线（录系统声音，SCRecordingOutput）没有暂停：⏸ 位置不变、置灰，提示为什么（隐藏的话 HUD 宽度
-  /// 随来源变，也看不出为什么没有）
-  func setPausable(_ pausable: Bool) {
-    guard medium == .audio else { return }
-    pauseButton.isEnabled = pausable
-    pauseButton.toolTip = pausable ? pauseName(false) : String(localized: "录系统声音时不能暂停")
   }
 
   /// 暂停钮的名字（提示、旁白）：录屏「暂停录屏 / 继续录屏」，录音「暂停录音 / 继续录音」

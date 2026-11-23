@@ -100,15 +100,23 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     var pinsHidden: Bool?
     var checksUpdates = false
     var recording: HotKeyAction?
+    /// 在录的那一段暂停着（issue #48：「暂停 / 继续录制」那一项叫「继续录制」）
+    var recordPaused = false
     /// 保持唤醒手动开着一段（那一项叫「停止保持唤醒」）
     var awake = false
     var statusPresets: [StatusPreset] = []
     var statusEntersFirst = false
     var features = Set(Feature.allCases.filter(\.isAvailable))
 
-    /// 这一项正在进行（标题换成「停止…」）：录屏 / 录音在录、保持唤醒手动开着
+    /// 这一项正在进行（标题换成「停止…」）：录屏 / 录音在录、保持唤醒手动开着；暂停 / 继续录制是「暂停着」（叫「继续录制」）
     func isRunning(_ action: HotKeyAction) -> Bool {
-      recording == action || (action == .keepAwake && awake)
+      if action == .recordPause { return recordPaused }
+      return recording == action || (action == .keepAwake && awake)
+    }
+
+    /// 菜单栏、启动器、主界面列不列这一项：暂停 / 继续录制只在录屏 / 录音录着时列（快捷键页、速查表照常列：那里是设键的地方）
+    func lists(_ action: HotKeyAction) -> Bool {
+      action != .recordPause || recording != nil
     }
   }
 
@@ -123,7 +131,7 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     var items: [LauncherItem] = []
     let extras = MenuExtra.allCases.filter { $0.isAvailable(state) }
     for section in HotKeyAction.visibleSections(enabled: state.features) {
-      for hotKey in section.actions where hotKey != .launcher {
+      for hotKey in section.actions where hotKey != .launcher && state.lists(hotKey) {
         if hotKey == .statusScreen {
           var statuses = state.statusPresets.map(statusPreset)
           if !statuses.isEmpty, state.statusEntersFirst { statuses[0].isFirstStatusPreset = true }
@@ -211,6 +219,7 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     .recognizeText: "OCR Recognize Text QR",
     .screenRecord: "Screen Recording Record Video",
     .audioRecord: "Audio Recording Record Voice Microphone",
+    .recordPause: "Pause Resume Recording 暂停录屏 继续录屏 暂停录音 继续录音",
     // 「钉图」：标题是「钉住剪贴板内容」，不放进来搜「钉图」找不到它（菜单里的另两项都叫「…钉图」）；剪贴板里的文字也能钉（issue #4），
     // 别家叫「贴图」
     .pinClipboard: "Pin Clipboard Image Text 钉图 贴图",
