@@ -260,7 +260,7 @@ private struct WelcomeScreen: View {
       VStack(alignment: .leading, spacing: 10) {
         Self.grid(Feature.listed)
         Divider()
-        Text("插件 · 用得上再勾，以后也能在 设置 › 全部插件 里添加")
+        Text("插件 · 用得上再勾，以后也能在 设置 › 插件 里添加")
           .font(.subheadline).foregroundStyle(.secondary)
         Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
           ForEach(Array(stride(from: 0, to: plugins.count, by: 3)), id: \.self) { start in

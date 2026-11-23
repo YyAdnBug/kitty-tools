@@ -31,6 +31,48 @@ struct PluginTests {
     #expect(Feature.PluginGroup.desktop.plugins.first == .launchpad || !Launchpad.isAvailable)
   }
 
+  /// 插件页的分节（2026-11-23 插件侧栏改版 L3）：添加了的一节「已添加」在最上面、按 Feature 的先后（= 原来侧栏的先后）；
+  /// 没添加的按用途分组、空的节不画；这台有的插件每个正好出现一次
+  @Test func pageGroupsPutAddedFirst() {
+    let available = Feature.allCases.filter { $0.isPlugin && $0.isAvailable }
+    let purposes = Feature.PluginGroup.allCases.filter { !$0.plugins.isEmpty }.map(\.title.key)
+    #expect(PluginsPage.groups(added: []).map(\.title.key) == purposes)
+    let all = PluginsPage.groups(added: Set(available))
+    #expect(all.map(\.title.key) == ["已添加"] && all.first?.plugins == available)
+    let some = PluginsPage.groups(added: [.island, .notes, .smoothScroll])
+    #expect(some.first?.title.key == "已添加")
+    #expect(some.first?.plugins == [.notes, .smoothScroll, .island].filter(\.isAvailable))
+    for groups in [PluginsPage.groups(added: []), all, some] {
+      let listed = groups.flatMap(\.plugins)
+      #expect(listed.count == available.count && Set(listed) == Set(available))
+      #expect(groups.allSatisfy { !$0.plugins.isEmpty })
+    }
+  }
+
+  /// 「新」（N3）：插件页里一行认它自己那一页里的新东西；侧栏「插件」那一行汇总插件页和各插件页的，别的页的不算
+  @Test func newMarksRollUpToPlugins() {
+    let entries = WhatsNew.entries
+    // 新插件本身（标在插件页）、插件页里的新东西（标在那个插件的页）：侧栏「插件」和插件页里它那一行都标
+    let plugins = entries.filter { $0.plugin != nil || $0.page?.feature?.isPlugin == true }
+    #expect(plugins.contains { $0.page?.feature?.isPlugin == true })
+    #expect(plugins.contains { $0.plugin != nil })
+    for entry in plugins {
+      let plugin = entry.plugin ?? entry.page?.feature
+      #expect(WhatsNew.marksPlugins(in: [entry.id]), "\(entry.id)")
+      #expect(plugin.map { WhatsNew.marks(plugin: $0, in: [entry.id]) } == true, "\(entry.id)")
+      // 别的插件那一行不跟着标
+      let other = Feature.allCases.first { $0.isPlugin && $0 != plugin }!
+      #expect(!WhatsNew.marks(plugin: other, in: [entry.id]), "\(entry.id)")
+    }
+    // 功能页、通用页、没有页的（只在菜单、动作上的）不算插件
+    let elsewhere = entries.filter {
+      $0.plugin == nil && $0.page?.feature?.isPlugin != true && $0.page != .plugins
+    }
+    #expect(elsewhere.contains { $0.page == nil } && elsewhere.contains { $0.page != nil })
+    for entry in elsewhere { #expect(!WhatsNew.marksPlugins(in: [entry.id]), "\(entry.id)") }
+    #expect(!WhatsNew.marksPlugins(in: []))
+  }
+
   /// 添加状态只在这台的（拍板 F2）：和改版前 SettingsSync 里点名的那四个一样，加上平滑滚动（要这台给辅助功能、跟这台
   /// 接没接鼠标有关），并且都进了 localKeys
   @Test func localPluginsMatchBefore() {

@@ -31,17 +31,16 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   static let visible = visible(launchpad: Launchpad.isAvailable)
 
   /// 侧栏的分组（功能管理拍板 M2 M3；2026-11-13 插件化 P3）：通用 ｜ 文字与搜索 ｜ 截图与录制 ｜ 插件 ｜ 快捷键、关于。
-  /// 和 allCases 同序，单测锁住。中间三组带标题、能折叠（section）。插件那组第一行是「全部插件」（一直在），下面只有添加了的
-  /// （没添加的插件页不在 pages 里，见 SettingsRoot），按这里的先后排、不按添加的先后
+  /// 和 allCases 同序，单测锁住。中间两组带标题、能折叠（section）。插件只有一行「插件」（2026-11-23 插件侧栏改版，
+  /// 拍板页 https://claude.ai/artifact/Rq4GQz9jMdPrVK18HmxLAY「全部按推荐」L1：全添加 13 个时侧栏 22 行、默认窗口要滚）：
+  /// 各插件的页不进侧栏，从插件页推进（sidebarPage），侧栏亮「插件」那一行
   static let groups: [[SettingsPage]] = [
-    [.general], [.clipboard, .launcher, .translate], [.screenshot, .record],
-    [
-      .plugins, .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu,
-      .keepAwake, .bluetoothSnooze, .smoothScroll, .appShortcuts, .keyRemapping, .snippetExpand,
-      .island,
-    ],
+    [.general], [.clipboard, .launcher, .translate], [.screenshot, .record], [.plugins],
     [.hotkeys, .about],
   ]
+
+  /// 侧栏里代表这一页的那一行：插件的页是「插件」（2026-11-23 L1），别的页是自己
+  var sidebarPage: SettingsPage { feature?.isPlugin == true ? .plugins : self }
 
   /// 侧栏的一组：标题（没有就不画）、组里的页；isOff 是最底下「已关闭」那组
   struct SidebarGroup: Equatable, Identifiable {
@@ -52,11 +51,13 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     var id: String { isOff ? "off" : pages.first?.section?.rawValue ?? pages.first?.rawValue ?? "" }
   }
 
-  /// 侧栏这一刻怎么分组（纯函数）：只留 pages 里有的（搜索匹配、这台系统有），空了的组不画；关着的功能（off）不在原来的组里，
-  /// 照侧栏顺序挪进最底下的「已关闭（N）」组（2026-11-05 用户提议，对标 VS Code 扩展栏底下折叠着的「已停用」）
+  /// 侧栏这一刻怎么分组（纯函数）：只留 pages 里有的（搜索匹配、这台系统有；插件的页算「插件」那一行），空了的组不画；
+  /// 关着的功能（off）不在原来的组里，照侧栏顺序挪进最底下的「已关闭（N）」组（2026-11-05 用户提议，对标 VS Code 扩展栏
+  /// 底下折叠着的「已停用」）
   static func sidebar(_ pages: [SettingsPage], off: Set<SettingsPage>) -> [SidebarGroup] {
+    let listed = Set(pages.map(\.sidebarPage))
     let shown = groups.compactMap { group -> SidebarGroup? in
-      let kept = group.filter { pages.contains($0) && !off.contains($0) }
+      let kept = group.filter { listed.contains($0) && !off.contains($0) }
       return kept.isEmpty ? nil : SidebarGroup(title: group.first?.section?.title, pages: kept)
     }
     let closed = allCases.filter { pages.contains($0) && off.contains($0) }
@@ -65,35 +66,31 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   }
 
   /// 侧栏里带标题的组（2026-11-04 真机反馈「间距那里有个提示」：同访达、邮件侧栏的小标题，点一下收起 / 展开，对标 PowerToys
-  /// 导航的分组）。通用、快捷键与关于两组没有：一头一尾，收起来也省不了地方
+  /// 导航的分组）。通用、快捷键与关于两组没有：一头一尾，收起来也省不了地方；「插件」只剩一行（2026-11-23 L1），也不要标题
   var section: SidebarSection? {
     switch self {
     case .clipboard, .launcher, .translate: .text
     case .screenshot, .record: .capture
-    case .plugins, .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu,
-      .keepAwake, .bluetoothSnooze, .smoothScroll, .appShortcuts, .keyRemapping, .snippetExpand,
-      .island:
-      .plugins
-    case .general, .hotkeys, .about: nil
+    default: nil
     }
   }
 
   /// 侧栏带标题、能收起的组。收起了哪几组按 rawValue 存进偏好（多语言拍板 D6：不存显示的标题，换了界面语言也认得）；
-  /// 0.9.0 及以前存的是中文标题，读的时候照样认（init(stored:)），下次收起 / 展开时换成 rawValue
+  /// 0.9.0 及以前存的是中文标题，读的时候照样认（init(stored:)），下次收起 / 展开时换成 rawValue。0.10.2 及以前还有
+  /// 「插件」（plugins / 插件）一组，存着的认不出、不管
   enum SidebarSection: String {
-    case text, capture, plugins
+    case text, capture
 
     var title: LocalizedStringResource {
       switch self {
       case .text: "文字与搜索"
       case .capture: "截图与录制"
-      case .plugins: "插件"
       }
     }
 
     /// 偏好里存的一项：rawValue，或者旧版本存的中文标题；认不出的 nil
     init?(stored: String) {
-      let legacy: [String: Self] = ["文字与搜索": .text, "截图与录制": .capture, "插件": .plugins]
+      let legacy: [String: Self] = ["文字与搜索": .text, "截图与录制": .capture]
       guard let section = Self(rawValue: stored) ?? legacy[stored] else { return nil }
       self = section
     }
@@ -118,7 +115,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   var titleResource: LocalizedStringResource {
     switch self {
     case .general: "通用"
-    case .plugins: "全部插件"
+    case .plugins: "插件"
     case .island: "刘海岛"
     case .clipboard: "剪贴板"
     case .launcher: "启动器"
@@ -342,6 +339,12 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     return visible.filter { pages.contains($0) || rowPages.contains($0) }
   }
 
+  /// 换到这一页时留不留着搜索词（侧栏不留一个没选中的残局）：这一页在侧栏的那一行还列着就留。插件的页算「插件」那一行
+  /// （2026-11-23 L1，评审 1）：搜「最近删除」停在便签页、侧栏只剩「插件」，点它或 ‹ 回插件页时搜索词不能被清掉
+  static func keepsQuery(on page: SettingsPage, matches: [SettingsPage]) -> Bool {
+    matches.contains { $0.sidebarPage == page.sidebarPage }
+  }
+
   /// 搜索落到「全部插件」时描出哪一行：对上了的第一个这台用得了、没添加的插件（按侧栏的先后）；搜的是「全部插件」
   /// 自己的词（插件、添加……）时不描——保持唤醒的关键词里也有「插件」
   static func hiddenPlugin(matching query: String, hidden: Set<SettingsPage>) -> Feature? {
@@ -396,13 +399,17 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   /// 换到一页了（打开设置窗也算）：记下碰过、重算 fresh（AppDelegate 接上；单测、截图自检不接，不写偏好）
   @ObservationIgnored var visit: (SettingsPage) -> Void = { _ in }
 
-  /// 主菜单「返回」能不能用：只在设置窗自己在前、推进了详情页时
-  var canGoBack: Bool { isKey && !path.isEmpty }
+  /// 停在某个插件自己的页上（2026-11-23 L1：插件的页是从插件页推进来的，侧栏亮「插件」）：「‹」/ ⌘[ 回插件页
+  var isInPlugin: Bool { page != .plugins && page.sidebarPage == .plugins }
+
+  /// 主菜单「返回」能不能用：只在设置窗自己在前、推进了详情页或停在插件的页上时
+  var canGoBack: Bool { isKey && (!path.isEmpty || isInPlugin) }
 
   /// 主菜单「返回」：菜单项的可用状态要到打开菜单时才同步（SwiftUI 在 menuNeedsUpdate 里刷，实测），
-  /// 过期的可用状态可能还在，所以这里再判断一次（空路径 removeLast 会崩）
+  /// 过期的可用状态可能还在，所以这里再判断一次（空路径 removeLast 会崩）。先退推进的详情页，再从插件的页退回插件页
   func goBack() {
-    if canGoBack { path.removeLast() }
+    guard canGoBack else { return }
+    if path.isEmpty { page = .plugins } else { path.removeLast() }
   }
 
   /// 搜索结果、别处直达的那一行（设置改版 S7 S8）：那一页滚到它、描一圈强调色，两秒后清掉
@@ -646,12 +653,17 @@ struct SettingsRoot: View {
     Set(collapsedGroups.split(separator: "\n").compactMap { .init(stored: String($0)) })
   }
 
+  /// 选中块画在当前页在侧栏的那一行上：插件的页亮「插件」（List 的选中还是那一页、不在列表里，点「插件」那一行才会换页回去）。
+  /// 「插件」那一行的「新」汇总了各插件页里的（WhatsNew.marksPlugins）
   private func rows(_ group: [SettingsPage]) -> some View {
     ForEach(group) { page in
       SidebarRow(
-        page: page, isSelected: page == navigation.page,
-        isNew: WhatsNew.marks(page, in: navigation.fresh)
+        page: page, isSelected: page == navigation.page.sidebarPage,
+        isNew: page == .plugins
+          ? WhatsNew.marksPlugins(in: navigation.fresh) : WhatsNew.marks(page, in: navigation.fresh)
       )
+      // 系统的「已选中」只给 List 真选中的那一行；停在插件的页上时「插件」那一行自己报
+      .accessibilityAddTraits(page == .plugins && navigation.isInPlugin ? .isSelected : [])
       .tag(SidebarItem.page(page))
     }
   }
@@ -680,7 +692,7 @@ struct SettingsRoot: View {
             Text("设置项（\(results.count)）")
           }
         }
-        // 分组：功能两组和插件带小标题、点标题收起 / 展开（同访达的侧栏）；通用、快捷键与关于不写标题；关着的功能在最底下
+        // 分组：功能两组带小标题、点标题收起 / 展开（同访达的侧栏）；通用、插件、快捷键与关于不写标题；关着的功能在最底下
         // 「已关闭」那组（默认收起）
         ForEach(SettingsPage.sidebar(matches, off: off)) { group in
           if group.isOff, let title = group.title {
@@ -722,7 +734,10 @@ struct SettingsRoot: View {
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
       .navigationTitle(navigation.page.title)
-      .toolbar { SettingsBackButton() }
+      // 插件的页上能点：回插件页（L1）；推进的详情页各自再声明一个
+      .toolbar {
+        SettingsBackButton(action: navigation.isInPlugin ? { navigation.page = .plugins } : nil)
+      }
     }
     .toolbar(removing: .sidebarToggle)
     .environment(navigation)
@@ -739,7 +754,7 @@ struct SettingsRoot: View {
     // 从菜单栏等处直接跳到一页，而旧搜索词把它筛掉了：清掉搜索词（侧栏不留一个没选中的残局）；那一页在收起的组里就展开
     .onChange(of: navigation.page) {
       navigation.visit(navigation.page)
-      if !matches.contains(navigation.page) { query = "" }
+      if !SettingsPage.keepsQuery(on: navigation.page, matches: matches) { query = "" }
       if let section = navigation.page.section, collapsed.contains(section) {
         expanded(section).wrappedValue = true
       }
@@ -782,7 +797,10 @@ struct SettingsRoot: View {
   }
 
   /// List 的单选要可选值；点空白处（nil）时保持当前页。选了「设置项」里的一行：落到那一行，侧栏选中回到它的页
-  /// （结果行只是入口，选中块不停在它上面）
+  /// （结果行只是入口，选中块不停在它上面）。停在插件的页上时这里是那一页、不是任何一行的 tag（L1：这样点「插件」那一行
+  /// 才算换了选中、回插件页）。
+  /// ponytail: 这时表格里没有选中行，侧栏有焦点时按 ↑↓ 从头 / 尾一行开始走（不是从「插件」旁边）；要从「插件」接着走，
+  /// 就得让选中停在「插件」、另外接住点已选中那一行（List 不报重复的选中）
   private var selection: Binding<SidebarItem?> {
     Binding {
       .page(navigation.page)

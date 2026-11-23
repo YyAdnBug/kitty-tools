@@ -34,7 +34,8 @@ struct SettingsListTests {
   /// 提醒（2026-11-04）排在状态屏后面、程序坞预览前面；访达右键（2026-11-08）排在程序坞预览后面、同一组。
   /// 2026-11-04 功能管理拍板 M2 M3：分六组（组之间留空），便签、提醒、状态屏一组，启动台、程序坞预览一组；
   /// 插件（2026-11-12）自己一组「插件」，排在功能后面、快捷键前面。2026-11-13 插件化（P3）：便签起都是插件，
-  /// 「便签与提醒」「桌面」两组并进插件组，刘海岛从通用旁边挪到插件组最后
+  /// 「便签与提醒」「桌面」两组并进插件组，刘海岛从通用旁边挪到插件组最后。2026-11-23 插件侧栏改版（L1）：侧栏里插件只剩
+  /// 一行「插件」，各插件的页不进侧栏（allCases 里照旧排在「插件」后面：菜单栏、快捷键页、速查表的先后读它）
   @Test func sidebarOrderMatchesMenu() {
     let pages = SettingsPage.allCases
     #expect(
@@ -44,38 +45,34 @@ struct SettingsListTests {
         .bluetoothSnooze, .smoothScroll, .appShortcuts, .keyRemapping, .snippetExpand, .island,
         .hotkeys, .about,
       ])
-    // 分组盖住每一页、和 allCases 同序
-    #expect(SettingsPage.groups.flatMap { $0 } == pages)
-    // 没有启动台（macOS 15）时插件组里没有它；搜索只剩一组里的页时别的组不画
+    // 分组盖住侧栏里的每一页（插件的页算「插件」那一行）、和 allCases 同序
+    #expect(SettingsPage.groups.flatMap { $0 } == pages.filter { $0.sidebarPage == $0 })
     #expect(
-      SettingsPage.sidebar(SettingsPage.visible(launchpad: false), off: []).map(\.pages)
-        == [
-          [.general], [.clipboard, .launcher, .translate], [.screenshot, .record],
-          [
-            .plugins, .notes, .reminders, .statusScreen, .dockPreview, .finderMenu, .keepAwake,
-            .bluetoothSnooze, .smoothScroll, .appShortcuts, .keyRemapping, .snippetExpand, .island,
-          ],
-          [.hotkeys, .about],
-        ])
+      pages.filter { $0.sidebarPage == .plugins } == [.plugins]
+        + Feature.allCases.filter(\.isPlugin).map(\.page))
+    let sidebar =
+      [
+        [.general], [.clipboard, .launcher, .translate], [.screenshot, .record], [.plugins],
+        [.hotkeys, .about],
+      ] as [[SettingsPage]]
     #expect(
-      SettingsPage.sidebar([.reminders, .about], off: []).map(\.pages) == [[.reminders], [.about]])
+      SettingsPage.sidebar(SettingsPage.visible(launchpad: false), off: []).map(\.pages) == sidebar)
+    // 搜索只剩一组里的页时别的组不画；搜到的是插件的页，侧栏列的是「插件」那一行（不重复）
+    #expect(
+      SettingsPage.sidebar([.reminders, .island, .about], off: []).map(\.pages)
+        == [[.plugins], [.about]])
     // 关着的功能挪进最底下「已关闭（N）」那组（照侧栏顺序）；整组都关了的组不画；组的标题不因为头一页挪走而丢
     // （只有功能会关着：没添加的插件不在 pages 里，见 SettingsRoot）
     let closed = SettingsPage.sidebar(SettingsPage.allCases, off: [.translate, .record])
     #expect(
       closed.map(\.pages) == [
-        [.general], [.clipboard, .launcher], [.screenshot],
-        [
-          .plugins, .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu,
-          .keepAwake, .bluetoothSnooze, .smoothScroll, .appShortcuts, .keyRemapping, .snippetExpand,
-          .island,
-        ],
-        [.hotkeys, .about], [.translate, .record],
+        [.general], [.clipboard, .launcher], [.screenshot], [.plugins], [.hotkeys, .about],
+        [.translate, .record],
       ])
     let titles = { (groups: [SettingsPage.SidebarGroup]) in
       groups.map { $0.title.map { String(localized: $0) } }
     }
-    #expect(titles(closed) == [nil, "文字与搜索", "截图与录制", "插件", nil, "已关闭（2）"])
+    #expect(titles(closed) == [nil, "文字与搜索", "截图与录制", nil, nil, "已关闭（2）"])
     #expect(closed.map(\.isOff) == [false, false, false, false, false, true])
     #expect(Set(closed.map(\.id)).count == closed.count)
     // id 不跟着显示的字走（多语言）：带标题的组是 SidebarSection 的 rawValue
@@ -86,15 +83,27 @@ struct SettingsListTests {
     for group in SettingsPage.groups {
       #expect(Set(group.map(\.section)).count == 1, "\(group)")
     }
-    #expect(SettingsPage.groups.map(\.first?.section) == [nil, .text, .capture, .plugins, nil])
+    #expect(SettingsPage.groups.map(\.first?.section) == [nil, .text, .capture, nil, nil])
     // 功能页对得上功能（刘海岛 2026-11-13 起是插件的页），通用 / 快捷键 / 关于不是功能
     #expect(pages.compactMap(\.feature) == Feature.allCases)
     #expect(
       SettingsPage.general.feature == nil && SettingsPage.island.feature == .island
         && SettingsPage.hotkeys.feature == nil)
-    // 插件组：第一行「全部插件」（不是哪个功能的页），下面就是全部插件（按 Feature 的先后）
-    #expect(SettingsPage.groups[3].first == .plugins && SettingsPage.plugins.feature == nil)
-    #expect(SettingsPage.groups[3].compactMap(\.feature) == Feature.allCases.filter(\.isPlugin))
+    // 插件只有一行「插件」（不是哪个功能的页，也没有组标题）；插件的页都归它
+    #expect(SettingsPage.groups[3] == [.plugins] && SettingsPage.plugins.feature == nil)
+    #expect(SettingsPage.plugins.title == "插件")
+    #expect(
+      SettingsPage.notes.sidebarPage == .plugins && SettingsPage.island.sidebarPage == .plugins)
+    #expect(SettingsPage.plugins.sidebarPage == .plugins)
+    #expect(SettingsPage.clipboard.sidebarPage == .clipboard)
+    #expect(SettingsPage.hotkeys.sidebarPage == .hotkeys)
+    for page in pages where page.sidebarPage == .plugins { #expect(page.section == nil, "\(page)") }
+    // 换页时留不留搜索词（评审 1）：搜到的是便签页（侧栏只剩「插件」），换到插件页、别的插件的页都留；换到没列的页才清
+    #expect(SettingsPage.keepsQuery(on: .plugins, matches: [.notes]))
+    #expect(SettingsPage.keepsQuery(on: .island, matches: [.notes, .general]))
+    #expect(SettingsPage.keepsQuery(on: .general, matches: [.notes, .general]))
+    #expect(!SettingsPage.keepsQuery(on: .clipboard, matches: [.notes]))
+    #expect(!SettingsPage.keepsQuery(on: .notes, matches: [.clipboard]))
     let sections = HotKeyAction.sections.map(\.title)
     #expect(sections.firstIndex(of: "翻译")! < sections.firstIndex(of: "截图与录制")!)
   }
@@ -102,9 +111,10 @@ struct SettingsListTests {
   /// 侧栏收起了哪几组按 SidebarSection 的 rawValue 存（多语言：不存显示的标题）；0.9.0 及以前存的中文标题照样认
   @Test func collapsedSidebarGroupsSurviveLanguage() {
     typealias Section = SettingsPage.SidebarSection
-    #expect(Section(stored: "text") == .text && Section(stored: "plugins") == .plugins)
+    #expect(Section(stored: "text") == .text && Section(stored: "capture") == .capture)
     #expect(Section(stored: "文字与搜索") == .text && Section(stored: "截图与录制") == .capture)
-    #expect(Section(stored: "插件") == .plugins)
+    // 0.10.2 及以前的「插件」组（2026-11-23 起只剩一行、不能收）：存着的认不出、不管
+    #expect(Section(stored: "plugins") == nil && Section(stored: "插件") == nil)
     #expect(Section(stored: "便签与提醒") == nil && Section(stored: "") == nil)
   }
 
@@ -543,6 +553,22 @@ struct SettingsListTests {
     navigation.path = ["google"]
     navigation.page = .launcher
     #expect(navigation.path.isEmpty)
+    // 插件的页（2026-11-23 L1：从插件页推进来的）：先退推进的子页，再退回插件页；插件页自己、别的页上不能退
+    navigation.page = .notes
+    navigation.path = ["notes.deck"]
+    #expect(navigation.isInPlugin && navigation.canGoBack)
+    navigation.goBack()
+    #expect(navigation.page == .notes && navigation.path.isEmpty && navigation.canGoBack)
+    navigation.goBack()
+    #expect(navigation.page == .plugins && !navigation.isInPlugin && !navigation.canGoBack)
+    navigation.page = .island
+    navigation.isKey = false
+    #expect(!navigation.canGoBack)
+    navigation.goBack()
+    #expect(navigation.page == .island)
+    navigation.isKey = true
+    navigation.page = .hotkeys
+    #expect(!navigation.isInPlugin && !navigation.canGoBack)
   }
 }
 

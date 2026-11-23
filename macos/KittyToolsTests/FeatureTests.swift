@@ -268,9 +268,9 @@ struct FeatureTests {
     #expect(SettingsPage.page(for: "保持唤醒", current: .about) == .keepAwake)
     // 添加了之后搜它的词停在它自己那页，不落到「全部插件」
     #expect(SettingsPage.matching("访达右键", hidden: []) == [.finderMenu])
-    #expect(SettingsPage.finderMenu.section == .plugins)
+    #expect(SettingsPage.finderMenu.sidebarPage == .plugins)
     #expect(SettingsPage.page(for: "防息屏", current: .about) == .keepAwake)
     #expect(SettingsPage.matching("防息屏", hidden: []) == [.keepAwake])
-    #expect(SettingsPage.keepAwake.section == .plugins)
+    #expect(SettingsPage.keepAwake.sidebarPage == .plugins)
   }
 }

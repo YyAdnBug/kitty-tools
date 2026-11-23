@@ -459,12 +459,12 @@
         }
       }
     },
-    "%@插件没添加，先不同步；到 设置 › 全部插件 里添加就接着同步" : {
+    "%@插件没添加，先不同步；到 设置 › 插件 里添加就接着同步" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The %@ plugin isn’t added, so it isn’t synced for now; add it in Settings › All Plugins to resume"
+            "value" : "The %@ plugin isn’t added, so it isn’t synced for now; add it in Settings › Plugins to resume"
           }
         }
       }
@@ -11799,12 +11799,12 @@
         }
       }
     },
-    "从网上下载的脚本，第一次运行前会先给你看一眼全文。Kitty Tools 自带的大功能（便签、刘海岛这些）是插件，在 设置 › 全部插件 里添加。" : {
+    "从网上下载的脚本，第一次运行前会先给你看一眼全文。Kitty Tools 自带的大功能（便签、刘海岛这些）是插件，在 设置 › 插件 里添加。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scripts downloaded from the web show you their full text before they first run. Kitty Tools’ larger built-in features (Notes, the Notch, and more) are plugins; add them in Settings › All Plugins."
+            "value" : "Scripts downloaded from the web show you their full text before they first run. Kitty Tools’ larger built-in features (Notes, the Notch, and more) are plugins; add them in Settings › Plugins."
           }
         }
       }
@@ -12269,12 +12269,12 @@
         }
       }
     },
-    "便签、提醒、刘海岛这些在「全部插件」里添加" : {
+    "便签、提醒、刘海岛这些在「插件」里添加" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add Notes, Reminders, the Notch, and more in All Plugins"
+            "value" : "Add Notes, Reminders, the Notch, and more in Plugins"
           }
         }
       }
@@ -13535,16 +13535,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "All Keys"
-          }
-        }
-      }
-    },
-    "全部插件" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "All Plugins"
           }
         }
       }
@@ -29782,12 +29772,12 @@
         }
       }
     },
-    "插件 · 用得上再勾，以后也能在 设置 › 全部插件 里添加" : {
+    "插件 · 用得上再勾，以后也能在 设置 › 插件 里添加" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Plugins · optional; you can add them later in Settings › All Plugins"
+            "value" : "Plugins · optional; you can add them later in Settings › Plugins"
           }
         }
       }
@@ -31882,12 +31872,12 @@
         }
       }
     },
-    "新装时插件都没添加。添加了才出现在侧栏、菜单栏、主界面、快捷键和启动器里；移除了设置和数据都留着，再添加就回来。" : {
+    "新装时插件都没添加。添加了才出现在菜单栏、主界面、快捷键和启动器里，设置在这一页点进去；移除了设置和数据都留着，再添加就回来。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Plugins aren’t added on a new install. Once added, a plugin shows up in the sidebar, the menu bar, Home, shortcuts, and the Launcher. If you remove it, its settings and data stay for when you add it again."
+            "value" : "Plugins aren’t added on a new install. Once added, a plugin shows up in the menu bar, Home, shortcuts, and the Launcher, and its settings open from this page. If you remove it, its settings and data stay for when you add it again."
           }
         }
       }
@@ -37997,12 +37987,12 @@
         }
       }
     },
-    "添加了才出现在侧栏、菜单栏、主界面、快捷键和启动器里" : {
+    "添加了才出现在菜单栏、主界面、快捷键和启动器里" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Once added, it shows up in the sidebar, the menu bar, Home, shortcuts, and the Launcher"
+            "value" : "Once added, it shows up in the menu bar, Home, shortcuts, and the Launcher"
           }
         }
       }

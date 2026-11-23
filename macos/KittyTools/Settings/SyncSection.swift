@@ -341,7 +341,7 @@ struct SyncSection: View {
     _ detail: LocalizedStringResource, feature: Feature?, isOn: Bool
   ) -> LocalizedStringResource {
     guard !isOn, let feature else { return detail }
-    if feature.isPlugin { return "\(feature.title)插件没添加，先不同步；到 设置 › 全部插件 里添加就接着同步" }
+    if feature.isPlugin { return "\(feature.title)插件没添加，先不同步；到 设置 › 插件 里添加就接着同步" }
     return "\(feature.title)关着，先不同步；到 设置 › 通用 › 功能 里打开就接着同步"
   }
 

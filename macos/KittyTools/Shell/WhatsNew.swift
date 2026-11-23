@@ -211,9 +211,15 @@ enum WhatsNew {
     entries.contains { ids.contains($0.id) && $0.page == page }
   }
 
-  /// 「全部插件」里这个插件的那一行要不要标
+  /// 插件页里这个插件的那一行要不要标：新插件本身，或者它自己那一页里有新东西（2026-11-23 插件侧栏改版 N3：插件的页不在侧栏、
+  /// 从这一行推进，标在页里的新功能从外面也要看得到）
   static func marks(plugin: Feature, in ids: Set<String>) -> Bool {
-    entries.contains { ids.contains($0.id) && $0.plugin == plugin }
+    entries.contains { ids.contains($0.id) && ($0.plugin == plugin || $0.page == plugin.page) }
+  }
+
+  /// 侧栏「插件」那一行要不要标（N3）：插件页自己的（新插件），加上各插件页里的
+  static func marksPlugins(in ids: Set<String>) -> Bool {
+    entries.contains { ids.contains($0.id) && $0.page?.sidebarPage == .plugins }
   }
 
   /// 设置页里这一节要不要标（按 key 比）

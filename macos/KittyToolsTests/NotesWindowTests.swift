@@ -749,7 +749,7 @@ struct NotesWindowTests {
       ]))
 
     let pages = SettingsPage.allCases
-    // 录制后面是插件组：第一行「全部插件」，便签紧跟着（插件页改版 A1）
+    // 录制后面是「插件」那一页，便签紧跟着（插件页改版 A1；2026-11-23 起侧栏只列「插件」，这里是 allCases 的先后）
     #expect(pages[pages.firstIndex(of: .record)! + 1] == .plugins)
     #expect(pages[pages.firstIndex(of: .plugins)! + 1] == .notes)
     #expect(SettingsPage.notes.title == "便签" && SettingsPage.notes.color == Style.Family.notes)

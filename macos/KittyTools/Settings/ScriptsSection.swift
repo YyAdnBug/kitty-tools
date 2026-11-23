@@ -56,7 +56,7 @@ struct ScriptsSection: View {
     Section {
       SettingRow(
         title: "启用脚本命令", subtitle: "每个脚本是启动器里的一条命令",
-        info: "从网上下载的脚本，第一次运行前会先给你看一眼全文。Kitty Tools 自带的大功能（便签、刘海岛这些）是插件，在 设置 › 全部插件 里添加。"
+        info: "从网上下载的脚本，第一次运行前会先给你看一眼全文。Kitty Tools 自带的大功能（便签、刘海岛这些）是插件，在 设置 › 插件 里添加。"
       ) {
         Toggle("启用脚本命令", isOn: $scriptsOn)
           .toggleStyle(.switch)

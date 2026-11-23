@@ -23,7 +23,7 @@ struct FeaturesPage: View {
           SectionFootnote("关掉的功能不出现在快捷键、菜单栏和启动器里，也不在后台运行；它的数据和设置都留着，打开就回来。")
         }
         Section {
-          SettingsPushRow(title: "插件", detail: "便签、提醒、刘海岛这些在「全部插件」里添加") {
+          SettingsPushRow(title: "插件", detail: "便签、提醒、刘海岛这些在「插件」里添加") {
             navigation?.page = .plugins
           }
         }

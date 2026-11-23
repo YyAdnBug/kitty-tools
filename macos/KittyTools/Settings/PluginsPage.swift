@@ -1,7 +1,9 @@
-// 设置 › 全部插件（2026-11-17 插件页改版，拍板页 https://claude.ai/artifact/FddFbxDbUETWmu2x7asZQv「全部按推荐」，
-// PLAN §10「插件页改版」）：侧栏「插件」组第一行固定的这一页（A1），下面照旧只列添加了的插件。
-// 按用途分组（A2，Feature.PluginGroup，空组不画），一行一个（A3）：28 pt 色块、名字（后面可挂「新」、橙色「要授权」）、一句话；
-// 没添加的右边「添加」、添加了的写「已添加」；整行能点——没添加的推进介绍页（PluginIntroPage），添加了的去它在侧栏的设置页（B1）。
+// 设置 › 插件（2026-11-17 插件页改版，拍板页 https://claude.ai/artifact/FddFbxDbUETWmu2x7asZQv「全部按推荐」，
+// PLAN §10「插件页改版」；2026-11-23 插件侧栏改版，拍板页 https://claude.ai/artifact/Rq4GQz9jMdPrVK18HmxLAY「全部按推荐」）：
+// 侧栏里插件只有这一行（L1，原来叫「全部插件」、下面再列添加了的插件）。添加了的一节「已添加」在最上面，按原来侧栏的先后（L3）；
+// 没添加的按用途分组在下面（A2，Feature.PluginGroup，空组不画）。一行一个（A3）：28 pt 色块、名字（后面可挂「新」、橙色「要授权」）、
+// 一句话；没添加的右边「添加」；整行能点——没添加的推进介绍页（PluginIntroPage），添加了的换到它的设置页（navigation.page，
+// 侧栏仍亮「插件」，‹ / ⌘[ 回这一页）。
 // 「添加」：能当场弹系统框的授权由 AppDelegate.applyFeatures 去问，只能去系统设置打开的（辅助功能、屏幕录制、访达扩展）
 // 跳到它自己的设置页（C3，PluginsPage.add）。侧栏搜索搜到没添加的插件、启动器「添加…插件」带过来时描一圈强调色两秒（A4）。
 // 页底两行链到 通用 › 功能（核心五个的开关，D1）和 启动器 › 脚本命令（D2）。页头画在自己的 NavigationStack 里，推进介绍页时一起换掉。
@@ -21,6 +23,9 @@ struct PluginsPage: View {
   /// 添加着、缺授权的：页面出现、设置窗重新当 key、偏好变了时重查（查授权要跨进程问系统，别放在初始值里——
   /// 父视图每画一次都会再算一遍初始值）
   @State private var missing: Set<Feature> = []
+  /// 分节按页面出现时添加着哪些来排（L3，评审 2）：开着这一页时点「添加」，那一行留在原处、只是「添加」换成 ›——挪到最上面
+  /// 「已添加」的话它从鼠标底下跑掉、下一行的「添加」滑过来，连点两下会加上没挑的那个。换页、从介绍页退回来时再排
+  @State private var arranged: Set<Feature>?
 
   var body: some View {
     // 截图自检单独画这一页时没有导航状态：给一个自己的栈
@@ -57,6 +62,22 @@ struct PluginsPage: View {
   private var plugins: [Feature] { Feature.plugins.filter(\.isAvailable) }
   private var added: Set<Feature> { fixed?.added ?? enabled }
 
+  /// 页里的一节：标题、这一节的插件
+  struct Group {
+    let title: LocalizedStringResource
+    let plugins: [Feature]
+  }
+
+  /// 页里怎么分节（纯函数，L3）：添加了的一节「已添加」在最上面，按 Feature 的先后（= 原来侧栏的先后，原来在侧栏点哪一行，
+  /// 现在点这一节的同一行）；没添加的按用途分组（A2）。空的节不画；这台用不了的插件不列
+  static func groups(added: Set<Feature>) -> [Group] {
+    let mine = Feature.allCases.filter { $0.isPlugin && $0.isAvailable && added.contains($0) }
+    let rest = Feature.PluginGroup.allCases.map { group in
+      Group(title: group.title, plugins: group.plugins.filter { !added.contains($0) })
+    }
+    return ([Group(title: "已添加", plugins: mine)] + rest).filter { !$0.plugins.isEmpty }
+  }
+
   private var page: some View {
     VStack(spacing: 0) {
       DetailHeader(
@@ -67,8 +88,7 @@ struct PluginsPage: View {
       }
       ScrollViewReader { proxy in
         Form {
-          ForEach(Feature.PluginGroup.allCases.filter { !$0.plugins.isEmpty }, id: \.self) {
-            group in
+          ForEach(Self.groups(added: arranged ?? added), id: \.title.key) { group in
             Section {
               ForEach(group.plugins, id: \.self) { plugin in
                 row(plugin).id(plugin)
@@ -86,7 +106,7 @@ struct PluginsPage: View {
               navigation?.page = .launcher
             }
           } footer: {
-            SectionFootnote("新装时插件都没添加。添加了才出现在侧栏、菜单栏、主界面、快捷键和启动器里；移除了设置和数据都留着，再添加就回来。")
+            SectionFootnote("新装时插件都没添加。添加了才出现在菜单栏、主界面、快捷键和启动器里，设置在这一页点进去；移除了设置和数据都留着，再添加就回来。")
           }
         }
         .formStyle(.grouped)
@@ -117,6 +137,7 @@ struct PluginsPage: View {
     .onSettingsBecameKey { recheck() }
     .onAppear {
       enabled = Feature.enabled
+      arranged = added
       recheck()
     }
   }
@@ -144,8 +165,8 @@ struct PluginsPage: View {
   }
 }
 
-/// 「全部插件」的一行：色块、名字（新 / 要授权）、一句话、「已添加」，整块是一个 plain 按钮（open：键盘、读屏都能用，同
-/// SettingsPushRow）；没添加时旁边一个「添加」按钮（兄弟视图，不并进行里）；最后一个 ›
+/// 插件页的一行：色块、名字（新 / 要授权）、一句话，整块是一个 plain 按钮（open：键盘、读屏都能用，同 SettingsPushRow）；
+/// 没添加时旁边一个「添加」按钮（兄弟视图，不并进行里）；最后一个 ›。添加了的在「已添加」那一节里，行尾不再写「已添加」（L3）
 private struct PluginRow: View {
   let plugin: Feature
   let isAdded: Bool
@@ -176,7 +197,6 @@ private struct PluginRow: View {
               .truncationMode(.tail)
           }
           Spacer(minLength: 8)
-          if isAdded { Text("已添加").foregroundStyle(.secondary) }
         }
         .contentShape(.rect)
       }
