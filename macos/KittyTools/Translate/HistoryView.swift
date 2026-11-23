@@ -478,7 +478,7 @@ struct HistoryView: View {
   private func header(_ title: String) -> some View {
     Text(title)
       .font(.system(size: 11, weight: .semibold))
-      .foregroundStyle(.tertiary)
+      .foregroundStyle(Style.metaText)
       .padding(.leading, 10)
       .padding(.bottom, 2)
       .frame(
@@ -800,7 +800,7 @@ private struct HistoryRow: View {
         }
         .font(.system(size: 11))
         .monospacedDigit()
-        .foregroundStyle(.tertiary)
+        .foregroundStyle(Style.metaText)
         .contentTransition(.opacity)
         if entry.favorite {
           Image(systemName: "star.fill")

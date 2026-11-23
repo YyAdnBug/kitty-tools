@@ -368,7 +368,7 @@ struct HomeView: View {
         if let title = section.title {
           Text(title)
             .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(Style.metaText)
             .padding(.leading, 10)
             .padding(.bottom, 2)
             .frame(height: Home.titleHeight, alignment: .bottomLeading)

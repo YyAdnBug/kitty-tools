@@ -233,15 +233,15 @@ struct ClipRowView: View {
     return ceil(width) <= room
   }
 
-  /// 右侧：有备注时是备注（secondary，所有条目都能写，体检 A3），否则「来源 · 多久前」（tertiary）
+  /// 右侧：有备注时是备注（Style.noteText，所有条目都能写，体检 A3），否则「来源 · 多久前」（Style.metaText）
   @ViewBuilder private var trailing: some View {
     if let note = item.note, !note.isEmpty {
-      Text(note).foregroundStyle(.secondary)
+      Text(note).foregroundStyle(Style.noteText)
     } else {
       // 跟着界面语言（Locale.current）：「31秒钟前」/「31 seconds ago」
       let ago = item.copiedAt.formatted(.relative(presentation: .named))
       Text([item.sourceTitle, ago].compactMap { $0 }.joined(separator: " · "))
-        .foregroundStyle(.tertiary)
+        .foregroundStyle(Style.metaText)
     }
   }
 }

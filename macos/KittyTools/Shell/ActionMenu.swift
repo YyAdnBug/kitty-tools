@@ -153,11 +153,15 @@ struct ActionMenu: View {
     }
     .padding(.vertical, 5)
     .frame(width: Self.width)
-    .background(.regularMaterial, in: .rect(cornerRadius: Style.Radius.card, style: .continuous))
-    .overlay(
-      RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous).hairlineBorder()
-    )
-    .floatingShadow()
+    .floatingSurface(RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)) {
+      $0.background(
+        .regularMaterial, in: .rect(cornerRadius: Style.Radius.card, style: .continuous)
+      )
+      .overlay(
+        RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous).hairlineBorder()
+      )
+      .floatingShadow()
+    }
     // 菜单上是箭头光标：它常盖在输入框上面（便签的正文、剪贴板的透镜），不垫这一块的话露出的是下面的 I 形
     .background { ArrowCursorArea() }
     // 转场绑在这里：调用方只要 if 显示 + 用动画改那个开关（出现 snap，减弱动态效果时只淡入）

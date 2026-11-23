@@ -27,7 +27,7 @@ description: 原生分支的视觉与动效设计语言 Whisker（用户 2026-09
 - 危险色 = `Style.danger`（系统红，HUD 是 `Style.HUD.danger`）：删除、清空、移到废纸篓、放弃录制、强制退出 / 结束这类操作的图标和文字，和它们的二次确认（提示文字、主按钮键帽 `KeyCap(danger:)`）全 App 统一用它（用户 2026-10-07）；动作菜单给 `isDestructive`、设置里的系统按钮用 `DangerButton`，确认框和系统菜单只给 `role: .destructive`；不手写 systemRed / `.red`，报错和「录制中」的红是别的语义（rule §3「危险色」）。
 - 五个招牌时刻：截图咔嚓飞入（录屏飞最后一帧、录音从 HUD 飞波形，rule §5 S1）、刘海岛、译文生成（末尾光标 + 彗星边框；原来的「显影」在可选中的文字上显示不出来，已按用户的决定拿掉，rule §5 S3）、会呼吸的面板、窗口磁吸——改相关代码不能丢。
 - 循环动效（彗星边框、扫光这类 ambient）只动变换：渐变画一次，循环挂在 `rotationEffect` / `offset` 的隐式动画上，不逐帧改渐变参数、不用 `TimelineView` 驱动（逐帧重画渐变吃掉过 30% 以上的 CPU）；裁剪区里带 offset 的渐变先 `compositingGroup()` 再裁，不然带子不动（rule §8）。
-- 在 macOS 15 上就要完整，Liquid Glass 只在 `#available(macOS 26, *)` 里替换材质。
+- 在 macOS 15 上就要完整，Liquid Glass 只在 `#available(macOS 26, *)` 里替换材质。26 起面板玻璃里垫 `Style.panelUnderlay`、浮起的卡片走 `floatingSurface`、行尾元信息和分组标题用 `Style.metaText`（液态玻璃「透明」是系统默认、开发机是「着色」：验玻璃两档都看，屏上抓图 `PolishProbeTests.glass()`，rule.md §2「26 分支」）。
 - 现成件（体检 2026-09-28）：卡片 `.cardSurface()`（不加阴影）、输入框底 `Style.inputFill`、分隔线 `Hairline()` / 描边 `shape.hairlineBorder()`（增强对比度自动 1 pt，别写死 `lineWidth: 0.5`）、带文字的主按钮 `BrandButtonStyle`（不用 `.borderedProminent` + tint）、复制对勾停 `Style.copiedHold`、列表行悬停 `Shell/HoverTracker`（不用 `onHover`）。
 - 减弱动态效果 / 降低透明度 / 增强对比度都要处理；岛和飞行卡片要发 VoiceOver 播报。
 - 每个新界面过一遍 rule §10 的检查清单；截图自检补新状态。

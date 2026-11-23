@@ -901,21 +901,43 @@ private enum EntryID: Hashable {
 }
 
 /// 分组标题「今天 · 12」+ 一条发丝线。高度必须正好是 headerHeight：高亮、滚动、吸顶都按它累加。
-/// 吸顶时加材质底，平时没有灰条
+/// 吸顶时加底，平时没有灰条：15 是材质；macOS 26 起（2026-11-23 美化 V5）材质在玻璃上是一条颜色不一样的带子（深色时
+/// 发黑）、下面那行字从它下沿露出半截，改成面板的底色、下沿 fade 淡出（滚动边缘效果的观感）
 private struct SectionHeader: View {
   let section: ClipboardPanelView.DaySection
   var pinned = false
+  /// 26 起吸顶时底色往下多铺这么高、从实淡到透明
+  private static let fade: CGFloat = 12
+  private static let fill = Color(nsColor: Style.stickyHeaderFill)
 
   var body: some View {
     HStack(spacing: 8) {
       Text("\(section.title) · \(section.rows.count)")
         .font(.system(size: 11, weight: .semibold))
-        .foregroundStyle(.tertiary)
+        .foregroundStyle(Style.metaText)
       Hairline()
     }
     .padding(.horizontal, 10)
     .frame(height: ClipboardPanelView.headerHeight)
-    .background(pinned ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(.clear))
+    .background(alignment: .top) {
+      if !pinned {
+        Color.clear
+      } else if #available(macOS 26, *) {
+        let height = ClipboardPanelView.headerHeight + Self.fade
+        LinearGradient(
+          stops: [
+            .init(color: Self.fill, location: 0),
+            .init(color: Self.fill, location: ClipboardPanelView.headerHeight / height),
+            .init(color: Self.fill.opacity(0), location: 1),
+          ], startPoint: .top, endPoint: .bottom
+        )
+        .frame(height: height)
+        // 铺到列表左右的边（四周内缩 inset 那一条也盖住），不然两侧露出两道竖边
+        .padding(.horizontal, -ClipboardPanelView.inset)
+      } else {
+        Rectangle().fill(.ultraThinMaterial)
+      }
+    }
   }
 }
 

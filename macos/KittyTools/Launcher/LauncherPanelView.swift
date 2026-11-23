@@ -289,7 +289,7 @@ struct LauncherPanelView: View {
   private func groupHeader(_ group: LauncherModel.Group) -> some View {
     Text(group.title)
       .font(.system(size: 11, weight: .semibold))
-      .foregroundStyle(.tertiary)
+      .foregroundStyle(Style.metaText)
       .padding(.leading, 10)
       .padding(.bottom, 2)
       .frame(
@@ -765,7 +765,7 @@ private struct LauncherRow: View {
     ZStack(alignment: .trailing) {
       Text(item.kindTitle)
         .font(.system(size: 12))
-        .foregroundStyle(.tertiary)
+        .foregroundStyle(Style.metaText)
         .opacity(showsShortcut ? 0 : 1)
       KeyCap("⌘\(number + 1)")
         .opacity(showsShortcut ? 1 : 0)
