@@ -67,7 +67,9 @@ import Observation
     iterators = []
     if let notifyPort { IONotificationPortDestroy(notifyPort) }
     notifyPort = nil
-    for service in currentServices() ?? [] {
+    let snapshot = currentServices()
+    defer { withExtendedLifetime(snapshot?.client) {} }
+    for service in snapshot?.services ?? [] {
       guard let previous = applied[service.id], !previous.owned.isEmpty else { continue }
       do {
         let current = try service.read()
@@ -190,16 +192,20 @@ import Observation
     }
   }
 
-  private func currentServices() -> [HIDKeyMapping.Service]? {
+  private func currentServices() -> (
+    client: IOHIDEventSystemClient, services: [HIDKeyMapping.Service]
+  )? {
     // 重连后 macOS 会创建新的 HID 服务，每次现建一个 simple client，不沿用旧的服务列表
+    // 服务读写仍要用到创建它们的 client，调用方读写完之前不能释放它
     let client = IOHIDEventSystemClientCreateSimpleClient(kCFAllocatorDefault)
     guard let services = IOHIDEventSystemClientCopyServices(client) as? [IOHIDServiceClient]
     else { return nil }
-    return services.compactMap(HIDKeyMapping.Service.init)
+    return (client, services.compactMap(HIDKeyMapping.Service.init))
   }
 
   func refresh(recheck: Bool = false) {
-    guard running, let services = currentServices() else { return }
+    guard running, let (client, services) = currentServices() else { return }
+    defer { withExtendedLifetime(client) {} }
     var keyboards: [String: RemapKeyboard] = [:]
     var problems: [String: Issue] = [:]
     let live = Set(services.map(\.id))
