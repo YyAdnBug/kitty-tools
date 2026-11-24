@@ -142,20 +142,30 @@ nonisolated enum ScrollSmoothing {
 
   // MARK: 滑
 
-  /// 正在滑的那一段：还没放出去的距离、整数像素的零头
+  /// 一格滚轮要去的地方：目标进程、光标下的窗口（ScrollTap 在会话层加了注解的那一点从滚轮上读；读不到是 0）
+  struct Target: Equatable, Sendable {
+    var pid: Int32 = 0
+    var window: Int64 = 0
+  }
+
+  /// 正在滑的那一段：还没放出去的距离、整数像素的零头、投给谁
   struct Motion: Equatable, Sendable {
     private(set) var remainingX = 0.0
     private(set) var remainingY = 0.0
     private var carryX = 0.0
     private var carryY = 0.0
+    /// 这一段投给谁（issue #50）：帧照最近那一格投过去，滑着时鼠标挪到别的窗口不跟着走
+    private(set) var target = Target()
 
     /// 两帧之间最多按多久算（线程被耽搁了一阵，不一下子跳过去）
     static let maxStep = 0.05
 
     var isIdle: Bool { remainingX == 0 && remainingY == 0 }
 
-    /// 再滚了一格：方向反了的话先把没滚完的扔掉（往下滑着时往上拨一格，马上往上走，不先把下面那截滚完）
-    mutating func add(dx: Double, dy: Double) {
+    /// 再滚了一格：落在别的窗口（target 变了）先把没滚完的扔掉——原来那截不跟着鼠标过去、新窗口只滚新拨的这一格；
+    /// 方向反了的话也先扔掉（往下滑着时往上拨一格，马上往上走，不先把下面那截滚完）
+    mutating func add(dx: Double, dy: Double, to target: Target = .init()) {
+      if target != self.target { self = Motion(target: target) }
       if dy != 0, remainingY != 0, (dy > 0) != (remainingY > 0) { (remainingY, carryY) = (0, 0) }
       if dx != 0, remainingX != 0, (dx > 0) != (remainingX > 0) { (remainingX, carryX) = (0, 0) }
       remainingX += dx

@@ -191,7 +191,7 @@ TEST_RUNNER_KITTY_LIVE_FINDER_KEYS=1 xcodebuild -project macos/KittyTools.xcodep
   test -only-testing:'KittyToolsTests/FinderKeysTests/liveTargetsKeyWindowOwner()'
 
 # 平滑滚动插件的实机自检（按需，约 3 秒，要测试宿主有「辅助功能」授权；**跑之前先问用户**）：真的起滚动线程、建事件拦截（探针模式：
-# 真的滚轮原样放过），发几个带记号的合成滚轮，量第一帧多快、一共滑多远、主线程卡半秒时帧还出不出、停了线程退没退；帧也吞掉，
+# 真的滚轮原样放过），发几个带记号的合成滚轮，量第一帧多快、一共滑多远、帧在不在那一格的位置、注解的那一点上有没有目标进程（issue #50）、主线程卡半秒时帧还出不出、停了线程退没退；帧也吞掉，
 # 到不了别的 App。改了 SmoothScroll/ 后跑。另有只听不改的 record()：TEST_RUNNER_KITTY_SMOOTH_SCROLL_RECORD=<秒>，这几秒里
 # 用真鼠标拨滚轮，打印系统给的行数 / 像素 / 定点（定「每行 40 点、一格至少一行」那两个数用）
 TEST_RUNNER_KITTY_LIVE_SMOOTH_SCROLL=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
