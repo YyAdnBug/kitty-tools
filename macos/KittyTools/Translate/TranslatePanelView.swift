@@ -135,6 +135,13 @@ struct TranslatePanelView: View {
     return min(max(height, minHeight), limit)
   }
 
+  /// 改浮窗高度带不带动画（纯函数，配单测）：有卡正在出字时一律不带，跟着行数一行一行直接长到位（美化与提速 P5：
+  /// 窗口帧动画那 0.14–0.18 s 里每帧整块浮窗都要重排一遍，几张卡轮流换行时窗口一直在动画里、和后面来的字抢主线程；
+  /// 同启动器、剪贴板打字时）；别的时候变化 8 pt 以上才带（小变化直接设）
+  static func animatesResize(from old: CGFloat, to new: CGFloat, streaming: Bool) -> Bool {
+    !streaming && abs(new - old) >= 8
+  }
+
   /// 浮窗最矮多高（也是拖下边的下限）
   static let minHeight: CGFloat = 220
   /// 浮窗默认宽度（「恢复默认大小」回到它）

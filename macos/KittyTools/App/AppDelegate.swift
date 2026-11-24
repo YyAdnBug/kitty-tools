@@ -821,7 +821,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       content: AnyView(
         TranslatePanelView(
           coordinator: coordinator, speaker: speaker,
-          resize: { height, mustFit in
+          resize: { [unowned self] height, mustFit in
             // 高度随内容（Bob 的做法），前三张结果卡总放得下（TranslatePanelView.panelHeight）。
             // 最小 / 最大高度都钉在这个值上：用户只能拖宽度，拖高度会和自动高度打架
             guard let panel = created else { return }
@@ -831,8 +831,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               cap: UserDefaults.standard.double(forKey: Prefs.translatePanelMaxHeight))
             panel.minSize = NSSize(width: 360, height: height)
             panel.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: height)
-            // 变化 8 pt 以上才带动画：流式输出时每来几个字都会长一点，小变化直接设
-            panel.setContentHeight(height, animated: abs(panel.frame.height - height) >= 8)
+            // 出字时一行一行直接长到位，别的时候变化 8 pt 以上才带动画（TranslatePanelView.animatesResize）
+            panel.setContentHeight(
+              height,
+              animated: TranslatePanelView.animatesResize(
+                from: panel.frame.height, to: height, streaming: coordinator.isStreamingText))
           },
           replaceOriginal: { [unowned self] in replaceOriginal() },
           isShown: { created?.isVisible ?? false }

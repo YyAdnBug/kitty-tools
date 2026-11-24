@@ -1,7 +1,10 @@
 // 结果卡片的正文（生成中有字、或完成后不按 Markdown 渲染的译文，mac-whisker §5 S3）：普通的 Text（系统字体 15 × 字号、
-// 行距 3.5），新字直接出现；生成中末尾一根强调色胶囊光标（2 pt × 0.82 行高，0.55 s 一程往返闪）。光标是叠在最后一个字
-// 后面的单独一层（位置取自 Text.LayoutKey），闪的是这一层透明度上的隐式循环动画（mac-whisker §8），不用重画文字；
+// 行距 3.5），新字直接出现；生成中末尾一根强调色胶囊光标（2 pt × 0.82 行高，0.55 s 一程往返闪）。光标是叠在文字上的
+// 单独一层（位置取自 Text.LayoutKey）：铺满正文的 LoopLayer（ProviderCardView.swift）里一层子图层，来字时只挪这层的位置，
+// 闪是它上面的 CABasicAnimation、整个交给渲染服务（美化与提速 P5：原来是 SwiftUI 的隐式循环动画，光标一项约 3.6%）；
 // 减弱动态效果时常亮。
+// ponytail: 生成中每来一批字 SwiftUI 都把整段正文重排、重画一遍（尺寸、Text.LayoutKey、可选中文字的排版各一遍，跟着字数涨；
+// 三张卡一起出字时主线程 42–46%，P5 量过，不在动效上）；要再省得生成中换成只往后追加的 TextKit 文字视图、完成再换回 Text，单独立项。
 // 这里原来是「显影」（RevealText：TextRenderer + TimelineView，新字淡入、去模糊、上浮 0.26 s）。结果卡片的正文要能选中，
 // 而可选中的文字系统不调 TextRenderer（macOS 15.7 实测，draw 一次都不进）：显影在真 App 里从没显示出来，挂着它却让
 // 出字时的 CPU 高出一倍多。第二轮体检第 1c 批按用户的决定拿掉；要恢复得单独立项、先出原型给用户看
@@ -20,6 +23,8 @@ struct ResultText: View {
     CGRect(x: run.maxX + 1.5, y: run.minY + run.height * 0.1, width: 2, height: run.height * 0.82)
   }
 
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
   var body: some View {
     Text(text)
       .font(.system(size: fontSize))
@@ -27,35 +32,19 @@ struct ResultText: View {
       .overlayPreferenceValue(Text.LayoutKey.self) { layouts in
         if isStreaming {
           GeometryReader { geometry in
-            if let anchored = layouts.last, let run = anchored.layout.last?.last {
-              let origin = geometry[anchored.origin]
-              StreamCursor(
-                rect: Self.cursorRect(after: run.typographicBounds.rect)
-                  .offsetBy(dx: origin.x, dy: origin.y))
-            }
+            // 铺满正文的一层，来字时视图不挪，只改里面那根光标子图层的位置
+            LoopLayer(
+              kind: .blink, color: Style.brand, animates: !reduceMotion,
+              mark: layouts.last.flatMap { anchored in
+                anchored.layout.last?.last.map { run in
+                  let origin = geometry[anchored.origin]
+                  return Self.cursorRect(after: run.typographicBounds.rect)
+                    .offsetBy(dx: origin.x, dy: origin.y)
+                }
+              })
           }
           .allowsHitTesting(false)
         }
       }
-  }
-}
-
-/// 生成中文字末尾的光标：单独一层，不用重画文字就能闪——透明度 1 ↔ 0.35、0.55 s 一程的隐式循环动画
-/// （正弦缓入缓出）；减弱动态效果时常亮。rect 是它在 ResultText 里的位置，来字时直接换
-/// （动画只挂在透明度上，位置不带动画）
-private struct StreamCursor: View {
-  let rect: CGRect
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @State private var dims = false
-
-  var body: some View {
-    Path(roundedRect: rect, cornerRadius: 1)
-      .fill(Style.brand)
-      .opacity(dims ? 0.35 : 1)
-      .animation(
-        .timingCurve(0.37, 0, 0.63, 1, duration: 0.55).repeatForever(autoreverses: true),
-        value: dims
-      )
-      .onAppear { dims = !reduceMotion }
   }
 }

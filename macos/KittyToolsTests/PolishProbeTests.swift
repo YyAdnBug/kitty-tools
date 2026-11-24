@@ -15,9 +15,12 @@ import Testing
 //   - 之后一小段里跑环每一轮忙了多久（CFRunLoopObserver：醒来 → 要睡之间，含 CA 提交），记合计和最长一下
 // 场景：启动器（呼出、打字、↓）、剪贴板（5000 / 300 条：呼出、↑↓、只换透镜不滚动的 ↓↑、滚动、打字搜）、翻译浮窗（出结果、三张卡流式出字）、
 // 设置窗（每页第一次 / 第二次打开）。偏好用临时域，库在内存里，图片在临时目录。
-// 要看主线程忙在哪：另加 TEST_RUNNER_KITTY_POLISH_LOOP=clip-down / clip-swap / clip-search / clip-narrow / clip-scroll / launcher-type / settings，
+// 要看主线程忙在哪：另加 TEST_RUNNER_KITTY_POLISH_LOOP=clip-down / clip-swap / clip-search / clip-narrow / clip-scroll / launcher-type / settings /
+// translate-wait（三张卡等结果）/ translate-stream（经协调器的流一轮接一轮），
 // 只把那一件来回做 10 秒，pid 写在 <目录>/pid，这时 `sample <pid> 7`。
 // 只量其中几块：TEST_RUNNER_KITTY_POLISH_ONLY=launcher,clip,translate,settings（逗号隔开）。
+// 翻译浮窗屏外量时另加 TEST_RUNNER_KITTY_POLISH_ANIMATE=always / lines：改高度照真 App 带动画（always：变化 8 pt 以上就带；
+// lines：有卡在出字时不带），看流式时窗口高度动画的开销（屏上的面板透明度 0.05，本来就不做高度动画）。
 // 第一次呼出预排过的（P7，OverlayPanel.prewarm）：另加 TEST_RUNNER_KITTY_POLISH_PREWARM=1（再屏外画一遍：=display），启动器、剪贴板
 // 面板建好后先预排、闲 1 秒再量第一次呼出，报告里多一行预排花了多久、phys_footprint 多了多少；和不加的那一遍对比。
 // capture()：ScreenCapture.freeze() 连做 6 次各多久（要「屏幕录制」授权，只在内存里截、不存图）。
@@ -205,9 +208,11 @@ struct PolishProbeTests {
 @MainActor final class PolishProbe {
   nonisolated static let onscreen =
     ProcessInfo.processInfo.environment["KITTY_POLISH_PROBE_ONSCREEN"] == "1"
-  /// 给 sample 用：只把这一件来回做 10 秒（clip-down / clip-search / clip-scroll / launcher-type / settings / settings-pair / translate-stream），
+  /// 给 sample 用：只把这一件来回做 10 秒（clip-down / clip-search / clip-scroll / launcher-type / settings / settings-pair / translate-wait / translate-stream），
   /// pid 写进 <目录>/pid
   nonisolated static let loop = ProcessInfo.processInfo.environment["KITTY_POLISH_LOOP"]
+  /// 翻译浮窗改高度带不带动画（量真 App 的高度动画用，只在屏外有效）：always / lines，见 translate()
+  nonisolated static let animate = ProcessInfo.processInfo.environment["KITTY_POLISH_ANIMATE"]
 
   private func looping(_ name: String, _ step: (Int) -> Void) -> Bool {
     guard Self.loop == name else { return false }
@@ -221,6 +226,17 @@ struct PolishProbeTests {
       index += 1
       spin(0.016)
     }
+    try? FileManager.default.removeItem(atPath: directory + "/pid")
+    return true
+  }
+
+  /// 同上，整段自己做：whole 收到该停的时刻（翻译的流一轮要等它出完，不是每 16 ms 一步）
+  private func looping(_ name: String, whole: (CFTimeInterval) -> Void) -> Bool {
+    guard Self.loop == name else { return false }
+    let directory = PolishProbeTests.directory!
+    try? "\(getpid())".write(toFile: directory + "/pid", atomically: true, encoding: .utf8)
+    spin(2)
+    whole(CACurrentMediaTime() + 10)
     try? FileManager.default.removeItem(atPath: directory + "/pid")
     return true
   }
@@ -926,9 +942,13 @@ struct PolishProbeTests {
 
   private func translate(_ prefs: UserDefaults) throws {
     Self.log("\n### 翻译浮窗（三张结果卡）")
-    let services = TranslateServiceStore(services: [.zhipu, .builtin(.google), .builtin(.deepl)])
+    var list = [TranslateService.zhipu, .builtin(.google), .builtin(.deepl)]
+    for index in list.indices { list[index].isEnabled = true }
+    let services = TranslateServiceStore(services: list)
     let history = try HistoryStore(db: Database(path: ":memory:"))
     let coordinator = TranslateCoordinator(services: services, history: history)
+    // 不读用户的折叠偏好（折叠着的服务不翻）
+    coordinator.collapsed = { [] }
     let speaker = Speaker()
     coordinator.beginInput()
     coordinator.sourceText = Self.english
@@ -938,6 +958,8 @@ struct PolishProbeTests {
     coordinator.cards = services.services.map { .init(service: $0, state: .waiting) }
     weak var created: OverlayPanel?
     let visible = NSScreen.main?.visibleFrame.height ?? 900
+    /// 窗口高度真改了几次（流式时应该只在行数变了时改）
+    var resizes = 0
     let panel = OverlayPanel(
       size: NSSize(width: 420, height: 560), minSize: NSSize(width: 360, height: 200),
       autoHide: .resignKey, isPinned: { true },
@@ -945,23 +967,90 @@ struct PolishProbeTests {
         coordinator: coordinator, speaker: speaker,
         resize: { height, mustFit in
           let height = TranslatePanelView.panelHeight(height, mustFit: mustFit, visible: visible)
-          created?.setContentHeight(height, animated: false)
+          guard let created else { return }
+          if abs(created.frame.height - height) > 0.5 { resizes += 1 }
+          // 屏上（透明度 0.05）的面板本来就不做高度动画；屏外量真 App 的动画：
+          // _ANIMATE=always：变化 8 pt 以上就带（0.3 – P4 的写法），=lines：有卡在出字时不带（P5）
+          let streaming = coordinator.cards.contains {
+            if case .running(let text) = $0.state { !text.isEmpty } else { false }
+          }
+          let animated =
+            switch Self.animate {
+            case "always": abs(created.frame.height - height) >= 8
+            case "lines": !streaming && abs(created.frame.height - height) >= 8
+            default: false
+            }
+          created.setContentHeight(height, animated: animated)
         }
       ).defaultAppStorage(prefs))
     created = panel
     let cold = show(panel)
     Self.log("第一次呼出（三张卡在等）：\(fmt(cold))")
-    // 等待中（骨架 + 彗星）1 秒里主线程忙多少
-    meter.start()
-    let cpu0 = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
-    spin(1)
-    let cpu1 = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
-    meter.stop()
-    Self.log(
-      "等待中 1 秒：主线程 CPU \(String(format: "%.1f", Double(cpu1 - cpu0) / 1e7))%（最长一下 \(String(format: "%.1f", meter.slices.max() ?? 0)) ms）"
-    )
-    // 流式：每 30 ms 三张卡各多一个字，共 3 秒
+    // 给 sample 用：等待中（骨架 + 彗星）原样摆 10 秒
+    if looping("translate-wait", whole: { end in spin(end - CACurrentMediaTime()) }) {
+      panel.hide()
+      return
+    }
+    // 等待中（骨架 + 彗星）1 秒里主线程忙多少：刚呼出后（0.4 s 起）一秒、再一秒（出现时的一次性活干完了，只剩循环动效）
+    for label in ["等待中 1 秒", "等待中再 1 秒"] {
+      meter.start()
+      let cpu0 = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+      spin(1)
+      let cpu1 = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+      meter.stop()
+      Self.log(
+        "\(label)：主线程 CPU \(String(format: "%.1f", Double(cpu1 - cpu0) / 1e7))%（最长一下 \(String(format: "%.1f", meter.slices.max() ?? 0)) ms）"
+      )
+    }
+    // 经协调器的流（真 App 的路径：每来一段字是主线程上的一次 job，三个服务各来各的）：每个服务每 30 ms 多一个字，
+    // 三个服务的相位错开 10 ms
     let full = Array(Self.chinese)
+    coordinator.stream = { service, _ in
+      let phase = list.firstIndex { $0.id == service.id } ?? 0
+      return AsyncThrowingStream { continuation in
+        let task = Task {
+          try? await Task.sleep(for: .milliseconds(10 * phase))
+          for step in 1...full.count {
+            guard !Task.isCancelled else { break }
+            continuation.yield(String(full.prefix(step)))
+            try? await Task.sleep(for: .milliseconds(30))
+          }
+          continuation.finish()
+        }
+        continuation.onTermination = { _ in task.cancel() }
+      }
+    }
+    /// 跑一轮：从开跑到三张都出完（最多 10 秒）
+    func streamOnce(until end: CFTimeInterval) {
+      coordinator.translate(Self.english, fromCopy: true)
+      spin(0.05)
+      while coordinator.isRunning, CACurrentMediaTime() < end { spin(0.05) }
+    }
+    if looping(
+      "translate-stream",
+      whole: { end in
+        while CACurrentMediaTime() < end { streamOnce(until: end) }
+      })
+    {
+      panel.hide()
+      return
+    }
+    resizes = 0
+    let cpuS = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+    let wallS = CACurrentMediaTime()
+    streamOnce(until: wallS + 10)
+    let cpuE = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+    let wall = (CACurrentMediaTime() - wallS) * 1000
+    let streamed = coordinator.cards.map(\.state) == Array(repeating: .done(Self.chinese), count: 3)
+    Self.log(
+      "经协调器流式（三个服务各自每 30 ms 一个字、相位错开 10 ms，各 \(full.count) 字）：主线程 CPU "
+        + "\(String(format: "%.0f", Double(cpuE - cpuS) / 1e6)) ms / \(String(format: "%.0f", wall)) ms 墙上时间"
+        + "（\(String(format: "%.1f", Double(cpuE - cpuS) / 1e4 / wall))%）；窗口改高 \(resizes) 次；"
+        + (streamed ? "三张都出完" : "没出完：\(coordinator.cards.map(\.state))"))
+    // 流式：每 30 ms 三张卡各多一个字，共 3 秒（直接改模型、每次同步排完画完：量一次更新本身多贵）
+    coordinator.cards = services.services.map { .init(service: $0, state: .waiting) }
+    spin(0.3)
+    resizes = 0
     var updates: [Double] = []
     meter.start()
     let cpu2 = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
@@ -978,7 +1067,7 @@ struct PolishProbeTests {
     meter.stop()
     Self.log(
       "流式出字（三张卡每 30 ms 各多一个字，100 次）：每次同步 \(Self.stats(updates))；"
-        + "这段主线程 CPU \(String(format: "%.0f", Double(cpu3 - cpu2) / 1e6)) ms / 约 \(String(format: "%.1f", 100 * 0.03 * 1000 + updates.reduce(0, +))) ms 墙上时间；跑环最长一下 \(String(format: "%.1f", meter.slices.max() ?? 0)) ms"
+        + "这段主线程 CPU \(String(format: "%.0f", Double(cpu3 - cpu2) / 1e6)) ms / 约 \(String(format: "%.1f", 100 * 0.03 * 1000 + updates.reduce(0, +))) ms 墙上时间；跑环最长一下 \(String(format: "%.1f", meter.slices.max() ?? 0)) ms；窗口改高 \(resizes) 次"
     )
     let done = settle(panel) {
       for index in coordinator.cards.indices {
