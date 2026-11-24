@@ -91,6 +91,12 @@ struct PanelHostingTests {
           panel.animator().setFrame(target, display: true)
         }
       } else {
+        // 直接 setFrame 盖不掉还在播的帧动画，播完会把旧目标写回来（同 NoteFloat.setFrame）：全量里主线程挤时，
+        // 前面 0.074 s 的那下过了 6 轮还没播完，晾衣绳停在了它的目标上。先用零时长的 animator 停住它
+        NSAnimationContext.runAnimationGroup { context in
+          context.duration = 0
+          panel.animator().setFrame(panel.frame, display: false)
+        }
         panel.setFrame(target, display: true)
         #expect(panel.frame == target)
       }
