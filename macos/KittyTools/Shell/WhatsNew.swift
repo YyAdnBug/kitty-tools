@@ -121,6 +121,16 @@ enum WhatsNew {
     Entry(
       id: "screenshot-corner-radius", version: "0.10.2", feature: .screenshot, page: .screenshot,
       section: "截图圆角"),
+    // 0.10.3：两个新插件（片段展开、键位映射；没添加时在侧栏「插件」那一行标，添加了算碰过，两个算一个）和新的全局动作
+    // 「暂停 / 继续录制」（不设默认快捷键，录制时菜单、主界面、快捷键页标，用过一次算看过）。启动台「隐藏的 App」
+    // （推进行没接「新」）、录屏暂停本身（HUD 上的按钮）、美化与提速（改样子、提速）不标，交给更新日志
+    Entry(
+      id: "plugin-snippet-expand", version: "0.10.3", feature: nil, page: .plugins,
+      plugin: .snippetExpand),
+    Entry(
+      id: "plugin-key-remapping", version: "0.10.3", feature: nil, page: .plugins,
+      plugin: .keyRemapping),
+    Entry(id: "record-pause", version: "0.10.3", feature: .record, actions: [.recordPause]),
   ]
 
   /// 一版最多标几个（拍板 B1：标多了到处都是「新」，等于没标）。同一版的几个新插件算一个：都只标在「全部插件」一处

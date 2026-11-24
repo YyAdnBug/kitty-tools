@@ -2678,8 +2678,16 @@ P8、V8 以后。材料（追问稿、实测报告、sample、对标、图标样
 
 > 2026-10-28（第三轮体检第 7 批）：2026-10-22 及更早的进度记录、做完的「已知的小毛病」、旧的「现状」「下一步」原样挪到 `docs/archive/PLAN-batches-2026-10.md` §12；AGENTS.md「项目概述」原来的长段原样挪到本节末尾「各族进度摘要（原 AGENTS 项目概述）」。
 
+**2026-11-24：0.10.3 集成**（用户「0.10.2 之后的代码都打包进来，版本号 0.10.3，打包给我测试，没问题就准备发布」）：分支 `claude/v0103`
+（工作树 `.claude/worktrees/v0103`，从 origin/macos `616c7c72`），收了本地 macos 的 `07aed0ee`（插件侧栏改版，快进）、`polish-wip`（美化与提速五批 +
+图标 A，合并提交；冲突只在 mac-whisker settings.md 和 HANDTEST）、`claude/eloquent-darwin-e7fad4` 和 `claude/frosty-kepler-6e4101`（两条偶发失败的
+单测修稳，11-22 别的会话做的、没并过）。origin/macos 上 0.10.2 之后的：PR #42 识字缓存恢复、PR #43 #46 键位映射插件、启动台隐藏 App（issue #44）、
+片段展开插件、PR #45 拷贝图中文字用实况文本、录制暂停（issue #48）。`MARKETING_VERSION` 升到 0.10.3，更新日志 0.10.3 共 15 条（中英）；`WhatsNew` 标两个新插件
+（算一个）和「暂停 / 继续录制」。设置窗内存不回落那个会话（`claude/settings-memory`）还在做，没收。没 push、没 tag；测试包在工作树 `macos/build/`，
+用户测完说「发布」再发。待手测：HANDTEST「启动台的隐藏 App 和常用一排」「片段展开」「拷贝图中文字」「录制暂停」「插件侧栏改版」「美化与提速手测」各节。
+
 **2026-11-23–24：美化与提速**（外部反馈「UI 可以更美、有些卡」，用户「全部按推荐」）：分支 `polish-wip`（工作树 `kitty-tools-macos-polish`，
-从 origin/macos `7c94b0f1`；之后 origin/macos 又进了录制暂停两个提交，并回去前要先合），提交 `0ae5c297`…`1a801cfc`，没 push、没升版本、没写更新日志、没打包；做了什么、数字和没达到的目标见 §10「美化与提速」。
+从 origin/macos `7c94b0f1`），提交 `0ae5c297`…`1fb770c1`，随 0.10.3 集成分支合进去（见上一条），没单独 push、没升版本、没写更新日志、没打包；做了什么、数字和没达到的目标见 §10「美化与提速」。
 App 图标的 `.icon` 样稿用户选了 A（`build/research/polish-2026-11-23/icon/overview.png`），第 6 批 `1a801cfc` 已进包。待手测：HANDTEST「美化与提速手测」1–56。
 
 **2026-11-20：0.10.2 开头**（用户「放到0.10.2里面去」）：分支 `claude/settings-feedback-120ed5`（工作树 `.claude/worktrees/settings-feedback-120ed5`，
