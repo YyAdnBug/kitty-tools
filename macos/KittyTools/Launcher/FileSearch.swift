@@ -8,8 +8,10 @@
 //   30 天内打开过的 + 14 天内下载的（带下载来源 kMDItemWhereFroms），约 70 ms。
 // 只读 Spotlight 给的属性（路径、名字、类型、日期），不 stat、不读文件，图标按类型取：桌面 / 文稿 / 下载里的
 // 文件搜到、显示都不碰文件本身；打开交给 NSWorkspace。
+// 查询在自己的串行队列上跑（文件末尾的 Spotlight，2026-11-24 用户反馈打「.xl」、删字都卡）：主线程只收拼好的 [Hit]。
 
 import AppKit
+import Synchronization
 import UniformTypeIdentifiers
 
 final class FileSearch {
@@ -27,13 +29,19 @@ final class FileSearch {
 
     /// 只有 1 个拉丁字母（或数字）的词：Spotlight 要 1–7 s，先不查。1 个汉字照查
     var isTooShort: Bool {
-      !terms.isEmpty
-        && !terms.contains { $0.count >= 2 || $0.unicodeScalars.contains { !$0.isASCII } }
+      !terms.isEmpty && !terms.contains(where: Self.isLongEnough)
+    }
+
+    /// 只数字母和数字：Spotlight 按词首比、标点只当分隔，「.x」和「x」一样宽（2026-11-24 本机 6118 条，
+    /// 打「.xlsx」路过它时主线程读结果卡 0.6–1 s）
+    static func isLongEnough(_ term: String) -> Bool {
+      term.unicodeScalars.contains { !$0.isASCII }
+        || term.count { $0.isLetter || $0.isNumber } >= 2
     }
   }
 
-  /// Spotlight 找到的一个文件：只有索引里的属性
-  struct Hit {
+  /// Spotlight 找到的一个文件：只有索引里的属性（在 Spotlight 的队列上拼好，交回主线程）
+  nonisolated struct Hit: Equatable {
     var path: String
     var name: String
     /// UTI（kMDItemContentType）；按它取图标、判断是不是文件夹
@@ -43,13 +51,14 @@ final class FileSearch {
   }
 
   /// 最多列多少条（Alfred 默认 40–50）
-  static let limit = 50
-  /// 最多处理多少条 Spotlight 结果：只读路径时每条约 3 µs，垃圾占七八成（「readme」6000 多条里九成在
-  /// node_modules），只看前面一小段会漏掉干净的结果。ponytail: 2 万条约 60 ms，单个汉字这种更宽的词才会碰到上限
-  static let processLimit = 20_000
+  nonisolated static let limit = 50
+  /// 最多处理多少条 Spotlight 结果：垃圾占七八成（「readme」6000 多条里九成在 node_modules），只看前面一小段会漏掉
+  /// 干净的结果。读一条的路径是一次进程间调用（2026-11-24 本机 13–110 µs，Spotlight 忙时更慢），所以在队列上读。
+  /// ponytail: 2 万条在队列上要 0.3–2 s（「re」近 4 万条），结果晚到、不卡输入框；要更快得换成按需分页读
+  nonisolated static let processLimit = 20_000
 
   /// 路径上有这些目录的不要（常见的依赖和构建产物目录；隐藏目录 .git 等 Spotlight 本来就不收）
-  static let excludedFolders: Set<String> = [
+  nonisolated static let excludedFolders: Set<String> = [
     "node_modules", "bower_components", "DerivedData", "build", "dist", "target", "out", "Pods",
     "Carthage", "vendor", "venv", "__pycache__", "coverage",
   ]
@@ -91,7 +100,7 @@ final class FileSearch {
   }
 
   /// 主目录外的、~/Library 里的（iCloud 云盘、第三方云盘除外）、路径上有 `excludedFolders` 的都不要
-  static func isExcluded(_ path: String, home: String = NSHomeDirectory()) -> Bool {
+  nonisolated static func isExcluded(_ path: String, home: String = NSHomeDirectory()) -> Bool {
     guard path.hasPrefix(home + "/") else { return true }
     let components = path.dropFirst(home.count + 1).split(separator: "/")
     if components.first == "Library",
@@ -127,15 +136,12 @@ final class FileSearch {
 
   /// pinyin：名字转拼音全拼 + 首字母（一条约 0.12 ms）；查询词里没有拉丁字母时用不上，不转（P3）
   static func item(_ hit: Hit, pinyin withPinyin: Bool = true) -> LauncherItem {
-    let stem = (hit.name as NSString).deletingPathExtension
-    let pinyin = withPinyin ? AppCatalog.pinyin(stem) : nil
+    let (names, initials) = matchNames(hit, pinyin: withPinyin)
     let parent = location(of: (hit.path as NSString).deletingLastPathComponent)
     let path = (hit.path as NSString).abbreviatingWithTildeInPath
     return LauncherItem(
-      kind: .path, target: hit.path, title: hit.name, subtitle: parent,
-      names: [hit.name, stem, pinyin?.full].compactMap { $0.map(LauncherMatch.fold) }
-        .reduce(into: []) { if !$0.contains($1) { $0.append($1) } },
-      initials: [LauncherMatch.initials(stem), pinyin?.initials].compactMap { $0 },
+      kind: .path, target: hit.path, title: hit.name, subtitle: parent, names: names,
+      initials: initials,
       // 直接给 Tab 补全的文字：通用的补全要 stat 文件判断是不是目录
       completion: isFolder(hit.contentType) ? path + "/" : path,
       // 声明这个类型的 App 卸载了时 Spotlight 还留着它的 UTI，系统却不认：按扩展名兜底，总要有个类型
@@ -144,8 +150,59 @@ final class FileSearch {
         ?? UTType(filenameExtension: (hit.path as NSString).pathExtension) ?? .data)
   }
 
+  typealias MatchNames = (names: [String], initials: [String])
+
+  /// 参与匹配的名字（文件名、去掉扩展名的、拼音全拼，折叠过、去重）和缩写：条目和主线程外的先挑一遍同一份
+  nonisolated static func matchNames(_ hit: Hit, pinyin withPinyin: Bool) -> MatchNames {
+    let stem = (hit.name as NSString).deletingPathExtension
+    let pinyin = withPinyin ? AppCatalog.pinyin(stem) : nil
+    return (
+      [hit.name, stem, pinyin?.full].compactMap { $0.map(LauncherMatch.fold) }
+        .reduce(into: []) { if !$0.contains($1) { $0.append($1) } },
+      [LauncherMatch.initials(stem), pinyin?.initials].compactMap { $0 }
+    )
+  }
+
+  /// 交回主线程之前，在 Spotlight 的队列上先挑一遍：按匹配分 → 时间 → 路径深浅排出前 limit 条，再带上用过的（used：
+  /// 使用记录里的文件路径，有加成、可能排上来）。主线程只给这些做行、加使用加成、按 rank 排——和全部交给它排的结果一样：
+  /// 没用过的加成是 0，最终分就是匹配分，排不过这前 limit 条（它们的最终分都不低于自己的匹配分，同分时先后的比法也一样）。
+  /// 2026-11-24：「␣rep」3182 条全在主线程做行、排序要 456 ms。
+  /// names：同一次查询各批之间按路径记下的名字和缩写（每批都是到目前为止的全部，转拼音一条约 0.12 ms，不记就每批重转）
+  nonisolated static func shortlist(
+    _ hits: [Hit], terms: [String], used: Set<String>, names cache: inout [String: MatchNames]
+  ) -> [Hit] {
+    guard hits.count > limit else { return hits }
+    let query = terms.joined(separator: " ")
+    let pinyin = needsPinyin(terms)
+    let ranked = hits.indices.map { index -> (index: Int, match: Double, depth: Int) in
+      let hit = hits[index]
+      let match: Double
+      if terms.isEmpty {
+        match = 1
+      } else {
+        let (names, initials) = cache[hit.path] ?? matchNames(hit, pinyin: pinyin)
+        cache[hit.path] = (names, initials)
+        match = max(LauncherMatch.score(query, names: names, initials: initials), 30)
+      }
+      return (index, match, hit.path.count { $0 == "/" })
+    }
+    // 和 rank 同样的比法；排序是稳定的，完全同分的按原来的先后
+    .sorted {
+      if $0.match != $1.match { return $0.match > $1.match }
+      if hits[$0.index].date != hits[$1.index].date {
+        return hits[$0.index].date > hits[$1.index].date
+      }
+      return $0.depth < $1.depth
+    }
+    let kept = Set(ranked.prefix(limit).map(\.index))
+    // 按原来的先后交出去：完全同分时 rank 排出来的先后和全部交给它时一样
+    return hits.indices.filter { kept.contains($0) || used.contains(hits[$0].path) }.map {
+      hits[$0]
+    }
+  }
+
   /// 拼音只在查询词里有拉丁字母时才用得上（「季度」「2024」不会去比拼音）
-  static func needsPinyin(_ terms: [String]) -> Bool {
+  nonisolated static func needsPinyin(_ terms: [String]) -> Bool {
     terms.contains { $0.contains { $0.isASCII && $0.isLetter } }
   }
 
@@ -241,73 +298,186 @@ final class FileSearch {
 
   // MARK: 查询
 
-  private var query: NSMetadataQuery?
-  private var observers: [NSObjectProtocol] = []
+  private let spotlight = Spotlight()
+  /// 这一次查询的编号：换了查询、停了以后，还在路上的那一批不要
+  private var generation = 0
+  /// 有一次查询起了、还没停（没起过就不用每敲一个字都往队列里投一次停）
+  private var isRunning = false
   private var onResults: ([Hit]) -> Void = { _ in }
 
-  /// 开始一次查询（先停掉上一次）。结果分批到：每批都回调一次（第一批通常就是全部），收完或够数就停
-  func start(_ request: Request, onResults: @escaping ([Hit]) -> Void) {
-    stop()
-    let text = request.terms.isEmpty ? Self.recentQuery : Self.queryString(request.terms)
-    guard let predicate = NSPredicate(fromMetadataQueryString: text) else { return onResults([]) }
-    let query = NSMetadataQuery()
-    query.predicate = predicate
-    query.searchScopes = [NSMetadataQueryUserHomeScope]
-    query.sortDescriptors = [
-      NSSortDescriptor(key: NSMetadataItemFSContentChangeDateKey, ascending: false)
-    ]
-    // 预取：按下标读这几个不用每条再去 mds 取（每条每个属性约 0.2 ms）；路径预取不了，单独读也很便宜
-    query.valueListAttributes = [
-      NSMetadataItemFSNameKey, NSMetadataItemContentTypeKey, NSMetadataItemFSContentChangeDateKey,
-      Self.lastUsedDateKey, Self.dateAddedKey,
-    ]
-    self.query = query
+  /// 开始一次查询（先停掉上一次）。结果分批到：每批都回调一次（到目前为止的全部先挑过一遍，和上一批一样的不回调），
+  /// 收完或够数就停。建查询、start、读结果、先挑一遍都在 Spotlight 的队列上，这里只收拼好的 [Hit]
+  /// used：使用记录里的文件路径（队列上先挑一遍时带上它们，shortlist）
+  func start(
+    _ request: Request, used: Set<String> = [], onResults: @escaping ([Hit]) -> Void
+  ) {
+    generation += 1
+    isRunning = true
+    let id = generation
     self.onResults = onResults
-    observers = [.NSMetadataQueryGatheringProgress, .NSMetadataQueryDidFinishGathering].map {
-      NotificationCenter.default.addObserver(forName: $0, object: query, queue: .main) {
-        [weak self] notification in
-        let finished = notification.name == .NSMetadataQueryDidFinishGathering
-        MainActor.assumeIsolated { self?.deliver(finished: finished) }
+    let text = request.terms.isEmpty ? Self.recentQuery : Self.queryString(request.terms)
+    spotlight.start(text, terms: request.terms, used: used, id: id) { [weak self] hits in
+      Task { @MainActor in
+        guard let self, self.generation == id else { return }
+        self.onResults(hits)
       }
     }
-    if !query.start() { stop() }
   }
 
   func stop() {
-    observers.forEach(NotificationCenter.default.removeObserver)
-    observers = []
-    query?.stop()
-    query = nil
+    guard isRunning else { return }
+    isRunning = false
+    generation += 1
+    spotlight.stop(generation)
+  }
+}
+
+/// FileSearch 的 Spotlight 查询：建、start、收进度、读结果、停都在自己的串行队列上，交出来的只有 [Hit]（2026-11-24）。
+/// 原来都在主线程，本机量的：start() 偶尔 100–200 ms；读一条结果的路径是一次进程间调用（13–110 µs，Spotlight 忙时更慢），
+/// 「.x」6118 条一批 0.6–1 s、「re」近 4 万条 1.5 s，进度每到一批就读一遍——打字、删字时输入框跟着卡。
+/// NSMetadataQuery 不是 Sendable：放在 Mutex 里、只在这个队列上碰（它的文档：start 要在 operationQueue 或主线程上调）
+nonisolated private final class Spotlight: Sendable {
+  private let queue: OperationQueue = {
+    let queue = OperationQueue()
+    queue.name = "kitty.file-search"
+    queue.maxConcurrentOperationCount = 1
+    queue.qualityOfService = .userInitiated
+    return queue
+  }()
+  /// 最新一次 start / stop 的编号：排着的那次轮到时已经不是最新的就不起（连着打字时只查最后那个词）
+  private let latest = Mutex(0)
+  private let running = Mutex<Running?>(nil)
+
+  private struct Running {
+    let id: Int
+    let query: NSMetadataQuery
+    let observers: [any NSObjectProtocol]
+    /// 上一批交出去的：和它一样就不再交（收完的那一批常和最后一次进度一样，主线程不用再排一遍）
+    var delivered: [FileSearch.Hit]?
+    /// 先挑一遍时按路径记下的名字和缩写（FileSearch.shortlist）
+    var names: [String: FileSearch.MatchNames] = [:]
   }
 
   private static let lastUsedDateKey = "kMDItemLastUsedDate"
   private static let dateAddedKey = "kMDItemDateAdded"
 
-  private func deliver(finished: Bool) {
-    guard let query else { return }
-    query.disableUpdates()
-    var hits: [Hit] = []
-    for index in 0..<min(query.resultCount, Self.processLimit) {
-      guard let item = query.result(at: index) as? NSMetadataItem,
-        let path = item.value(forAttribute: NSMetadataItemPathKey) as? String,
-        !Self.isExcluded(path)
-      else { continue }
-      let value = { query.value(ofAttribute: $0, forResultAt: index) }
-      let dates = [NSMetadataItemFSContentChangeDateKey, Self.lastUsedDateKey, Self.dateAddedKey]
-        .compactMap { value($0) as? Date }
-      hits.append(
-        Hit(
-          path: path,
-          name: value(NSMetadataItemFSNameKey) as? String ?? (path as NSString).lastPathComponent,
-          contentType: value(NSMetadataItemContentTypeKey) as? String,
-          date: dates.max() ?? .distantPast))
+  /// terms、used：读完一批先在队列上挑一遍（FileSearch.shortlist），只把挑出来的交出去
+  func start(
+    _ text: String, terms: [String], used: Set<String>, id: Int,
+    deliver: @escaping @Sendable ([FileSearch.Hit]) -> Void
+  ) {
+    latest.withLock { $0 = id }
+    queue.addOperation { [self] in
+      tearDown()
+      guard latest.withLock({ $0 }) == id else { return }
+      // 查询整个在锁里建、起：NSMetadataQuery 不是 Sendable，在外面建好再放进来编译器不让（region 检查）
+      let started = running.withLock { running in
+        guard let predicate = NSPredicate(fromMetadataQueryString: text) else { return false }
+        let query = NSMetadataQuery()
+        query.predicate = predicate
+        query.searchScopes = [NSMetadataQueryUserHomeScope]
+        query.sortDescriptors = [
+          NSSortDescriptor(key: NSMetadataItemFSContentChangeDateKey, ascending: false)
+        ]
+        // 预取：按下标读这几个不用每条再去 mds 取；路径预取不了，只能一条条读
+        query.valueListAttributes = [
+          NSMetadataItemFSNameKey, NSMetadataItemContentTypeKey,
+          NSMetadataItemFSContentChangeDateKey,
+          Self.lastUsedDateKey, Self.dateAddedKey,
+        ]
+        // 进度和收完的通知投到这个队列上，观察者（queue: nil）就在这里跑
+        query.operationQueue = queue
+        let observers = [
+          NSNotification.Name.NSMetadataQueryGatheringProgress, .NSMetadataQueryDidFinishGathering,
+        ].map { name in
+          NotificationCenter.default.addObserver(forName: name, object: query, queue: nil) {
+            [weak self] note in
+            let finished = note.name == .NSMetadataQueryDidFinishGathering
+            // 再排一次队：就算通知是在锁里（start / enableUpdates 时）同步发出来的，也只是排进队列，不会在锁里再进 collect
+            self?.queue.addOperation { [weak self] in
+              self?.collect(id: id, finished: finished, terms: terms, used: used, deliver: deliver)
+            }
+          }
+        }
+        running = Running(id: id, query: query, observers: observers)
+        return query.start()
+      }
+      if !started {
+        tearDown()
+        deliver([])
+      }
     }
-    let onResults = onResults
-    if finished || query.resultCount >= Self.processLimit {
-      stop()
-    } else {
-      query.enableUpdates()
+  }
+
+  func stop(_ id: Int) {
+    latest.withLock { $0 = id }
+    queue.addOperation { [self] in tearDown() }
+  }
+
+  private func tearDown() {
+    running.withLock { running in
+      running.map(Self.halt)
+      running = nil
     }
-    onResults(hits)
+  }
+
+  /// 停掉这一次（先移除观察者再 stop）。只在 running 的锁里调
+  private static func halt(_ current: Running) {
+    current.observers.forEach(NotificationCenter.default.removeObserver)
+    current.query.stop()
+  }
+
+  /// 进度 / 收完：读到目前为止的全部（最多 processLimit 条）；收完或够数就停
+  private func collect(
+    id: Int, finished: Bool, terms: [String], used: Set<String>,
+    deliver: @Sendable ([FileSearch.Hit]) -> Void
+  ) {
+    let hits: [FileSearch.Hit]? = running.withLock { running in
+      guard var current = running, current.id == id else { return nil }
+      // 又打了字、停了：这一批不读了，当场停掉（排在后面的新查询不用等它读完、挑完；不调 tearDown，锁里再加锁会崩）
+      let isStale = { self.latest.withLock { $0 } != id }
+      guard !isStale() else {
+        Self.halt(current)
+        running = nil
+        return nil
+      }
+      let query = current.query
+      query.disableUpdates()
+      var hits: [FileSearch.Hit] = []
+      for index in 0..<min(query.resultCount, FileSearch.processLimit) {
+        if index % 256 == 255, isStale() {
+          Self.halt(current)
+          running = nil
+          return nil
+        }
+        guard let item = query.result(at: index) as? NSMetadataItem,
+          let path = item.value(forAttribute: NSMetadataItemPathKey) as? String,
+          !FileSearch.isExcluded(path)
+        else { continue }
+        let value = { query.value(ofAttribute: $0, forResultAt: index) }
+        let dates = [NSMetadataItemFSContentChangeDateKey, Self.lastUsedDateKey, Self.dateAddedKey]
+          .compactMap { value($0) as? Date }
+        hits.append(
+          FileSearch.Hit(
+            path: path,
+            name: value(NSMetadataItemFSNameKey) as? String ?? (path as NSString).lastPathComponent,
+            contentType: value(NSMetadataItemContentTypeKey) as? String,
+            date: dates.max() ?? .distantPast))
+      }
+      hits = FileSearch.shortlist(hits, terms: terms, used: used, names: &current.names)
+      let done = finished || query.resultCount >= FileSearch.processLimit
+      // 和上一批一样的不交；还没收完、一条都没挑到的那批也不交（列表先留着上一次的，免得先空再长；收完还是空的照交）
+      let skip = hits == current.delivered || (!done && hits.isEmpty)
+      if done {
+        Self.halt(current)
+        running = nil
+      } else {
+        query.enableUpdates()
+        if !hits.isEmpty { current.delivered = hits }
+        running = current
+      }
+      return skip ? nil : hits
+    }
+    if let hits { deliver(hits) }
   }
 }

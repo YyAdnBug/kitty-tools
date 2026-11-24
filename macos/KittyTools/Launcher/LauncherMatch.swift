@@ -71,17 +71,22 @@ nonisolated enum LauncherMatch {
 
   /// 0 表示不匹配
   static func score(_ query: String, item: LauncherItem) -> Double {
+    score(query, names: item.names, initials: item.initials)
+  }
+
+  /// 同上，只给名字和缩写（文件搜索在主线程外先挑一遍时还没有 LauncherItem，FileSearch.shortlist）
+  static func score(_ query: String, names: [String], initials: [String]) -> Double {
     let whole = fold(query.trimmingCharacters(in: .whitespaces))
     guard !whole.isEmpty else { return 0 }
     let tokens = whole.split(whereSeparator: \.isWhitespace).map(String.init)
     // 带空格的整句（「visual studio」）先整体比一次，再逐词比，取好的那个
-    let perToken = tokens.map { tier($0, item) }.min() ?? 0
-    return tokens.count > 1 ? max(tier(whole, item), perToken) : perToken
+    let perToken = tokens.map { tier($0, names, initials) }.min() ?? 0
+    return tokens.count > 1 ? max(tier(whole, names, initials), perToken) : perToken
   }
 
-  private static func tier(_ token: String, _ item: LauncherItem) -> Double {
+  private static func tier(_ token: String, _ names: [String], _ initials: [String]) -> Double {
     var best: Double = 0
-    for name in item.names {
+    for name in names {
       if name == token { return 100 }
       if name.hasPrefix(token) {
         best = max(best, 80)
@@ -93,7 +98,7 @@ nonisolated enum LauncherMatch {
         best = max(best, 40)
       }
     }
-    if best < 50, token.count >= 2, item.initials.contains(where: { $0.hasPrefix(token) }) {
+    if best < 50, token.count >= 2, initials.contains(where: { $0.hasPrefix(token) }) {
       best = 50
     }
     return best

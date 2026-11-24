@@ -35,6 +35,54 @@ struct FileSearchTests {
     #expect(FileSearch.request(for: "open ab")?.isTooShort == false)
     #expect(FileSearch.request(for: "open 报")?.isTooShort == false)  // 1 个汉字照查
     #expect(FileSearch.request(for: "open ")?.isTooShort == false)  // 最近的文件
+    // 标点不算字：Spotlight 按词首比，「.x」和「x」一样宽（2026-11-24 本机 6000 多条，主线程卡 0.7 s）
+    for query in [" .x", "open .x", "find -a", " c++", " .x ."] {
+      #expect(FileSearch.request(for: query)?.isTooShort == true, "\(query)")
+    }
+    for query in [" .xl", " x.y", " .x report", " 1.5"] {
+      #expect(FileSearch.request(for: query)?.isTooShort == false, "\(query)")
+    }
+  }
+
+  /// 队列上先挑一遍（shortlist）再交给 rank，和全部交给 rank 排出来的一样：随机（带种子，失败时信息里有轮次）的名字、
+  /// 时间、深浅、用过的文件和加成；同一次查询分几批交（names 缓存跨批复用）也一样
+  @Test func shortlistKeepsRanking() {
+    var random = SplitMix(seed: 20_261_124)
+    let words = ["report", "rep", "Repo", "季度报告", "readme", "x", "notes", "reply", "2024"]
+    for round in 0..<200 {
+      let hits = (0..<random.next(below: 161)).map { index in
+        let name = (0...random.next(below: 3)).map { _ in words[random.next(below: words.count)] }
+          .joined(separator: ["-", " ", ""][random.next(below: 3)])
+        let depth = String(repeating: "/d", count: random.next(below: 4))
+        return hit("\(depth)/\(index)/\(name).md", daysAgo: Double(random.next(below: 6)))
+      }
+      let used = Set(hits.filter { _ in random.next(below: 8) == 0 }.map(\.path))
+      let boost = { (item: LauncherItem) -> (global: Double, query: Double) in
+        used.contains(item.target)
+          ? (Double(item.target.count % 7), Double(item.target.count % 3)) : (0, 0)
+      }
+      let terms = [[], ["rep"], ["re", "no"], ["jidu"], ["x"], ["2024"], ["季度"]][round % 7]
+      let expected = FileSearch.rank(hits, terms: terms, boost: boost)
+      // 分两批：先交前一半，再交全部（每批都是到目前为止的全部），缓存接着用
+      var names: [String: FileSearch.MatchNames] = [:]
+      _ = FileSearch.shortlist(
+        Array(hits.prefix(hits.count / 2)), terms: terms, used: used, names: &names)
+      let picked = FileSearch.shortlist(hits, terms: terms, used: used, names: &names)
+      #expect(
+        FileSearch.rank(picked, terms: terms, boost: boost) == expected, "round \(round) \(terms)")
+    }
+  }
+
+  /// 单测用的带种子随机数（SplitMix64）
+  private struct SplitMix {
+    var seed: UInt64
+    mutating func next(below bound: Int) -> Int {
+      seed &+= 0x9E37_79B9_7F4A_7C15
+      var z = seed
+      z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+      z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+      return Int((z ^ (z >> 31)) % UInt64(bound))
+    }
   }
 
   @Test func queryStringEscapesAndParses() throws {

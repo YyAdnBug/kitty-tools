@@ -734,7 +734,14 @@ extension LauncherModel {
       checksFolderAccess = false
       folderHint = FileSearch.accessHint(denied: Permissions.deniedFolders())
     }
-    files.start(request) { [weak self] hits in self?.showFiles(hits, for: request) }
+    files.start(request, used: usedFiles) { [weak self] hits in
+      self?.showFiles(hits, for: request)
+    }
+  }
+
+  /// 使用记录里的文件路径：Spotlight 的队列上先挑一遍时带上它们（有使用加成，可能排上来，FileSearch.shortlist）
+  var usedFiles: Set<String> {
+    Set(usage.entries.values.lazy.filter { $0.kind == .path }.map(\.target))
   }
 
   /// 文件结果到了（分批，每批都是到目前为止的全部）：排好序，前面放整句（连关键词）匹配到的 App / 内置动作
