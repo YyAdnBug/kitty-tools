@@ -566,6 +566,23 @@ struct HistoryListTests {
     coordinator.resumeInput()
     #expect(coordinator.translatedSource == "hello" && !coordinator.languageChanged)
   }
+
+  /// 原文框「点过 / 改过字」（美化 V7）：翻译一段（划词、复制即译、截图翻译、历史重翻）、↩ 重翻、清空、输入翻译再打开都清零——
+  /// 呼出时带进来的原文、按 ↩ 都不算在改
+  @Test @MainActor func sessionsClearSourceTouched() throws {
+    let coordinator = TranslateCoordinator(
+      services: TranslateServiceStore(services: []),
+      history: try HistoryStore(db: Database(path: ":memory:")))
+    let sessions: [() -> Void] = [
+      { coordinator.translate("This whole sentence came from a selection.") },
+      { coordinator.start() }, { coordinator.beginInput() }, { coordinator.resumeInput() },
+    ]
+    for begin in sessions {
+      coordinator.sourceTouched = true
+      begin()
+      #expect(!coordinator.sourceTouched)
+    }
+  }
 }
 
 struct ServiceLogoTests {
@@ -766,6 +783,15 @@ struct TranslatePanelHeightTests {
     #expect(!TranslatePanelView.animatesResize(from: 300, to: 322.5, streaming: true))
     #expect(!TranslatePanelView.animatesResize(from: 300, to: 306, streaming: false))
     #expect(TranslatePanelView.animatesResize(from: 400, to: 300, streaming: false))
+  }
+
+  /// 原文框的强调色焦点环（美化 V7）：拿着焦点、并且点过 / 改过字或者在组字才亮；光拿着焦点（呼出时）是中性的
+  @Test func sourceFocusRingOnlyWhileEditing() {
+    #expect(!TranslatePanelView.showsSourceFocus(focused: true, touched: false, composing: false))
+    #expect(TranslatePanelView.showsSourceFocus(focused: true, touched: true, composing: false))
+    #expect(TranslatePanelView.showsSourceFocus(focused: true, touched: false, composing: true))
+    #expect(!TranslatePanelView.showsSourceFocus(focused: false, touched: true, composing: false))
+    #expect(!TranslatePanelView.showsSourceFocus(focused: false, touched: false, composing: false))
   }
 
   /// 真排一遍（屏外窗口、临时偏好域）：不超过三张时要放下的就是全部内容；四张时停在第三张的下沿，
@@ -1141,16 +1167,14 @@ struct TranslateBatch4Tests {
     coordinator.collapsed = { [] }
     // 一帧按 0.5 s 算：全量并行跑时主线程挤，按 1/60 s 数写了几次不稳；合不合帧看的是「一帧里来的都并成一次」
     coordinator.flushFrame = 0.5
-    /// 每个服务一口气来 40 段（段与段之间让出一次，消费的任务一段一段拿）；之后：b 正常出完 / 报截断 / 一直不结束
+    /// 每个服务一口气来 40 段（中间不让出：段与段之间要是让出、机器又忙，每段都隔开超过一帧，数出来就和不合帧一样，
+    /// 2026-11-24 全量并行跑时挂过一次；帧长的算法 flushDelay 上面单测）；之后：b 正常出完 / 报截断 / 一直不结束
     var ending = "finish"
     coordinator.stream = { service, _ in
       let tail = service.id == b.id ? ending : "finish"
       return AsyncThrowingStream { continuation in
         let task = Task {
-          for count in 1...40 {
-            continuation.yield("字\(count)")
-            await Task.yield()
-          }
+          for count in 1...40 { continuation.yield("字\(count)") }
           switch tail {
           case "finish": continuation.finish()
           case "truncate": continuation.finish(throwing: TranslateError.truncated)

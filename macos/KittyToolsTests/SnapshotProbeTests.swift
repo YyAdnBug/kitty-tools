@@ -3731,10 +3731,12 @@ struct SnapshotProbeTests {
       ),
       // 划词没取到文字：占位换成说明（体检 A16）
       ("translate-missed-selection", { c in c.beginInput(missedSelection: true) }),
-      // 原文改过、还没重译：原文框右下角弹出「翻译 ↩」
+      // 原文改过、还没重译：原文框右下角弹出「翻译 ↩」；用户点进去改了字，原文框亮强调色焦点环（美化 V7——
+      // 别的状态都是呼出后没碰过的原文框：拿着焦点，但只是中性的框）
       (
         "translate-edited",
         { c in
+          c.sourceTouched = true
           c.sourceText = "SwiftUI provides views and controls."
           c.translatedSource = "SwiftUI provides views."
           c.detected = .en

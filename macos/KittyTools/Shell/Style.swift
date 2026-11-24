@@ -222,7 +222,8 @@ enum Style {
     }
     return AnyShapeStyle(.tertiary)
   }()
-  /// 剪贴板行尾的备注（用户自己写的，比「来源 · 多久前」深一档）：15 照旧 secondary；26 起同 metaText 的原因换成定死的
+  /// 剪贴板行尾的备注（用户自己写的，比「来源 · 多久前」深一档）、翻译语言胶囊里的「自动」（10 pt 的小字，2026-11-24
+  /// 美化 V7 起不再是强调色）：15 照旧 secondary；26 起同 metaText 的原因换成定死的
   /// black 0.72 / white 0.75（secondary 在玻璃上比 metaText 还浅，层级就倒过来了）
   static let noteText: AnyShapeStyle = {
     if #available(macOS 26, *) {
@@ -245,6 +246,16 @@ enum Style {
   static let hairline = dynamic(
     light: .black.withAlphaComponent(0.08), dark: .white.withAlphaComponent(0.10),
     contrast: (.black.withAlphaComponent(0.25), .white.withAlphaComponent(0.25)))
+  /// 输入框没拿焦点时那圈线（InputBox）：15 就是 hairline；macOS 26 起深一档 black 0.12 / white 0.16（2026-11-24 美化 V7：
+  /// 翻译原文框平时不亮焦点环了，垫了底的玻璃上 0.08 的线和面板只差约 1.2:1，看不出框在哪）；增强对比度同 hairline 的 0.25
+  static let inputRim: Color = {
+    if #available(macOS 26, *) {
+      return dynamic(
+        light: .black.withAlphaComponent(0.12), dark: .white.withAlphaComponent(0.16),
+        contrast: (.black.withAlphaComponent(0.25), .white.withAlphaComponent(0.25)))
+    }
+    return hairline
+  }()
   /// 发丝线宽：平时 0.5 pt，增强对比度 1 pt
   static func hairlineWidth(_ contrast: ColorSchemeContrast) -> CGFloat {
     contrast == .increased ? 1 : 0.5
@@ -665,8 +676,9 @@ private struct HairlineBorder<S: InsettableShape>: View {
   }
 }
 
-/// 输入框底（Whisker §2：Style.inputFill + 发丝线（增强对比度 1 pt），圆角 card）：翻译原文框、历史搜索框、剪贴板对话框的
-/// 输入框、快捷键录制框共用。拿着焦点时换成焦点环（Whisker §3「输入框焦点」：1 pt 品牌粉 0.55 描边 + 粉 0.18 外发光），淡入淡出
+/// 输入框底（Whisker §2：Style.inputFill + 发丝线（26 起深一档的 Style.inputRim；增强对比度 1 pt），圆角 card）：翻译原文框、
+/// 历史搜索框、剪贴板对话框的输入框、快捷键录制框共用。isFocused 时换成焦点环（Whisker §3「输入框焦点」：1 pt 品牌粉 0.55 描边
+/// + 粉 0.18 外发光），淡入淡出；翻译原文框只在「在改」时才给 true（TranslatePanelView.showsSourceFocus，美化 V7）
 struct InputBox: ViewModifier {
   var isFocused = false
   @Environment(\.colorSchemeContrast) private var contrast
@@ -685,7 +697,7 @@ struct InputBox: ViewModifier {
       .overlay {
         shape
           .strokeBorder(
-            isFocused ? Style.brand.opacity(0.55) : Style.hairline,
+            isFocused ? Style.brand.opacity(0.55) : Style.inputRim,
             lineWidth: isFocused ? 1 : Style.hairlineWidth(contrast)
           )
           .animation(fade, value: isFocused)

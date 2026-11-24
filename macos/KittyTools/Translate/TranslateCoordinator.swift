@@ -51,6 +51,10 @@ import Observation
   }
   /// 划词没取到文字、当输入翻译打开的（体检 A16）：原文框占位换成「没取到选中的文字…」，开始输入就恢复
   private(set) var missedSelection = false
+  /// 这次呼出后用户在原文框里点过、改过字（SourceTextView 的 onUserEdit 置上）：原文框据此才画强调色焦点环（美化 V7，
+  /// TranslatePanelView.showsSourceFocus）。呼出、重翻（start / beginInput / resumeInput）和原文框丢焦点时清零——
+  /// 呼出时带进来的原文、按 ↩ 重翻都不算在改
+  var sourceTouched = false
   /// 历史的「清空历史…」确认框（「⋯」菜单和历史 ⌘K 都开它，确认框挂在浮窗根视图上）
   var confirmsClearHistory = false
   /// 翻译历史盖在结果区上（⌘Y、「⋯」菜单）；开 / 关都让列表复位（搜索词、范围、选中、撤销）。
@@ -280,6 +284,7 @@ import Observation
   /// 占位换成「没取到选中的文字，可以直接输入或粘贴」。输入翻译热键不走这里（保留上次的，见 resumeInput）
   func beginInput(missedSelection: Bool = false) {
     cancel()
+    sourceTouched = false
     sourceText = ""
     self.missedSelection = missedSelection
     translatedSource = nil
@@ -307,6 +312,7 @@ import Observation
   /// 输入翻译热键 / 菜单再打开浮窗（体检 A14）：保留上次的原文和结果（调用方把原文全选，打字即替换），
   /// 收起提示、关上历史；上次收起时被中断的卡片重新跑——折叠着的不跑、回到「没翻」，点开再翻。收着时换过语言的整个重译
   func resumeInput() {
+    sourceTouched = false
     notice = nil
     noticePermission = nil
     missedSelection = false
@@ -342,6 +348,7 @@ import Observation
   /// 用当前原文开新会话（语言设置变了也调它重译）
   func start() {
     languageChanged = false
+    sourceTouched = false
     cancel()
     showsHistory = false
     notice = nil

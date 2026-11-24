@@ -1,6 +1,10 @@
 #!/usr/bin/env swift
 // 品牌图标生成脚本（Whisker C 阶段，D1 原创角色「探头」：小黑猫扒在剪贴板卡片边上往下看）。
 // 用法：swift macos/brand-icons.swift [预览目录]
+//      swift macos/brand-icons.swift --layers <目录>：只出分层图标（Icon Composer 的 .icon）用的各层 PNG，不写 Assets、
+//      不写 DMG 背景（2026-11-24 美化 V6 的样稿；.icon 还没进包，样稿和进包步骤在 macos/build/research/polish-2026-11-23/icon/）。
+//      1024 px 透明、整张画布就是图标主体（旧底板 100…924 撑满），不画底板 / 圆角 / 阴影 / 高光；三组从前到后：
+//      爪子（paws、beans）/ 卡片（card、card-lines）/ 猫头（face、glints、eyes、head；单色外观换 head-mono）
 // 写入 KittyTools/Resources/Assets.xcassets：AppIcon 10 张 PNG（1024 画布、主体 824、四边留 100、超椭圆圆角约 185、
 // 烘焙阴影 y 10 / σ 10 / 黑 30%；16、32 像素用手调的简化版）和菜单栏模板图 StatusIcon（22 × 16 pt，@1x / @2x）；
 // 另写 Config/dmg-background.tiff（DMG 窗口背景：设计区 600 × 400 pt 在左上角，奶油底、字标 Kitty Tools、虚点弧线箭头、
@@ -124,29 +128,52 @@ func plate(_ ctx: CGContext, unit: CGFloat, pixelsPerUnit: CGFloat, shadow: Bool
 }
 
 // MARK: 探头（1024 设计单位）
+// 拆成几块：平面图标按 kitten() 的顺序叠起来；分层图标（--layers）每块各出一层，头在卡片后面、爪子搭在卡片上。
+// 两只眼睛、两只爪子互不重叠，按块画（先两只眼白、再两组高光）和逐只画出来逐像素一样
 
-func kitten(_ ctx: CGContext) {
-  let u: CGFloat = 1024
-  // 耳朵（外黑内粉）：耳尖往外撇，和脸颊之间留出一个缺口（不然头像顶头盔）
+let eyeX: [CGFloat] = [424, 600]
+let pawX: [CGFloat] = [386, 638]
+let cardTop: CGFloat = 614
+
+/// 耳朵（外黑）+ 头，一块墨色；inner：中间夹着画内耳（平面图标：内耳被头盖住下半截）
+func earsAndHead(_ ctx: CGContext, inner: Bool = false) {
+  // 耳尖往外撇，和脸颊之间留出一个缺口（不然头像顶头盔）
   let ear = [point(352, 392), point(296, 204), point(478, 330)]
   triangle(ctx, ear, ink, round: 32)
-  triangle(ctx, mirrored(ear, unit: u), ink, round: 32)
+  triangle(ctx, mirrored(ear, unit: 1024), ink, round: 32)
+  if inner { innerEars(ctx) }
+  ellipse(ctx, 512, 522, 256, 208, ink)
+}
+
+func innerEars(_ ctx: CGContext) {
   let inner = [point(366, 354), point(338, 260), point(426, 320)]
   triangle(ctx, inner, hex(0xFF7FA0), round: 12)
-  triangle(ctx, mirrored(inner, unit: u), hex(0xFF7FA0), round: 12)
-  // 头
-  ellipse(ctx, 512, 522, 256, 208, ink)
-  // 腮红
+  triangle(ctx, mirrored(inner, unit: 1024), hex(0xFF7FA0), round: 12)
+}
+
+func blush(_ ctx: CGContext) {
   ellipse(ctx, 352, 568, 30, 16, hex(0xFF7FA0, 0.8))
   ellipse(ctx, 672, 568, 30, 16, hex(0xFF7FA0, 0.8))
-  // 眼睛：奶油色眼白，瞳孔往下看卡片，一大一小两个高光
-  for cx: CGFloat in [424, 600] {
+}
+
+/// 眼睛：奶油色眼白，瞳孔往下看卡片
+func eyes(_ ctx: CGContext) {
+  for cx in eyeX {
     ellipse(ctx, cx, 500, 56, 60, cream)
     ellipse(ctx, cx + 6, 524, 34, 35, ink)
+  }
+}
+
+/// 一大一小两个高光
+func glints(_ ctx: CGContext) {
+  for cx in eyeX {
     ellipse(ctx, cx + 21, 507, 11.5, 11.5, hex(0xFFFFFF))
     ellipse(ctx, cx - 8, 541, 5.5, 5.5, hex(0xFFFFFF, 0.9))
   }
-  // 鼻子和 ω 嘴
+}
+
+/// 鼻子和 ω 嘴
+func noseAndMouth(_ ctx: CGContext) {
   triangle(ctx, [point(496, 566), point(528, 566), point(512, 585)], hex(0xFF7FA0), round: 10)
   let mouth = CGMutablePath()
   mouth.move(to: point(490, 594))
@@ -158,19 +185,45 @@ func kitten(_ ctx: CGContext) {
   ctx.setLineJoin(.round)
   ctx.addPath(mouth)
   ctx.strokePath()
-  // 剪贴板卡片 + 内容条
-  roundRect(ctx, 168, 614, 688, 440, 60, cream)
+}
+
+/// 剪贴板卡片（下沿伸出底板，被裁掉）
+func clipCard(_ ctx: CGContext) { roundRect(ctx, 168, cardTop, 688, 440, 60, cream) }
+
+func cardLines(_ ctx: CGContext) {
   roundRect(ctx, 252, 744, 400, 32, 16, cardLine)
   roundRect(ctx, 252, 812, 520, 32, 16, cardLine)
   roundRect(ctx, 252, 880, 300, 32, 16, cardLine)
-  // 爪子在卡片上压出的一点影子，再画爪子和肉垫
-  for cx: CGFloat in [386, 638] {
-    ellipse(ctx, cx, 652, 70, 13, hex(0xE9C6D0, 0.8))
-    ellipse(ctx, cx, 616, 76, 46, ink)
+}
+
+/// 爪子在卡片上压出的一点影子（分层图标不画：阴影由系统按图层加）
+func pawShadows(_ ctx: CGContext) {
+  for cx in pawX { ellipse(ctx, cx, 652, 70, 13, hex(0xE9C6D0, 0.8)) }
+}
+
+func paws(_ ctx: CGContext) {
+  for cx in pawX { ellipse(ctx, cx, 616, 76, 46, ink) }
+}
+
+func pawBeans(_ ctx: CGContext) {
+  for cx in pawX {
     for (dx, dy) in [(-26.0, 14.0), (0.0, 21.0), (26.0, 14.0)] as [(CGFloat, CGFloat)] {
       ellipse(ctx, cx + dx, 616 + dy, 10, 9, beans)
     }
   }
+}
+
+func kitten(_ ctx: CGContext) {
+  earsAndHead(ctx, inner: true)
+  blush(ctx)
+  eyes(ctx)
+  glints(ctx)
+  noseAndMouth(ctx)
+  clipCard(ctx)
+  cardLines(ctx)
+  pawShadows(ctx)
+  paws(ctx)
+  pawBeans(ctx)
 }
 
 /// 32 像素手调：头、耳、眼白、卡片、爪子都对到像素格上（设计单位 = 像素）
@@ -361,6 +414,66 @@ func writePNG(_ image: CGImage, to url: URL) {
   let rep = NSBitmapImageRep(cgImage: image)
   rep.size = NSSize(width: image.width, height: image.height)
   try! rep.representation(using: .png, properties: [:])!.write(to: url)
+}
+
+// MARK: 分层素材（--layers）
+
+/// 分层图标（Icon Composer 的 .icon）的一层：1024 px 透明 PNG，整张画布就是图标主体——旧底板的 100…924 撑满画布
+/// （坐标照旧，整体放大 1024 / 824）。不画底板、圆角、留白、阴影和高光：系统按图层自己加，底色写在 icon.json 的 fill 里
+func layerImage(_ draw: (CGContext) -> Void) -> CGImage {
+  render(pixels: 1024, unit: 824) {
+    $0.translateBy(x: -100, y: -100)
+    draw($0)
+  }
+}
+
+/// 头（耳朵 + 脸）：箱口往下 24 处切掉（藏在卡片后面的那截在半透明 / 单色外观里会透出来），挖掉眼睛（比眼白小一圈，
+/// 眼白那层盖上去）。pawGap > 0 再沿爪子挖一圈缝：单色外观（染色 / 透明）里头和爪子都换白，不挖就粘成一块
+func head(pawGap: CGFloat) -> (CGContext) -> Void {
+  { ctx in
+    ctx.saveGState()
+    ctx.clip(to: CGRect(x: 0, y: 0, width: 1024, height: cardTop + 24))
+    earsAndHead(ctx)
+    ctx.restoreGState()
+    ctx.setBlendMode(.clear)
+    for cx in eyeX { ellipse(ctx, cx, 500, 52, 56, ink) }
+    for cx in pawX where pawGap > 0 { ellipse(ctx, cx, 616, 76 + pawGap, 46 + pawGap, ink) }
+    ctx.setBlendMode(.normal)
+  }
+}
+
+/// 从后往前：头、五官、眼睛、高光（一组：猫）/ 卡片、内容条（一组）/ 爪子、肉垫（一组，搭在卡片上）。
+/// 爪子在卡片上压出的影子不要（系统给爪子那组加阴影）
+let layers: [(name: String, draw: (CGContext) -> Void)] = [
+  ("head", head(pawGap: 0)),
+  ("head-mono", head(pawGap: 12)),
+  (
+    "face",
+    { ctx in
+      // 内耳只留头外面那截（平面图标里下半截被头盖住）；腮红、鼻子和嘴
+      ctx.saveGState()
+      ctx.addRect(CGRect(x: 0, y: 0, width: 1024, height: 1024))
+      ctx.addEllipse(in: CGRect(x: 512 - 256, y: 522 - 208, width: 512, height: 416))
+      ctx.clip(using: .evenOdd)
+      innerEars(ctx)
+      ctx.restoreGState()
+      blush(ctx)
+      noseAndMouth(ctx)
+    }
+  ),
+  ("eyes", eyes), ("glints", glints), ("card", clipCard), ("card-lines", cardLines),
+  ("paws", paws), ("beans", pawBeans),
+]
+
+// 只出分层素材、不碰 Assets 和 DMG 背景（样稿阶段，进包前不改现在的 PNG）
+if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--layers" {
+  let directory = URL(fileURLWithPath: CommandLine.arguments[2])
+  try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  for layer in layers {
+    writePNG(layerImage(layer.draw), to: directory.appending(path: "\(layer.name).png"))
+  }
+  print("已写入分层素材 \(layers.count) 张：\(directory.path)")
+  exit(0)
 }
 
 let macos = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
