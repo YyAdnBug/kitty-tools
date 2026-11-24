@@ -14,6 +14,7 @@
 // ponytail: 每行 40 点、一格至少一行是按浏览器内核的换算定的，没拿真鼠标量过系统给的行数（SmoothScrollProbeTests 的
 // record() 能量）；量出来不对就改 pointsPerLine 和 lines(_:)。
 
+import CoreGraphics
 import Foundation
 
 nonisolated enum ScrollSmoothing {
@@ -142,20 +143,41 @@ nonisolated enum ScrollSmoothing {
 
   // MARK: 滑
 
-  /// 正在滑的那一段：还没放出去的距离、整数像素的零头
+  /// 一格滚轮要去的地方：目标进程（ScrollTap 在会话层加了注解的那一点从滚轮上读；读不到是 0）和位置（全局坐标）
+  struct Target: Equatable, Sendable {
+    var pid: Int32 = 0
+    var location = CGPoint.zero
+
+    /// 离上一格挪开多远（点）算换了地方：一边拨一边手会带着鼠标晃几个点；挪到另一扇窗口、同一扇里的另一块（侧栏和正文、
+    /// 左右分屏）都远过它。光标下是哪扇窗口在这一点上读不到（字段 91 / 92 是 0，实测），只能按距离
+    static let moved = 40.0
+
+    func isSamePlace(as other: Target) -> Bool {
+      pid == other.pid
+        && hypot(location.x - other.location.x, location.y - other.location.y) <= Self.moved
+    }
+  }
+
+  /// 正在滑的那一段：还没放出去的距离、整数像素的零头、投给谁
   struct Motion: Equatable, Sendable {
     private(set) var remainingX = 0.0
     private(set) var remainingY = 0.0
     private var carryX = 0.0
     private var carryY = 0.0
+    /// 这一段投给谁（issue #50）：帧照最近那一格投过去，滑着时鼠标挪到别的窗口不跟着走
+    private(set) var target = Target()
 
     /// 两帧之间最多按多久算（线程被耽搁了一阵，不一下子跳过去）
     static let maxStep = 0.05
 
     var isIdle: Bool { remainingX == 0 && remainingY == 0 }
 
-    /// 再滚了一格：方向反了的话先把没滚完的扔掉（往下滑着时往上拨一格，马上往上走，不先把下面那截滚完）
-    mutating func add(dx: Double, dy: Double) {
+    /// 再滚了一格：换了地方（Target.isSamePlace）先把没滚完的扔掉——原来那截不跟着鼠标过去、新地方只滚新拨的这一格；
+    /// 方向反了的话也先扔掉（往下滑着时往上拨一格，马上往上走，不先把下面那截滚完）。帧投到最近这一格（同一个地方里手晃的
+    /// 那几个点跟着走）
+    mutating func add(dx: Double, dy: Double, to target: Target = .init()) {
+      if !target.isSamePlace(as: self.target) { self = Motion() }
+      self.target = target
       if dy != 0, remainingY != 0, (dy > 0) != (remainingY > 0) { (remainingY, carryY) = (0, 0) }
       if dx != 0, remainingX != 0, (dx > 0) != (remainingX > 0) { (remainingX, carryX) = (0, 0) }
       remainingX += dx

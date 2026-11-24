@@ -1,5 +1,6 @@
 // 平滑滚动的事件拦截（拍板 C2：放在 Kitty 里单独的一条线程上；全仓库第三处事件拦截，mac-overlay-panel §11）。
-// 会话层、头插、会吞事件的拦截，只收滚轮和鼠标按下。
+// 会话层加了注解的那一点、头插、会吞事件的拦截，只收滚轮和鼠标按下（2026-11-24 issue #50 从会话层挪过来：这一点上的滚轮带着
+// 系统定好的目标进程，帧要照它投）。
 // 为什么不在主线程（同状态屏的 InputBlock 那样）：会吞事件的拦截在回调返回之前，这一下滚动谁都收不到；挂在主线程上，Kitty 一忙
 // （同步一轮、导入设置、排一篇长便签）全系统的滚轮都会顿，超时系统还会停掉拦截。这里一条专门的线程（Thread + 它自己的运行环，
 // 照刘海岛 MediaKeys 的写法）：拦截的回调、出帧的定时器都在它上面。红线：
@@ -8,8 +9,16 @@
 // - 归不归它管、怎么滑都是纯函数（ScrollSmoothing）。自己发出去的合成滚动带一个记号（eventSourceUserData），回到这里原样放过；
 //   Dev 版和正式版用同一个记号，两个都开着也不会平滑两遍
 // - 合成的滚动是像素单位、标成连续的（App 照触控板那样按像素滚，不再自己加一层滚轮动画），修饰键清空（滑到一半按下 ⌘ 不会
-//   变成缩放，NonCoalesced 那一位照新建时的留着），发在光标下的窗口；按屏幕刷新一帧帧发，滑完就停掉定时器，没在滑时这条线程
-//   只是在等事件。帧上照抄原滚轮「方向已经按自然滚动翻过」的标记（没公开的字段 137，NSEvent.isDirectionInvertedFromDevice；
+//   变成缩放，NonCoalesced 那一位照新建时的留着）；按屏幕刷新一帧帧发，滑完就停掉定时器，没在滑时这条线程只是在等事件。
+// - 帧投到最近那一格滚轮去的地方，不跟着鼠标走（issue #50：原来发到会话层、系统按发出那一刻的光标重新找窗口，滑着时鼠标挪到
+//   别的窗口，剩下那截就滚到了那边）：帧是那一格（注解过的）的拷贝，改成像素距离——位置和系统给它记的都是它的（进程里 AppKit
+//   按位置找窗口和视图；光标下的窗口那两个字段在这一点上的滚轮也是 0、新建的事件写不进去，都实测过），postToPid 直接投给它的
+//   目标进程，不再经会话层重新找。同触控板的惯性：甩出去之后鼠标挪走，惯性还在原来的窗口里滑完。再拨一格换了地方（别的进程、
+//   离上一格远过 40 点）时原来没滚完的扔掉（Motion.add）。认不出目标进程的（是 0）、探针的帧照旧发到会话层
+// - 拷贝带着原滚轮的事件源：发出去时 eventSourceUserData 按事件源上的算（真滚轮的 0、探针的探针记号），写在字段上的不算
+//   （liveProbe 实测；setSource(nil) 也不行）。帧换上这条线程自己的私有事件源、记号写在它上面——不然帧回到拦截里认不出是自己的，
+//   当成触控板把这一段停掉
+// - 帧上照抄原滚轮「方向已经按自然滚动翻过」的标记（没公开的字段 137，NSEvent.isDirectionInvertedFromDevice；
 //   反向开关反过的再翻一次）：按物理方向算的地方（截图框选里滚轮换层）才不会反
 // - 鼠标按下、触控板来了（连续的滚动）、按着修饰键拨了一格（缩放，issue #37）时把正在滑的那一段停掉（同触控板上手指一碰，
 //   惯性就停；ScrollSmoothing.halts）
@@ -45,6 +54,9 @@ nonisolated final class ScrollShared: NSObject, Sendable {
     let time: TimeInterval
     let dx: Int
     let dy: Int
+    /// 帧的位置、回到拦截里时系统注解的目标进程（issue #50：帧照那一格投）
+    let location: CGPoint
+    let targetPID: Int64
   }
 
   let state = Mutex(State())
@@ -79,6 +91,10 @@ nonisolated final class ScrollTap: NSObject {
   private var lastTick: TimeInterval = 0
   /// 正在滑的那一段的帧上写的「方向已经翻过」（最近一格的）
   private var inverted: Int64 = 0
+  /// 最近那一格滚轮的拷贝：帧从它改出来（frame(from:…)）
+  private var template: CGEvent?
+  /// 帧的事件源（记号写在它上面，见文件头）
+  private let source = CGEventSource(stateID: .privateState)
 
   private init(shared: ScrollShared) { self.shared = shared }
 
@@ -107,7 +123,7 @@ nonisolated final class ScrollTap: NSObject {
     let mask = types.reduce(CGEventMask(0)) { $0 | CGEventMask(1) << CGEventMask($1.rawValue) }
     guard
       let port = CGEvent.tapCreate(
-        tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
+        tap: .cgAnnotatedSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
         eventsOfInterest: mask,
         callback: { _, type, event, refcon in
           guard let refcon else { return Unmanaged.passUnretained(event) }
@@ -177,10 +193,18 @@ nonisolated final class ScrollTap: NSObject {
       guard bounce.accept(dx: dx, dy: dy, time: time) else { return true }
       let device = Self.invertedField.map { event.getIntegerValueField($0) != 0 } ?? false
       inverted = device != flipped ? 1 : 0
-      motion.add(dx: dx, dy: dy)
+      motion.add(dx: dx, dy: dy, to: Self.target(event))
+      template = event.copy()
       if timer == nil { begin() }
       return true
     }
+  }
+
+  /// 这一格要去的地方：目标进程（会话层加了注解的那一点才有）和位置
+  static func target(_ event: CGEvent) -> ScrollSmoothing.Target {
+    ScrollSmoothing.Target(
+      pid: Int32(clamping: event.getIntegerValueField(.eventTargetUnixProcessID)),
+      location: event.location)
   }
 
   /// 从滚轮事件里取出 decide 要看的几样（单测锁住修饰键：⌘、⌃ 都算交给 App 缩放的那一类，issue #37）；
@@ -279,6 +303,7 @@ nonisolated final class ScrollTap: NSObject {
     timer?.invalidate()
     timer = nil
     motion = .init()
+    template = nil
   }
 
   /// 放一帧：发一个像素单位的合成滚动（带记号）；滑完了停掉定时器
@@ -288,26 +313,60 @@ nonisolated final class ScrollTap: NSObject {
       let (tau, probe) = shared.state.withLock { ($0.settings.tau, $0.probe) }
       let step = motion.step(dt: now - lastTick, tau: tau)
       lastTick = now
-      if step.dx != 0 || step.dy != 0 {
-        Self.post(
-          dx: step.dx, dy: step.dy, inverted: inverted,
-          marker: probe ? Self.probeFrameMarker : Self.ownMarker)
+      if step.dx != 0 || step.dy != 0,
+        let frame = Self.frame(
+          from: template, dx: step.dx, dy: step.dy, inverted: inverted,
+          marker: probe ? Self.probeFrameMarker : Self.ownMarker, source: source)
+      {
+        // 探针的帧要回到拦截里吞掉：照旧发到会话层
+        let pid = motion.target.pid
+        if pid > 0, !probe { frame.postToPid(pid) } else { frame.post(tap: .cgSessionEventTap) }
       }
       if motion.isIdle { halt() }
     }
   }
 
-  private static func post(dx: Int, dy: Int, inverted: Int64, marker: Int64) {
+  /// 一帧：最近那一格滚轮（template）的拷贝，换上 source（记号写在它上面，见文件头），距离照新建的像素滚动写（行 → 像素 →
+  /// 定点：写行数时系统重算另外两个，同 negate），时刻换成现在、滚动次数清零（新建的是 0）；没有那一格或 source 时就是新建的
+  /// 那个。单测锁住和新建的一样、位置跟着那一格、事件源上是记号
+  static func frame(
+    from template: CGEvent?, dx: Int, dy: Int, inverted: Int64, marker: Int64,
+    source: CGEventSource?
+  ) -> CGEvent? {
     guard
-      let event = CGEvent(
+      let fresh = CGEvent(
         scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2,
         wheel1: Int32(clamping: dy), wheel2: Int32(clamping: dx), wheel3: 0)
-    else { return }
-    event.flags = event.flags.intersection(.maskNonCoalesced)
-    event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+    else { return nil }
+    fresh.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+    var event = fresh
+    if let source, let copy = template?.copy() {
+      source.userData = marker
+      copy.setSource(source)
+      event = copy
+      // 先标成连续再写距离（行数按连续的算，和新建的一样）
+      event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+      for (line, point, fixed) in [
+        (
+          CGEventField.scrollWheelEventDeltaAxis1, CGEventField.scrollWheelEventPointDeltaAxis1,
+          CGEventField.scrollWheelEventFixedPtDeltaAxis1
+        ),
+        (
+          .scrollWheelEventDeltaAxis2, .scrollWheelEventPointDeltaAxis2,
+          .scrollWheelEventFixedPtDeltaAxis2
+        ),
+      ] {
+        event.setIntegerValueField(line, value: fresh.getIntegerValueField(line))
+        event.setIntegerValueField(point, value: fresh.getIntegerValueField(point))
+        event.setDoubleValueField(fixed, value: fresh.getDoubleValueField(fixed))
+      }
+      event.setIntegerValueField(.scrollWheelEventScrollCount, value: 0)
+      event.timestamp = DispatchTime.now().uptimeNanoseconds
+    }
+    event.flags = fresh.flags.intersection(.maskNonCoalesced)
     if let field = invertedField { event.setIntegerValueField(field, value: inverted) }
     event.setIntegerValueField(.eventSourceUserData, value: marker)
-    event.post(tap: .cgSessionEventTap)
+    return event
   }
 }
 
@@ -316,6 +375,7 @@ extension ScrollShared.ProbeFrame {
     self.init(
       time: ProcessInfo.processInfo.systemUptime,
       dx: Int(event.getIntegerValueField(.scrollWheelEventPointDeltaAxis2)),
-      dy: Int(event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1)))
+      dy: Int(event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1)),
+      location: event.location, targetPID: event.getIntegerValueField(.eventTargetUnixProcessID))
   }
 }
