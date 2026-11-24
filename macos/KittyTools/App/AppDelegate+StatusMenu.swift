@@ -49,8 +49,8 @@ extension AppDelegate {
     item.submenu = submenu
   }
 
-  /// 菜单栏「提醒」一项带子菜单（提醒 D6）：新建提醒…（带全局快捷键）、下一个是什么、几分钟后提醒我、
-  /// 暂停全部 / 恢复、管理提醒…
+  /// 菜单栏「提醒」一项带子菜单（提醒 D6）：有挂着的提醒时最上面先是它（标题、知道了、稍后），然后新建提醒…（带全局快捷键）、
+  /// 下一个是什么、几分钟后提醒我、暂停全部 / 恢复、管理提醒…
   /// isNew：提醒是这一版新加的、还没碰过（新功能标记）：「提醒」和「新建提醒…」都挂「新」（子菜单的父项跟着挂，拍板 A4）
   private func addReminderMenu(to menu: NSMenu, isNew: Bool) {
     let family = HotKeyAction.reminderNew
@@ -59,6 +59,21 @@ extension AppDelegate {
       SettingsPage.reminders.titleResource, symbol: family.symbol, color: color
     ) {}
     let submenu = NSMenu()
+    // 挂着的提醒（岛上的卡、边框、全屏）在这里也能处理：标题一行灰字 + 知道了 / 稍后（issue #51：卡片找不到时边框关不掉）
+    if let notice = reminders.currentNotice {
+      submenu.autoenablesItems = false
+      let line = submenu.addAction("\(notice.title)", symbol: "alarm.fill", color: color) {}
+      line.isEnabled = false
+      submenu.addAction("知道了", symbol: "checkmark.circle", color: color) { [unowned self] in
+        reminders.acknowledge()
+      }
+      if notice.snoozes {
+        submenu.addAction(
+          "稍后 \(reminders.snoozeMinutes) 分钟", symbol: "clock.arrow.circlepath", color: color
+        ) { [unowned self] in reminders.snooze() }
+      }
+      submenu.addItem(.separator())
+    }
     let hotKey = hotKeys.bindings[family]
     let create = submenu.addAction(
       "\(family.title)…", symbol: "plus", color: color, key: hotKey?.menuKeyEquivalent ?? "",

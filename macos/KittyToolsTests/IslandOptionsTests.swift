@@ -145,6 +145,30 @@ import Testing
         [Self.menu, elsewhere, filled], screen: Self.screen, top: 38, front: 99))
   }
 
+  @Test func pinnedReminderNeverHidesInFullScreen() {
+    // 刘海屏全屏、岛在刘海屏上：平时藏
+    #expect(
+      Island.hides(fullScreen: true, onNotchScreen: true, board: false, level: false, pinned: false)
+    )
+    // 挂着提醒（边框亮着时能关它的只有岛上那张卡，issue #51）、那一张、音量 / 亮度提示：照常
+    #expect(
+      !Island.hides(fullScreen: true, onNotchScreen: true, board: false, level: false, pinned: true)
+    )
+    #expect(
+      !Island.hides(fullScreen: true, onNotchScreen: true, board: true, level: false, pinned: false)
+    )
+    #expect(
+      !Island.hides(fullScreen: true, onNotchScreen: true, board: false, level: true, pinned: false)
+    )
+    // 摆在别的屏上、不是全屏：照常
+    #expect(
+      !Island.hides(
+        fullScreen: true, onNotchScreen: false, board: false, level: false, pinned: false))
+    #expect(
+      !Island.hides(
+        fullScreen: false, onNotchScreen: true, board: false, level: false, pinned: false))
+  }
+
   @Test func lightPlatesGetDarkInk() {
     #expect(IslandLeading.ink(on: NSColor(srgbRed: 1, green: 0.85, blue: 0.1, alpha: 1)) != .white)
     #expect(

@@ -40398,12 +40398,12 @@
         }
       }
     },
-    "看视频、玩游戏时，刘海岛和它的提示都不出现。" : {
+    "看视频、玩游戏时，刘海岛和它的提示都不出现；到点的提醒照常出现。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "While you watch videos or play games, the Notch and its notices stay hidden."
+            "value" : "While you watch videos or play games, the Notch and its notices stay hidden. Reminders still appear when they’re due."
           }
         }
       }

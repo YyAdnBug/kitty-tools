@@ -259,9 +259,13 @@ import SwiftUI
   @ObservationIgnored var turnedAt: ContinuousClock.Instant?
   /// 鼠标在岛上时来的新提示：移开再换上，只留最新一条（拍板 B5）
   @ObservationIgnored var pending: (content: Content, actions: [Action])?
-  /// 挂着直到处理的那一条（提醒，PLAN §10「提醒」C2；pin）：不到点收起，别的提示来了先显示那条、收起后换回它
+  /// 挂着直到处理的那一条（提醒，PLAN §10「提醒」C2；pin）：不到点收起，别的提示来了先显示那条、收起后换回它。
+  /// 挂着时全屏也不藏（hides）
   @ObservationIgnored private var pinned:
     (content: Content, actions: [Action], onClose: () -> Void)?
+  {
+    didSet { syncFullScreenAlpha() }
+  }
   @ObservationIgnored var monitors: [Any] = []
   /// 悬停期间每 0.2 s 再核一次指针：从岛直接挪进本 App 不收鼠标移动的窗口时没有移动事件，靠它发现离开
   @ObservationIgnored var hoverCheck: Task<Void, Never>?
@@ -284,12 +288,20 @@ import SwiftUI
     didSet { if oldValue != hiddenForFullScreen { syncFullScreenAlpha() } }
   }
 
-  /// 现在藏着（窗口在刘海屏上、全屏、不是那一张、不是音量 / 亮度提示）
+  /// 现在藏着（窗口在刘海屏上、全屏、不是那一张、不是音量 / 亮度提示、没挂着提醒）
   var hidesNow: Bool {
-    guard hiddenForFullScreen, !isBoardOpen, level == nil, let window,
-      let notch = Self.notchScreen
-    else { return false }
-    return window.screen?.frame == notch.frame
+    guard let window, let notch = Self.notchScreen else { return false }
+    return Self.hides(
+      fullScreen: hiddenForFullScreen, onNotchScreen: window.screen?.frame == notch.frame,
+      board: isBoardOpen, level: level != nil, pinned: pinned != nil)
+  }
+
+  /// 全屏时藏不藏（纯函数）：刘海屏上前台全屏、岛摆在刘海屏上才藏；那一张（快捷键叫出来的拿着键盘）、音量 / 亮度提示照常，
+  /// 挂着提醒时整座岛都不藏（issue #51：边框亮在每块屏上，能关掉它的只有岛上那张卡，藏起来就再也关不掉）
+  static func hides(
+    fullScreen: Bool, onNotchScreen: Bool, board: Bool, level: Bool, pinned: Bool
+  ) -> Bool {
+    fullScreen && onNotchScreen && !board && !level && !pinned
   }
 
   private func syncFullScreenAlpha() {
@@ -882,6 +894,17 @@ import SwiftUI
     guard isShowingPinned, let content else { return }
     if !isHovered { shakes += 1 }
     Self.post([content.title, content.detail].compactMap { $0 }.joined(separator: Self.comma))
+  }
+
+  /// 挂着的那条跟着指针换屏（issue #51）：它只摆在到点那一刻指针所在的屏上，边框却亮在每块屏上——人在另一块屏上、
+  /// 那块屏被拔掉了，就找不到能关边框的那张卡。指针换了屏（track）、屏幕变了（updateNotches）时，正显示着它、指针不在岛上、
+  /// 键盘不在它的按钮上，就挪到指针那块屏上重新摆（同一块屏上不动）。别的提示、那一张在上面时不挪（它们收起时换回它）
+  func followPointer() {
+    guard isShowingPinned, !isStaged, !isHovered, !holdsKeyboard, let window,
+      let target = NSScreen.underMouse, window.screen?.frame != target.frame
+    else { return }
+    window.orderOut(nil)
+    showWindow(on: target)
   }
 
   /// 不再挂着（调用方那边处理完了、功能关了）：正显示着就收

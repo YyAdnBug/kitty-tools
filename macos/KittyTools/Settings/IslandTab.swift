@@ -213,7 +213,7 @@ struct IslandTab: View {
       .settingsAnchor(.islandOutlined)
       SettingRow(
         title: "全屏时藏起来", subtitle: "刘海那块屏全屏时不出现",
-        info: "看视频、玩游戏时，刘海岛和它的提示都不出现。"
+        info: "看视频、玩游戏时，刘海岛和它的提示都不出现；到点的提醒照常出现。"
       ) {
         Toggle("全屏时藏起来", isOn: $hidesInFullScreen)
           .toggleStyle(.switch)

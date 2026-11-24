@@ -198,7 +198,7 @@ import AppKit
 
   // MARK: 看一遍
 
-  private var snoozeMinutes: Int {
+  var snoozeMinutes: Int {
     let value = defaults.integer(forKey: Prefs.remindersSnoozeMinutes)
     return Reminder.snoozeChoices.contains(value) ? value : Reminder.snoozeChoices[0]
   }
@@ -619,8 +619,16 @@ import AppKit
     return ids.filter { id in list.first { $0.id == id }?.schedule.kind != .interval }
   }
 
+  /// 现在挂着的那一条（岛上那张卡 / 边框 / 全屏写的标题）、能不能「稍后」（有到点的才能）；没挂着是 nil。
+  /// 菜单栏「提醒」里也能处理它（issue #51：边框亮着、岛上那张卡找不到时，总还有这一条路）
+  var currentNotice: (title: String, snoozes: Bool)? {
+    let fired = firing.compactMap { id in list.first { $0.id == id } }
+    let lost = missed.compactMap { id in list.first { $0.id == id } }
+    return Self.notice(fired: fired, missed: lost).map { ($0.title, !fired.isEmpty) }
+  }
+
   /// 「知道了」：挂着的都算处理了
-  private func acknowledge() {
+  func acknowledge() {
     ReminderSound.stop()  // 自己选的长音频：用户处理了才停（进入状态屏、只剩错过的那几条收面板时不停：刚响的那声还要响完）
     let handled = firing + missed
     firing = []
@@ -629,7 +637,7 @@ import AppKit
   }
 
   /// 「稍后」：到点的推 N 分钟（岛上是设置里定的那个，全屏上能另选）；一起挂着的错过的算处理了
-  private func snooze(minutes: Int? = nil) {
+  func snooze(minutes: Int? = nil) {
     ReminderSound.stop()
     let until = Date.now.addingTimeInterval(TimeInterval((minutes ?? snoozeMinutes) * 60))
     for id in firing { state.snoozed[id] = until }

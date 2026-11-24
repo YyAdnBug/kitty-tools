@@ -53,6 +53,8 @@ extension Island {
     if isShowingWings, !isOpen, !isStaged, let window, let screen = Self.notchScreen {
       place(window, on: screen)
     }
+    // 挂着的提醒（边框亮着时能关它的只有这张卡）：原来那块屏拔掉了、合上了，挪到指针那块屏上（issue #51）
+    followPointer()
   }
 
   /// 有刘海屏、插件也添加着才常驻监听（点刘海、停在刘海上、耳朵的悬停要它们）；否则照旧显示时装、收起后卸
@@ -237,6 +239,8 @@ extension Island {
     if isShowingLevel { return }
     if content != nil || isBoardOpen {
       if let window { hover(NSMouseInRect(mouse, shapeOnScreen(window), false)) }
+      // 挂着的提醒跟着指针换屏（issue #51）
+      followPointer()
       return
     }
     // 刚收起、还在缩回时不鼓
