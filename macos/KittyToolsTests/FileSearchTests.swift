@@ -175,6 +175,70 @@ struct FileSearchTests {
     #expect(FileSearch.rank(hits, terms: [], boost: noBoost).first?.title == "reportcard.md")
   }
 
+  /// 拍板 1A 2B：文件结果执行过收起，90 秒内再呼出回到原来的搜索（字全选、选中照旧）；重查到的文件没多出来就不换
+  /// （刚开过的那个有了使用加成也不往前挪），多出新文件才换；超过 90 秒、执行的不是文件的照旧清空
+  @Test func resumesFileSearchAfterRunning() throws {
+    let findMy = AppCatalog.item(path: "/System/Applications/FindMy.app")
+    let usage = try LauncherUsage(db: Database(path: ":memory:"))
+    let model = LauncherModel(usage: usage, apps: [findMy])
+    let start = Date(timeIntervalSinceReferenceDate: 1000)
+    let hits = [
+      hit("/Desktop/report-a.md"), hit("/Desktop/report-b.md", daysAgo: 2),
+      hit("/Desktop/report-c.md", daysAgo: 3),
+    ]
+    model.query = " report"
+    let request = try #require(model.fileRequest)
+    model.showFiles(hits, for: request)
+    model.selection = 1
+    let opened = try #require(model.selectedItem)
+    // ↩ 打开第 2 个：execute 会真的打开文件，这里只摆出它留下的样子
+    model.lastRun = opened
+    model.executed = true
+    model.didHide(now: start)
+    model.prepareForShow(now: start.addingTimeInterval(80))
+    #expect(model.query == " report" && model.resumesQuery && model.selectedItem == opened)
+    let shown = model.results
+    for _ in 0..<3 { usage.record(opened, query: model.query) }
+    model.showFiles(hits, for: request)
+    #expect(model.results == shown && model.selectedItem == opened)
+    // 多出新文件：换上新排的，选中还在开过的那一个上
+    model.showFiles(hits + [hit("/Desktop/report-d.md")], for: request)
+    #expect(model.results.count == shown.count + 1 && model.selectedItem == opened)
+    // 打了字就照常：新结果换上
+    model.query = " repo"
+    model.showFiles(hits, for: try #require(model.fileRequest))
+    #expect(model.results.count == hits.count)
+    // 超过 90 秒：清空
+    model.lastRun = model.selectedItem
+    model.executed = true
+    model.didHide(now: start)
+    model.prepareForShow(now: start.addingTimeInterval(91))
+    #expect(model.query.isEmpty && !model.resumesQuery)
+    // 对着文件以外做的事（⌥↩ 在访达里搜、⌃↩ 网页搜索、⌘, 这些不记 lastRun）：选中的是文件也照旧清空
+    model.query = " report"
+    model.showFiles(hits, for: try #require(model.fileRequest))
+    #expect(model.selectedItem?.kind == .path)
+    model.executed = true
+    model.didHide(now: start)
+    model.prepareForShow(now: start.addingTimeInterval(1))
+    #expect(model.query.isEmpty)
+    // 收起时 Spotlight 还没回来（列表里还是打字前的那些）：回来后结果到了照常换上
+    model.query = " report"
+    model.didHide(now: start)
+    model.prepareForShow(now: start.addingTimeInterval(1))
+    #expect(model.query == " report" && model.results.map(\.target) != hits.map(\.path))
+    model.showFiles(hits, for: try #require(model.fileRequest))
+    #expect(model.results.count == hits.count)
+    // 文件搜索里执行的是整句匹配到的 App（不是文件）：照旧清空
+    model.query = "find my"
+    model.showFiles(hits, for: try #require(model.fileRequest))
+    model.lastRun = try #require(model.results.first { $0.kind == .app })
+    model.executed = true
+    model.didHide(now: start)
+    model.prepareForShow(now: start.addingTimeInterval(1))
+    #expect(model.query.isEmpty)
+  }
+
   @Test func findModeKeysAndWholeQueryApps() throws {
     let findMy = AppCatalog.item(path: "/System/Applications/FindMy.app")
     let usage = try LauncherUsage(db: Database(path: ":memory:"))

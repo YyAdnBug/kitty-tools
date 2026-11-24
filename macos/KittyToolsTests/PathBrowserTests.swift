@@ -149,6 +149,47 @@ struct PathBrowserTests {
     }
   }
 
+  /// 拍板 1A：路径模式里打开过一项，90 秒内再呼出回到原来的目录；目录是重读的，读完选回那一行；读完之前挪过选中的，
+  /// 留在挪到的那一行
+  @MainActor @Test func resumesPathModeAfterRunning() async throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "kitty-path-\(UUID())")
+      .resolvingSymlinksInPath()
+    defer { try? FileManager.default.removeItem(at: root) }
+    for folder in ["alpha", "beta"] {
+      try FileManager.default.createDirectory(
+        at: root.appending(path: folder), withIntermediateDirectories: true)
+    }
+    try Data().write(to: root.appending(path: "alpine.txt"))
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    let start = Date(timeIntervalSinceReferenceDate: 1000)
+    model.query = root.path + "/"
+    await model.pathLookup()
+    model.selection = 2
+    let picked = try #require(model.selectedItem)
+    #expect(picked.title == "beta")
+    model.lastRun = picked
+    model.executed = true
+    model.didHide(now: start)
+    model.prepareForShow(now: start.addingTimeInterval(30))
+    await model.pathLookup()
+    #expect(model.query == root.path + "/" && model.resumesQuery && model.selectedItem == picked)
+    // 回来后目录还没读完就按 ↓：读完留在挪到的那一行，不打回原来那行、也不回第 0 行
+    model.lastRun = picked
+    model.executed = true
+    model.didHide(now: start)
+    model.prepareForShow(now: start.addingTimeInterval(30))
+    #expect(model.handleCommand(#selector(NSResponder.moveDown(_:))))
+    let moved = try #require(model.selectedItem)
+    await model.pathLookup()
+    #expect(moved != picked && model.selectedItem == moved)
+    // 执行的是「还有 N 项」这种提示行、或者不在路径模式：照旧清空
+    model.lastRun = LauncherItem(kind: .prompt, target: "x", title: "x", subtitle: "")
+    model.executed = true
+    model.didHide(now: start)
+    model.prepareForShow(now: start.addingTimeInterval(1))
+    #expect(model.query.isEmpty)
+  }
+
   /// 启动器里的整条路
   @MainActor @Test func launcherPathMode() async throws {
     let root = FileManager.default.temporaryDirectory.appending(path: "kitty-path-\(UUID())")

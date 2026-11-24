@@ -156,6 +156,7 @@ extension LauncherModel {
       item.contentType.map { $0.conforms(to: .folder) }
       ?? ((try? file.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true)
     let folder = isFolder ? file : file.deletingLastPathComponent()
+    lastRun = item
     close()
     NSWorkspace.shared.open([folder], withApplicationAt: app, configuration: .init()) {
       _, error in
@@ -167,6 +168,7 @@ extension LauncherModel {
   /// ⇧⌘C：把文件本身放进剪贴板（能粘进访达、聊天窗口；同录屏卡的「拷贝」）
   func copyFile(_ item: LauncherItem) {
     Paster.write(files: [URL(filePath: item.target)])
+    lastRun = item
     close()
     island?.show("已拷贝文件", detail: "\(item.title)")
   }
@@ -175,6 +177,7 @@ extension LauncherModel {
   func copyShellPath(_ item: LauncherItem) {
     let url = URL(filePath: item.target)
     Paster.write(string: FinderLink.shellText([url]), record: true)
+    lastRun = item
     close()
     island?.show("已拷贝终端写法的路径", detail: "\(FinderLink.copiedDetail([url]))")
   }

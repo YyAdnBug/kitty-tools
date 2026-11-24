@@ -244,6 +244,7 @@ extension LauncherModel {
     switch item.kind {
     case .app, .path:
       if revealsOnReturn(item) { return open(URL(filePath: item.target), item) }
+      lastRun = item
       close()
       NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: item.target)])
     case .scriptResult where item.payload != nil:
@@ -299,6 +300,7 @@ extension LauncherModel {
     case .calculation(let copy): (text, title) = (copy.text, copy.title)
     }
     Paster.write(string: text, record: true)
+    lastRun = item
     close()
     guard let title else { return }
     let isPath = (item.kind == .app || item.kind == .path) && copyTitle(for: item) == title
@@ -340,6 +342,7 @@ extension LauncherModel {
     selectionMotion = Style.isKeyRepeat ? .instant : .snap
     selection = (selection + offset + results.count) % results.count
     userMovedSelection = true
+    resumedSelection = nil
     // 焦点一直在搜索框，行上的「已选中」读屏看不到：说出选中了什么（A1）
     if let item = selectedItem { Island.announceSettled(item.title, item.kindTitle) }
   }

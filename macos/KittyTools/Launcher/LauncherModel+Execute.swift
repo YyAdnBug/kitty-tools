@@ -510,6 +510,7 @@ extension LauncherModel {
   /// 在访达里选中（find 的 ↩ 记使用，和打开一样）；先收起再叫访达
   private func reveal(_ item: LauncherItem) {
     usage.record(item, query: query)
+    lastRun = item
     close()
     NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: item.target)])
   }
@@ -761,6 +762,7 @@ extension LauncherModel {
   /// 要等 App 启动完才返回，面板会一直挂着）；打开成功才记使用（item 为 nil 的搜索页不记），打不开时面板已经收起，用刘海岛说
   func open(_ url: URL, _ item: LauncherItem?, with app: URL? = nil) {
     let query = query  // 收起时查询会被清空
+    lastRun = item
     close()
     let done: @Sendable (NSRunningApplication?, (any Error)?) -> Void = { [weak self] _, error in
       Task { @MainActor in
@@ -792,6 +794,7 @@ extension LauncherModel {
     } else if let index = results.firstIndex(of: item) {
       if armed?.id != item.id { armed = nil }
       forgotten = nil
+      resumedSelection = nil
       selectionMotion = .glide
       selection = index
       userMovedSelection = true
