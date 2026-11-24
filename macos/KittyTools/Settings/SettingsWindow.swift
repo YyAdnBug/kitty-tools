@@ -868,10 +868,9 @@ private struct SidebarRow: View {
     }
   }
 
-  /// 「关于」那一行的图标：App 图标裁掉四周的留白、只留主体（同菜单栏的彩色图标），画成和别的色块一样大的 20 pt。
-  /// 直接把 App 图标缩到 20 的话，主体只有 16（1024 的画布四边各留 100），比上面那一列色块小一圈
-  private static let aboutIcon = StatusItem.menuBarImage(
-    from: NSApp.applicationIconImage, points: 20)
+  /// 「关于」那一行的图标：平面 App 图标裁掉四周留白的主体（资源里的 ColorIcon20，同菜单栏的彩色图标），和别的色块一样大的
+  /// 20 pt。直接把 App 图标缩到 20 的话主体只有 16（1024 的画布四边各留 100），而且 26 起它跟着系统图标风格变色
+  private static let aboutIcon = NSImage(named: "ColorIcon20") ?? NSImage()
 
   private func highlight(emphasized: Bool) -> some View {
     let shape = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)

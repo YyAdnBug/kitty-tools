@@ -36,6 +36,10 @@ INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.productivity
 // CLANG_* / GCC_* 告警（没有 C / ObjC 源码）。
 ALWAYS_SEARCH_USER_PATHS = NO
 ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon
+// App 图标是 Icon Composer 的 KittyTools/Resources/AppIcon.icon（brand-icons.swift 生成，2026-11-24 美化 V6）：macOS 26 起
+// 用它的分层图标，macOS 15 读 actool 从它压平的那份（同名的 AppIcon.appiconset 被无声忽略，只留给 Windows 的 .ico）；
+// all = 给旧系统的 AppIcon.icns 带齐 16–512 @1x / @2x 每一档（不写的话只有 16、128 两档，kitty-box 2026-11-02 实测）
+ASSETCATALOG_COMPILER_STANDALONE_ICON_BEHAVIOR = all
 // 全 App 强调色 = 品牌粉（系统强调色选「多色」时系统控件也跟着变粉）
 ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor
 COMBINE_HIDPI_IMAGES = YES

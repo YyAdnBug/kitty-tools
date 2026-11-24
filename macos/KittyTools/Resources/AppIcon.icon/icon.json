@@ -1,0 +1,167 @@
+{
+  "fill-specializations" : [
+    {
+      "value" : {
+        "linear-gradient" : [
+          "srgb:1.00000,0.52549,0.66275,1.00000",
+          "srgb:0.91373,0.22745,0.42745,1.00000"
+        ]
+      }
+    },
+    {
+      "appearance" : "dark",
+      "value" : {
+        "linear-gradient" : [
+          "srgb:0.72157,0.20784,0.37255,1.00000",
+          "srgb:0.41569,0.09412,0.20392,1.00000"
+        ]
+      }
+    }
+  ],
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "glass" : false,
+          "hidden-specializations" : [
+            {
+              "appearance" : "tinted",
+              "value" : true
+            }
+          ],
+          "image-name" : "beans.png",
+          "name" : "beans"
+        },
+        {
+          "fill-specializations" : [
+            {
+              "appearance" : "tinted",
+              "value" : {
+                "solid" : "srgb:1.00000,1.00000,1.00000,1.00000"
+              }
+            }
+          ],
+          "image-name" : "paws.png",
+          "name" : "paws"
+        }
+      ],
+      "name" : "Paws",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0.5
+      }
+    },
+    {
+      "layers" : [
+        {
+          "fill-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "srgb:0.87843,0.66275,0.73333,1.00000"
+              }
+            },
+            {
+              "appearance" : "tinted",
+              "value" : {
+                "solid" : "srgb:0.30000,0.30000,0.30000,1.00000"
+              }
+            }
+          ],
+          "image-name" : "card-lines.png",
+          "name" : "card-lines"
+        },
+        {
+          "fill-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "srgb:0.90196,0.83922,0.81569,1.00000"
+              }
+            },
+            {
+              "appearance" : "tinted",
+              "value" : {
+                "solid" : "srgb:0.50000,0.50000,0.50000,1.00000"
+              }
+            }
+          ],
+          "image-name" : "card.png",
+          "name" : "card"
+        }
+      ],
+      "lighting" : "combined",
+      "name" : "Card",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0.5
+      }
+    },
+    {
+      "layers" : [
+        {
+          "glass" : false,
+          "image-name" : "glints.png",
+          "name" : "glints"
+        },
+        {
+          "image-name" : "face.png",
+          "name" : "face"
+        },
+        {
+          "hidden-specializations" : [
+            {
+              "appearance" : "tinted",
+              "value" : true
+            }
+          ],
+          "image-name" : "eyes.png",
+          "name" : "eyes"
+        },
+        {
+          "fill-specializations" : [
+            {
+              "appearance" : "tinted",
+              "value" : {
+                "solid" : "srgb:1.00000,1.00000,1.00000,1.00000"
+              }
+            }
+          ],
+          "image-name-specializations" : [
+            {
+              "value" : "head.png"
+            },
+            {
+              "appearance" : "tinted",
+              "value" : "head-mono.png"
+            }
+          ],
+          "name" : "head"
+        }
+      ],
+      "lighting" : "combined",
+      "name" : "Kitten",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.45
+      },
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : [
+      "macOS"
+    ]
+  }
+}

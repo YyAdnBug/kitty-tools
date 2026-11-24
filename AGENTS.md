@@ -52,7 +52,7 @@ macos/                       # 本分支唯一开发区
 ├── TRANSLATION.md           # 多语言：代码怎么写、每批的流程、英文口径、术语表、不翻的清单
 ├── status-emoji.swift       # 状态屏打进包里的那几个动画表情（自带的状态和示例提醒用的 + 眼睛）：下载好的动画 PNG → Resources/status-emoji-*.heics（只用 ImageIO）；别的在 release emoji-pack-1，用到时下载
 ├── emoji-pack.swift         # 动画表情包：Fluent 动画全部 746 个 → 上传到 release emoji-pack-<版本> 的 HEICS + Resources/emoji-pack.json 对照表（中文名用 CLDR）+ Resources/emoji-thumbs/ 缩略图
-├── brand-icons.swift        # 品牌图标：角色「探头」的 AppIcon 10 张 + 菜单栏剪影 StatusIcon + DMG 背景（CoreGraphics 生成）
+├── brand-icons.swift        # 品牌图标：角色「探头」的 App 图标 AppIcon.icon（分层）+ 平面 AppIcon 10 张（给 Windows）+ ColorIcon16 / 20 + 菜单栏剪影 StatusIcon + DMG 背景（CoreGraphics 生成）
 ├── .swift-format
 ├── PLAN.md                  # 仍有效的方案：§2 技术栈、§4 架构与文件表、§8 打包、§10 约束与决定、§11 实现原则、§12 现状与下一步
 ├── HANDTEST.md              # 真机回归清单（约 40 条，发版前走）+ 正在验收的那一轮手测（新的手测加在这里；旧条目在 docs/archive/HANDTEST-2026-10.md）
@@ -259,7 +259,8 @@ macos/build-dmg.sh
 # Intel 包（Apple 芯片上交叉编；出 _x86_64.dmg / .zip，不写清单）
 ARCH=x86_64 macos/build-dmg.sh
 
-# 重新生成 App 图标、菜单栏剪影和 DMG 背景（改角色或产品名只改这个脚本；加一个目录参数另存放大预览）
+# 重新生成 App 图标（Resources/AppIcon.icon + 平面 PNG）、菜单栏剪影 / 彩色小图和 DMG 背景（改角色或产品名只改这个脚本；
+# 加一个目录参数另存放大预览，含 ictool 渲的六种图标风格；--layers <目录> 只出分层图标的各层）
 swift macos/brand-icons.swift
 
 # 功能图标（色块里那 26 个，mac 和 Windows 共用）：改了 icons/feature/*.svg 之后重新生成 mac 的自定义符号；

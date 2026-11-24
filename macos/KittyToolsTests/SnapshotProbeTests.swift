@@ -843,7 +843,11 @@ struct SnapshotProbeTests {
         StatusIconProbe(), size: NSSize(width: 260, height: 124), dark: dark,
         to: "\(out)/status-icons\(dark ? "-dark" : "").png")
     }
-    let colorRep = try #require(StatusItem.colorIcon.representations.last as? NSBitmapImageRep)
+    // 资源目录里的图不是位图表示：经 TIFF 转一遍，取 @2x 那张
+    let colorReps = NSBitmapImageRep.imageReps(
+      with: try #require(StatusItem.colorIcon.tiffRepresentation))
+    let colorRep = try #require(
+      colorReps.compactMap { $0 as? NSBitmapImageRep }.max { $0.pixelsWide < $1.pixelsWide })
     try #require(colorRep.representation(using: .png, properties: [:]))
       .write(to: URL(filePath: "\(out)/status-icon-color@2x.png"))
     // 最小窗口（contentMinSize 700 × 460）下的通用页：外观缩略图、强调色两排放得下

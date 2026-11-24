@@ -1,17 +1,24 @@
-#!/usr/bin/env swift
-// 品牌图标生成脚本（Whisker C 阶段，D1 原创角色「探头」：小黑猫扒在剪贴板卡片边上往下看）。
+#!/usr/bin/env swift  // 品牌图标生成脚本（Whisker C 阶段，D1 原创角色「探头」：小黑猫扒在剪贴板卡片边上往下看）。
 // 用法：swift macos/brand-icons.swift [预览目录]
-//      swift macos/brand-icons.swift --layers <目录>：只出分层图标（Icon Composer 的 .icon）用的各层 PNG，不写 Assets、
-//      不写 DMG 背景（2026-11-24 美化 V6 的样稿；.icon 还没进包，样稿和进包步骤在 macos/build/research/polish-2026-11-23/icon/）。
-//      1024 px 透明、整张画布就是图标主体（旧底板 100…924 撑满），不画底板 / 圆角 / 阴影 / 高光；三组从前到后：
-//      爪子（paws、beans）/ 卡片（card、card-lines）/ 猫头（face、glints、eyes、head；单色外观换 head-mono）
-// 写入 KittyTools/Resources/Assets.xcassets：AppIcon 10 张 PNG（1024 画布、主体 824、四边留 100、超椭圆圆角约 185、
-// 烘焙阴影 y 10 / σ 10 / 黑 30%；16、32 像素用手调的简化版）和菜单栏模板图 StatusIcon（22 × 16 pt，@1x / @2x）；
+//      swift macos/brand-icons.swift --layers <目录>：只出分层图标的各层 PNG 到那个目录（调样子用），别的都不写。
+// App 图标（2026-11-24 美化 V6 起）是 Icon Composer 文档 KittyTools/Resources/AppIcon.icon（icon.json + Assets/ 里每层一张
+// 1024 px 透明 PNG）：Xcode 的 actool 编成 macOS 26 起的分层图标（玻璃高光、阴影、圆角由系统按层加，跟着系统的图标风格
+// 默认 / 深色 / 着色 / 透明变），另从它压平一份给 macOS 15（同名的 AppIcon.appiconset 被无声忽略，Xcode 文档和实测都是）。
+// 整张画布就是图标主体（平面图标底板的 100…924 撑满，坐标照旧、整体放大 1024 / 824）；底色是 icon.json 里的渐变，不画底板。
+// 三组从前到后：爪子（paws、beans）/ 卡片（card、card-lines）/ 猫头（face、glints、eyes、head）——头在卡片后面、爪子搭在
+// 卡片上。深色外观换深一档的玫红底（系统默认会换成近黑的底，黑猫就没了）、卡片暗一成；单色外观（着色、透明，JSON 里都叫
+// tinted）头和爪子换白、藏起眼睛和肉垫（头上挖好的洞透出底色）、头换成沿爪子挖了缝的 head-mono，卡片换灰。用户在三个样稿里
+// 选了 A（品牌粉底 + 奶油卡片），样稿和对比在 macos/build/research/polish-2026-11-23/icon/。
+// 另写进 KittyTools/Resources/Assets.xcassets：
+// - AppIcon.appiconset 10 张平面 PNG（1024 画布、主体 824、四边留 100、超椭圆圆角约 185、烘焙阴影 y 10 / σ 10 / 黑 30%；
+//   16、32 像素用手调的简化版）：App 不再用它，留着给 windows/tools/app-icon.swift 出 Windows 的 .ico，样子别动；
+// - ColorIcon16 / ColorIcon20（@1x / @2x）：平面图标的主体（裁掉留白、按超椭圆去掉底角的烘焙阴影），菜单栏彩色图标（16 pt）
+//   和设置侧栏「关于」那一行（20 pt）用——固定的样子，不跟系统的图标风格变；
+// - 菜单栏模板图 StatusIcon（22 × 16 pt，@1x / @2x）。
 // 另写 Config/dmg-background.tiff（DMG 窗口背景：设计区 600 × 400 pt 在左上角，奶油底、字标 Kitty Tools、虚点弧线箭头、
 // 「仍要打开」路径，说明中英各一行；整张画布 2560 × 1600 pt，窗口拉大也不露白；@1x + @2x，Deflate；改产品名或文案也改这里）。
-// 只用 AppKit / CoreGraphics / CoreText / ImageIO，几何都在这一个文件里：改角色就改这里再跑一遍。给了预览目录时另存放大的预览图。
-// 例外：彩色菜单栏图标（Shell/StatusItem.swift 的 menuBarImage）从 1024 的 AppIcon 按同样的留白 100 / 主体 824 /
-// 超椭圆 n = 5 裁主体，改这几项要一起改那边（StatusItemTests.colorIconIsTheWholeAppIcon 会报）。
+// 只用 AppKit / CoreGraphics / CoreText / ImageIO，几何都在这一个文件里：改角色就改这里再跑一遍。给了预览目录时另存放大的
+// 预览图，并用 Xcode 带的 ictool 渲出 AppIcon.icon 的六种外观（512 px，不带系统留白和阴影）。
 
 import AppKit
 
@@ -465,7 +472,119 @@ let layers: [(name: String, draw: (CGContext) -> Void)] = [
   ("paws", paws), ("beans", pawBeans),
 ]
 
-// 只出分层素材、不碰 Assets 和 DMG 背景（样稿阶段，进包前不改现在的 PNG）
+// MARK: AppIcon.icon 的 icon.json
+
+typealias JSON = [String: Any]
+
+/// icon.json 里的颜色只认 srgb:r,g,b,a 这种写法（#RRGGBB 会报错）
+func srgb(_ value: UInt32) -> String {
+  String(
+    format: "srgb:%.5f,%.5f,%.5f,1.00000", Double((value >> 16) & 0xFF) / 255,
+    Double((value >> 8) & 0xFF) / 255, Double(value & 0xFF) / 255)
+}
+
+func gray(_ value: Double) -> String {
+  String(format: "srgb:%.5f,%.5f,%.5f,1.00000", value, value, value)
+}
+
+/// 只在一种外观生效的值：dark，或者 tinted（单色外观：着色、透明都读它）
+func only(_ appearance: String, _ value: Any) -> JSON {
+  ["appearance": appearance, "value": value]
+}
+
+func solid(_ color: String) -> JSON { ["solid": color] }
+
+/// 一层，图片是 Assets/<名字>.png
+func iconLayer(_ name: String, _ keys: JSON = [:]) -> JSON {
+  keys.merging(["name": name, "image-name": "\(name).png"]) { $1 }
+}
+
+/// 一组：半透明关掉（卡通保持饱和、实心）、中性阴影；combined = 整组一个玻璃外壳，小五官不会各自鼓成果冻。
+/// 阴影用 Decimal：Double 的 0.45 会写成 0.45000000000000001
+func group(_ name: String, shadow: Decimal, combined: Bool, _ layers: [JSON]) -> JSON {
+  var group: JSON = [
+    "name": name, "layers": layers, "shadow": ["kind": "neutral", "opacity": shadow] as JSON,
+    "translucency": ["enabled": false, "value": 0.5] as JSON,
+  ]
+  if combined { group["lighting"] = "combined" }
+  return group
+}
+
+let iconDocument: JSON = [
+  // 底：平面图标底板渐变的两头；深色外观换深一档的玫红
+  "fill-specializations": [
+    ["value": ["linear-gradient": [srgb(0xFF86A9), srgb(0xE93A6D)]]],
+    only("dark", ["linear-gradient": [srgb(0xB8355F), srgb(0x6A1834)]]),
+  ] as [JSON],
+  // 从前到后，最多 4 组（第 5 组 actool 直接报错）
+  "groups": [
+    group(
+      "Paws", shadow: 0.5, combined: false,
+      [
+        iconLayer("beans", ["glass": false, "hidden-specializations": [only("tinted", true)]]),
+        iconLayer("paws", ["fill-specializations": [only("tinted", solid(gray(1)))]]),
+      ]),
+    group(
+      "Card", shadow: 0.5, combined: true,
+      [
+        iconLayer(
+          "card-lines",
+          [
+            "fill-specializations": [
+              only("dark", solid(srgb(0xE0A9BB))), only("tinted", solid(gray(0.3))),
+            ]
+          ]),
+        iconLayer(
+          "card",
+          [
+            "fill-specializations": [
+              only("dark", solid(srgb(0xE6D6D0))), only("tinted", solid(gray(0.5))),
+            ]
+          ]),
+      ]),
+    group(
+      "Kitten", shadow: 0.45, combined: true,
+      [
+        iconLayer("glints", ["glass": false]),
+        iconLayer("face"),
+        iconLayer("eyes", ["hidden-specializations": [only("tinted", true)]]),
+        [
+          "name": "head", "fill-specializations": [only("tinted", solid(gray(1)))],
+          "image-name-specializations": [["value": "head.png"], only("tinted", "head-mono.png")],
+        ],
+      ]),
+  ],
+  "supported-platforms": ["squares": ["macOS"]],
+]
+
+// MARK: 彩色小图（ColorIcon16 / ColorIcon20）
+
+/// 边长 side 像素的 sRGB 画布（不翻转：画进来的 CGImage 方向照旧）
+func canvas(_ side: Int, _ draw: (CGContext) -> Void) -> CGImage {
+  let ctx = CGContext(
+    data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0, space: sRGB,
+    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+  draw(ctx)
+  return ctx.makeImage()!
+}
+
+/// 平面图标（1024 px 那张）的主体：裁掉画布四边各 100 的留白，在原分辨率上按主体外形（超椭圆 n = 5）去掉底角那点烘焙阴影
+/// （缩小后再裁的话边缘像素会混进阴影的黑），再高质量插值缩到 pixels。原来是 StatusItem.menuBarImage 运行时从
+/// NSApp.applicationIconImage 现画的；26 起那张是系统按图标风格渲的 .icon，所以挪到这里、用平面图标出固定的一份
+func colorIcon(from flat: CGImage, pixels: Int) -> CGImage {
+  let body = flat.cropping(to: CGRect(x: 100, y: 100, width: 824, height: 824))!
+  let shaped = canvas(824) {
+    $0.addPath(squircle(center: 412, radius: 412))
+    $0.clip()
+    $0.draw(body, in: CGRect(x: 0, y: 0, width: 824, height: 824))
+  }
+  return canvas(pixels) {
+    $0.interpolationQuality = .high
+    $0.draw(shaped, in: CGRect(x: 0, y: 0, width: pixels, height: pixels))
+  }
+}
+
+// 只出分层素材、别的都不写（调样子时看各层）
 if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--layers" {
   let directory = URL(fileURLWithPath: CommandLine.arguments[2])
   try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -485,21 +604,42 @@ for (points, scale) in [
   let name = "icon_\(points)x\(points)\(scale == 2 ? "@2x" : "").png"
   writePNG(appIcon(pixels: points * scale), to: appIconSet.appending(path: name))
 }
-let statusSet = assets.appending(path: "StatusIcon.imageset")
-try! FileManager.default.createDirectory(at: statusSet, withIntermediateDirectories: true)
-writePNG(statusIcon(scale: 1), to: statusSet.appending(path: "StatusIcon.png"))
-writePNG(statusIcon(scale: 2), to: statusSet.appending(path: "StatusIcon@2x.png"))
-try! """
-{
-  "images" : [
-    { "filename" : "StatusIcon.png", "idiom" : "mac", "scale" : "1x" },
-    { "filename" : "StatusIcon@2x.png", "idiom" : "mac", "scale" : "2x" }
-  ],
-  "info" : { "author" : "xcode", "version" : 1 },
-  "properties" : { "template-rendering-intent" : "template" }
-}
+/// 一个 @1x / @2x 的 imageset；template：菜单栏模板图（跟着菜单栏深浅反色）
+func writeImageSet(_ name: String, template: Bool = false, _ image: (_ scale: Int) -> CGImage) {
+  let set = assets.appending(path: "\(name).imageset")
+  try! FileManager.default.createDirectory(at: set, withIntermediateDirectories: true)
+  writePNG(image(1), to: set.appending(path: "\(name).png"))
+  writePNG(image(2), to: set.appending(path: "\(name)@2x.png"))
+  let properties =
+    template ? ",\n  \"properties\" : { \"template-rendering-intent\" : \"template\" }" : ""
+  try! """
+  {
+    "images" : [
+      { "filename" : "\(name).png", "idiom" : "mac", "scale" : "1x" },
+      { "filename" : "\(name)@2x.png", "idiom" : "mac", "scale" : "2x" }
+    ],
+    "info" : { "author" : "xcode", "version" : 1 }\(properties)
+  }
 
-""".write(to: statusSet.appending(path: "Contents.json"), atomically: true, encoding: .utf8)
+  """.write(to: set.appending(path: "Contents.json"), atomically: true, encoding: .utf8)
+}
+writeImageSet("StatusIcon", template: true) { statusIcon(scale: $0) }
+// 彩色小图从刚写的 1024 px PNG 读回来裁（和原来运行时从 App 图标里取的是同一份像素）
+let flatIcon = CGImageSourceCreateImageAtIndex(
+  CGImageSourceCreateWithURL(appIconSet.appending(path: "icon_512x512@2x.png") as CFURL, nil)!, 0,
+  nil)!
+for points in [16, 20] {
+  writeImageSet("ColorIcon\(points)") { colorIcon(from: flatIcon, pixels: points * $0) }
+}
+// 分层图标：各层 PNG + icon.json（键排好序、缩进固定，重跑逐字节不变）
+let iconDoc = macos.appending(path: "KittyTools/Resources/AppIcon.icon")
+let iconAssets = iconDoc.appending(path: "Assets")
+try! FileManager.default.createDirectory(at: iconAssets, withIntermediateDirectories: true)
+for layer in layers {
+  writePNG(layerImage(layer.draw), to: iconAssets.appending(path: "\(layer.name).png"))
+}
+try! JSONSerialization.data(withJSONObject: iconDocument, options: [.prettyPrinted, .sortedKeys])
+  .write(to: iconDoc.appending(path: "icon.json"))
 // DMG 背景：@1x、@2x 两张合进一个 TIFF（dpi 72 / 144，访达按屏幕倍率挑）。用 ImageIO 写 Deflate：
 // 画布大半是纯色，NSBitmapImageRep 只有 LZW，每条带都从头建字典，同一张图大 60%
 let dmg = CGImageDestinationCreateWithURL(
@@ -513,7 +653,7 @@ for scale in [1, 2] {
     ] as CFDictionary)
 }
 precondition(CGImageDestinationFinalize(dmg))
-print("已写入 AppIcon 10 张、StatusIcon @1x / @2x、DMG 背景 @1x / @2x")
+print("已写入 AppIcon.icon（\(layers.count) 层）、AppIcon 10 张、ColorIcon16 / 20、StatusIcon、DMG 背景")
 
 // 预览：大图原样，小图按像素放大 8 倍（不插值），菜单栏放在浅 / 深两条栏上
 if CommandLine.arguments.count > 1 {
@@ -546,5 +686,20 @@ if CommandLine.arguments.count > 1 {
     writePNG(
       magnify(statusIcon(scale: scale), factor, background: hex(0xF4EFF1)),
       to: preview.appending(path: "status-\(scale)x.png"))
+  }
+  // AppIcon.icon 的六种外观：Xcode 带的 ictool（和 Icon Composer 的预览同一套渲染）
+  for rendition in ["Default", "Dark", "TintedLight", "TintedDark", "ClearLight", "ClearDark"] {
+    let ictool = Process()
+    ictool.executableURL = URL(
+      fileURLWithPath:
+        "/Applications/Xcode.app/Contents/Applications/Icon Composer.app/Contents/Executables/ictool"
+    )
+    ictool.arguments = [
+      iconDoc.path, "--export-image", "--output-file",
+      preview.appending(path: "icon-\(rendition).png").path, "--platform", "macOS", "--rendition",
+      rendition, "--width", "512", "--height", "512", "--scale", "1",
+    ]
+    try! ictool.run()
+    ictool.waitUntilExit()
   }
 }

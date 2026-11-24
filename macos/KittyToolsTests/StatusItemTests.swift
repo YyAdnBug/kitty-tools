@@ -19,50 +19,56 @@ struct StatusItemTests {
     #expect(StatusItem.IconStyle.allCases.map(\.title) == ["单色", "彩色"])
   }
 
-  /// 单色是模板图（跟着菜单栏反色）；彩色不是模板、16 pt 正方形、@1x / @2x 两张位图；读屏名都是 Kitty Tools
+  /// 单色是模板图（跟着菜单栏反色）；彩色不是模板、16 pt 正方形、@1x / @2x 两张；读屏名都是 Kitty Tools
   @Test func styleImages() throws {
     let template = try #require(StatusItem.IconStyle.template.image)
     #expect(template.isTemplate && template.accessibilityDescription == "Kitty Tools")
     let color = try #require(StatusItem.IconStyle.color.image)
     #expect(!color.isTemplate && color.accessibilityDescription == "Kitty Tools")
     #expect(color.size == NSSize(width: 16, height: 16))
-    #expect(color.representations.map(\.pixelsWide) == [16, 32])
+    // 资源目录给的是 NSCGImageRep，同一倍率不止一张（实测 16、16、32、32）：看有哪几种像素宽
+    #expect(Set(color.representations.map(\.pixelsWide)) == [16, 32])
     // 只画一次
     #expect(StatusItem.IconStyle.color.image === color)
   }
 
-  /// 彩色取的是大图，不是 16 / 32 px 那两张手调简化版：假图标 32 px 红、1024 px 绿，出来是绿的
-  @Test func colorIconUsesLargeRepresentation() throws {
-    let icon = NSImage(size: NSSize(width: 32, height: 32))
-    icon.addRepresentation(Self.solid(.red, pixels: 32))
-    icon.addRepresentation(Self.solid(.green, pixels: 1024))
-    let rep = try #require(
-      StatusItem.menuBarImage(from: icon).representations.last as? NSBitmapImageRep)
-    let center = try #require(rep.colorAt(x: 16, y: 16)?.usingColorSpace(.sRGB))
-    #expect(center.greenComponent > 0.9 && center.redComponent < 0.1)
+  /// 彩色小图（菜单栏 16 pt、设置侧栏「关于」那一行 20 pt）是平面 App 图标的主体：四角透明（画布留白没带进来），一圈边上
+  /// 没有烘焙阴影的黑；左边中间是粉底，下半中间是奶油色卡片，上半中间是黑猫（不是 16 / 32 px 那两张手调简化版：那两张四周
+  /// 还有留白）。读的是 brand-icons.swift 出的资源 ColorIcon16 / 20，不是 NSApp.applicationIconImage——26 起那张跟着系统的
+  /// 图标风格（深色 / 着色 / 透明）变色，这里不该看这台机器的设置（2026-11-24 美化 V6）
+  @Test func colorIconIsTheWholeAppIcon() throws {
+    let about = try #require(NSImage(named: "ColorIcon20"))
+    #expect(about.size == NSSize(width: 20, height: 20))
+    for image in [StatusItem.colorIcon, about] {
+      let rep = try #require(Self.bitmaps(image).max { $0.pixelsWide < $1.pixelsWide })
+      let side = rep.pixelsWide
+      #expect(side == Int(image.size.width) * 2 && rep.pixelsHigh == side)
+      let pixel = { (x: Int, y: Int) in rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) }
+      let last = side - 1
+      for (x, y) in [(0, 0), (last, 0), (0, last), (last, last)] {
+        #expect((pixel(x, y)?.alphaComponent ?? 1) < 0.05, "角 \(x),\(y) / \(side)")
+      }
+      for index in 0..<side {
+        for (x, y) in [(index, 0), (index, last), (0, index), (last, index)] {
+          guard let color = pixel(x, y), color.alphaComponent > 0.1 else { continue }
+          #expect(color.redComponent > 0.55, "边 \(x),\(y) / \(side)")
+        }
+      }
+      // 下面的坐标按 32 px 那张定，40 px 的按比例换
+      let at = { (x: Int, y: Int) in pixel(x * side / 32, y * side / 32) }
+      let pink = try #require(at(1, 14))
+      #expect(pink.redComponent > 0.85 && pink.greenComponent < 0.6 && pink.blueComponent < 0.7)
+      let cream = try #require(at(16, 27))
+      #expect(cream.redComponent > 0.9 && cream.greenComponent > 0.85 && cream.blueComponent > 0.8)
+      let cat = try #require(at(16, 11))
+      #expect(cat.redComponent < 0.35 && cat.greenComponent < 0.3)
+    }
   }
 
-  /// 真的 App 图标：只取圆角方块主体——四角透明（画布留白没带进来），一圈边上没有烘焙阴影的黑；
-  /// 左边中间是粉底，下半中间是奶油色卡片，上半中间是黑猫
-  @Test func colorIconIsTheWholeAppIcon() throws {
-    let rep = try #require(StatusItem.colorIcon.representations.last as? NSBitmapImageRep)
-    #expect(rep.pixelsWide == 32 && rep.pixelsHigh == 32)
-    let pixel = { (x: Int, y: Int) in rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) }
-    for (x, y) in [(0, 0), (31, 0), (0, 31), (31, 31)] {
-      #expect((pixel(x, y)?.alphaComponent ?? 1) < 0.05, "角 \(x),\(y)")
-    }
-    for index in 0..<32 {
-      for (x, y) in [(index, 0), (index, 31), (0, index), (31, index)] {
-        guard let color = pixel(x, y), color.alphaComponent > 0.1 else { continue }
-        #expect(color.redComponent > 0.55, "边 \(x),\(y)")
-      }
-    }
-    let pink = try #require(pixel(1, 14))
-    #expect(pink.redComponent > 0.85 && pink.greenComponent < 0.6 && pink.blueComponent < 0.7)
-    let cream = try #require(pixel(16, 27))
-    #expect(cream.redComponent > 0.9 && cream.greenComponent > 0.85 && cream.blueComponent > 0.8)
-    let cat = try #require(pixel(16, 11))
-    #expect(cat.redComponent < 0.35 && cat.greenComponent < 0.3)
+  /// 图的各倍率位图：资源目录里的图不是 NSBitmapImageRep，经 TIFF 转一遍（各倍率按原像素出）
+  private static func bitmaps(_ image: NSImage) -> [NSBitmapImageRep] {
+    guard let tiff = image.tiffRepresentation else { return [] }
+    return NSBitmapImageRep.imageReps(with: tiff).compactMap { $0 as? NSBitmapImageRep }
   }
 
   /// 什么时候弹菜单（U12①）：当前事件是鼠标事件时——右键、左键点并带 ⌃；读屏「按下」、键盘导航（当前事件是按键，
@@ -151,20 +157,6 @@ struct StatusItemTests {
     for word in ["菜单栏", "状态栏", "图标", "隐藏", "彩色"] {
       #expect(SettingsPage.general.matches(word), "\(word)")
     }
-  }
-
-  private static func solid(_ color: NSColor, pixels: Int) -> NSBitmapImageRep {
-    let rep = NSBitmapImageRep(
-      bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels, bitsPerSample: 8,
-      samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
-      bytesPerRow: 0, bitsPerPixel: 0)!
-    NSGraphicsContext.saveGraphicsState()
-    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-    color.setFill()
-    NSRect(x: 0, y: 0, width: pixels, height: pixels).fill()
-    NSGraphicsContext.restoreGraphicsState()
-    rep.size = NSSize(width: 32, height: 32)
-    return rep
   }
 
   /// 第五轮体检 A4④：高亮的那一行换成模板图（跟着字反白），离开换回家族色；后来换成别的图（状态屏的表情）的不动

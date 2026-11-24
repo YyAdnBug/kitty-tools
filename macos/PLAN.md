@@ -131,6 +131,7 @@
 | `KeepAwake/` | （保持唤醒，第一个插件，2026-11-12；拍板和做法在 §10「插件与保持唤醒」）`KeepAwakePlan.swift`（纯函数：定时的时段、跨午夜、下一次要变的时刻、启动器「awake …」的解析、剩多久的说法）、`KeepAwake.swift`（执行层：手动的一段和定时，`ProcessInfo.beginActivity`、到点 / 醒来 / 改时间重新算、岛上说一声） |
 | `Reminders/` | `ReminderSound.swift`（提示音：系统的、个人「声音」文件夹里的、自己选的文件（拷进数据目录 `reminder-sounds/`），播放最多 30 秒、处理了就停；编号的校验，2026-11-04 用户反馈）、`ReminderPhrase.swift`（启动器一句话建提醒的解析，纯函数）、`ReminderSync.swift`（提醒列表接进全局同步）、`ReminderScreen.swift`（全屏提醒，面板 `ReminderScreenPanel`）、`ReminderGlow.swift`（边框：每屏四条贴边窄窗口）、`Reminder.swift`（一条提醒：标题、说明、表情、开关、时间规则 `Schedule`、提醒方式、全屏多久、声音、催促；三条示例；偏好里的 JSON、逐字段兜底的解码和 `sanitized`；设置页的列表纯函数和摘要）、`ReminderSchedule.swift`（纯函数：一次 / 每周 / 每月的下一次、间隔按锚点和时段、`ReminderCheck.check` 此刻哪几条响 / 算错过 / 下次几点看、`reconciled`；这台电脑的状态 `ReminderState`）、`ReminderCenter.swift`（执行层：一个睡到下一刻的计时任务、锁屏 / 解锁 / 醒来 / 改时钟的监听、间隔提醒的空闲检查、挂在刘海岛上的那一条、知道了 / 稍后；专注模式里先压着的那几条）、`ReminderFocus.swift`（专注模式滤镜 `ReminderFocusFilter` 和它现在说的 `ReminderFocus`，2026-11-17）；2026-11-04，§10「提醒」 |
 | `Notes/` | （便签，§10「便签」；2026-10-12 立项、2026-10-18 八批全部做完）**数据**：`Note.swift`（模型、标题 / 摘要、清洗和上限）、`NoteStore.swift`（单独的库、排序搜索、最近删除 30 天、落盘重试）、`NotesBackup.swift`（每日备份留 7 份、打不开时的恢复，和剪贴板的平行）、`NoteSample.swift`（空库首次放一条示例）。**入口和窗口**：`NoteCapture.swift` + `NoteCaptureView.swift`（⌥N 快速记一条）、`NotesWindow.swift` + `NotesWindowView.swift`（全部便签窗口的列表 / 搜索 / 工具栏 / 右键）、`NoteWall.swift` + `NotesWallView.swift`（便签墙的纯函数和视图）。**屏幕边缘**：`NoteEdge.swift`（开关、叫停、面板生命周期）、`NoteDeck.swift` / `NoteDeckModel.swift` / `NoteDeckState.swift` / `NoteDeckOptions.swift` / `NoteDeckLayout.swift` / `NoteDeckPill.swift` / `NoteDeckPanel.swift` / `NoteDeckView.swift`（药丸、标签列、状态机、几何、设置、面板）。**打开的便签**：`NoteSheet.swift` + `NoteSheetModel.swift` + `NotePanel.swift`（那叠和浮动共用）、`NoteFloat.swift` / `NoteFloatModel.swift` / `NoteFloatState.swift` / `NoteFloatLayout.swift` / `NoteFloatPanel.swift`（拖出来、拉大小、固定后回原位；一张一个）、`NoteFloats.swift`（同时浮几张：上限、最久没碰、几张一起记位置，2026-10-22）、`NoteFields.swift`（标题 / 正文输入框）、`NoteColorPicker.swift`（颜色菜单的「其他颜色…」：系统取色面板、最近用过，2026-10-22）。**正文**：`NoteTextView.swift` + `NoteTextView+Images.swift`（显式搭的 TextKit 1；样式只改属性；组字期间不重排不落盘）、`NoteStyles.swift`（行距、五种任务方框、代码块、文字颜色）、`NoteMarkdown.swift`（不用正则的扫描器、标记藏 / 露）、`NoteTasks.swift`（任务和列表的纯函数）、`NoteTaskBox.swift`（任务方框自己画的圆角方框：几何、五种画法、记号取色；2026-10-18）、`NotePaper.swift`（8 种纸色、6 种文字颜色）、`NoteImages.swift` + `NoteImageStore.swift` + `NoteImageAttachment.swift`（令牌、图片目录、附件字符）、`NoteImageCrop.swift`（图片的裁切层：几何纯函数 + 盖在正文滚动区上的视图，2026-10-22）、`NoteMarkdownFiles.swift`（整个 / 单条的导出导入）、`NoteRichPaste.swift`（往正文里粘网页、文稿：RTF / HTML 转成 Markdown，第四轮体检 X4）、`NoteSync.swift`（同步的合并规则：版本钟、状态后改的赢、墓碑，纯函数；2026-10-22）、`NoteSyncFolder.swift`（同步文件夹的写法、一轮该合什么、刹车、该写出去什么，纯函数；2026-10-22）、`NoteSyncDisk.swift`（读写同步文件夹：协调读写、没下载完的文件、缓存，主线程外；2026-10-23）、`NoteSyncer.swift`（同步的执行层：什么时候合、一轮怎么走、刹车、正在编辑的先不换、认出库被退回去了；2026-10-23）、`NoteSyncServer.swift`（连 WebDAV 服务器时本机镜像和服务器之间搬文件：pull / push、账、每轮请求数，主线程外；issue #18，2026-11-13）。规矩：编辑器、Markdown、任务、颜色、图片、导出导入在 mac-overlay-panel §3 §5，那叠和浮动在 §12，长相在 `mac-whisker/notes.md`，备份在 mac-clipboard §1，划词在 mac-translate §5。 |
+| `Resources/` | （只记图标；别的资源记在用到它的那一格）`AppIcon.icon`（App 图标，Icon Composer 文档：icon.json + `Assets/` 每层一张 1024 px PNG，2026-11-24 美化 V6 起；Xcode 编成 26 起的分层图标、另压平一份给 15，`Base.xcconfig` 的 `ASSETCATALOG_COMPILER_STANDALONE_ICON_BEHAVIOR = all` 让那份 icns 带齐各档）、`Assets.xcassets` 里的 `AppIcon.appiconset`（平面图标 10 张，App 不用——同名的 `.icon` 在时被无声忽略——留着给 `windows/tools/app-icon.swift` 出 .ico）、`ColorIcon16` / `ColorIcon20`（平面图标的主体，菜单栏彩色图标和设置侧栏「关于」那一行，固定样子、不跟系统图标风格）、`StatusIcon`（菜单栏剪影模板图）。这些都由 `swift macos/brand-icons.swift` 生成，别手改 |
 
 各 provider 函数签名统一，由 coordinator 里的一个 `switch` 分发。不建 registry 或 factory。
 
@@ -2619,7 +2620,7 @@ Alfred 的 Related Apps、BetterTouchTool 按 App 停用，调研和测开销的
 「透明」「着色」两档），拍板页 https://claude.ai/artifact/QVaU65sZ6qmawDLtsLwey8（P1–P8 卡顿、V1–V8 美化），用户「全部按推荐」，
 P8、V8 以后。材料（追问稿、实测报告、sample、对标、图标样稿）在 `build/research/polish-2026-11-23/`。在 polish-wip 上串行五批，
 一批一个提交；量测探针 `KittyToolsTests/PolishProbeTests.swift`（用法在文件头）前后各跑一遍、基线和改后交替两轮。
-手测在 HANDTEST「美化与提速手测」1–49。更新日志等发版时写（没改版本号）。
+手测在 HANDTEST「美化与提速手测」1–56。更新日志等发版时写（没改版本号）。
 
 | 批 | 提交 | 条目 | 结果（M3 Air 60 Hz、-O、屏上） |
 |---|---|---|---|
@@ -2628,18 +2629,19 @@ P8、V8 以后。材料（追问稿、实测报告、sample、对标、图标样
 | 2 三个小提速 | `30bed0e8` | P4 P6 P7 | 启动器搜索本身 12–15 → 5–7 ms（每字同步仍 22–33 ms）；开机闲 3 秒预排，第一次呼出启动器 155 → 39–53 ms、剪贴板 5000 条 102–156 → 48–56 ms（+13 MB）；设置「看过的页留着」量过不划算、没做，通用页再换回 224–243 → 182 ms |
 | 3 剪贴板列表 | `98621c58` | P1–P3 | ↓ 14.8 → 8.3 ms；滚动 600 步里超过 16.7 ms 的 100–129 → 26–40；打字每字 55–94 → 32–61 ms；三项目标（6 / 8 / 16 ms）都没到 |
 | 4 翻译流式 | `686d2bf7` | P5 | 等结果时 16.5–18.9% → 0.0%（动效换 CALayer）；三卡出字 49% → 44%，目标 15% 没到 |
-| 5 翻译减粉 + 图标样稿 | `5a937500` | V7（V6 样稿） | 原文框点进去才亮焦点环、「自动」灰字；`.icon` 三个变体的样稿（挑图页 https://claude.ai/artifact/U119QQwH4VFx8A69JqGhJc），用户 2026-11-24 选 A（品牌粉 + 奶油卡片），另一批进包 |
+| 5 翻译减粉 + 图标样稿 | `5a937500` | V7（V6 样稿） | 原文框点进去才亮焦点环、「自动」灰字；`.icon` 三个变体的样稿（挑图页 https://claude.ai/artifact/U119QQwH4VFx8A69JqGhJc），用户 2026-11-24 选 A（品牌粉 + 奶油卡片） |
+| 6 图标进包 | （本批，待提交） | V6 | A 进包：`brand-icons.swift` 直接写 `Resources/AppIcon.icon`，`Base.xcconfig` 加 `ASSETCATALOG_COMPILER_STANDALONE_ICON_BEHAVIOR = all`；菜单栏彩色图标和设置「关于」那一行改读固定的 `ColorIcon16` / `ColorIcon20`（不再取 `NSApp.applicationIconImage`）；平面 PNG、StatusIcon、DMG 背景逐字节不变 |
 
 跨批的结论（别重查）：
 - **剩下的卡在 SwiftUI 本身**：剪贴板 ↑↓ / 滚动剩的是焦点链（`FocusBridge`）、新行的手势 / 右键菜单 / 无障碍修饰和排字画字；翻译出字剩的是每次把三张卡的正文整段重排重画（每张 5–6 ms、跟着字数涨）。再往下要换渲染方式（剪贴板换 NSTableView、翻译生成中用 TextKit 追加），另议。剪贴板打完字偶尔一下 80–150 ms，改前改后都有，原因没找到。
 - **设置「看过的页留着」试过四种都不比重建快**（时间在露出来那页的排版和 NSTableView 行重建），别再试；细节在 mac-whisker settings.md。设置窗看过各页两遍后 +110–160 MB、关窗不回落（改前就有），没查。
 - **剪贴板的行不再是 Button**（每行一个按钮会让 SwiftUI 每次重排整条焦点链）：整行一个 `DragGesture(minimumDistance: 0)` + `allowsWindowActivationEvents`，例外和代价在 mac-clipboard §5。
 - 玻璃上系统「次要」层级色的字（启动器副标题、底栏条数）仍只有约 2.4–3.1:1，不在 V3 范围，没改。
-- **V6 选定后进包**：步骤在 `build/research/polish-2026-11-23/icon/README.md`。要点：`.icon` 一加，15 上也只能用 Xcode 从它压平的那份（同名 appiconset 被无声忽略，手调的 16 / 32 px 没了）；appiconset 留着给 Windows 的 .ico；26 起 `NSApp.applicationIconImage` 跟着系统图标风格变，菜单栏彩色图标和 `StatusItemTests.colorIconIsTheWholeAppIcon` 要改读一张单独出的图。
+- **V6 已进包**（第 6 批，样稿和进包前的说明在 `build/research/polish-2026-11-23/icon/`）：`.icon` 一加，15 上也只能用 Xcode 从它压平的那份（同名 appiconset 被无声忽略，手调的 16 / 32 px 没了；Apple 文档和 actool 实测都是）；appiconset 照旧生成、留给 Windows 的 .ico；26 起 `NSApp.applicationIconImage` 跟着系统图标风格变色，所以菜单栏彩色图标、设置侧栏「关于」那一行和 `StatusItemTests.colorIconIsTheWholeAppIcon` 改读 brand-icons 出的 `ColorIcon16` / `ColorIcon20`（设置 › 关于页的大图仍是 `applicationIconImage`，跟着风格变是对的）。
 
 ## 11½. Whisker 设计语言改造（2026-09-25 起）
 
-已归档到 `docs/archive/PLAN-12.md` §11½（A–E 各阶段的内容、状态和 2026-09-26 的交接）。现状：A 基础与招牌时刻、B 界面重做、C 品牌、E 截图重设计都已完成（待手测）；D 深度只剩「macOS 26 玻璃 + `.icon`」——玻璃分支第 11 批已写好，等 26 测试机按 `HANDTEST.md`「macOS 26 手测」实测，`.icon` 也等 26。规范正文在 `.claude/skills/mac-whisker/rule.md`（核心）和各 `mac-whisker/<界面>.md`。
+已归档到 `docs/archive/PLAN-12.md` §11½（A–E 各阶段的内容、状态和 2026-09-26 的交接）。现状：A 基础与招牌时刻、B 界面重做、C 品牌、E 截图重设计都已完成（待手测）；D 深度只剩「macOS 26 玻璃 + `.icon`」——玻璃分支第 11 批已写好，等 26 测试机按 `HANDTEST.md`「macOS 26 手测」实测；`.icon` 2026-11-24 已进包（§10「美化与提速」第 6 批）。规范正文在 `.claude/skills/mac-whisker/rule.md`（核心）和各 `mac-whisker/<界面>.md`。
 
 ## 12. 进度与交接（2026-09-24，新会话从这里接着做）
 
@@ -2649,7 +2651,7 @@ P8、V8 以后。材料（追问稿、实测报告、sample、对标、图标样
 
 **2026-11-23–24：美化与提速**（外部反馈「UI 可以更美、有些卡」，用户「全部按推荐」）：分支 `polish-wip`（工作树 `kitty-tools-macos-polish`，
 从 origin/macos `bbd78015`），六个提交 `0ae5c297`…`5a937500`，没 push、没升版本、没写更新日志、没打包；做了什么、数字和没达到的目标见 §10「美化与提速」。
-App 图标的 `.icon` 样稿用户选了 A（`build/research/polish-2026-11-23/icon/overview.png`），另做一批进包。待手测：HANDTEST「美化与提速手测」1–49。
+App 图标的 `.icon` 样稿用户选了 A（`build/research/polish-2026-11-23/icon/overview.png`），第 6 批已进包（待提交）。待手测：HANDTEST「美化与提速手测」1–56。
 
 **2026-11-20：0.10.2 开头**（用户「放到0.10.2里面去」）：分支 `claude/settings-feedback-120ed5`（工作树 `.claude/worktrees/settings-feedback-120ed5`，
 从 origin/macos `41ef6134` = 0.10.1 + 发布记录）。0.10.1 装上后用户看设置窗口报的两处：`2f28573d` 平滑滚动「滚动」一组页脚的「恢复默认」、
