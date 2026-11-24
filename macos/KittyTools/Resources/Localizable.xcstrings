@@ -1413,6 +1413,28 @@
         }
       }
     },
+    "%lld 个文件和文件夹" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld file or folder"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld files and folders"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld 个文件读不到，没算" : {
       "localizations" : {
         "en" : {
@@ -16929,6 +16951,16 @@
         }
       }
     },
+    "取消多选" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel Selection"
+          }
+        }
+      }
+    },
     "取消归档" : {
       "localizations" : {
         "en" : {
@@ -17097,6 +17129,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "image and file favorites aren’t included (%@)"
+          }
+        }
+      }
+    },
+    "另有 %lld 项没能移走" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld more item couldn’t be moved"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld more items couldn’t be moved"
+                }
+              }
+            }
           }
         }
       }
@@ -19767,6 +19821,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Show in Finder"
+          }
+        }
+      }
+    },
+    "在访达中显示 %lld 个" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Show %lld Item in Finder"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Show %lld Items in Finder"
+                }
+              }
+            }
           }
         }
       }
@@ -22521,6 +22597,16 @@
         }
       }
     },
+    "已勾选" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selected"
+          }
+        }
+      }
+    },
     "已压缩" : {
       "localizations" : {
         "en" : {
@@ -23587,6 +23673,28 @@
         }
       }
     },
+    "已拷贝 %lld 个文件" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Copied %lld file"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Copied %lld files"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "已拷贝名称" : {
       "localizations" : {
         "en" : {
@@ -23913,6 +24021,28 @@
         }
       }
     },
+    "已放回 %lld 项" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Put back %lld item"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Put back %lld items"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "已放回「%@」" : {
       "localizations" : {
         "en" : {
@@ -24193,6 +24323,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Moved to Trash"
+          }
+        }
+      }
+    },
+    "已移到废纸篓 %lld 项" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Moved %lld item to the Trash"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Moved %lld items to the Trash"
+                }
+              }
+            }
           }
         }
       }
@@ -24503,6 +24655,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Connected"
+          }
+        }
+      }
+    },
+    "已选 %lld 个" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld selected"
           }
         }
       }
@@ -27280,6 +27442,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open"
+          }
+        }
+      }
+    },
+    "打开 %lld 个" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Open %lld Item"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Open %lld Items"
+                }
+              }
+            }
           }
         }
       }
@@ -30894,6 +31078,28 @@
         }
       }
     },
+    "放回了 %lld 项" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Put back %lld item"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Put back %lld items"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "放回刚删的便签（连着删了几条就一条条放回；光标在正文、标题、搜索框里时先撤销那里打的字）" : {
       "localizations" : {
         "en" : {
@@ -33638,6 +33844,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Some apps don’t have a menu bar"
+          }
+        }
+      }
+    },
+    "有的原处已经有同名的了、或者原来的文件夹不在了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some already have an item with the same name in their place, or their original folder is gone"
           }
         }
       }

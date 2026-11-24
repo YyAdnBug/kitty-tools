@@ -239,6 +239,59 @@ struct FileSearchTests {
     #expect(model.query.isEmpty)
   }
 
+  /// 拍板 3A：文件行多选——⇧↓ 从选中行扩选（不能勾的 App 行跳过）、⌘K 勾了两个以上只给批量动作（find 模式第一项是
+  /// 「在访达中显示 N 个」）、Esc 先取消多选（查询还在）、⌘ 点按加减（没在多选时连选中的一起勾）、⇧ 点按选一段、
+  /// 不按 ⇧ 移动取消、结果换了看不见的勾去掉
+  @Test func multiSelectsFileRows() throws {
+    let findMy = AppCatalog.item(path: "/System/Applications/FindMy.app")
+    let model = LauncherModel(
+      usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [findMy])
+    model.query = "find my"
+    let hits = [
+      hit("/Desktop/my-a.md"), hit("/Desktop/my-b.md", daysAgo: 2),
+      hit("/Desktop/my-c.md", daysAgo: 3),
+    ]
+    model.showFiles(hits, for: try #require(model.fileRequest))
+    let rows = model.results
+    #expect(rows.count == 4 && !model.isCheckable(rows[0]) && model.isCheckable(rows[1]))
+    let extend = #selector(NSResponder.moveDownAndModifySelection(_:))
+    #expect(model.handleCommand(extend))
+    #expect(model.checked == [rows[1].id] && model.selection == 1)
+    #expect(model.handleCommand(extend))
+    #expect(model.checkedItems == [rows[1], rows[2]] && model.selection == 2)
+    #expect(String(localized: model.checkedPrimaryTitle) == "在访达中显示 2 个")
+    let actions = model.actions.map(\.title)
+    #expect(actions.prefix(2) == ["在访达中显示 2 个", "打开 2 个"] && actions.contains("拷贝文件"))
+    // 右键一行：勾着的那行给批量动作，没勾的那行对着它自己
+    #expect(model.contextActions(for: rows[1]).count == model.actions.count)
+    #expect(model.contextActions(for: rows[3]).count != model.actions.count)
+    // Esc：先取消多选，查询还在
+    #expect(model.handleCommand(#selector(NSResponder.cancelOperation(_:))))
+    #expect(model.checked.isEmpty && model.query == "find my")
+    // ⌘ 点按：没在多选时连选中的一起勾上，再点一下去掉
+    model.selection = 1
+    model.check(rows[3], range: false)
+    #expect(model.checked == [rows[1].id, rows[3].id] && model.selection == 3)
+    model.check(rows[3], range: false)
+    #expect(model.checked == [rows[1].id])
+    // 只勾一个、选中的是别的行：⌘K 也是批量菜单（键位都对着勾的那一个）
+    #expect(model.selection == 3 && model.actions.first?.title == "在访达中显示 1 个")
+    // ⇧ 点按：从锚点（刚点的第 4 行）到这里能勾的都勾上（App 行跳过）
+    model.check(rows[0], range: true)
+    #expect(model.checked == [rows[1].id, rows[2].id, rows[3].id])
+    // 不按 ⇧ 移动：取消
+    #expect(model.handleCommand(#selector(NSResponder.moveUp(_:))))
+    #expect(model.checked.isEmpty)
+    // 结果换了：看不见的勾去掉，看得见的留着
+    model.check(rows[1], range: false)
+    model.check(rows[2], range: false)
+    model.showFiles([hits[1]], for: try #require(model.fileRequest))
+    #expect(model.checkedItems.map(\.target) == [hits[1].path])
+    // 收起：勾全清（回到原来的搜索时也不带）
+    model.didHide()
+    #expect(model.checked.isEmpty)
+  }
+
   @Test func findModeKeysAndWholeQueryApps() throws {
     let findMy = AppCatalog.item(path: "/System/Applications/FindMy.app")
     let usage = try LauncherUsage(db: Database(path: ":memory:"))

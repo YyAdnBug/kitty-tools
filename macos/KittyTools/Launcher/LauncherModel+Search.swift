@@ -148,6 +148,9 @@ extension LauncherModel {
     lastRun = nil
     resumingFiles = false
     resumedSelection = nil
+    // 多选的勾不留（回到原来的搜索时列表照旧、勾全清）
+    checked = []
+    checkAnchor = nil
     menuTarget = nil
     // 读到的菜单只留半分钟（插件说明里这么写的）：这期间再呼出同一个 App 不用重读
     menuExpiry = Task { [weak self] in

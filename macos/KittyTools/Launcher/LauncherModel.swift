@@ -65,7 +65,19 @@ import UniformTypeIdentifiers
   {
     typed.last - typed.previous < typingGap && now - typed.last < typingGap
   }
-  var results: [LauncherItem] = []
+  var results: [LauncherItem] = [] {
+    // 结果换了（打字、重查、删掉一行）：看不见的勾去掉（多选，拍板 3A；同剪贴板「操作对象只算看得见的」）
+    didSet {
+      if !checked.isEmpty {
+        let shown = Set(results.lazy.map(\.id))
+        checked.removeAll { !shown.contains($0) }
+      }
+    }
+  }
+  /// 多选勾着的行（id，按勾的先后；只有文件、文件夹的行能勾，LauncherModel+MultiSelect）。空 = 不在多选
+  var checked: [String] = []
+  /// ⇧↑↓、⇧ 点按扩选的起点
+  @ObservationIgnored var checkAnchor: String?
   var selection = 0
   /// 列表滚到哪了：可见部分的顶在内容里的位置（视图滚动时写进来；列表被空状态换掉时回 0）。只有按住 ⌘ 时界面才读它
   var listTop: CGFloat = 0
