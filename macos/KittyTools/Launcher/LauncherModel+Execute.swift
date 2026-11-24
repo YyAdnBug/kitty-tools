@@ -458,6 +458,8 @@ extension LauncherModel {
       self.armed = nil
       return true
     }
+    // 上膛时取消多选：再按 ↩ 是确认这一条，不是打开勾着的
+    checked = []
     // ⌘1–9 执行的不一定是选中那行：先选中它，提示才看得见
     if let index = results.firstIndex(of: item), index != selection {
       selectionMotion = .snap
@@ -510,6 +512,7 @@ extension LauncherModel {
   /// 在访达里选中（find 的 ↩ 记使用，和打开一样）；先收起再叫访达
   private func reveal(_ item: LauncherItem) {
     usage.record(item, query: query)
+    lastRun = item
     close()
     NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: item.target)])
   }
@@ -761,7 +764,13 @@ extension LauncherModel {
   /// 要等 App 启动完才返回，面板会一直挂着）；打开成功才记使用（item 为 nil 的搜索页不记），打不开时面板已经收起，用刘海岛说
   func open(_ url: URL, _ item: LauncherItem?, with app: URL? = nil) {
     let query = query  // 收起时查询会被清空
+    lastRun = item
     close()
+    launch(url, item, with: app, query: query)
+  }
+
+  /// 交给系统打开（面板已经收起）：成功记使用，打不开用刘海岛说。多选一起打开时一个一个调（runChecked）
+  func launch(_ url: URL, _ item: LauncherItem?, with app: URL? = nil, query: String) {
     let done: @Sendable (NSRunningApplication?, (any Error)?) -> Void = { [weak self] _, error in
       Task { @MainActor in
         guard let self else { return }
@@ -787,11 +796,24 @@ extension LauncherModel {
 
   func click(_ item: LauncherItem) {
     showsActions = false
+    // ⌘ 点按加减、⇧ 点按选一段（多选，同剪贴板面板）：只对文件、文件夹的行；只认鼠标点的（旁白「按下」时
+    // currentEvent 可能是打大写字母留下的 ⇧）。勾着时 ⌘ / ⇧ 点到不能勾的行：响提示音、勾留着
+    var modifiers: NSEvent.ModifierFlags = []
+    if let event = NSApp.currentEvent, [.leftMouseDown, .leftMouseUp].contains(event.type) {
+      modifiers = event.modifierFlags.intersection([.command, .shift])
+    }
+    if !modifiers.isEmpty {
+      if isCheckable(item) { return check(item, range: !modifiers.contains(.command)) }
+      if !checked.isEmpty { return NSSound.beep() }
+    }
     if Style.isDoubleClick {
       execute(item)
     } else if let index = results.firstIndex(of: item) {
       if armed?.id != item.id { armed = nil }
       forgotten = nil
+      resumedSelection = nil
+      checked = []
+      checkAnchor = item.id
       selectionMotion = .glide
       selection = index
       userMovedSelection = true

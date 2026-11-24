@@ -239,6 +239,8 @@ struct LauncherPanelView: View {
       LazyVStack(spacing: 0) {
         let groups = model.groups
         let base = shortcutBase
+        // 多选时（拍板 3A）：能勾的行首一个勾选圆，不能勾的留同样宽的空位，图标还是一条竖线
+        let checked = Set(model.checked)
         ForEach(Array(model.results.enumerated()), id: \.element.rowID) { index, item in
           if let group = groups.first(where: { $0.row == index }) {
             groupHeader(group)
@@ -252,14 +254,18 @@ struct LauncherPanelView: View {
               showsShortcut: showsShortcuts && (0..<9).contains(index - base),
               isSelected: isSelected, isArmed: model.isArmed(item),
               alternate: isSelected ? model.alternateSubtitle(for: item) : nil,
-              hotKey: isSelected ? item.hotKeyAction.flatMap(model.boundHotKey)?.display : nil
+              hotKey: isSelected ? item.hotKeyAction.flatMap(model.boundHotKey)?.display : nil,
+              check: checked.isEmpty
+                ? nil
+                : !model.isCheckable(item)
+                  ? .blank : checked.contains(item.id) ? .checked : .unchecked
             )
             .frame(height: rowHeight(item))
             .contentShape(.rect)
           }
           .buttonStyle(.plain)
           // 右键和 ⌘K 同一份动作（体检 C8）；包成视图：菜单打开时才算，不在每次画行时建一遍
-          .contextMenu { ActionContextMenu { model.actions(for: item) } }
+          .contextMenu { ActionContextMenu { model.contextActions(for: item) } }
           .accessibilityActions { accessibilityActions(for: item) }
         }
       }
@@ -476,7 +482,24 @@ struct LauncherPanelView: View {
         .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
         .id(notice)
     }
-    if let selected = model.selectedItem, model.notice == nil {
+    let checkedCount = model.checkedItems.count
+    if checkedCount > 0, model.notice == nil {
+      // 多选：左边「已选 N 个」（只算看得见的勾），「取消 Esc」
+      HStack(spacing: 12) {
+        Text("已选 \(checkedCount) 个").foregroundStyle(.secondary).lineLimit(1)
+        Button {
+          model.checked = []
+        } label: {
+          HStack(spacing: 6) {
+            Text("取消").lineLimit(1)
+            KeyCap("Esc")
+          }
+          .contentShape(.rect)
+        }
+        .accessibilityLabel("取消多选")
+      }
+      .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
+    } else if let selected = model.selectedItem, model.notice == nil {
       HStack(spacing: 8) {
         KindTile(symbol: selected.familySymbol, color: selected.familyColor, size: 16)
         Text(selected.kindTitle).foregroundStyle(.secondary)
@@ -487,7 +510,23 @@ struct LauncherPanelView: View {
     // 有新版本：种类后面常驻「更新到 x」（没有选中项时也在）；就地提示出来时让开
     if model.notice == nil { UpdateBarHint { model.hidePanel() } }
     Spacer(minLength: 8)
-    if let selected = model.selectedItem {
+    if checkedCount > 0 {
+      let primary = String(localized: model.checkedPrimaryTitle)
+      Button(action: { model.runChecked() }) {
+        HStack(spacing: 6) {
+          Text(primary)
+          KeyCap("↩", primary: true).accessibilityHidden(true)
+        }
+      }
+      .accessibilityLabel(primary)
+      Button(action: model.toggleActions) {
+        HStack(spacing: 6) {
+          Text("操作")
+          KeyCap("⌘K")
+        }
+      }
+      .accessibilityLabel("操作")
+    } else if let selected = model.selectedItem {
       let primary = String(localized: model.primaryAction(for: selected).title)
       // 等着再按一次确认、强制退出：字和 ↩ 键帽换危险色（mac-whisker §3「危险色」）
       let danger = model.isDangerous(selected, commandKey: false)
@@ -656,12 +695,28 @@ private struct LauncherRow: View {
   let alternate: String?
   /// 选中的内置动作当前的全局快捷键（N10，没设就是 nil）
   let hotKey: String?
+  /// 多选（拍板 3A，同剪贴板面板）时行首那一格；nil = 不在多选
+  var check: CheckMark? = nil
+
+  enum CheckMark {
+    case unchecked, checked
+    /// 这一行不能勾：留同样宽的空位，图标还是一条竖线
+    case blank
+  }
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   /// 悬停（没选中的行铺 fill.hover，0.10 s 淡入；浮层不激活本 App，SwiftUI 的 onHover 不可靠，用 HoverTracker）
   @State private var hovered = false
 
   var body: some View {
     HStack(spacing: 10) {
+      if let check {
+        Image(systemName: check == .checked ? "checkmark.circle.fill" : "circle")
+          .font(.system(size: 15))
+          .foregroundStyle(check == .checked ? Style.brand : .secondary)
+          .contentTransition(.symbolEffect(.replace))
+          .opacity(check == .blank ? 0 : 1)
+          .accessibilityHidden(true)
+      }
       icon
       if item.kind == .calculation {
         if let alternate {
@@ -713,7 +768,8 @@ private struct LauncherRow: View {
     .padding(.horizontal, 10)
     .frame(maxHeight: .infinity)
     .background(
-      hovered && !isSelected ? Style.hoverFill : .clear,
+      check == .checked
+        ? Style.brand.opacity(0.14) : hovered && !isSelected ? Style.hoverFill : .clear,
       in: .rect(cornerRadius: Style.Radius.card, style: .continuous)
     )
     .background {
@@ -721,6 +777,7 @@ private struct LauncherRow: View {
     }
     .accessibilityElement(children: .combine)
     .accessibilityAddTraits(isSelected ? .isSelected : [])
+    .accessibilityValue(check == .checked ? String(localized: "已勾选") : "")
   }
 
   @ViewBuilder private var icon: some View {

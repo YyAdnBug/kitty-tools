@@ -4360,6 +4360,9 @@ struct SnapshotProbeTests {
         ("launcher-files", "open 报告", found), ("launcher-files-recent", " ", recent),
         ("launcher-files-find", "find 报告", found), ("launcher-files-short", "open a", []),
         ("launcher-files-actions", "open 报告", found),
+        // 多选（拍板 3A）：勾了 3 个（行首勾选圆、勾中的品牌粉淡底、底栏「已选 3 个」「打开 3 个 ↩」）和勾着时的 ⌘K
+        ("launcher-files-multi", "open 报告", found),
+        ("launcher-files-multi-actions", "open 报告", found),
       ] {
         model.query = query
         // 最近的文件那张带上最后一行的授权提示
@@ -4369,8 +4372,13 @@ struct SnapshotProbeTests {
           model.showFiles(hits, for: request)
         }
         model.alternate = name == "launcher-files-find" ? .command : .none
+        if name.hasPrefix("launcher-files-multi") {
+          model.checked = [0, 2, 3].map { model.results[$0].id }
+          model.selection = 2
+        }
         // 文件的 ⌘K：快速查看、打开方式（默认的标「默认」）、移到废纸篓（体检 C7）
-        model.showsActions = name == "launcher-files-actions"
+        model.showsActions =
+          name == "launcher-files-actions" || name == "launcher-files-multi-actions"
         try snapshot(
           LauncherPanelView(model: model),
           size: NSSize(width: 720, height: LauncherPanelView.height(for: model)),

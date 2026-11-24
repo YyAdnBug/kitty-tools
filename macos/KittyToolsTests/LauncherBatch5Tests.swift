@@ -119,7 +119,7 @@ struct LauncherBatch5Tests {
     #expect(model.notice == nil && !model.handleKeyEquivalent(undo))
   }
 
-  /// A27：没执行就收起，60 秒内再呼出保留查询和选中项（搜索框全选）；执行过、超过 60 秒的清空
+  /// A27：没执行就收起，90 秒内（拍板 2B，原来 60 秒）再呼出保留查询和选中项（搜索框全选）；执行过、超过 90 秒的清空
   @Test func keepsQueryAfterDismissWithoutRunning() throws {
     let usage = try LauncherUsage(db: Database(path: ":memory:"))
     let apps = [app("Safari"), app("Slack"), app("Sketch")]
@@ -129,11 +129,11 @@ struct LauncherBatch5Tests {
     model.selection = 2
     let selected = try #require(model.selectedItem)
     model.didHide(now: start)
-    model.prepareForShow(now: start.addingTimeInterval(30))
+    model.prepareForShow(now: start.addingTimeInterval(80))
     #expect(model.query == "s" && model.selectedItem == selected && model.resumesQuery)
-    // 超过 60 秒：照旧清空
+    // 超过 90 秒：照旧清空
     model.didHide(now: start)
-    model.prepareForShow(now: start.addingTimeInterval(61))
+    model.prepareForShow(now: start.addingTimeInterval(91))
     #expect(model.query.isEmpty && !model.resumesQuery)
     // quit 空格的列表再呼出时重列：收起期间退出了的 App 不在、新开的在
     model.commandTargets = { _ in [apps[0], apps[1]] }

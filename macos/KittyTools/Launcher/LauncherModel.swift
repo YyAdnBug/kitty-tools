@@ -20,7 +20,8 @@
 // ↑↓ ↩ 选择执行、Esc 关掉，菜单里标着的其余键位（⇥ ⌥↩ ⌃↩ ⌘ 键）照常可用、先关菜单。行上右键是同一份动作（体检 C8）。
 // 单击选中、双击执行（和剪贴板面板一致）。打开 App / 文件 / 网址 / 搜索页：↩ 当下就收起，系统在后台打开，不等 App
 // 启动完（2026-09-27 用户要求）；打开成功才记使用，打不开用刘海岛说。其余先执行、成功才收起（失败在面板里显示，§11 #33）。
-// 启动器没有固定：点外面就收起（N8）；没执行就收起的，60 秒内再呼出保留查询和选中项（体检 A27）。
+// 启动器没有固定：点外面就收起（N8）；没执行就收起的，90 秒内再呼出保留查询和选中项（体检 A27）；文件结果（文件搜索、
+// 路径模式里的行）执行过也留着（2026-11-24 拍板 1A 2B：同一次搜索常要连开几个）。
 // 脚本命令（2026-11-07，ScriptCommand / ScriptLibrary / ScriptRunner）：一个脚本一行，和系统命令一样搜、排、记使用、收藏，
 // 别名一字不差时排第一；↩ 跑它（写了 confirm 的先上膛），从网上下载的第一次先在面板里给用户看一眼全文（review，↩ 运行、
 // Esc 回去）；超过 1 秒没跑完岛上出「正在运行」带「停止」；输出按它的 mode：岛上一行 / 粘贴 / 复制 / 不显示 /
@@ -40,6 +41,10 @@ import UniformTypeIdentifiers
     didSet {
       typedAt = (ProcessInfo.processInfo.systemUptime, typedAt.last)
       forgotten = nil  // 打字就不能再撤销移除
+      // 打了字就不是「回到原来的搜索」了：新结果照常换上、选中照常从第一行起
+      lastRun = nil
+      resumingFiles = false
+      resumedSelection = nil
       review = nil
       if output != nil { closeOutput() }
       search()
@@ -60,7 +65,19 @@ import UniformTypeIdentifiers
   {
     typed.last - typed.previous < typingGap && now - typed.last < typingGap
   }
-  var results: [LauncherItem] = []
+  var results: [LauncherItem] = [] {
+    // 结果换了（打字、重查、删掉一行）：看不见的勾去掉（多选，拍板 3A；同剪贴板「操作对象只算看得见的」）
+    didSet {
+      if !checked.isEmpty {
+        let shown = Set(results.lazy.map(\.id))
+        checked.removeAll { !shown.contains($0) }
+      }
+    }
+  }
+  /// 多选勾着的行（id，按勾的先后；只有文件、文件夹的行能勾，LauncherModel+MultiSelect）。空 = 不在多选
+  var checked: [String] = []
+  /// ⇧↑↓、⇧ 点按扩选的起点
+  @ObservationIgnored var checkAnchor: String?
   var selection = 0
   /// 列表滚到哪了：可见部分的顶在内容里的位置（视图滚动时写进来；列表被空状态换掉时回 0）。只有按住 ⌘ 时界面才读它
   var listTop: CGFloat = 0
@@ -507,8 +524,16 @@ import UniformTypeIdentifiers
   @ObservationIgnored var noticeTask: Task<Void, Never>?
   /// 这次呼出里执行过会收起面板的动作（↩、⌘1–9、双击、⌘C 这些）：收起时不留查询
   @ObservationIgnored var executed = false
-  /// 没执行就收起的时间：60 秒内再呼出保留查询和选中项
+  /// 留着查询收起的时间：90 秒内再呼出保留查询和选中项
   @ObservationIgnored var keptAt: Date?
+  /// 收起之前最后对着哪一行做了打开、在访达中显示、在终端中打开、复制、拷贝这类事（在做的那一处记，不看入口：
+  /// ⌘K、右键、快捷键都走同一批函数）。收起时看它是不是文件 / 文件夹（拍板 1A）；打字、收起时清掉
+  @ObservationIgnored var lastRun: LauncherItem?
+  /// 正在回到原来的文件搜索：重查到的文件都在现在的列表里就不换（不然刚开过的那个被使用加成顶到第一行、选中跟着跳），
+  /// 多出新文件才换。打字、收起时清掉
+  @ObservationIgnored var resumingFiles = false
+  /// 回到原来的路径模式时选中的那一行：目录重读到了、重排之后选回它。打字、移动选中、收起时清掉
+  @ObservationIgnored var resumedSelection: String?
   /// 这次呼出接着上次的查询（AppDelegate 据此把搜索框的字全选：直接打字就替换）
   @ObservationIgnored var resumesQuery = false
 
@@ -516,8 +541,8 @@ import UniformTypeIdentifiers
   /// 浏览历史最多列几行：排在书签后面，别把兜底搜索、补全提示挤出可见区
   static let historyLimit = 5
   static let rescanInterval: TimeInterval = 300
-  /// 没执行就收起后，多久内再呼出保留查询
-  static let keepQueryInterval: TimeInterval = 60
+  /// 留着查询收起后，多久内再呼出接着用（拍板 2B：60 → 90 秒）
+  static let keepQueryInterval: TimeInterval = 90
 
   init(usage: LauncherUsage, apps: [LauncherItem]? = nil) {
     self.usage = usage

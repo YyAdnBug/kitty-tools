@@ -18,7 +18,8 @@ import Testing
 // 要看主线程忙在哪：另加 TEST_RUNNER_KITTY_POLISH_LOOP=clip-down / clip-swap / clip-search / clip-narrow / clip-scroll / launcher-type / settings /
 // translate-wait（三张卡等结果）/ translate-stream（经协调器的流一轮接一轮），
 // 只把那一件来回做 10 秒，pid 写在 <目录>/pid，这时 `sample <pid> 7`。
-// 只量其中几块：TEST_RUNNER_KITTY_POLISH_ONLY=launcher,clip,translate,settings（逗号隔开）。
+// 只量其中几块：TEST_RUNNER_KITTY_POLISH_ONLY=launcher,clip,translate,settings,files（逗号隔开）。files = 启动器文件搜索真查本机
+// Spotlight（2026-11-24「.xl」卡顿；逐字打删「␣.xlsx」「open .xlsx」「␣report」，_LOOP=files-type 给 sample）。
 // 翻译浮窗屏外量时另加 TEST_RUNNER_KITTY_POLISH_ANIMATE=always / lines：改高度照真 App 带动画（always：变化 8 pt 以上就带；
 // lines：有卡在出字时不带），看流式时窗口高度动画的开销（屏上的面板透明度 0.05，本来就不做高度动画）。
 // 第一次呼出预排过的（P7，OverlayPanel.prewarm）：另加 TEST_RUNNER_KITTY_POLISH_PREWARM=1（再屏外画一遍：=display），启动器、剪贴板
@@ -318,6 +319,7 @@ struct PolishProbeTests {
     if Self.loop == nil, wants("clip") { try clipboard(prefs, count: 300) }
     if wants("translate") { try translate(prefs) }
     if wants("settings") { try settings(prefs) }
+    if wants("files") { try launcherFiles(prefs) }
   }
 
   // MARK: - 共用
@@ -619,6 +621,106 @@ struct PolishProbeTests {
     panel.hide()
     built = nil
     _ = built
+    spin(0.3)
+  }
+
+  // MARK: - 启动器的文件搜索
+
+  /// 2026-11-24 用户反馈：文件搜索逐字打「.xlsx」、再删「sx」都卡一会。真查本机 Spotlight（宿主 = Dev 版的授权），
+  /// 每个字：改 query 那一下同步多久、之后 1.5 s 里结果到了几批、最后一批什么时候到、主线程最长一下 / 合计忙多久；
+  /// 再按 0.1 s 一个字连着打一遍，看整段里主线程最长卡多久。只记数量，不记文件名。
+  /// _LOOP=files-type：照 0.15 s 一个字来回打删 10 秒，给 sample 用
+  private func launcherFiles(_ prefs: UserDefaults) throws {
+    Self.log("\n### 启动器文件搜索（本机 Spotlight）")
+    let model = LauncherModel(
+      usage: try LauncherUsage(db: Database(path: ":memory:")), apps: AppCatalog.scan())
+    model.boundHotKey = { $0.defaultHotKey }
+    model.prepareForShow()
+    let panel = OverlayPanel(
+      size: NSSize(width: Style.listPanelWidth, height: LauncherPanelView.height(for: model)),
+      topAnchored: true, autoHide: .clickOutside, isPinned: { true },
+      content: LauncherPanelView(model: model).defaultAppStorage(prefs))
+    model.resize = { [weak panel, unowned model] in
+      panel?.setContentHeight($0, animated: !model.showsActions && !model.isTyping)
+    }
+    show(panel)
+    spin(0.3)
+    // 带 apps 建的模型（isFixture）不查 Spotlight：照 searchFiles 自己起（同一个 FileSearch、同一个 showFiles）
+    var deliveries: [(at: CFTimeInterval, hits: Int)] = []
+    func type(_ text: String) {
+      model.query = text
+      guard let request = model.fileRequest, !request.isTooShort else { return }
+      model.files.start(request, used: model.usedFiles) { [weak model] hits in
+        deliveries.append((CACurrentMediaTime(), hits.count))
+        model?.showFiles(hits, for: request)
+      }
+    }
+    /// 逐字打完，再逐字删回 2 个字
+    func steps(_ word: String) -> [String] {
+      var typed: [String] = []
+      var text = ""
+      for character in word {
+        text.append(character)
+        typed.append(text)
+      }
+      while text.count > 2 {
+        text.removeLast()
+        typed.append(text)
+      }
+      return typed
+    }
+    if looping(
+      "files-type",
+      { index in
+        let all = steps(" .xlsx")
+        if index % 9 == 0 { type(all[index / 9 % all.count]) }
+      })
+    {
+      return
+    }
+    let visible = { (text: String) in text.replacingOccurrences(of: " ", with: "␣") }
+    for word in [" .xlsx", "open .xlsx", " report", ".xlsx"] {
+      settle(panel, after: 0.3) { model.query = "" }
+      var lines: [String] = []
+      var syncs: [Double] = []
+      var longest: [Double] = []
+      for text in steps(word) {
+        deliveries = []
+        let start = CACurrentMediaTime()
+        let value = settle(panel, after: 1.5) { type(text) }
+        syncs.append(value.sync)
+        longest.append(value.longest)
+        let last = deliveries.last.map { ($0.at - start) * 1000 } ?? 0
+        lines.append(
+          String(
+            format: "「%@」同步 %.1f ms，%d 批（最后一批 %.0f ms、%d 条）、之后最长一下 %.1f ms、合计忙 %.1f ms",
+            visible(text), value.sync, deliveries.count, last, deliveries.last?.hits ?? 0,
+            value.longest, value.busy))
+      }
+      Self.log(
+        "逐字（每字等 1.5 s）「\(visible(word))」：同步 \(Self.stats(syncs))；之后最长一下 \(Self.stats(longest))")
+      for line in lines { Self.log("  - " + line) }
+      // 连着打：0.1 s 一个字，整段（含最后等 1.5 s）主线程每一轮
+      settle(panel, after: 0.3) { model.query = "" }
+      meter.start()
+      var fast: [Double] = []
+      for text in steps(word) {
+        let start = CACurrentMediaTime()
+        type(text)
+        panel.contentView?.layoutSubtreeIfNeeded()
+        panel.displayIfNeeded()
+        CATransaction.flush()
+        fast.append((CACurrentMediaTime() - start) * 1000)
+        spin(0.1)
+      }
+      spin(1.5)
+      meter.stop()
+      Self.log(
+        "连着打（0.1 s 一字）「\(visible(word))」：每字同步 \(Self.stats(fast))；整段跑环每一轮 \(Self.stats(meter.slices))"
+      )
+    }
+    panel.hide()
+    model.files.stop()
     spin(0.3)
   }
 

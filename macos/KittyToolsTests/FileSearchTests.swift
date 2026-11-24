@@ -35,6 +35,54 @@ struct FileSearchTests {
     #expect(FileSearch.request(for: "open ab")?.isTooShort == false)
     #expect(FileSearch.request(for: "open 报")?.isTooShort == false)  // 1 个汉字照查
     #expect(FileSearch.request(for: "open ")?.isTooShort == false)  // 最近的文件
+    // 标点不算字：Spotlight 按词首比，「.x」和「x」一样宽（2026-11-24 本机 6000 多条，主线程卡 0.7 s）
+    for query in [" .x", "open .x", "find -a", " c++", " .x ."] {
+      #expect(FileSearch.request(for: query)?.isTooShort == true, "\(query)")
+    }
+    for query in [" .xl", " x.y", " .x report", " 1.5"] {
+      #expect(FileSearch.request(for: query)?.isTooShort == false, "\(query)")
+    }
+  }
+
+  /// 队列上先挑一遍（shortlist）再交给 rank，和全部交给 rank 排出来的一样：随机（带种子，失败时信息里有轮次）的名字、
+  /// 时间、深浅、用过的文件和加成；同一次查询分几批交（names 缓存跨批复用）也一样
+  @Test func shortlistKeepsRanking() {
+    var random = SplitMix(seed: 20_261_124)
+    let words = ["report", "rep", "Repo", "季度报告", "readme", "x", "notes", "reply", "2024"]
+    for round in 0..<200 {
+      let hits = (0..<random.next(below: 161)).map { index in
+        let name = (0...random.next(below: 3)).map { _ in words[random.next(below: words.count)] }
+          .joined(separator: ["-", " ", ""][random.next(below: 3)])
+        let depth = String(repeating: "/d", count: random.next(below: 4))
+        return hit("\(depth)/\(index)/\(name).md", daysAgo: Double(random.next(below: 6)))
+      }
+      let used = Set(hits.filter { _ in random.next(below: 8) == 0 }.map(\.path))
+      let boost = { (item: LauncherItem) -> (global: Double, query: Double) in
+        used.contains(item.target)
+          ? (Double(item.target.count % 7), Double(item.target.count % 3)) : (0, 0)
+      }
+      let terms = [[], ["rep"], ["re", "no"], ["jidu"], ["x"], ["2024"], ["季度"]][round % 7]
+      let expected = FileSearch.rank(hits, terms: terms, boost: boost)
+      // 分两批：先交前一半，再交全部（每批都是到目前为止的全部），缓存接着用
+      var names: [String: FileSearch.MatchNames] = [:]
+      _ = FileSearch.shortlist(
+        Array(hits.prefix(hits.count / 2)), terms: terms, used: used, names: &names)
+      let picked = FileSearch.shortlist(hits, terms: terms, used: used, names: &names)
+      #expect(
+        FileSearch.rank(picked, terms: terms, boost: boost) == expected, "round \(round) \(terms)")
+    }
+  }
+
+  /// 单测用的带种子随机数（SplitMix64）
+  private struct SplitMix {
+    var seed: UInt64
+    mutating func next(below bound: Int) -> Int {
+      seed &+= 0x9E37_79B9_7F4A_7C15
+      var z = seed
+      z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+      z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+      return Int((z ^ (z >> 31)) % UInt64(bound))
+    }
   }
 
   @Test func queryStringEscapesAndParses() throws {
@@ -125,6 +173,123 @@ struct FileSearchTests {
     #expect(boosted.first?.title == "old-report.pdf")
     // 只输关键词：按时间，从新到旧
     #expect(FileSearch.rank(hits, terms: [], boost: noBoost).first?.title == "reportcard.md")
+  }
+
+  /// 拍板 1A 2B：文件结果执行过收起，90 秒内再呼出回到原来的搜索（字全选、选中照旧）；重查到的文件没多出来就不换
+  /// （刚开过的那个有了使用加成也不往前挪），多出新文件才换；超过 90 秒、执行的不是文件的照旧清空
+  @Test func resumesFileSearchAfterRunning() throws {
+    let findMy = AppCatalog.item(path: "/System/Applications/FindMy.app")
+    let usage = try LauncherUsage(db: Database(path: ":memory:"))
+    let model = LauncherModel(usage: usage, apps: [findMy])
+    let start = Date(timeIntervalSinceReferenceDate: 1000)
+    let hits = [
+      hit("/Desktop/report-a.md"), hit("/Desktop/report-b.md", daysAgo: 2),
+      hit("/Desktop/report-c.md", daysAgo: 3),
+    ]
+    model.query = " report"
+    let request = try #require(model.fileRequest)
+    model.showFiles(hits, for: request)
+    model.selection = 1
+    let opened = try #require(model.selectedItem)
+    // ↩ 打开第 2 个：execute 会真的打开文件，这里只摆出它留下的样子
+    model.lastRun = opened
+    model.executed = true
+    model.didHide(now: start)
+    model.prepareForShow(now: start.addingTimeInterval(80))
+    #expect(model.query == " report" && model.resumesQuery && model.selectedItem == opened)
+    let shown = model.results
+    for _ in 0..<3 { usage.record(opened, query: model.query) }
+    model.showFiles(hits, for: request)
+    #expect(model.results == shown && model.selectedItem == opened)
+    // 多出新文件：换上新排的，选中还在开过的那一个上
+    model.showFiles(hits + [hit("/Desktop/report-d.md")], for: request)
+    #expect(model.results.count == shown.count + 1 && model.selectedItem == opened)
+    // 打了字就照常：新结果换上
+    model.query = " repo"
+    model.showFiles(hits, for: try #require(model.fileRequest))
+    #expect(model.results.count == hits.count)
+    // 超过 90 秒：清空
+    model.lastRun = model.selectedItem
+    model.executed = true
+    model.didHide(now: start)
+    model.prepareForShow(now: start.addingTimeInterval(91))
+    #expect(model.query.isEmpty && !model.resumesQuery)
+    // 对着文件以外做的事（⌥↩ 在访达里搜、⌃↩ 网页搜索、⌘, 这些不记 lastRun）：选中的是文件也照旧清空
+    model.query = " report"
+    model.showFiles(hits, for: try #require(model.fileRequest))
+    #expect(model.selectedItem?.kind == .path)
+    model.executed = true
+    model.didHide(now: start)
+    model.prepareForShow(now: start.addingTimeInterval(1))
+    #expect(model.query.isEmpty)
+    // 收起时 Spotlight 还没回来（列表里还是打字前的那些）：回来后结果到了照常换上
+    model.query = " report"
+    model.didHide(now: start)
+    model.prepareForShow(now: start.addingTimeInterval(1))
+    #expect(model.query == " report" && model.results.map(\.target) != hits.map(\.path))
+    model.showFiles(hits, for: try #require(model.fileRequest))
+    #expect(model.results.count == hits.count)
+    // 文件搜索里执行的是整句匹配到的 App（不是文件）：照旧清空
+    model.query = "find my"
+    model.showFiles(hits, for: try #require(model.fileRequest))
+    model.lastRun = try #require(model.results.first { $0.kind == .app })
+    model.executed = true
+    model.didHide(now: start)
+    model.prepareForShow(now: start.addingTimeInterval(1))
+    #expect(model.query.isEmpty)
+  }
+
+  /// 拍板 3A：文件行多选——⇧↓ 从选中行扩选（不能勾的 App 行跳过）、⌘K 勾了两个以上只给批量动作（find 模式第一项是
+  /// 「在访达中显示 N 个」）、Esc 先取消多选（查询还在）、⌘ 点按加减（没在多选时连选中的一起勾）、⇧ 点按选一段、
+  /// 不按 ⇧ 移动取消、结果换了看不见的勾去掉
+  @Test func multiSelectsFileRows() throws {
+    let findMy = AppCatalog.item(path: "/System/Applications/FindMy.app")
+    let model = LauncherModel(
+      usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [findMy])
+    model.query = "find my"
+    let hits = [
+      hit("/Desktop/my-a.md"), hit("/Desktop/my-b.md", daysAgo: 2),
+      hit("/Desktop/my-c.md", daysAgo: 3),
+    ]
+    model.showFiles(hits, for: try #require(model.fileRequest))
+    let rows = model.results
+    #expect(rows.count == 4 && !model.isCheckable(rows[0]) && model.isCheckable(rows[1]))
+    let extend = #selector(NSResponder.moveDownAndModifySelection(_:))
+    #expect(model.handleCommand(extend))
+    #expect(model.checked == [rows[1].id] && model.selection == 1)
+    #expect(model.handleCommand(extend))
+    #expect(model.checkedItems == [rows[1], rows[2]] && model.selection == 2)
+    #expect(String(localized: model.checkedPrimaryTitle) == "在访达中显示 2 个")
+    let actions = model.actions.map(\.title)
+    #expect(actions.prefix(2) == ["在访达中显示 2 个", "打开 2 个"] && actions.contains("拷贝文件"))
+    // 右键一行：勾着的那行给批量动作，没勾的那行对着它自己
+    #expect(model.contextActions(for: rows[1]).count == model.actions.count)
+    #expect(model.contextActions(for: rows[3]).count != model.actions.count)
+    // Esc：先取消多选，查询还在
+    #expect(model.handleCommand(#selector(NSResponder.cancelOperation(_:))))
+    #expect(model.checked.isEmpty && model.query == "find my")
+    // ⌘ 点按：没在多选时连选中的一起勾上，再点一下去掉
+    model.selection = 1
+    model.check(rows[3], range: false)
+    #expect(model.checked == [rows[1].id, rows[3].id] && model.selection == 3)
+    model.check(rows[3], range: false)
+    #expect(model.checked == [rows[1].id])
+    // 只勾一个、选中的是别的行：⌘K 也是批量菜单（键位都对着勾的那一个）
+    #expect(model.selection == 3 && model.actions.first?.title == "在访达中显示 1 个")
+    // ⇧ 点按：从锚点（刚点的第 4 行）到这里能勾的都勾上（App 行跳过）
+    model.check(rows[0], range: true)
+    #expect(model.checked == [rows[1].id, rows[2].id, rows[3].id])
+    // 不按 ⇧ 移动：取消
+    #expect(model.handleCommand(#selector(NSResponder.moveUp(_:))))
+    #expect(model.checked.isEmpty)
+    // 结果换了：看不见的勾去掉，看得见的留着
+    model.check(rows[1], range: false)
+    model.check(rows[2], range: false)
+    model.showFiles([hits[1]], for: try #require(model.fileRequest))
+    #expect(model.checkedItems.map(\.target) == [hits[1].path])
+    // 收起：勾全清（回到原来的搜索时也不带）
+    model.didHide()
+    #expect(model.checked.isEmpty)
   }
 
   @Test func findModeKeysAndWholeQueryApps() throws {

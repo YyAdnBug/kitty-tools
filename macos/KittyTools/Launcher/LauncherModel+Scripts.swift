@@ -139,7 +139,7 @@ extension LauncherModel {
       island?.show("那次的输出没留着", detail: "只留最近一次的输出", tone: .info)
       return
     }
-    // 先叫出来再换上：收起着时呼出会按「过了 60 秒」清掉查询，那会顺手关掉输出页；正在跑的全文脚本停掉（同 Esc）。
+    // 先叫出来再换上：收起着时呼出会按「过了 90 秒」清掉查询，那会顺手关掉输出页；正在跑的全文脚本停掉（同 Esc）。
     // 启动器功能关着叫不出来：不留一张过期的输出页（第三轮评审）
     if output != nil { closeOutput() }
     guard showPanel() else { return }

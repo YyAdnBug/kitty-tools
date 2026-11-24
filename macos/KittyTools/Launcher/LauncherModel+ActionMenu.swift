@@ -6,8 +6,18 @@ import SwiftUI
 extension LauncherModel {
   // MARK: ⌘K 动作菜单 / 右键菜单
 
-  /// 选中项的动作（⌘K）
-  var actions: [ActionMenu.Item] { selectedItem.map(actions(for:)) ?? [] }
+  /// 选中项的动作（⌘K）。勾着时只给批量动作（只勾一个也是：菜单上的键位 ↩ ⌘↩ ⌘C ⇧⌘C 都对着勾的，和按键一致）
+  var actions: [ActionMenu.Item] {
+    let checked = checkedItems
+    if !checked.isEmpty { return checkedActions(checked) }
+    return selectedItem.map(actions(for:)) ?? []
+  }
+
+  /// 行上右键：点的是勾着的行给批量动作，否则对着被点的那一行
+  func contextActions(for item: LauncherItem) -> [ActionMenu.Item] {
+    let checked = checkedItems
+    return checked.contains(item) ? checkedActions(checked) : actions(for: item)
+  }
 
   /// 一项能做的全部动作（N8；右键菜单同一份，体检 C8）：主动作 ↩ 在最前，每行写上键位，执行的和按键是同一段代码。
   /// 分节：打开 ｜ 用别的 App 打开（脚本是编辑、改别名、关掉）｜ 复制 ｜ 搜索框（补全、⌥↩、⌃↩）｜ 收藏、移除、废纸篓

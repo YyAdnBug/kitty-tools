@@ -88,7 +88,8 @@ extension LauncherModel {
     }
   }
 
-  /// 呼出前：应用程序目录变了就重扫（后台扫，扫完刚装的 App 就搜得到）；60 秒内没执行就收起的，接着上次的查询和选中项
+  /// 呼出前：应用程序目录变了就重扫（后台扫，扫完刚装的 App 就搜得到）；90 秒内留着查询收起的，接着上次的查询和选中项。
+  /// 文件搜索先留着上次的列表（重查到的没有多出新文件就不换），路径模式目录重读到了选回原来那一行
   func prepareForShow(now: Date = .now) {
     isShown = true
     // 搜菜单项的那个 App（N3）：这一刻的前台（启动器不激活本 App，前台还是底下那个）
@@ -109,6 +110,8 @@ extension LauncherModel {
     let keeps = keptAt.map { now.timeIntervalSince($0) <= Self.keepQueryInterval } ?? false
     keptAt = nil
     let kept = keeps ? selectedItem?.id : nil
+    resumingFiles = keeps && fileRequest != nil
+    resumedSelection = keeps && pathRequest != nil ? kept : nil
     if keeps || query.isEmpty { search() } else { query = "" }
     if let kept { reselect(kept) }
     resumesQuery = keeps && !query.isEmpty
@@ -135,9 +138,19 @@ extension LauncherModel {
   }
 
   /// 收起：执行过、或者查询是空的，清空；没执行就收起的（点外面、再按热键、切到别的 App）留着查询和选中项，
-  /// 60 秒内再呼出接着用（体检 A27）。App 目录超过 5 分钟就趁没人看时重扫（接住子文件夹里的升级、改名）
+  /// 90 秒内再呼出接着用（体检 A27）。文件结果（文件搜索、路径模式里的行）执行过也留着（拍板 1A）。
+  /// App 目录超过 5 分钟就趁没人看时重扫（接住子文件夹里的升级、改名）
   func didHide(now: Date = .now) {
     isShown = false
+    // 在文件搜索 / 路径模式里对着一个文件、文件夹做了事（打开、在访达中显示、在终端中打开、复制、拷贝，不管从哪个入口）：
+    // 同一次搜索常要连开几个。⌥↩ 在访达里搜、⌃↩ 网页搜索、⌘, 这些不对着文件的照旧清空
+    let ranFile = (fileRequest != nil || pathRequest != nil) && lastRun.map(isPathRow) == true
+    lastRun = nil
+    resumingFiles = false
+    resumedSelection = nil
+    // 多选的勾不留（回到原来的搜索时列表照旧、勾全清）
+    checked = []
+    checkAnchor = nil
     menuTarget = nil
     // 读到的菜单只留半分钟（插件说明里这么写的）：这期间再呼出同一个 App 不用重读
     menuExpiry = Task { [weak self] in
@@ -183,8 +196,8 @@ extension LauncherModel {
     ratesTask?.cancel()
     ratesTask = nil
     ratesFailed = false
-    // 打着密码参数没跑就收起的也不留（第三轮 C3：60 秒内再呼出时还看得见）
-    if executed || query.isEmpty || holdsSecret {
+    // 打着密码参数没跑就收起的也不留（第三轮 C3：90 秒内再呼出时还看得见）
+    if (executed && !ranFile) || query.isEmpty || holdsSecret {
       keptAt = nil
       if !query.isEmpty { query = "" }
     } else {
@@ -586,7 +599,12 @@ extension LauncherModel {
       guard !Task.isCancelled else { return }
       pathReads[directory] = nil
       pathListings[directory] = listing
-      if pathRequest != nil { search() }
+      if pathRequest != nil {
+        // 选回哪一行：回到原来的路径模式时收起前那一行（目录是重读的）；等着读的时候用户挪过选中的，留在挪到的那一行
+        let keep = resumedSelection ?? (userMovedSelection ? selectedItem?.id : nil)
+        search()
+        if let keep, reselect(keep), !pathPending { resumedSelection = nil }
+      }
     }
     return nil
   }
@@ -734,7 +752,14 @@ extension LauncherModel {
       checksFolderAccess = false
       folderHint = FileSearch.accessHint(denied: Permissions.deniedFolders())
     }
-    files.start(request) { [weak self] hits in self?.showFiles(hits, for: request) }
+    files.start(request, used: usedFiles) { [weak self] hits in
+      self?.showFiles(hits, for: request)
+    }
+  }
+
+  /// 使用记录里的文件路径：Spotlight 的队列上先挑一遍时带上它们（有使用加成，可能排上来，FileSearch.shortlist）
+  var usedFiles: Set<String> {
+    Set(usage.entries.values.lazy.filter { $0.kind == .path }.map(\.target))
   }
 
   /// 文件结果到了（分批，每批都是到目前为止的全部）：排好序，前面放整句（连关键词）匹配到的 App / 内置动作
@@ -747,6 +772,13 @@ extension LauncherModel {
     let found = FileSearch.rank(
       hits, terms: request.terms, item: { files.item($0, pinyin: pinyin) },
       boost: { usage.boost(for: $0, query: query) })
+    // 回到原来的搜索（拍板 1A）：重查到的文件都还在现在的列表里就不换，顺序、选中照旧；多出新文件（或者现在一个文件都没有：
+    // 收起前 Spotlight 还没回来）才换
+    if resumingFiles {
+      let shown = Set(results.lazy.filter { $0.kind == .path }.map(\.target))
+      if !shown.isEmpty, Set(found.map(\.target)).isSubset(of: shown) { return }
+      resumingFiles = false
+    }
     let whole = query.trimmingCharacters(in: .whitespaces)
     let searchable = searchableApps
     let named =

@@ -24,6 +24,8 @@ extension LauncherModel {
         searchInFinder()
       } else if event.modifierFlags.contains(.control) {
         searchWeb()
+      } else if !checked.isEmpty {
+        runChecked()
       } else if let selectedItem {
         execute(selectedItem)
       }
@@ -32,6 +34,13 @@ extension LauncherModel {
     // ⇧Tab：路径模式里回到上一级；别处吞掉（同 Tab，不让焦点跳走）
     case #selector(NSResponder.insertBacktab(_:)):
       if pathRequest != nil { goUpPath() }
+    // ⇧↑ ⇧↓：列表里有文件、文件夹时扩选（多选）；没有就交还输入框（选字）
+    case #selector(NSResponder.moveUpAndModifySelection(_:))
+    where results.contains(where: isCheckable):
+      extendChecks(by: -1)
+    case #selector(NSResponder.moveDownAndModifySelection(_:))
+    where results.contains(where: isCheckable):
+      extendChecks(by: 1)
     // →：光标在搜索词末尾、有选中项时打开动作菜单（同剪贴板），否则照常往右移光标
     case #selector(NSResponder.moveRight(_:))
     where selectedItem != nil && Self.caretAtEnd(of: query):
@@ -42,6 +51,8 @@ extension LauncherModel {
         toggleQuickLook()  // 先缩回预览
       } else if armed != nil {
         armed = nil  // 先撤掉上膛，再清空搜索
+      } else if !checked.isEmpty {
+        checked = []  // 再取消多选（拍板 3A：Esc 先取消多选，再清空搜索）
       } else {
         guard !query.isEmpty else { return false }  // 没有查询：交给窗口关闭
         query = ""
@@ -161,6 +172,10 @@ extension LauncherModel {
     case .command: handled = handleCommandKey(event)
     case [.command, .option] where key == kVK_UpArrow || key == kVK_DownArrow:
       handled = moveFavorite(by: key == kVK_UpArrow ? -1 : 1)
+    // 勾着时对着勾的：不看搜索框的选区（回到原来的搜索时框里的字是全选的，拍板 1A）
+    case [.command, .shift] where key == kVK_ANSI_C && !checked.isEmpty:
+      copyCheckedFiles()
+      handled = true
     case [.command, .shift] where key == kVK_ANSI_C:
       guard let item = selectedItem, isWebLink(item) || isPathRow(item),
         !Self.fieldHasSelection(event)
@@ -187,7 +202,11 @@ extension LauncherModel {
   private func handleCommandKey(_ event: NSEvent) -> Bool {
     switch event.typedKeyCode {
     case kVK_Return:
-      if let item = selectedItem { commandReturn(item) }
+      if !checked.isEmpty {
+        runChecked(commandKey: true)
+      } else if let item = selectedItem {
+        commandReturn(item)
+      }
     // 「常用」里 ⌘⌫：忘掉这一项（有查询、或 ⌘K 过滤框里有字时 ⌘⌫ 照常删到行首）；收藏上没有这个动作，响提示音
     case kVK_Delete where isShowingRecent && (!showsActions || actionQuery.isEmpty):
       if let item = selectedItem, isCommon(item) { forget(item) } else { NSSound.beep() }
@@ -195,6 +214,8 @@ extension LauncherModel {
     case kVK_ANSI_Z
     where query.isEmpty && forgotten != nil && (!showsActions || actionQuery.isEmpty):
       undoForget()
+    case kVK_ANSI_C where !checked.isEmpty:
+      copyCheckedPaths()
     case kVK_ANSI_C where !Self.fieldHasSelection(event):
       guard let item = selectedItem, copyTitle(for: item) != nil else { return false }
       copy(item)
@@ -244,6 +265,7 @@ extension LauncherModel {
     switch item.kind {
     case .app, .path:
       if revealsOnReturn(item) { return open(URL(filePath: item.target), item) }
+      lastRun = item
       close()
       NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: item.target)])
     case .scriptResult where item.payload != nil:
@@ -299,6 +321,7 @@ extension LauncherModel {
     case .calculation(let copy): (text, title) = (copy.text, copy.title)
     }
     Paster.write(string: text, record: true)
+    lastRun = item
     close()
     guard let title else { return }
     let isPath = (item.kind == .app || item.kind == .path) && copyTitle(for: item) == title
@@ -340,6 +363,10 @@ extension LauncherModel {
     selectionMotion = Style.isKeyRepeat ? .instant : .snap
     selection = (selection + offset + results.count) % results.count
     userMovedSelection = true
+    resumedSelection = nil
+    // 不按 ⇧ 地移动：取消多选（同剪贴板面板）
+    checked = []
+    checkAnchor = selectedItem?.id
     // 焦点一直在搜索框，行上的「已选中」读屏看不到：说出选中了什么（A1）
     if let item = selectedItem { Island.announceSettled(item.title, item.kindTitle) }
   }
