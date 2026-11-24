@@ -497,7 +497,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 现在算不算闲（纯函数）：没在框选，看得见的窗口里没有浮层（三块主面板等）、没有全部便签窗口、没有展开着的那叠
   /// （扇着、打开着便签；一直展开时静置的那一列常驻屏幕上，不算）。**浮动便签不拦**：它可以一直浮在屏幕上，拦了就
-  /// 永远不回收（清缓存时留下它的图，见 reclaimIdleMemory）。设置窗也不拦：回收的东西它都不用
+  /// 永远不回收（清缓存时留下它的图，见 reclaimIdleMemory）。设置窗也不拦：回收的东西它都不用（开着的设置窗不放，
+  /// releaseClosedSettingsWindow 只放关着的）
   static func isIdle(windows: [NSWindow], isCapturing: Bool) -> Bool {
     !isCapturing
       && !windows.contains { window in
@@ -517,6 +518,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     LinkPreview.shared.dropHeroes()
     Annotation.releaseCaches()  // 打码的缩小图和模糊用的 Core Image 上下文（约 45 MB，2026-11-12）
     releaseClosedNotesWindow()
+    releaseClosedSettingsWindow()
     // 便签正文里解好的图片缩略图（第 7 批：按像素数算 cost，闲下来整块放掉）；浮在屏幕上的那张便签里的图留着
     // （清了它下一次重画先闪一块纸色）
     let floating = (noteEdge?.floats.floatingIDs ?? []).compactMap { noteStore?.note($0) }
@@ -539,6 +541,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     old.window.contentViewController = nil
     // 搜索的折叠缓存只有这扇窗口的搜索框用：一起放掉
     noteStore?.dropSearchCache()
+  }
+
+  /// 关着的设置窗整个放掉（2026-11-24 量，内存探针第 7 节：17 页各看两遍后关窗，留着的窗口和停着的那一页约 15 MB 堆、
+  /// 3 MB 属性图；放掉后 footprint 第一次回落 8–39 MB（7 次中位 33），之后每次 3–8 MB。关窗后不回落的大头不在这里：
+  /// 第一次打开时系统框架一次性的类型、符号缓存约 20 MB，和分配器留着的空闲页约 30 MB（macOS 27 的 xzone，调回收接口还不出）。
+  /// 代价是再打开要重建，-O 的测试宿主里约 0.5 s（留着时 1–3 ms），所以等闲下来再放：刚关又开的不用重建。
+  /// 最小化着的不放（它在程序坞里）。同 releaseClosedNotesWindow：先置空属性，再拆视图树
+  private func releaseClosedSettingsWindow() {
+    guard let old = builtSettingsWindow, !old.window.isVisible, !old.window.isMiniaturized else {
+      return
+    }
+    builtSettingsWindow = nil
+    // 记位置的名字让出来（万一旧窗口对象还被谁捏着，新建的那扇就占不到这个名字、不再记位置）
+    old.window.setFrameAutosaveName("")
+    old.window.contentViewController = nil
   }
 
   /// 三块主面板建过没有（lazy：一碰就建）。只是要收起时看它们：没建过就不用收，别为了收起把关着的功能（Feature）的面板
@@ -886,8 +903,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 设置窗的导航状态：窗口懒建，主菜单的「显示 › 返回」（KittyToolsApp 的 SettingsCommands）一启动就要读它
   let settingsNavigation = SettingsNavigation()
 
-  lazy var settingsWindow: SettingsWindow = {
-    weak var created: SettingsWindow?
+  /// 设置窗：用时再建；关掉后闲下来整个放掉（releaseClosedSettingsWindow），再打开时重建，还停在原来那页（导航状态在
+  /// settingsNavigation 里）
+  private var builtSettingsWindow: SettingsWindow?
+
+  var settingsWindow: SettingsWindow {
+    if let built = builtSettingsWindow { return built }
+    let window = makeSettingsWindow()
+    builtSettingsWindow = window
+    return window
+  }
+
+  private func makeSettingsWindow() -> SettingsWindow {
     settingsNavigation.newScriptCreated = { [unowned self] url in
       scriptLibrary.refresh()
       island.show(
@@ -981,7 +1008,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           AboutTab(updater: updater.isSupported ? updater : nil) {
             self.firstInstall = false
             self.onboardingStart = .welcome
-            created?.navigation.showsOnboarding = true
+            self.settingsNavigation.showsOnboarding = true
           })
       }
     }
@@ -998,9 +1025,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         .environment(island))
     }
-    created = window
+    window.onClose = { [unowned self] in idleReclaim.schedule() }
     return window
-  }()
+  }
 
   /// 到点的提醒要进入状态屏（提醒 C1 / C12）：先把进不去的情况挑出来（进不去时提醒退成全屏，原因写在全屏上——状态屏自己的
   /// 警告岛会被全屏盖住），再真的进。进去了返回 nil

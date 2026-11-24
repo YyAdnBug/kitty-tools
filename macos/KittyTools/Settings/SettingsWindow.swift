@@ -460,6 +460,8 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
   /// 只读：单测看窗口的内容和最小尺寸
   let window: NSWindow
   let navigation: SettingsNavigation
+  /// 关窗时（AppDelegate 排一次空闲回收：闲下来把关着的设置窗整个放掉）
+  var onClose: () -> Void = {}
 
   /// - Parameters:
   ///   - navigation: 导航状态（AppDelegate 持有，主菜单的「返回」也读它；窗口是懒建的）
@@ -521,6 +523,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     // 引导开着时关掉设置窗也算关掉了引导（E1）
     if navigation.showsOnboarding { navigation.showsOnboarding = false }
     NSApp.leaveDockIfNoWindows(closing: window)
+    onClose()
   }
 }
 
