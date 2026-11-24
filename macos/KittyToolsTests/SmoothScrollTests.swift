@@ -322,28 +322,30 @@ struct SmoothScrollTests {
     #expect(motion.remainingX == -5 && motion.remainingY == -10)
   }
 
-  /// 再拨一格落在别的窗口（issue #50）：原来没滚完的扔掉、新窗口只滚新拨的这一格；同一扇窗口接着叠。同一个进程的另一扇
-  /// 窗口也算别处
+  /// 再拨一格换了地方（issue #50）：原来没滚完的扔掉、新地方只滚新拨的这一格；同一个地方（手晃几个点）接着叠、跟着最近那一格。
+  /// 别的进程、同一个进程里挪开 40 点以上（另一扇窗口、侧栏和正文）都算换了地方
   @Test func motionDropsRemainderOnNewTarget() {
-    let right = S.Target(pid: 100, window: 7)
+    let right = S.Target(pid: 100, location: CGPoint(x: 900, y: 400))
     var motion = S.Motion()
     motion.add(dx: 0, dy: 120, to: right)
     _ = motion.step(dt: 1.0 / 60, tau: 0.12)
     let left = motion.remainingY
-    motion.add(dx: 0, dy: 40, to: right)
-    #expect(motion.remainingY == left + 40 && motion.target == right)
-    let other = S.Target(pid: 200, window: 9)
+    let jitter = S.Target(pid: 100, location: CGPoint(x: 920, y: 430))
+    motion.add(dx: 0, dy: 40, to: jitter)
+    #expect(motion.remainingY == left + 40 && motion.target == jitter)
+    let other = S.Target(pid: 200, location: CGPoint(x: 925, y: 430))
     motion.add(dx: 0, dy: 40, to: other)
     #expect(motion.remainingY == 40 && motion.target == other)
-    motion.add(dx: 10, dy: 0, to: S.Target(pid: 200, window: 10))
+    motion.add(dx: 10, dy: 0, to: S.Target(pid: 200, location: CGPoint(x: 300, y: 430)))
     #expect(motion.remainingX == 10 && motion.remainingY == 0)
     var sent = 0
     while !motion.isIdle { sent += motion.step(dt: 1.0 / 60, tau: 0.12).dx }
     #expect(sent == 10)
   }
 
-  /// 帧是最近那一格滚轮的拷贝（issue #50）：位置和系统注解的目标都跟着那一格——滑着时鼠标挪走，帧还投到原处；距离、连续、
-  /// 修饰键清空、记号、「方向已经翻过」和新建的像素滚动一样；时刻是现在。目标从那一格上读。只建事件、不发
+  /// 帧是最近那一格滚轮的拷贝（issue #50）：位置和系统记的目标都跟着那一格——滑着时鼠标挪走，帧还投到原处；距离、连续、
+  /// 修饰键清空、「方向已经翻过」和新建的像素滚动一样；时刻是现在；记号写在帧的事件源上（拷贝带着原滚轮的事件源，发出去时
+  /// 按事件源上的记号算，字段上写的留不住：liveProbe 实测，这里只能看事件源）。目标从那一格上读。只建事件、不发
   @Test func frameFollowsLastWheel() throws {
     let wheel = try #require(
       CGEvent(
@@ -353,8 +355,8 @@ struct SmoothScrollTests {
     wheel.flags = .maskShift
     wheel.setIntegerValueField(.eventTargetUnixProcessID, value: 4242)
     wheel.setIntegerValueField(.scrollWheelEventScrollCount, value: 5)
-    // 窗口那两个字段只有系统注解得上（新建的事件写不进去），这里读到 0
-    #expect(ScrollTap.target(wheel) == S.Target(pid: 4242, window: 0))
+    #expect(ScrollTap.target(wheel) == S.Target(pid: 4242, location: CGPoint(x: 123, y: 456)))
+    let source = try #require(CGEventSource(stateID: .privateState))
     let ints: [CGEventField] = [
       .scrollWheelEventDeltaAxis1, .scrollWheelEventPointDeltaAxis1, .scrollWheelEventDeltaAxis2,
       .scrollWheelEventPointDeltaAxis2, .scrollWheelEventIsContinuous, .scrollWheelEventScrollCount,
@@ -365,12 +367,15 @@ struct SmoothScrollTests {
     ]
     for (dx, dy) in [(0, 7), (0, -7), (5, 0), (-33, 120), (0, 1)] {
       let frame = try #require(
-        ScrollTap.frame(from: wheel, dx: dx, dy: dy, inverted: 1, marker: ScrollTap.ownMarker))
+        ScrollTap.frame(
+          from: wheel, dx: dx, dy: dy, inverted: 1, marker: ScrollTap.ownMarker, source: source))
       let fresh = try #require(
-        ScrollTap.frame(from: nil, dx: dx, dy: dy, inverted: 1, marker: ScrollTap.ownMarker))
+        ScrollTap.frame(
+          from: nil, dx: dx, dy: dy, inverted: 1, marker: ScrollTap.ownMarker, source: source))
       #expect(frame !== wheel)
       #expect(frame.location == wheel.location)
       #expect(ScrollTap.target(frame) == ScrollTap.target(wheel))
+      #expect(CGEventSource(event: frame)?.userData == ScrollTap.ownMarker)
       for field in ints {
         #expect(frame.getIntegerValueField(field) == fresh.getIntegerValueField(field), "\(field)")
       }
@@ -383,6 +388,11 @@ struct SmoothScrollTests {
       #expect(ns.hasPreciseScrollingDeltas && ns.isDirectionInvertedFromDevice)
       #expect(abs(ns.timestamp - ProcessInfo.processInfo.systemUptime) < 1)
     }
+    // 没有事件源时退回新建的（位置是现在的光标）
+    let bare = try #require(
+      ScrollTap.frame(
+        from: wheel, dx: 0, dy: 7, inverted: 0, marker: ScrollTap.ownMarker, source: nil))
+    #expect(bare.getIntegerValueField(.scrollWheelEventScrollCount) == 0)
   }
 
   /// 线程被耽搁了很久：这一帧也只按 maxStep 放，不一下子跳到底
