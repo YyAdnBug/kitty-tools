@@ -640,6 +640,46 @@ struct ClipboardStoreTests {
     #expect(off.height(of: picture.id) == 40 && off.offset(of: b.id) == 104)
   }
 
+  /// 透镜加在缓存的「不带透镜」前缀和上（ListLayout(base:lens:)，美化与提速 P1）：每一项的顶、总高、分组标题的顶、
+  /// 二分出来的要画哪几项，和整条重算一遍的一模一样；鼠标在哪一行按同一份几何换算（标题、列表外是 nil）
+  @Test func lensOnCachedBaseMatchesFullLayout() {
+    let items = (0..<30).map { text("第 \($0) 条", ago: Double($0) * 3600 * 2) }
+    let sections = ClipboardPanelView.daySections(items)
+    let base = ListLayout.Base(leading: 40, sections: sections)
+    let lenses: [(id: UUID, height: CGFloat)?] = [
+      nil, (items[0].id, 198), (items[17].id, 70), (items[29].id, 146),
+    ]
+    for lens in lenses {
+      let full = ListLayout(leading: 40, sections: sections, lens: lens)
+      let cached = ListLayout(base: base, lens: lens)
+      #expect((0...full.entries.count).map(full.top(of:)) == (0...cached.entries.count).map(cached.top(of:)))
+      #expect(full.sectionTops == cached.sectionTops && full.totalHeight == cached.totalHeight)
+      for band in [0, 3, 40] {
+        #expect(full.window(band: band, viewport: 427.5) == cached.window(band: band, viewport: 427.5))
+      }
+    }
+    let (a, b) = (text("a"), text("b"))
+    let layout = ListLayout(
+      base: ListLayout.Base(leading: 40, sections: [(.now, "今天", [(0, a), (1, b)])]),
+      lens: (a.id, 198))
+    #expect(layout.rowID(atY: 39) == nil)  // 「新建片段」
+    #expect(layout.rowID(atY: 40 + 23) == nil)  // 分组标题
+    #expect(layout.rowID(atY: 40 + 24) == a.id)
+    #expect(layout.rowID(atY: 40 + 24 + 197) == a.id)  // 透镜里
+    #expect(layout.rowID(atY: 40 + 24 + 198) == b.id)
+    #expect(layout.rowID(atY: -1) == nil && layout.rowID(atY: layout.totalHeight) == nil)
+  }
+
+  /// 行标题压空白不建正则（美化与提速 P3）：和 replacing(/\s+/, with: " ") 结果一样
+  @Test func collapsingWhitespaceMatchesRegex() {
+    for sample in [
+      "", " ", "a", "  a  b\n\nc\t\td  ", "全角\u{3000}空格", "换行\r\n回车", "\u{00A0}不断行空格",
+      "emoji 👍🏽  合字", "a\u{2028}b\u{2029}c",
+    ] {
+      #expect(sample.collapsingWhitespace() == sample.replacing(/\s+/, with: " "), "\(sample)")
+    }
+  }
+
   /// 剪贴板面板挂进屏外窗口（不弹面板、不抢键盘）；「显示透镜」等用临时偏好域，不读 Dev 版里手测时改过的设置
   private func showPanel(_ model: ClipboardPanelModel) throws -> (
     window: NSWindow, close: () -> Void
@@ -649,6 +689,7 @@ struct ClipboardStoreTests {
       styleMask: [.borderless], backing: .buffered, defer: false)
     let suite = "kitty-lens-test-\(UUID().uuidString)"
     let prefs = try #require(UserDefaults(suiteName: suite))
+    ClipRowFrames.users += 1
     window.contentView = NSHostingView(
       rootView: ClipboardPanelView(model: model).defaultAppStorage(prefs))
     window.orderFront(nil)
@@ -656,16 +697,21 @@ struct ClipboardStoreTests {
       window,
       {
         window.orderOut(nil)
+        ClipRowFrames.users -= 1
         prefs.removePersistentDomain(forName: suite)
       }
     )
   }
 
-  /// 每行背景里的 HoverTracker 是一个和整行（含透镜）一样大的 NSView：拿它的 frame（窗口坐标，原点左下）当行实际画在哪
-  private func drawnRows(in view: NSView) -> [CGRect] {
-    (String(describing: type(of: view)) == "TrackingView"
-      ? [view.convert(view.bounds, to: nil)] : [])
-      + view.subviews.flatMap(drawnRows(in:))
+  /// 行实际画在哪（窗口坐标，原点左下）：每个行视图自己报的 frame（ClipRowFrames，showPanel 里打开），只算这块面板的条目
+  /// （别的测试同时开着的面板也在报）。原来找每行背景里的 HoverTracker（和整行一样大的 NSView），2026-11-23 悬停收成整块列表
+  /// 一块追踪区后改成这样
+  private func drawnRows(_ model: ClipboardPanelModel, in window: NSWindow) -> [CGRect] {
+    let ids = Set(model.store.items.map(\.id))
+    let height = window.contentView?.bounds.height ?? 0
+    return ClipRowFrames.frames.values.filter { ids.contains($0.item) }.map {
+      CGRect(x: $0.frame.minX, y: height - $0.frame.maxY, width: $0.frame.width, height: $0.frame.height)
+    }
   }
 
   /// 实际画出来的行里正好一行展开成选中项的透镜，⌘Y 的起点（cardFrame，窗口坐标、原点左上）就是这一行；返回这一行
@@ -676,7 +722,7 @@ struct ClipboardStoreTests {
     let view = try #require(window.contentView)
     let item = try #require(model.selectedItem)
     let lens = Lens.height(for: item, form: model.contentForm(of: item))
-    let drawn = drawnRows(in: view).sorted { $0.maxY > $1.maxY }
+    let drawn = drawnRows(model, in: window).sorted { $0.maxY > $1.maxY }
     let expanded = drawn.filter { $0.height > ClipRowView.height + 1 }
     #expect(expanded.count == 1 && abs(expanded[0].height - lens) < 0.5, step)
     let row = try #require(expanded.first, step)
@@ -706,7 +752,7 @@ struct ClipboardStoreTests {
       // 至少等 0.5 s 让透镜动画走完；删掉的行还在播退场就再等（最多 2 s），一直多出来的行（搬走没清掉的旧行）照样失败
       for tick in 0..<25 {
         RunLoop.main.run(until: .now.addingTimeInterval(0.1))
-        if tick >= 4, drawnRows(in: try #require(window.contentView)).count == items.count { break }
+        if tick >= 4, drawnRows(model, in: window).count == items.count { break }
       }
       let (item, row, drawn) = try expectLens(model, in: window, step)
       #expect(drawn.count == items.count, step)

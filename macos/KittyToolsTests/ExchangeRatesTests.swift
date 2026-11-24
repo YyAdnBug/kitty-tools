@@ -172,6 +172,34 @@ struct ExchangeRatesTests {
     #expect(Calculator.item(for: "2^10", rates: table, home: "CNY")?.payload == "1024")
   }
 
+  /// 启动器每打一个字要问三四遍（P4）：没提到任何货币的不跑正则、直接 nil；同一个查询只解析一次（首尾空格不算），换了查询照常
+  @Test func skipsQueriesWithoutCurrencyAndParsesOnce() {
+    for query in ["safari", "系统设置", "12*(3+4)/7", "zqxjkvw", "2024-01-01"] {
+      #expect(!ExchangeRates.mentionsCurrency(query), "\(query)")
+      #expect(request(query) == nil, "\(query)")
+    }
+    // 不写金额的问法也提到了货币；全角、大小写、去掉问法里的字之后才挨在一起的（「美的元」→「美元」）都算
+    for query in ["美元兑人民币", "USD/CNY", "usd cny", "美元汇率", "￥100", "100 Japanese Yen", "100 美的元"] {
+      #expect(ExchangeRates.mentionsCurrency(query), "\(query)")
+    }
+    #expect(request("100 美的元") == req(100, "USD"))
+    // 每种货币的代码（大小写）和系统给的中文名都认得。荷属安的列斯盾（ANG）除外：名字里的「的」是问法里的字，解析时
+    // 也先去掉了，这个名字本来就换算不了（代码照样认）
+    for code in ExchangeRates.isoCodes {
+      #expect(ExchangeRates.mentionsCurrency("100 \(code)"), "\(code)")
+      #expect(ExchangeRates.mentionsCurrency("100 \(code.lowercased())"), "\(code)")
+      let name = ExchangeRates.chineseName(code)
+      #expect(
+        ExchangeRates.mentionsCurrency("100 \(name)") || request("100 \(name)") == nil, "\(code)")
+    }
+    // 记下的结果按查询认：首尾空格一样，换了查询（含没提到货币的）照常重新算
+    #expect(request("100 usd") == req(100, "USD"))
+    #expect(request("  100 usd ") == req(100, "USD"))
+    #expect(request("100 usd to jpy") == req(100, "USD", "JPY"))
+    #expect(request("safari") == nil)
+    #expect(request("100 usd") == req(100, "USD"))
+  }
+
   @Test func remembersUsedCurrencies() {
     var recents = ExchangeRates.remembering("100 usd to jpy", in: [], home: "CNY")
     #expect(recents == ["JPY", "USD"])

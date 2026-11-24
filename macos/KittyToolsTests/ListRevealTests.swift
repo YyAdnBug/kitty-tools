@@ -142,7 +142,7 @@ struct ListRevealTests {
   }
 
   /// 只画可见区附近（ListWindow，2026-10-03）：按段取要画的项，上下各多 overscan；段号超出内容（列表刚变短）时
-  /// 按最后一段画；空列表什么都不画
+  /// 按滚到底的样子画（顶夹在「总高 − 可见区」，2026-11-23）；空列表什么都不画
   @Test func windowRange() {
     let tops = (0...1000).map { CGFloat($0) * 40 }  // 1000 行，每行 40
     let viewport: CGFloat = 427.5
@@ -150,9 +150,23 @@ struct ListRevealTests {
     #expect(ListWindow.range(tops, band: 0, inset: 6, viewport: viewport) == 0..<25)
     // 第 10 段：顶在 2394，从 2074 画到 3381.5
     #expect(ListWindow.range(tops, band: 10, inset: 6, viewport: viewport) == 51..<85)
-    // 段号超出内容：按最后一段（39834）画，一直到最后一行
-    #expect(ListWindow.range(tops, band: 1000, inset: 6, viewport: viewport) == 987..<1000)
+    // 段号超出内容：按滚到底的样子画（顶 40000 − 427.5 − 6 = 39566.5，从 39246.5 起），一直到最后一行。
+    // 原来按最后一段的开头（39834）画、从 39514 起：滚到底时可见区的顶在 39572.5，段高 240 也盖得住，只是多画几行
+    #expect(ListWindow.range(tops, band: 1000, inset: 6, viewport: viewport) == 981..<1000)
     #expect(ListWindow.range([0], band: 3, inset: 6, viewport: viewport).isEmpty)
+    // 剪贴板：一段 40、上下各多 240（美化与提速 P2）。第 10 段：顶在 394，从 154 画到 1101.5
+    #expect(
+      ListWindow.range(tops, band: 10, inset: 6, viewport: viewport, bandHeight: 40, overscan: 240)
+        == 3..<28)
+    // 往下挪一段：只在两头各进出一行
+    #expect(
+      ListWindow.range(tops, band: 11, inset: 6, viewport: viewport, bandHeight: 40, overscan: 240)
+        == 4..<29)
+    // 段号超出内容（滚到底时删了一批）：从 39326.5 起画，盖住滚到底的可见区（39572.5 起）。原来按最后一段的开头
+    // （39954）画、从 39714 起，顶上空 140 pt
+    #expect(
+      ListWindow.range(tops, band: 1000, inset: 6, viewport: viewport, bandHeight: 40, overscan: 240)
+        == 983..<1000)
   }
 
   /// 翻译历史的列表几何：标题 24、行 44 一次算好；每一组第一条的区间连着标题；身份标题按标题字、行按条目

@@ -10,6 +10,7 @@ import AVFoundation
 import AppKit
 import Carbon.HIToolbox
 import Foundation
+import Observation
 import SwiftUI
 import Testing
 
@@ -566,6 +567,23 @@ struct HistoryListTests {
     coordinator.resumeInput()
     #expect(coordinator.translatedSource == "hello" && !coordinator.languageChanged)
   }
+
+  /// 原文框「点过 / 改过字」（美化 V7）：翻译一段（划词、复制即译、截图翻译、历史重翻）、↩ 重翻、清空、输入翻译再打开都清零——
+  /// 呼出时带进来的原文、按 ↩ 都不算在改
+  @Test @MainActor func sessionsClearSourceTouched() throws {
+    let coordinator = TranslateCoordinator(
+      services: TranslateServiceStore(services: []),
+      history: try HistoryStore(db: Database(path: ":memory:")))
+    let sessions: [() -> Void] = [
+      { coordinator.translate("This whole sentence came from a selection.") },
+      { coordinator.start() }, { coordinator.beginInput() }, { coordinator.resumeInput() },
+    ]
+    for begin in sessions {
+      coordinator.sourceTouched = true
+      begin()
+      #expect(!coordinator.sourceTouched)
+    }
+  }
 }
 
 struct ServiceLogoTests {
@@ -760,6 +778,23 @@ struct TranslatePanelHeightTests {
     #expect(TranslatePanelView.panelHeight(120, mustFit: 120, visible: 992) == 220)
   }
 
+  /// 改高度带不带动画（美化与提速 P5）：出字时一行一行直接到位；别的时候 8 pt 以上才带
+  @Test func resizeAnimatesOnlyWhenNotStreaming() {
+    #expect(TranslatePanelView.animatesResize(from: 300, to: 322.5, streaming: false))
+    #expect(!TranslatePanelView.animatesResize(from: 300, to: 322.5, streaming: true))
+    #expect(!TranslatePanelView.animatesResize(from: 300, to: 306, streaming: false))
+    #expect(TranslatePanelView.animatesResize(from: 400, to: 300, streaming: false))
+  }
+
+  /// 原文框的强调色焦点环（美化 V7）：拿着焦点、并且点过 / 改过字或者在组字才亮；光拿着焦点（呼出时）是中性的
+  @Test func sourceFocusRingOnlyWhileEditing() {
+    #expect(!TranslatePanelView.showsSourceFocus(focused: true, touched: false, composing: false))
+    #expect(TranslatePanelView.showsSourceFocus(focused: true, touched: true, composing: false))
+    #expect(TranslatePanelView.showsSourceFocus(focused: true, touched: false, composing: true))
+    #expect(!TranslatePanelView.showsSourceFocus(focused: false, touched: true, composing: false))
+    #expect(!TranslatePanelView.showsSourceFocus(focused: false, touched: false, composing: false))
+  }
+
   /// 真排一遍（屏外窗口、临时偏好域）：不超过三张时要放下的就是全部内容；四张时停在第三张的下沿，
   /// 正好少第四张卡和它上面的间距
   @Test @MainActor func mustFitStopsAtThirdCard() throws {
@@ -797,41 +832,64 @@ struct TranslatePanelHeightTests {
   }
 }
 
-/// 第二轮体检第 1 批：等待卡的三处循环动效（彗星边框、骨架和「思考中」的扫光）只动图层的变换，不逐帧重画渐变
+/// 等待卡的三处循环动效（彗星边框、骨架和「思考中」的扫光）和生成中的光标（第二轮体检第 1 批起只动变换；美化与提速 P5
+/// 换成 LoopLayer）：循环是图层上的 CABasicAnimation、整个交给渲染服务，主线程不逐帧推，也不逐帧重画渐变
 struct ResultCardLoopTests {
-  /// 一次取样：环形渐变层转到几度、每个线性渐变层的 x、有没有渐变层自己在裁剪
-  private struct Sample: Equatable {
-    var angles: [Double] = []
-    var bands: [Double] = []
-    var clips = false
+  /// 一层带循环动画的图层：动画的 keyPath、一程多久、往不往返，图层是什么（环形 / 线性渐变、色块）
+  private struct Loop: Hashable {
+    var keyPath: String
+    var duration: Double
+    var autoreverses: Bool
+    var layer: String
+  }
+
+  /// 一次取样：带循环动画的图层，和所有图层的模型值（变换、位置、透明度）——SwiftUI 的隐式动画是主线程逐帧改模型值，
+  /// 交给渲染服务的动画模型值不动；带动画那几层的显示值（presentation，按动画的时钟算出来的）在走
+  private struct Sample {
+    var loops: [Loop] = []
+    var models: [String] = []
+    var shown: [String] = []
+    /// 彗星的环形渐变层（减弱动态效果时也在，停在 0°）、看得见的扫光带子
+    var conics = 0
+    var bands = 0
 
     mutating func collect(_ layer: CALayer) {
-      if let gradient = layer as? CAGradientLayer {
-        if gradient.type == .conic {
-          let transform = layer.affineTransform()
-          angles.append(atan2(transform.b, transform.a) * 180 / .pi)
-        } else {
-          bands.append(layer.frame.minX)
+      let name: String =
+        switch (layer as? CAGradientLayer)?.type {
+        case .conic?: "conic"
+        case .axial?: "axial"
+        default: "plain"
         }
-        clips = clips || layer.masksToBounds
+      if name == "conic" { conics += 1 }
+      if name == "axial", !layer.isHidden { bands += 1 }
+      if let animation = layer.animation(forKey: LoopLayerView.animationKey) as? CABasicAnimation {
+        #expect(animation.repeatCount == .infinity)
+        loops.append(
+          Loop(
+            keyPath: animation.keyPath ?? "", duration: animation.duration,
+            autoreverses: animation.autoreverses, layer: name))
+        let shown = layer.presentation()
+        self.shown.append("\(shown?.affineTransform() ?? .identity) \(shown?.opacity ?? -1)")
       }
+      models.append("\(layer.affineTransform()) \(layer.position) \(layer.opacity)")
       for sublayer in layer.sublayers ?? [] { collect(sublayer) }
     }
   }
 
-  /// 把一张「思考中」的卡摆进屏外窗口（浅色、不抢键盘），隔 0.2 s 取三次样。全量并行跑时主线程上穿插着别的测试，
-  /// 间隔会被拉长到说不准多久：取三次，免得两次正好隔了整数圈、看着像没动
-  private func samples(reduceMotion: Bool) throws -> [Sample] {
+  /// 把一张卡摆进屏外窗口（浅色、不抢键盘），隔 0.2 s 取三次样
+  private func samples(_ state: TranslateCoordinator.CardState, reduceMotion: Bool) throws
+    -> [Sample]
+  {
     var service = TranslateService.newAI()
     service.name = "GPT-4o mini"  // 有官方 logo：卡片里没有别的渐变
     let window = NSWindow(
-      contentRect: NSRect(x: -20000, y: -20000, width: 420, height: 100), styleMask: [.borderless],
+      contentRect: NSRect(x: -20000, y: -20000, width: 420, height: 120), styleMask: [.borderless],
       backing: .buffered, defer: false)
     window.appearance = NSAppearance(named: .aqua)
     let host = NSHostingView(
       rootView: ProviderCardView(
-        card: .init(service: service, state: .running("")), index: 0, language: nil,
-        speaker: Speaker(), onRetry: {}
+        card: .init(service: service, state: state), index: 0, language: nil, speaker: Speaker(),
+        onRetry: {}
       )
       .environment(\._accessibilityReduceMotion, reduceMotion))
     window.contentView = host
@@ -845,24 +903,39 @@ struct ResultCardLoopTests {
     }
   }
 
-  /// 省 CPU 靠的是：渐变各是一层不用重画的 CAGradientLayer，循环时 SwiftUI 只改图层的旋转 / 位置。所以看几次取样：
-  /// 环形渐变那一层在转，三条高光带（「思考中」+ 骨架两根条）在挪，而且没有哪层渐变自己在裁剪——
-  /// SwiftUI 把「裁剪区里带 offset 的渐变」压成一层时就是那样，带子会停在条的正中不动（Skeleton 里的 compositingGroup 防的就是它）。
-  /// 减弱动态效果时边框不转、没有高光带。
-  /// 认的是 SwiftUI 现在怎么把这几个视图变成图层（macOS 15.7）：系统升级后这条挂了，先在活动监视器里重看等待时的 CPU、
-  /// 真浮窗里看扫光还扫不扫，再改这里。显示器睡着时动画的时钟不一定走，跳过
-  @Test(.enabled(if: CGDisplayIsAsleep(CGMainDisplayID()) == 0))
-  func waitingLoopsOnlyMoveLayers() throws {
-    let moving = try samples(reduceMotion: false)
-    try #require(moving.allSatisfy { $0.angles.count == 1 && $0.bands.count == 3 && !$0.clips })
-    #expect(moving.contains { abs($0.angles[0] - moving[0].angles[0]) > 5 })
-    for band in 0..<3 {
-      #expect(moving.contains { abs($0.bands[band] - moving[0].bands[band]) > 1 }, "第 \(band) 条")
+  /// 「思考中」的等待卡：彗星一层环形渐变在转（2.4 s 一圈），「思考中」和骨架两根条三条高光带在平移（1.3 s 一趟），
+  /// 都是挂在图层上的动画；几次取样之间图层的模型值一个都没变（主线程没在推）。减弱动态效果时没有动画、没有高光带，
+  /// 彗星停在 0°
+  @Test func waitingLoopsAreLayerAnimations() throws {
+    let moving = try samples(.running(""), reduceMotion: false)
+    let comet = Loop(
+      keyPath: "transform.rotation.z", duration: 2.4, autoreverses: false, layer: "conic")
+    let sweep = Loop(
+      keyPath: "transform.translation.x", duration: 1.3, autoreverses: false, layer: "axial")
+    for sample in moving {
+      #expect(sample.loops.filter { $0 == comet }.count == 1, "\(sample.loops)")
+      #expect(sample.loops.filter { $0 == sweep }.count == 3, "\(sample.loops)")
+      #expect(sample.loops.count == 4 && sample.bands == 3)
     }
+    #expect(moving.allSatisfy { $0.models == moving[0].models })
+    #expect(moving.contains { $0.shown != moving[0].shown }, "动画的时钟没走")
 
-    let still = try samples(reduceMotion: true)
-    #expect(still.allSatisfy { $0 == still[0] })
-    #expect(still[0].angles == [0] && still[0].bands.isEmpty)
+    let still = try samples(.running(""), reduceMotion: true)
+    #expect(still.allSatisfy { $0.loops.isEmpty && $0.bands == 0 && $0.conics == 1 })
+    #expect(still.allSatisfy { $0.models == still[0].models })
+  }
+
+  /// 生成中的光标：一层色块透明度往返（0.55 s 一程），来字只挪它、不重画；减弱动态效果时常亮；出完就没有了
+  @Test func cursorBlinksOnLayer() throws {
+    let blink = Loop(keyPath: "opacity", duration: 0.55, autoreverses: true, layer: "plain")
+    let streaming = try samples(.running("你好，世界"), reduceMotion: false)
+    #expect(streaming.allSatisfy { $0.loops.filter { $0 == blink }.count == 1 })
+    #expect(streaming.allSatisfy { $0.models == streaming[0].models })
+    #expect(streaming.contains { $0.shown != streaming[0].shown }, "动画的时钟没走")
+    let still = try samples(.running("你好，世界"), reduceMotion: true)
+    #expect(still.allSatisfy { !$0.loops.contains(blink) })
+    let done = try samples(.done("你好，世界"), reduceMotion: false)
+    #expect(done.allSatisfy { $0.loops.isEmpty })
   }
 }
 
@@ -1073,6 +1146,85 @@ struct TranslateBatch4Tests {
     coordinator.translate("New sentence to translate", fromCopy: true)
     for _ in 0..<200 { await Task.yield() }
     #expect(coordinator.cards.map(\.state) == [.done("新译文")])
+  }
+
+  /// 流式的字一帧最多写一次进 cards（美化与提速 P5）：一阵阵来的增量攒着、满一帧才把最新一段写进去，几张卡一起写；
+  /// 出完、截断时最后一段都在；取消的卡不会被攒着的字改回「生成中」
+  @Test func streamingTextIsCoalescedPerFrame() async throws {
+    #expect(TranslateCoordinator.flushDelay(now: 10, last: 0, frame: 1.0 / 60) == 0)
+    #expect(
+      abs(
+        TranslateCoordinator.flushDelay(now: 10.005, last: 10, frame: 1.0 / 60) - (1.0 / 60 - 0.005)
+      )
+        < 1e-9)
+    #expect(TranslateCoordinator.flushDelay(now: 10.02, last: 10, frame: 1.0 / 60) == 0)
+
+    var (a, b) = (TranslateService.newAI(), TranslateService.newAI())
+    a.isEnabled = true
+    b.isEnabled = true
+    let coordinator = TranslateCoordinator(
+      services: TranslateServiceStore(services: [a, b]),
+      history: try HistoryStore(db: Database(path: ":memory:")))
+    coordinator.collapsed = { [] }
+    // 一帧按 0.5 s 算：全量并行跑时主线程挤，按 1/60 s 数写了几次不稳；合不合帧看的是「一帧里来的都并成一次」
+    coordinator.flushFrame = 0.5
+    /// 每个服务一口气来 40 段（中间不让出：段与段之间要是让出、机器又忙，每段都隔开超过一帧，数出来就和不合帧一样，
+    /// 2026-11-24 全量并行跑时挂过一次；帧长的算法 flushDelay 上面单测）；之后：b 正常出完 / 报截断 / 一直不结束
+    var ending = "finish"
+    coordinator.stream = { service, _ in
+      let tail = service.id == b.id ? ending : "finish"
+      return AsyncThrowingStream { continuation in
+        let task = Task {
+          for count in 1...40 { continuation.yield("字\(count)") }
+          switch tail {
+          case "finish": continuation.finish()
+          case "truncate": continuation.finish(throwing: TranslateError.truncated)
+          default: break
+          }
+        }
+        continuation.onTermination = { _ in task.cancel() }
+      }
+    }
+    let writes = WriteCount()
+    Self.countWrites(coordinator, writes)
+    func settle() async throws {
+      for _ in 0..<3000 where coordinator.isRunning { try await Task.sleep(for: .milliseconds(2)) }
+    }
+    // 复制即译带来的：不自动复制（不碰真剪贴板）
+    coordinator.translate("Coalesce these streaming updates please", fromCopy: true)
+    try await settle()
+    #expect(coordinator.cards.map(\.state) == [.done("字40"), .done("字40")])
+    // 两个服务 80 段：段段都写是 80 多次；合帧后是开头的新卡、等待、第一段马上写的那一次、（慢的话）满一帧再写一两次、
+    // 两张卡各完成一次
+    #expect(writes.count < 15, "\(writes.count)")
+
+    ending = "truncate"
+    coordinator.translate("Coalesce these streaming updates again", fromCopy: true)
+    try await settle()
+    #expect(coordinator.cards.map(\.state) == [.done("字40"), .truncated("字40")])
+
+    // b 一直不结束：出到一半收起（取消），之后攒着的字不再写回
+    ending = "hang"
+    coordinator.translate("Coalesce these streaming updates once more", fromCopy: true)
+    for _ in 0..<3000 where coordinator.cards.last?.state.text == nil {
+      try await Task.sleep(for: .milliseconds(2))
+    }
+    #expect(coordinator.cards.last?.state.text != nil)
+    coordinator.cancel()
+    try await Task.sleep(for: .milliseconds(700))
+    #expect(coordinator.cards.last?.state == .failed(.interrupted))
+  }
+
+  /// 数 cards 被改了几次：onChange 在改之前同步调，里面马上重新登记（同一次改动不会再通知新登记的）
+  private static func countWrites(_ coordinator: TranslateCoordinator, _ writes: WriteCount) {
+    withObservationTracking {
+      _ = coordinator.cards
+    } onChange: {
+      MainActor.assumeIsolated {
+        writes.count += 1
+        countWrites(coordinator, writes)
+      }
+    }
   }
 
   /// 主结果（第三轮体检 U1）：按顺序第一个翻成功的；前面的还在跑就等，出错 / 截断 / 中断的跳过
@@ -1800,4 +1952,9 @@ struct TranslateFavoriteProbeTests {
       print("favorite-probe 浮窗来一段字（\(label)）：中位 \(Self.median(times))，最慢 \(times.max()!)")
     }
   }
+}
+
+/// 单测里数模型被改了几次（TranslateBatch4Tests.countWrites）
+final class WriteCount {
+  var count = 0
 }

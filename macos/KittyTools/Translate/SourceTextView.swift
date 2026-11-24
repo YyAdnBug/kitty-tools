@@ -4,7 +4,8 @@
 // 消失时把焦点还给主输入框（焦点已在别的输入框里就不抢）。插入点和选中文字底色是
 // 品牌粉（mac-overlay-panel §3）；onFocusChange：焦点进出时回调（外面的输入框底据此画 Whisker 焦点环）。
 // onComposingChange：输入法开始 / 结束组字时回调——组着的字确认前不进 text（textDidChange 要确认了才来），外面自己画的
-// 占位要据此藏起来，不然和拼音叠在一起（issue #16）。
+// 占位要据此藏起来，不然和拼音叠在一起（issue #16）。onUserEdit：用户在框里按下鼠标、或者改了字（程序写进去的不算）——
+// 翻译原文框据此才亮焦点环（美化 V7）。
 // 外面的输入框底不给它左右内边距、改由 horizontalInset 缩进文字：滚动区铺满框宽，滚动条贴框的右边（同翻译结果卡）。
 // 便签的快速记一条（Notes/NoteCaptureView）也用它（提交模式；记成新便签时 Tab 去标题框，onTab）。便签的正文不用它：
 // 全部便签窗口和屏幕边缘那叠的正文是便签专用的编辑器（Notes/NoteTextView.swift，2026-10-13 第 5 批起）。
@@ -34,11 +35,15 @@ struct SourceTextView: NSViewRepresentable {
   var onTab: (() -> Void)?
   /// 输入法开始 / 结束组字（外面画的占位：text 空着、又没在组字才显示）。同样放在最后
   var onComposingChange: ((Bool) -> Void)?
+  /// 用户在框里按下鼠标（滚动区把文本视图撑满整个框，点在字下面的空白处也落在它上面）、或者改了字（textDidChange：打字、粘贴、删字、撤销；updateNSView 写 string 不报）。
+  /// 翻译原文框「点进去改字才亮焦点环」用（美化 V7）。同样放在最后
+  var onUserEdit: (() -> Void)?
 
   func makeNSView(context: Context) -> FocusScrollView {
     let textView = FocusTextView(frame: .zero)
     textView.onFocusChange = onFocusChange
     textView.onComposingChange = onComposingChange
+    textView.onUserEdit = onUserEdit
     textView.isRichText = false
     textView.allowsUndo = true
     textView.font = .systemFont(ofSize: fontSize)
@@ -65,6 +70,7 @@ struct SourceTextView: NSViewRepresentable {
     guard let textView = scroll.documentView as? FocusTextView else { return }
     textView.onFocusChange = onFocusChange
     textView.onComposingChange = onComposingChange
+    textView.onUserEdit = onUserEdit
     if let request = focusRequest, request != context.coordinator.focusRequest {
       context.coordinator.focusRequest = request
       textView.window?.makeFirstResponder(textView)
@@ -98,6 +104,7 @@ struct SourceTextView: NSViewRepresentable {
     func textDidChange(_ notification: Notification) {
       guard let textView = notification.object as? NSTextView else { return }
       parent.text = textView.string
+      parent.onUserEdit?()
     }
 
     func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
@@ -137,7 +144,13 @@ struct SourceTextView: NSViewRepresentable {
   final class FocusTextView: NSTextView {
     var onFocusChange: ((Bool) -> Void)?
     var onComposingChange: ((Bool) -> Void)?
+    var onUserEdit: (() -> Void)?
     private var composing = false
+
+    override func mouseDown(with event: NSEvent) {
+      onUserEdit?()
+      super.mouseDown(with: event)
+    }
 
     // 组字开始 / 组着的字变了、确认（insertText）、撤掉（setMarkedText 给空的，返回后才不算组字）、焦点走了替它确认
     // （unmarkText）：每次之后看一眼，变了才报

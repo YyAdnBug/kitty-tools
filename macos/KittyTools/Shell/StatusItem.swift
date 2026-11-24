@@ -75,9 +75,12 @@ final class StatusItem: NSObject, NSMenuDelegate {
     return image
   }()
 
-  /// 只画一次（设置页每次重画都要读它）
+  /// 彩色 = 平面 App 图标的主体（资源里的 ColorIcon16：brand-icons.swift 从 1024 px 那张裁掉四周留白、按主体外形去掉
+  /// 底角的烘焙阴影，预先画成 16 pt 的 @1x / @2x；不用 16 / 32 px 手调简化版）。16 pt 高，和单色剪影的视觉高度一样；按钮仍是
+  /// squareLength，换样式宽度不跳。不从 NSApp.applicationIconImage 现画（2026-11-24 美化 V6）：26 起它是系统按图标风格
+  /// （深色 / 着色 / 透明）渲的分层图标，菜单栏上的彩色图标不该跟着程序坞的风格变色
   static let colorIcon: NSImage = {
-    let image = menuBarImage(from: NSApp.applicationIconImage)
+    let image = NSImage(named: "ColorIcon16") ?? NSImage(size: NSSize(width: 16, height: 16))
     image.accessibilityDescription = "Kitty Tools"
     return image
   }()
@@ -169,72 +172,6 @@ final class StatusItem: NSObject, NSMenuDelegate {
     let top = max(bounds.midY - icon.height / 2 - side / 2 + 1, bounds.minY)
     let bottom = min(bounds.midY + icon.height / 2 - side / 2 - 1, bounds.maxY - side)
     return NSRect(x: x, y: flipped ? bottom : top, width: side, height: side)
-  }
-
-  /// 彩色图标 = 完整的 App 图标（程序坞、访达里那张）。不交给 NSImage 按菜单栏尺寸自己挑表示：16 pt 会挑到 16 / 32 px
-  /// 那两张手调简化版（Whisker §6）。取 1024 px 的大图，裁掉画布四周各 100 的留白、只留 824 的圆角方块主体，先在原分辨率上
-  /// 按主体外形（超椭圆，同 brand-icons.swift）去掉底角那点烘焙阴影（缩小后再裁的话边缘像素会混进阴影的黑），
-  /// 再高质量插值预先画成 @1x / @2x 两张位图。16 pt 高，和单色剪影的视觉高度一样；按钮仍是 squareLength，换样式宽度不跳
-  static func menuBarImage(from icon: NSImage, points: Int = 16) -> NSImage {
-    let image = NSImage(size: NSSize(width: points, height: points))
-    var proposed = CGRect(x: 0, y: 0, width: 1024, height: 1024)
-    guard let source = icon.cgImage(forProposedRect: &proposed, context: nil, hints: nil) else {
-      return image
-    }
-    let unit = CGFloat(source.width) / 1024
-    let side = Int((824 * unit).rounded())
-    guard
-      let body = source.cropping(
-        to: CGRect(x: 100 * unit, y: 100 * unit, width: 824 * unit, height: 824 * unit)),
-      let shaped = bitmap(
-        side: side,
-        { context in
-          context.addPath(squircle(side: CGFloat(side)))
-          context.clip()
-          context.draw(body, in: CGRect(x: 0, y: 0, width: side, height: side))
-        })
-    else { return image }
-    for scale in 1...2 {
-      let pixels = points * scale
-      guard
-        let small = bitmap(
-          side: pixels,
-          { context in
-            context.interpolationQuality = .high
-            context.draw(shaped, in: CGRect(x: 0, y: 0, width: pixels, height: pixels))
-          })
-      else { continue }
-      let rep = NSBitmapImageRep(cgImage: small)
-      rep.size = image.size
-      image.addRepresentation(rep)
-    }
-    return image
-  }
-
-  /// 边长 side 像素的 sRGB 画布
-  private static func bitmap(side: Int, _ draw: (CGContext) -> Void) -> CGImage? {
-    guard let space = CGColorSpace(name: CGColorSpace.sRGB),
-      let context = CGContext(
-        data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0, space: space,
-        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
-    else { return nil }
-    draw(context)
-    return context.makeImage()
-  }
-
-  /// App 图标主体的外形：超椭圆 |x|⁵ + |y|⁵ = 1（macOS 图标的连续圆角，同 brand-icons.swift 的 squircle）
-  private static func squircle(side: CGFloat) -> CGPath {
-    let path = CGMutablePath()
-    let radius = side / 2
-    for step in 0..<256 {
-      let angle = CGFloat(step) / 256 * 2 * .pi
-      let point = CGPoint(
-        x: radius + radius * copysign(pow(abs(cos(angle)), 0.4), cos(angle)),
-        y: radius + radius * copysign(pow(abs(sin(angle)), 0.4), sin(angle)))
-      if step == 0 { path.move(to: point) } else { path.addLine(to: point) }
-    }
-    path.closeSubpath()
-    return path
   }
 
   func menuNeedsUpdate(_ menu: NSMenu) {

@@ -530,18 +530,23 @@ struct SaveDirectoryRow: View {
   @AppStorage(Prefs.screenshotSaveDirectory) private var savedDirectory: String?
   /// 它在访达里的名字（选的那一刻存下的）
   @AppStorage(Prefs.screenshotSaveDirectoryName) private var savedName: String?
+  /// 没选过时用的系统截屏存储位置和它在访达里的名字：出现时、恢复默认时读（2026-11-23 美化与提速 P6：原来每画一次都现查）
+  @State private var systemFolder: (path: String, name: String)?
+
+  /// 系统截屏的存储位置（多半是桌面，在本机）。ponytail: 它也能在 ⌘⇧5 里设成网络盘，那时这里会卡，
+  /// 升级路径见 ScreenshotOutput.saveFolderName
+  private static func readSystemFolder() -> (path: String, name: String) {
+    let path = ScreenshotOutput.directory(saved: nil).path
+    return (path, FileManager.default.displayName(atPath: path))
+  }
 
   var body: some View {
     LabeledContent {
       HStack(spacing: 8) {
         if let info { InfoButton(info, about: title) }
-        // 没选过的是系统截屏的存储位置（多半是桌面，在本机）：现取。ponytail: 它也能在 ⌘⇧5 里设成网络盘，那时这里会卡，
-        // 升级路径见 ScreenshotOutput.saveFolderName
-        let path = savedDirectory ?? ScreenshotOutput.directory(saved: nil).path
-        let name =
-          savedDirectory == nil
-          ? FileManager.default.displayName(atPath: path)
-          : savedName ?? (path as NSString).lastPathComponent
+        let system = savedDirectory == nil ? systemFolder ?? Self.readSystemFolder() : nil
+        let path = savedDirectory ?? system?.path ?? ""
+        let name = system?.name ?? savedName ?? (path as NSString).lastPathComponent
         // 同工具栏「存储到「桌面」」：访达里的名字 + 文件夹图标，完整路径在悬停提示里
         Label(name, systemImage: "folder")
           .lineLimit(1)
@@ -560,6 +565,12 @@ struct SaveDirectoryRow: View {
     } label: {
       Text(plain: title)
       if let subtitle { Text(plain: subtitle) }
+    }
+    .onAppear {
+      if savedDirectory == nil, systemFolder == nil { systemFolder = Self.readSystemFolder() }
+    }
+    .onChange(of: savedDirectory) {
+      if savedDirectory == nil { systemFolder = Self.readSystemFolder() }
     }
   }
 

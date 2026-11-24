@@ -112,6 +112,9 @@ enum Calculator {
 
   /// 「255 in hex」「0xff in dec」「255 转 二进制」：左边是算式（结果要是整数），右边是进制
   static func convertRadix(_ query: String) -> Result? {
+    // 要写了进制：没写的不跑下面的正则（P4，同 convert）
+    let folded = query.folding(options: [.widthInsensitive, .caseInsensitive], locale: nil)
+    guard ["hex", "bin", "oct", "dec", "进制"].contains(where: folded.contains) else { return nil }
     let text = normalize(query).trimmingCharacters(in: .whitespaces)
     guard
       let match = text.wholeMatch(
@@ -162,6 +165,8 @@ enum Calculator {
   /// 「10 km to mi」「30 摄氏度 转 华氏度」「1.5GB in MB」：左边一个数加单位，右边单位；两边要是同一类量。
   /// 结果：大字「6.2137 mi」（分组）、↩ 粘贴 / Tab 写回「6.2137 mi」（不分组，接着能换算）、⌘K「复制原始数字」6.2137
   static func convert(_ query: String, english: Bool = false) -> Result? {
+    // 左边要有数：没有数字的（打 App 名）不跑下面的正则（启动器每打一个字都问，2026-11-23 美化与提速 P4）
+    guard query.contains(where: \.isNumber) else { return nil }
     let text = normalize(query).trimmingCharacters(in: .whitespaces)
     guard
       let match = text.wholeMatch(

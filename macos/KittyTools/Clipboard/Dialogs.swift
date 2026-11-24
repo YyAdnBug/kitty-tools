@@ -28,9 +28,11 @@ struct DialogOverlay: View {
         card(dialog)
           .padding(14)
           .frame(maxWidth: .infinity, alignment: .leading)
-          // 阴影只挂在底上：挂在整张卡上会给里面的每个字都加阴影。和动作菜单同一档（Style 的 floatingShadow）
-          .background { shape.fill(.regularMaterial).floatingShadow() }
-          .overlay(shape.hairlineBorder())
+          // 阴影只挂在底上：挂在整张卡上会给里面的每个字都加阴影。和动作菜单同一档（Style 的 floatingSurface）
+          .floatingSurface(shape) {
+            $0.background { shape.fill(.regularMaterial).floatingShadow() }
+              .overlay(shape.hairlineBorder())
+          }
           .padding(6)
           .id(dialog.id)
           .transition(

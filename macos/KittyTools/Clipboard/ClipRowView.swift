@@ -29,6 +29,8 @@ struct ClipRowView: View {
   var picture = false
   /// 图片行选中展开：图长到 108 高，各格顶对齐
   var expanded = false
+  /// 面板这次呼出的时刻：只当刷新的由头（行按值比较，不传的话条目没变时「多久前」一直是上次画的）
+  var shownAt = Date.distantPast
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   static let height: CGFloat = 40
@@ -179,7 +181,8 @@ struct ClipRowView: View {
     // 宽高按原样的数字插（同 ClipItem.title：插 Int 会按语言加千分位）
     let full =
       picture
-      ? item.image.map { "\(String($0.width))×\(String($0.height))" } ?? item.title : item.title
+      ? item.image.map { "\(String($0.width))×\(String($0.height))" } ?? item.title
+      : Self.title(of: item)
     guard !query.isEmpty else { return AttributedString(full) }
     var shown = full
     switch item.kind {
@@ -200,7 +203,7 @@ struct ClipRowView: View {
     case .file:
       shown = Search.excerpt(of: full, query: query, before: 12, after: 160) ?? full
     }
-    var attributed = AttributedString(shown.replacing(/\s+/, with: " "))
+    var attributed = AttributedString(shown.collapsingWhitespace())
     attributed.highlight(query)
     return attributed
   }
@@ -215,7 +218,44 @@ struct ClipRowView: View {
   static func showsWholeText(_ item: ClipItem) -> Bool {
     // 标题列再宽也放不下 400 字节（最窄的字母也有 3 pt 多）；长文本不在这里整段去空白
     guard item.kind == .text, let text = item.text, text.utf8.count <= 400 else { return false }
+    let key = WholeTextKey(
+      text: text, rich: item.richType != nil, snippet: item.isSnippet, favorite: item.favorite)
+    if let cached = wholeTexts[item.id], cached.key == key { return cached.shows }
+    let shows = measureWholeText(item, text: text)
+    wholeTexts[item.id] = (key, shows)
+    return shows
+  }
+
+  /// 判定用到的条目数据：缓存连它一起记、取的时候比（正文没变时两边是同一块存储，比较当场返回）
+  private struct WholeTextKey: Equatable {
+    let text: String
+    let rich: Bool
+    let snippet: Bool
+    let favorite: Bool
+  }
+
+  /// showsWholeText、行标题按条目缓存（美化与提速 P3）：有搜索词时每一行的标题都要问一次、透镜高度也要，
+  /// 量一次字宽、去一次空白（正则）各要几十微秒，打一个字就是几十行。收起面板时裁掉删了的（prune）
+  private static var wholeTexts: [UUID: (key: WholeTextKey, shows: Bool)] = [:]
+  private static var titles: [UUID: (text: String, title: String)] = [:]
+
+  /// 文本条目的行标题（ClipItem.title，按条目缓存）；别的种类现算（不贵）
+  static func title(of item: ClipItem) -> String {
+    guard item.kind == .text, let text = item.text else { return item.title }
+    if let cached = titles[item.id], cached.text == text { return cached.title }
     let title = item.title
+    titles[item.id] = (text, title)
+    return title
+  }
+
+  /// 收起面板时（ClipboardPanelModel.reset）：删掉的条目不留在两张缓存里
+  static func prune(keeping live: Set<UUID>) {
+    wholeTexts = wholeTexts.filter { live.contains($0.key) }
+    titles = titles.filter { live.contains($0.key) }
+  }
+
+  private static func measureWholeText(_ item: ClipItem, text: String) -> Bool {
+    let title = title(of: item)
     guard title == text.trimmingCharacters(in: .whitespacesAndNewlines) else { return false }
     // 标题列最窄时：行宽 − 常显的滚动条 16 − 左右内边距 − 图标块 − 三处固定间距（图标后、Spacer 两边）
     // − Spacer 最窄 8 − 右侧文字那一格（带 maxWidth 的 frame 有多少占多少，字再短也占满 220）
@@ -233,15 +273,15 @@ struct ClipRowView: View {
     return ceil(width) <= room
   }
 
-  /// 右侧：有备注时是备注（secondary，所有条目都能写，体检 A3），否则「来源 · 多久前」（tertiary）
+  /// 右侧：有备注时是备注（Style.noteText，所有条目都能写，体检 A3），否则「来源 · 多久前」（Style.metaText）
   @ViewBuilder private var trailing: some View {
     if let note = item.note, !note.isEmpty {
-      Text(note).foregroundStyle(.secondary)
+      Text(note).foregroundStyle(Style.noteText)
     } else {
       // 跟着界面语言（Locale.current）：「31秒钟前」/「31 seconds ago」
       let ago = item.copiedAt.formatted(.relative(presentation: .named))
       Text([item.sourceTitle, ago].compactMap { $0 }.joined(separator: " · "))
-        .foregroundStyle(.tertiary)
+        .foregroundStyle(Style.metaText)
     }
   }
 }
@@ -423,7 +463,7 @@ extension ClipItem {
     switch kind {
     case .text:
       return String((text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).prefix(200))
-        .replacing(/\s+/, with: " ")
+        .collapsingWhitespace()
     case .image:
       guard let image else { return String(localized: "图片") }
       // 宽高按原样的数字插（插 Int 会按语言加千分位：1,200×240）
@@ -432,6 +472,26 @@ extension ClipItem {
       let names = (filePaths ?? []).map { URL(filePath: $0).lastPathComponent }
       return names.count == 1 ? names[0] : names.joinedAsList()
     }
+  }
+}
+
+extension String {
+  /// 连续的空白（含换行）压成一个空格：同 `replacing(/\s+/, with: " ")`（\s 按字符就是 Character.isWhitespace），
+  /// 不建正则——行标题每画一次都要，正则一次几十微秒（光建正则就占一半），搜索时几十行一起来（美化与提速 P3）
+  nonisolated func collapsingWhitespace() -> String {
+    var result = ""
+    result.reserveCapacity(utf8.count)
+    var inSpace = false
+    for character in self {
+      if character.isWhitespace {
+        if !inSpace { result.append(" ") }
+        inSpace = true
+      } else {
+        result.append(character)
+        inSpace = false
+      }
+    }
+    return result
   }
 }
 

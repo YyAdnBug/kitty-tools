@@ -122,10 +122,23 @@ import Observation
   /// 启动器「cb 关键词」呼出面板后直接设它；reset() 清空
   var query = "" {
     didSet {
+      if query != oldValue { queriedAt = ProcessInfo.processInfo.systemUptime }
       armsLastToken = false
       restartBrowsing()
       noteActivity()
     }
+  }
+  /// 上一次改搜索词的时刻（开机以来的秒数；写的值和原来一样不算）
+  @ObservationIgnored private var queriedAt: TimeInterval = 0
+  /// 刚打过字（搜索词这一下改了还不到 LauncherModel.typingGap）：结果条数变了时面板高度直接到位、不做动画
+  /// （Whisker §1「每次按键后的结果刷新 0 ms」；同启动器 P4：窗口帧动画那 0.14–0.18 s 的每一帧 SwiftUI 都把整块面板
+  /// 按新的高重排一遍，后面打的字要等它）。和启动器不同，第一个字也不动画：剪贴板的列表本来就在，
+  /// 打字只是把它变短。新条目进来、删除、筛选照常动画
+  var isTyping: Bool { Self.isTyping(queriedAt, now: ProcessInfo.processInfo.systemUptime) }
+
+  /// isTyping 的纯函数（单测）
+  static func isTyping(_ queriedAt: TimeInterval, now: TimeInterval) -> Bool {
+    now - queriedAt < LauncherModel.typingGap
   }
   var scope = Scope.all { didSet { restartBrowsing() } }
   /// nil = 全部类型。选了图片 / 文件就清掉形态筛选（形态只对文本有意义）
@@ -187,8 +200,10 @@ import Observation
   var armsLastToken = false
   /// 选中高亮这次怎么移动（Whisker §4）：键盘单按 snap，连发与筛选变化不动画，点选 glide
   private(set) var selectionMotion = Style.Motion.instant
-  /// 列表增删的动画：筛选 / 搜索换列表时这一次不动画（instant），视图画完这次后调 settleList() 恢复
-  private(set) var listMotion = Style.Motion.settle
+  /// 列表增删的动画：筛选 / 搜索换列表时这一次不动画（instant），视图画完这次后调 settleList() 恢复。
+  /// 不被观察（美化与提速 P3）：视图只在列表真变了、本来就要重画的那一次读它；恢复成 settle 不该再让整块面板重画一遍
+  /// （原来打一个字后跟着再画一遍）
+  @ObservationIgnored private(set) var listMotion = Style.Motion.settle
   /// 每次换列表（筛选 / 搜索）加一：视图据此在画完后恢复 listMotion
   private(set) var listGeneration = 0
   /// 条目里的第一个链接（⌘K / 右键「打开链接」；按条目缓存，右键菜单每画一行都要问，别每次都跑 NSDataDetector）。
@@ -283,6 +298,8 @@ import Observation
     form = nil
     sourceBundleID = nil
     groupFilter = .all
+    // 点按钮清掉的不是在打字：面板长回去照常动画
+    queriedAt = 0
   }
 
   /// 透镜和放大预览里的正文：JSON 按开关美化（结果按条目缓存）。ponytail: 超长文本只预览前 10 万字，粘贴仍是全文
@@ -638,15 +655,17 @@ import Observation
   /// 单击选中（透镜滑过去），双击粘贴；⌘ 单击切换勾选，⇧ 单击从锚点选到这里。
   /// 双击以第一下选中的条目为准：第一下让透镜收放、行会位移，第二下可能落在别的行上。
   /// 打开「单击条目直接粘贴」后没有第一下，粘贴的就是点中的这条
-  func click(_ item: ClipItem) {
+  /// forced：不看 NSApp.currentEvent、按给定的来（旁白「按下」一行只选中：最后一个事件刚好是双击松开时会被当成粘贴）
+  func click(_ item: ClipItem, as forced: Click? = nil) {
     noteActivity()
     let closesMenu = palette != nil
     isBrowsing = true
     selectionMotion = .glide
     palette = nil
-    switch Self.click(
-      modifiers: NSApp.currentEvent?.modifierFlags ?? [], clicks: Style.clickCount,
-      pastesOnClick: pastesOnClick)
+    switch forced
+      ?? Self.click(
+        modifiers: NSApp.currentEvent?.modifierFlags ?? [], clicks: Style.clickCount,
+        pastesOnClick: pastesOnClick)
     {
     case .check:
       if multiSelection.isEmpty, let current = selectedItem { multiSelection = [current.id] }
@@ -1648,6 +1667,7 @@ import Observation
     let live = Set(store.items.map(\.id))
     formCache = formCache.filter { live.contains($0.key) }
     linkCache = linkCache.filter { live.contains($0.key) }
+    ClipRowView.prune(keeping: live)
   }
 
   /// 筛选 / 搜索变了：回到第一条；勾选只留新列表里看得见的（一条不剩就退出多选，体检 B8）

@@ -2,7 +2,7 @@
 // 显示只 orderFrontRegardless + makeKey，永远不调 NSApp.activate：前台 App 保持不变，
 // 粘贴时发的 ⌘V、划词时发的 ⌘C 才会落到它身上。
 // 外观是 Whisker 的 Panel 皮肤（mac-whisker §2）：无边框、16 pt 连续圆角（maskImage 裁，系统阴影跟着走）+ 描边
-// （macOS 26 起换成液态玻璃 NSGlassEffectView，不画描边）；
+// （macOS 26 起换成液态玻璃 NSGlassEffectView，不画描边，玻璃里垫一层 Style.panelUnderlay）；
 // 出现时淡入 + 内容下落 6 pt，用户关掉时一块替身在原位淡出（真窗口立刻收走，键盘马上回到原 App；不用系统的窗口淡出，
 // 它会泛白，见 fadeOutStandIn），高度可带动画伸缩。
 // ⌘Y 放大预览用 zoom / unzoom：从检查器卡片的位置长出来、缩回去。剪贴板、启动器、翻译浮窗可选「挤压入场」（设置 › 通用「动效」，squeezesIn）。
@@ -148,7 +148,7 @@ final class OverlayPanel: NSPanel {
       // 液态玻璃：圆角交给玻璃（不用 maskImage、PanelRim 不画），内容进它的 contentView（玻璃用 Auto Layout 撑满）
       // 图层按同一个圆角再裁一遍（macOS 27 当 key 时圆角外的黑边，见 NSGlassEffectView.clipped）
       let glass = NSGlassEffectView.clipped(cornerRadius: Style.Radius.panel)
-      let background = NSView()
+      let background = GlassUnderlay()  // 垫一层底：玻璃「透明」时字压不住背后（Style.panelUnderlay）
       background.autoresizingMask = [.width, .height]  // 自动缩放掩码和玻璃撑满它的约束一致、不打架
       glass.contentView = background
       return (glass, background)
@@ -225,6 +225,14 @@ final class OverlayPanel: NSPanel {
 
   /// 现在粘得进哪个文本视图（记着的窗口在屏上、第一响应者是能编辑的 NSTextView）；nil = 照旧发给前台 App
   func pasteTarget() -> NSTextView? { Paster.pasteTarget(in: pasteTargetWindow) }
+
+  /// 屏外预排（2026-11-23 美化与提速 P7）：开机闲下来以后先把 SwiftUI 的树建好、排一遍，第一次呼出就不用当场做。
+  /// **不显示**：不 orderFront、不 makeKey、不装鼠标监听，窗口还是 defer 着的（窗口服务器那边的窗口第一次 order 时才建）。
+  /// 只排版、不画：屏外先画一遍（displayIfNeeded）实测不省第一次呼出的时间（窗口第一次上屏时照样重画），白花 CPU。开着时什么都不做
+  func prewarm() {
+    guard !isVisible else { return }
+    contentView?.layoutSubtreeIfNeeded()
+  }
 
   /// makingKey = false：只露出来、不抢键盘（复制即译），此时靠点外关闭。
   /// anchor：新出现时放在这一点（鼠标位置）的右下 12 pt（翻译浮窗、剪贴板面板、启动器「跟随鼠标」）；已经开着就不挪。
@@ -907,6 +915,26 @@ private struct PanelRoot<Content: View>: View {
   var body: some View {
     content.ignoresSafeArea().overlay(PanelRim()).symbolEffectsRemoved(reduceMotion).appAccent()
   }
+}
+
+/// macOS 26 起面板玻璃 contentView 里放内容的那一层，自己铺一层 Style.panelUnderlay（2026-11-23 美化 V1）。
+/// 颜色在 updateLayer 里按这块视图的外观解析（外观变了 AppKit 会再调；「降低透明度」开关变了自己盯着通知重画）
+private final class GlassUnderlay: NSView {
+  override var wantsUpdateLayer: Bool { true }
+
+  override init(frame: NSRect) {
+    super.init(frame: frame)
+    wantsLayer = true
+    NSWorkspace.shared.notificationCenter.addObserver(
+      self, selector: #selector(displayOptionsChanged),
+      name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  override func updateLayer() { layer?.backgroundColor = Style.panelUnderlay.cgColor }
+
+  @objc private func displayOptionsChanged() { needsDisplay = true }
 }
 
 /// 无边框窗口的拖边：左右改宽度（夹在 minSize / maxSize 之间，另一边不动），下边改「最高多高」（W2，顶边不动、

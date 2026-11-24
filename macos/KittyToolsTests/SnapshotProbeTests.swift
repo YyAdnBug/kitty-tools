@@ -843,7 +843,11 @@ struct SnapshotProbeTests {
         StatusIconProbe(), size: NSSize(width: 260, height: 124), dark: dark,
         to: "\(out)/status-icons\(dark ? "-dark" : "").png")
     }
-    let colorRep = try #require(StatusItem.colorIcon.representations.last as? NSBitmapImageRep)
+    // 资源目录里的图不是位图表示：经 TIFF 转一遍，取 @2x 那张
+    let colorReps = NSBitmapImageRep.imageReps(
+      with: try #require(StatusItem.colorIcon.tiffRepresentation))
+    let colorRep = try #require(
+      colorReps.compactMap { $0 as? NSBitmapImageRep }.max { $0.pixelsWide < $1.pixelsWide })
     try #require(colorRep.representation(using: .png, properties: [:]))
       .write(to: URL(filePath: "\(out)/status-icon-color@2x.png"))
     // 最小窗口（contentMinSize 700 × 460）下的通用页：外观缩略图、强调色两排放得下
@@ -3731,10 +3735,12 @@ struct SnapshotProbeTests {
       ),
       // 划词没取到文字：占位换成说明（体检 A16）
       ("translate-missed-selection", { c in c.beginInput(missedSelection: true) }),
-      // 原文改过、还没重译：原文框右下角弹出「翻译 ↩」
+      // 原文改过、还没重译：原文框右下角弹出「翻译 ↩」；用户点进去改了字，原文框亮强调色焦点环（美化 V7——
+      // 别的状态都是呼出后没碰过的原文框：拿着焦点，但只是中性的框）
       (
         "translate-edited",
         { c in
+          c.sourceTouched = true
           c.sourceText = "SwiftUI provides views and controls."
           c.translatedSource = "SwiftUI provides views."
           c.detected = .en

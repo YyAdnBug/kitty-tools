@@ -143,23 +143,97 @@ enum Style {
   nonisolated static func dynamic(
     light: NSColor, dark: NSColor, contrast: (light: NSColor, dark: NSColor)? = nil
   ) -> Color {
-    Color(
-      nsColor: NSColor(name: nil) { appearance in
-        let isDark =
-          appearance.bestMatch(from: [.darkAqua, .vibrantDark, .accessibilityHighContrastDarkAqua])
-          != nil
-        // 高对比外观按名字匹配不到（NSAppearance 会归到普通外观），直接读系统开关；开关一变系统会重画
-        if let contrast, NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast {
-          return isDark ? contrast.dark : contrast.light
-        }
-        return isDark ? dark : light
-      })
+    Color(nsColor: dynamicNSColor(light: light, dark: dark, contrast: contrast))
   }
 
-  /// 列表选中（一块灰色高亮，文字不反白）
-  static let selectedFill = dynamic(
-    light: .black.withAlphaComponent(0.07), dark: .white.withAlphaComponent(0.10),
-    contrast: (.black.withAlphaComponent(0.16), .white.withAlphaComponent(0.22)))
+  /// 同 dynamic，给 AppKit 图层用（只在 updateLayer / draw 里取 cgColor，Whisker §2「外观」）。
+  /// solid：「降低透明度」时换成它（先于 contrast）
+  nonisolated static func dynamicNSColor(
+    light: NSColor, dark: NSColor, contrast: (light: NSColor, dark: NSColor)? = nil,
+    solid: (light: NSColor, dark: NSColor)? = nil
+  ) -> NSColor {
+    NSColor(name: nil) { appearance in
+      let isDark =
+        appearance.bestMatch(from: [.darkAqua, .vibrantDark, .accessibilityHighContrastDarkAqua])
+        != nil
+      if let solid, NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency {
+        return isDark ? solid.dark : solid.light
+      }
+      // 高对比外观按名字匹配不到（NSAppearance 会归到普通外观），直接读系统开关；开关一变系统会重画
+      if let contrast, NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast {
+        return isDark ? contrast.dark : contrast.light
+      }
+      return isDark ? dark : light
+    }
+  }
+
+  /// 列表选中（一块灰色高亮，文字不反白）。macOS 26 起浓一档（2026-11-23 美化 V2）：面板换成垫了底的玻璃，
+  /// 0.07 / 0.10 在上面几乎看不出选中了哪行（屏上实抓 PolishProbeTests.glass()）；增强对比度那档不变
+  static let selectedFill: Color = {
+    let contrast = (NSColor.black.withAlphaComponent(0.16), NSColor.white.withAlphaComponent(0.22))
+    if #available(macOS 26, *) {
+      return dynamic(
+        light: .black.withAlphaComponent(0.10), dark: .white.withAlphaComponent(0.14),
+        contrast: contrast)
+    }
+    return dynamic(
+      light: .black.withAlphaComponent(0.07), dark: .white.withAlphaComponent(0.10),
+      contrast: contrast)
+  }()
+
+  /// macOS 26 起面板玻璃里垫的那层底（2026-11-23 美化 V1，mac-whisker §2「26 分支」）：OverlayPanel.makeBackground
+  /// 的玻璃 contentView（剪贴板、启动器、翻译浮窗、主界面、程序坞预览和它们退场的替身）铺的就是它（浮起来的卡片、吸顶
+  /// 分组标题各有一份同类的：floatingUnderlay、stickyHeaderFill）。液态玻璃选「透明」（系统默认，NSGlassTintAmount = 0）时玻璃几乎全透：浅色页面上字和背后
+  /// 的字糊在一起，彩色壁纸上整块染成壁纸色，深色压在浅色页面上是一块发灰的板子（开发机设的是「着色」，看不出来）。
+  /// 值按屏上实抓定（PolishProbeTests.glass()，「透明 / 着色」× 浅深 × 页面 / 壁纸）：正文和选中行标题 ≥ 4.5:1。
+  /// 降低透明度时换成实底
+  static let panelUnderlay = dynamicNSColor(
+    light: .white.withAlphaComponent(0.6), dark: .black.withAlphaComponent(0.55),
+    solid: panelSolid)
+  /// 「降低透明度」时面板的实底（panelUnderlay、stickyHeaderFill 共用）
+  private static let panelSolid = (
+    light: NSColor(white: 0.96, alpha: 1), dark: NSColor(white: 0.14, alpha: 1)
+  )
+  /// 面板里浮起来的卡片（floatingSurface）在材质上垫的底：比面板再实一点（浅色的材质本身发灰，垫 0.6 的话卡片比面板
+  /// 还暗）。深色照 macOS 的习惯「浮起来的更亮一层」：一块比面板亮的灰，垫黑的话菜单像面板上挖的洞
+  static let floatingUnderlay = dynamicNSColor(
+    light: .white.withAlphaComponent(0.8), dark: NSColor(white: 0.21, alpha: 0.92),
+    solid: panelSolid)
+  /// floatingSurface 的 1 pt 描边（比 hairline 重一档：玻璃上要一眼看出卡片的边）
+  static let floatingRim = dynamic(
+    light: .black.withAlphaComponent(0.14), dark: .white.withAlphaComponent(0.18),
+    contrast: (.black.withAlphaComponent(0.35), .white.withAlphaComponent(0.4)))
+  /// 吸顶分组标题的底（2026-11-23 美化 V5，下沿由用的地方淡出）：玻璃 + panelUnderlay 叠出来的面板颜色的近似
+  /// （屏上实抓的中位：浅 0.96–0.98、深 0.18–0.35），压住下面滚过去的行。不直接拿 panelUnderlay：叠在已经垫过底的
+  /// 面板上，深色时又是一条发黑的带子
+  static let stickyHeaderFill = dynamicNSColor(
+    light: NSColor(white: 0.98, alpha: 0.85), dark: NSColor(white: 0.25, alpha: 0.85),
+    solid: panelSolid)
+
+  /// 行尾元信息（剪贴板的「来源 · 多久前」、启动器的类型、翻译历史的时间）和分组标题这类次要文字（2026-11-23 美化 V3）：
+  /// 15 照旧 tertiary；macOS 26 起玻璃面板上 tertiary 只有 1.6–2.3:1，换成 secondary 也只到 2.4–2.9（玻璃上的层级色
+  /// 走鲜亮混合，比标称的浅），用定死的 black 0.6 / white 0.62（≥ 3:1，屏上实抓 PolishProbeTests.glass()）
+  static let metaText: AnyShapeStyle = {
+    if #available(macOS 26, *) {
+      return AnyShapeStyle(
+        dynamic(
+          light: .black.withAlphaComponent(0.6), dark: .white.withAlphaComponent(0.62),
+          contrast: (.black.withAlphaComponent(0.75), .white.withAlphaComponent(0.8))))
+    }
+    return AnyShapeStyle(.tertiary)
+  }()
+  /// 剪贴板行尾的备注（用户自己写的，比「来源 · 多久前」深一档）、翻译语言胶囊里的「自动」（10 pt 的小字，2026-11-24
+  /// 美化 V7 起不再是强调色）：15 照旧 secondary；26 起同 metaText 的原因换成定死的
+  /// black 0.72 / white 0.75（secondary 在玻璃上比 metaText 还浅，层级就倒过来了）
+  static let noteText: AnyShapeStyle = {
+    if #available(macOS 26, *) {
+      return AnyShapeStyle(
+        dynamic(
+          light: .black.withAlphaComponent(0.72), dark: .white.withAlphaComponent(0.75),
+          contrast: (.black.withAlphaComponent(0.85), .white.withAlphaComponent(0.9))))
+    }
+    return AnyShapeStyle(.secondary)
+  }()
   /// 悬停
   static let hoverFill = dynamic(
     light: .black.withAlphaComponent(0.04), dark: .white.withAlphaComponent(0.05))
@@ -172,6 +246,16 @@ enum Style {
   static let hairline = dynamic(
     light: .black.withAlphaComponent(0.08), dark: .white.withAlphaComponent(0.10),
     contrast: (.black.withAlphaComponent(0.25), .white.withAlphaComponent(0.25)))
+  /// 输入框没拿焦点时那圈线（InputBox）：15 就是 hairline；macOS 26 起深一档 black 0.12 / white 0.16（2026-11-24 美化 V7：
+  /// 翻译原文框平时不亮焦点环了，垫了底的玻璃上 0.08 的线和面板只差约 1.2:1，看不出框在哪）；增强对比度同 hairline 的 0.25
+  static let inputRim: Color = {
+    if #available(macOS 26, *) {
+      return dynamic(
+        light: .black.withAlphaComponent(0.12), dark: .white.withAlphaComponent(0.16),
+        contrast: (.black.withAlphaComponent(0.25), .white.withAlphaComponent(0.25)))
+    }
+    return hairline
+  }()
   /// 发丝线宽：平时 0.5 pt，增强对比度 1 pt
   static func hairlineWidth(_ contrast: ColorSchemeContrast) -> CGFloat {
     contrast == .increased ? 1 : 0.5
@@ -592,8 +676,9 @@ private struct HairlineBorder<S: InsettableShape>: View {
   }
 }
 
-/// 输入框底（Whisker §2：Style.inputFill + 发丝线（增强对比度 1 pt），圆角 card）：翻译原文框、历史搜索框、剪贴板对话框的
-/// 输入框、快捷键录制框共用。拿着焦点时换成焦点环（Whisker §3「输入框焦点」：1 pt 品牌粉 0.55 描边 + 粉 0.18 外发光），淡入淡出
+/// 输入框底（Whisker §2：Style.inputFill + 发丝线（26 起深一档的 Style.inputRim；增强对比度 1 pt），圆角 card）：翻译原文框、
+/// 历史搜索框、剪贴板对话框的输入框、快捷键录制框共用。isFocused 时换成焦点环（Whisker §3「输入框焦点」：1 pt 品牌粉 0.55 描边
+/// + 粉 0.18 外发光），淡入淡出；翻译原文框只在「在改」时才给 true（TranslatePanelView.showsSourceFocus，美化 V7）
 struct InputBox: ViewModifier {
   var isFocused = false
   @Environment(\.colorSchemeContrast) private var contrast
@@ -612,7 +697,7 @@ struct InputBox: ViewModifier {
       .overlay {
         shape
           .strokeBorder(
-            isFocused ? Style.brand.opacity(0.55) : Style.hairline,
+            isFocused ? Style.brand.opacity(0.55) : Style.inputRim,
             lineWidth: isFocused ? 1 : Style.hairlineWidth(contrast)
           )
           .animation(fade, value: isFocused)
@@ -671,6 +756,25 @@ extension View {
   /// （Notes/NoteDeckView：透明面板上浮着的纸）也用它；别各写各的。只挂在底上（材质那一层）或整块不含字的
   /// 视图上：挂在带字的内容上会给每个字都加阴影
   func floatingShadow() -> some View { shadow(color: .black.opacity(0.25), radius: 18, y: 8) }
+
+  /// 面板里浮起来的卡片的底（⌘K 动作菜单、剪贴板对话框；mac-whisker §3「层级」）。macOS 26 起（2026-11-23 美化 V4）：
+  /// 光是材质的话在玻璃面板上和后面的列表糊在一起（浅色差不多亮、深色只深一点、阴影几乎看不见），所以材质上再垫一层
+  /// 面板那种底（Style.floatingUnderlay）、1 pt 发丝线、投影加深，阴影只挂在底上。15 原样走 legacy（各处原来的
+  /// 材质 + hairlineBorder + floatingShadow）
+  @ViewBuilder func floatingSurface<S: InsettableShape, Legacy: View>(
+    _ shape: S, else legacy: (Self) -> Legacy
+  ) -> some View {
+    if #available(macOS 26, *) {
+      background {
+        shape.fill(.regularMaterial)
+          .overlay(shape.fill(Color(nsColor: Style.floatingUnderlay)))
+          .shadow(color: .black.opacity(0.35), radius: 22, y: 10)
+      }
+      .overlay(shape.strokeBorder(Style.floatingRim, lineWidth: 1))
+    } else {
+      legacy(self)
+    }
+  }
 }
 
 /// 空状态（剪贴板面板、翻译浮窗、翻译历史共用，2026-10-12 由两处各写一份合成）：28 pt 符号 + 14 semibold 标题 +

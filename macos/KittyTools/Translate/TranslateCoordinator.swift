@@ -8,6 +8,7 @@
 // 它的搜索框命令和 ⌘ 键（N7）也从这里分发。
 // 折叠着的服务不自动翻译（2026-11-15，有用户问折叠了还耗不耗 token）：开会话时它们是「没翻」的卡（.idle）、不发请求，
 // 点开（expand）才翻当前原文；点开后才翻的卡不当主结果（不写历史、不自动复制），静默替换和截图盖回先用没折叠的服务。
+// 流式的字一帧最多写一次进 cards、几张卡一起写（美化与提速 P5，stage / flushStaged）：完成、出错、重跑、取消都把攒着的扔掉。
 
 import AppKit
 import Carbon.HIToolbox
@@ -50,6 +51,10 @@ import Observation
   }
   /// 划词没取到文字、当输入翻译打开的（体检 A16）：原文框占位换成「没取到选中的文字…」，开始输入就恢复
   private(set) var missedSelection = false
+  /// 这次呼出后用户在原文框里点过、改过字（SourceTextView 的 onUserEdit 置上）：原文框据此才画强调色焦点环（美化 V7，
+  /// TranslatePanelView.showsSourceFocus）。呼出、重翻（start / beginInput / resumeInput）和原文框丢焦点时清零——
+  /// 呼出时带进来的原文、按 ↩ 重翻都不算在改
+  var sourceTouched = false
   /// 历史的「清空历史…」确认框（「⋯」菜单和历史 ⌘K 都开它，确认框挂在浮窗根视图上）
   var confirmsClearHistory = false
   /// 翻译历史盖在结果区上（⌘Y、「⋯」菜单）；开 / 关都让列表复位（搜索词、范围、选中、撤销）。
@@ -114,6 +119,12 @@ import Observation
   @ObservationIgnored private var tasks: [String: (run: Int, task: Task<Void, Never>)] = [:]
   /// 每次 run 加一：旧任务拿着旧号，写不进同一个服务的新卡（B1，和 Task.isCancelled 两道保险）
   @ObservationIgnored private var runs = 0
+  /// 流式攒着、还没写进 cards 的字（服务 id → 到目前为止的整段）和合帧的记账（stage）
+  @ObservationIgnored private var staged: [String: String] = [:]
+  @ObservationIgnored private var flushScheduled = false
+  @ObservationIgnored private var lastFlush: CFTimeInterval = 0
+  /// 合帧的一帧多长（单测换成长的：全量并行跑时主线程挤，按真时间数不准）
+  @ObservationIgnored var flushFrame: CFTimeInterval = 1.0 / 60
   /// 这次会话已经按哪个服务写过历史 / 自动复制过（U1：第一个翻成功的服务定下来时只做一次）
   @ObservationIgnored private var recordedPrimary: String?
   /// 翻译用的流（单测换成假的；默认就是 TranslateService.translate 的那个 switch）
@@ -171,6 +182,13 @@ import Observation
       case .waiting, .running: true
       default: false
       }
+    }
+  }
+
+  /// 有卡正在出字（生成中、已经有字）：浮窗这时跟着行数直接长高、不带动画（TranslatePanelView.animatesResize）
+  var isStreamingText: Bool {
+    cards.contains {
+      if case .running(let text) = $0.state { !text.isEmpty } else { false }
     }
   }
 
@@ -266,6 +284,7 @@ import Observation
   /// 占位换成「没取到选中的文字，可以直接输入或粘贴」。输入翻译热键不走这里（保留上次的，见 resumeInput）
   func beginInput(missedSelection: Bool = false) {
     cancel()
+    sourceTouched = false
     sourceText = ""
     self.missedSelection = missedSelection
     translatedSource = nil
@@ -293,6 +312,7 @@ import Observation
   /// 输入翻译热键 / 菜单再打开浮窗（体检 A14）：保留上次的原文和结果（调用方把原文全选，打字即替换），
   /// 收起提示、关上历史；上次收起时被中断的卡片重新跑——折叠着的不跑、回到「没翻」，点开再翻。收着时换过语言的整个重译
   func resumeInput() {
+    sourceTouched = false
     notice = nil
     noticePermission = nil
     missedSelection = false
@@ -328,6 +348,7 @@ import Observation
   /// 用当前原文开新会话（语言设置变了也调它重译）
   func start() {
     languageChanged = false
+    sourceTouched = false
     cancel()
     showsHistory = false
     notice = nil
@@ -514,6 +535,7 @@ import Observation
     dictionaryTask?.cancel()
     for entry in tasks.values { entry.task.cancel() }
     tasks = [:]
+    staged = [:]
     for index in cards.indices {
       switch cards[index].state {
       case .waiting, .running: cards[index].state = .failed(.interrupted)
@@ -539,7 +561,7 @@ import Observation
         for try await text in stream(service, request) {
           guard current() else { return }
           latest = text
-          update(service.id, .running(text))
+          stage(service.id, text)
         }
         // 取消时流会正常结束而不是抛错：这里不能把半截结果当成完成
         guard current() else { return }
@@ -563,8 +585,54 @@ import Observation
   }
 
   private func update(_ id: String, _ state: CardState) {
+    // 完成 / 出错 / 重跑带着这张卡最新的样子：攒着没写进去的那段作废，别在之后把它改回「生成中」
+    staged[id] = nil
     guard let index = cards.firstIndex(where: { $0.id == id }) else { return }
     cards[index].state = state
+  }
+
+  /// 流式的字先攒着，一帧最多写一次进 cards、几张卡一起写（美化与提速 P5）：每个服务的每段增量都是主线程上单独的一次
+  /// job，段段都改模型的话浮窗整块跟着重算、重排一遍（三张卡一起出字时一秒上百次）。离上次写进去不到一帧就等满一帧，
+  /// 闲着之后的第一段马上写。完成 / 出错 / 重跑经 update 把攒着的那段扔掉（它们带着完整的字），取消时整个清空
+  private func stage(_ id: String, _ text: String) {
+    staged[id] = text
+    guard !flushScheduled else { return }
+    flushScheduled = true
+    let delay = Self.flushDelay(now: CACurrentMediaTime(), last: lastFlush, frame: flushFrame)
+    Task {
+      if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
+      flushStaged()
+    }
+  }
+
+  /// 把攒着的字写进还在生成的卡（一次改 cards）；卡已经完成、出错、被取消的不动（B1：不把它改回「生成中」）
+  private func flushStaged() {
+    flushScheduled = false
+    lastFlush = CACurrentMediaTime()
+    guard !staged.isEmpty else { return }
+    var next = cards
+    var changed = false
+    for (id, text) in staged {
+      guard let index = next.firstIndex(where: { $0.id == id }) else { continue }
+      switch next[index].state {
+      case .waiting, .running:
+        if next[index].state != .running(text) {
+          next[index].state = .running(text)
+          changed = true
+        }
+      default: break
+      }
+    }
+    staged = [:]
+    if changed { cards = next }
+  }
+
+  /// 攒着的字还要等多久才写进模型（纯函数，配单测）：离上次写进去满一帧（frame，按 60 Hz：120 Hz 的屏也不必
+  /// 一秒改 120 次模型）就马上写，不满就等到满
+  static func flushDelay(now: CFTimeInterval, last: CFTimeInterval, frame: CFTimeInterval)
+    -> CFTimeInterval
+  {
+    max(0, last + frame - now)
   }
 
   /// 主结果定下来（或换成了另一个服务的）时写历史、自动复制，同一个服务只做一次：后面的服务再出来不各复制一次（U1）。

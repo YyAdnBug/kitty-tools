@@ -470,6 +470,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     isIdle: { [unowned self] in Self.isIdle(windows: NSApp.windows, isCapturing: isCapturing) },
     work: { [unowned self] in reclaimIdleMemory() })
 
+  /// 开机后闲下来（3 秒，没在框选、没有面板开着、没在走欢迎引导；忙着就再等一轮）在屏外预排启动器和剪贴板面板
+  /// （2026-11-23 美化与提速 P7：第一次呼出要当场建 SwiftUI 树、排第一遍版，启动器约 155 ms、剪贴板 5000 条 100–155 ms；
+  /// 预排过 40–55 ms）。只做一次，启动时排上（applicationDidFinishLaunching）
+  lazy var panelPrewarm = Memory.IdleTimer(
+    after: .seconds(3),
+    isIdle: { [unowned self] in
+      Self.isIdle(windows: NSApp.windows, isCapturing: isCapturing)
+        && !settingsNavigation.showsOnboarding
+    },
+    work: { [unowned self] in prewarmPanels() })
+
+  /// 功能关着的不建（关着时本来就不会被建出来）；已经呼出过的不用。启动器先按空搜索框搜一遍（收藏、常用），第一次呼出时
+  /// prepareForShow 搜出来的还是这几行，SwiftUI 只比一遍；面板建好之后再搜（搜索要读面板接上的功能开关）
+  private func prewarmPanels() {
+    if Feature.launcher.isOn, builtLauncherPanel == nil {
+      let panel = launcherPanel
+      launcherModel.search()
+      panel.prewarm()
+    }
+    if Feature.clipboard.isOn, builtClipboardPanel == nil { clipboardPanel.prewarm() }
+  }
+
   /// 上一次看到的「空闲时释放识字模型」。AppDelegate 建出来时默认值还没注册（bool(forKey:) 读到 false），先按注册的
   /// 默认值（开）记；偏好里是关的，第一次偏好通知时预热一次，和启动时那次是同一个（OCR.foreground 只做一次）
   private var lastOCRReleaseWhenIdle = true
@@ -576,9 +598,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     panel.squeezesIn = { Self.squeezesIn() }
     model.hidePanel = { [unowned panel] in panel.hide() }
     model.pasteTargetView = { [unowned panel] in panel.pasteTarget() }
-    // ⌘K 菜单开着时瞬间长高：菜单锚在底栏上方，面板边长边插进来会越过搜索栏被裁，得先长好再从右下角放大
+    // ⌘K 菜单开着时瞬间长高：菜单锚在底栏上方，面板边长边插进来会越过搜索栏被裁，得先长好再从右下角放大。
+    // 连着打字时也直接到位（isTyping，P4）
     model.resize = { [unowned panel, unowned model] in
-      panel.setContentHeight($0, animated: !model.showsActions)
+      panel.setContentHeight($0, animated: !model.showsActions && !model.isTyping)
     }
     model.runAction = { [unowned self] in runLauncherAction($0) }
     model.actionState = { [unowned self] in menuState }
@@ -726,7 +749,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     panel.squeezesIn = { Self.squeezesIn() }
     model.hidePanel = { [unowned panel] in panel.hide() }
     model.pasteTargetView = { [unowned panel] in panel.pasteTarget() }
-    model.resize = { [unowned panel] in panel.setContentHeight($0, animated: true) }
+    // 打字带来的高度变化直接到位（isTyping，美化与提速 P3）
+    model.resize = { [unowned panel, unowned model] in
+      panel.setContentHeight($0, animated: !model.isTyping)
+    }
     panel.maxSize = NSSize(
       width: Style.listPanelWidths.upperBound, height: .greatestFiniteMagnitude)
     panel.widthKey = Prefs.clipboardPanelWidth
@@ -795,7 +821,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       content: AnyView(
         TranslatePanelView(
           coordinator: coordinator, speaker: speaker,
-          resize: { height, mustFit in
+          resize: { [unowned self] height, mustFit in
             // 高度随内容（Bob 的做法），前三张结果卡总放得下（TranslatePanelView.panelHeight）。
             // 最小 / 最大高度都钉在这个值上：用户只能拖宽度，拖高度会和自动高度打架
             guard let panel = created else { return }
@@ -805,8 +831,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               cap: UserDefaults.standard.double(forKey: Prefs.translatePanelMaxHeight))
             panel.minSize = NSSize(width: 360, height: height)
             panel.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: height)
-            // 变化 8 pt 以上才带动画：流式输出时每来几个字都会长一点，小变化直接设
-            panel.setContentHeight(height, animated: abs(panel.frame.height - height) >= 8)
+            // 出字时一行一行直接长到位，别的时候变化 8 pt 以上才带动画（TranslatePanelView.animatesResize）
+            panel.setContentHeight(
+              height,
+              animated: TranslatePanelView.animatesResize(
+                from: panel.frame.height, to: height, streaming: coordinator.isStreamingText))
           },
           replaceOriginal: { [unowned self] in replaceOriginal() },
           isShown: { created?.isVisible ?? false }

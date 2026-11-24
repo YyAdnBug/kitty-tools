@@ -45,6 +45,15 @@ struct ClipboardPanelTests {
 
   /// JSON 默认美化（体检 A10）：换条目不复位，一次呼出里点过「原文」就一直看原文，收起面板（reset）才回到美化；
   /// 美化结果按条目缓存，编辑正文后清掉
+  /// 刚改过搜索词（不到 0.2 s）：结果变了时面板高度直接到位（美化与提速 P3）；停下来之后的变化照常动画
+  @Test func typingResizesInstantly() {
+    let gap = LauncherModel.typingGap
+    #expect(ClipboardPanelModel.isTyping(100, now: 100.01))
+    #expect(ClipboardPanelModel.isTyping(100, now: 100 + gap / 2))
+    #expect(!ClipboardPanelModel.isTyping(100, now: 100 + gap))
+    #expect(!ClipboardPanelModel.isTyping(0, now: 100))
+  }
+
   @Test func jsonPrettyByDefault() throws {
     let (model, _) = try makeModel([#"{"b":1,"a":[2]}"#, "普通文本", #"{"x":true}"#])
     let json = try item(model, #"{"b":1,"a":[2]}"#)

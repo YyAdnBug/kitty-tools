@@ -188,15 +188,14 @@ struct ProviderCardView: View {
       Spacer(minLength: 6)
       CardActions {
         if let text = card.state.text, !text.isEmpty {
-          // 只读译文：单词卡读第一行释义，讲解卡读第一段，别的去掉 Markdown 记号再读（R1）
-          let speech = Speaker.speechText(text, wordStyle: wordStyle, explanation: explains)
-          Button(
-            "朗读", systemImage: speaker.speaking == speech ? "speaker.wave.2.fill" : "speaker.wave.2"
-          ) { speaker.toggle(speech, language: language) }
-          .symbolEffect(
-            .variableColor.iterative.reversing,
-            isActive: speaker.speaking == speech && !reduceMotion
-          )
+          // 只读译文：单词卡读第一行释义，讲解卡读第一段，别的去掉 Markdown 记号再读（R1）。
+          // 用到才算（P5）：生成中每来一段字标题行都要重算一遍，去记号这一步不便宜，没在朗读时不用比
+          let speech = { Speaker.speechText(text, wordStyle: wordStyle, explanation: explains) }
+          let isSpeaking = speaker.speaking.map { $0 == speech() } ?? false
+          Button("朗读", systemImage: isSpeaking ? "speaker.wave.2.fill" : "speaker.wave.2") {
+            speaker.toggle(speech(), language: language)
+          }
+          .symbolEffect(.variableColor.iterative.reversing, isActive: isSpeaking && !reduceMotion)
           // 读屏名字带上服务名（第四轮体检 U12）：几张卡的按钮一样，光读「复制」分不清是哪一张的
           .accessibilityLabel("朗读\(name)的译文")
           Button("复制", systemImage: isCopied ? "checkmark" : "doc.on.doc", action: onCopy)
@@ -223,7 +222,7 @@ struct ProviderCardView: View {
 
   /// 正文的滚动区：放得下时和内容一样高（和不滚动时一模一样），超过 8 行就停在上限、在卡片里滚。
   /// 外层结果区纵向不给高度，滚动区自然取内容高度；fixedSize 让它放在别处（设置页预览）也这样。
-  /// 高度只跟着内容变（越过上限那一下由浮窗的高度动画接住），滚动时不变。
+  /// 高度只跟着内容变（浮窗跟着改高：出字时直接到位，别的时候越过上限那一下由浮窗的高度动画接住），滚动时不变。
   /// 左右内边距在正文上：滚动区铺满卡宽，滚动条贴卡片右边
   private var scroller: some View {
     let fontSize = 15 * fontScale
@@ -708,76 +707,35 @@ struct ServiceTile: View {
   }
 }
 
-// 下面三处循环动效（彗星边框、「思考中」、骨架的扫光）都只动变换（mac-whisker §8）：渐变各是一层只画一次的图层，
-// 循环的是 rotationEffect / offset 上的隐式动画（线性、无限循环，onAppear 里起），SwiftUI 在后台的显示链接线程上
-// 逐帧只改图层的旋转 / 位置，不重画内容、不占主线程。
-// 不能每帧改渐变的参数（AngularGradient 的 angle、LinearGradient 的起止点），也不用 TimelineView 驱动：
-// 系统给正式版出过 3 份「CPU 占用过高」报告（56–70%，持续 2–3 分钟），栈都是主线程逐帧用 CPU 光栅化环形渐变
-// （CA::Layer display → CGContextDrawConicGradient）。实测（两张 396 × 120 pt 的卡，@2x、60 Hz，一个核 = 100%，
-// 只算本进程）：整张「思考中」的等待卡约 30% → 约 6%；单看边框 33% → 3.5%（原来卡越高越贵，300 pt 高时 46%，
-// 现在和卡高无关）、骨架 12.5% → 4%、「思考中」9% → 3.5%；TimelineView 就算只把角度交给 rotationEffect
-// 也有 4–5%（它空转自己就 3–6%）。减弱动态效果时三处都不起动画，CPU 是 0。
-// ponytail: 剩下的约 6% 是 SwiftUI 逐帧推这几个隐式动画的开销。自绘 CALayer + CABasicAnimation 能到 0–0.6%
-// （动画整个交给渲染服务），代价是三处各包一层 NSViewRepresentable，强调色、深浅色、减弱动态效果、出场淡入淡出
-// 都得自己接，屏外截图自检里永远是没动的那一帧；等待时的 CPU 还嫌高再换。
-// ResultCardLoopTests 锁住「渐变是图层、在动的只是变换」。
+// 下面三处循环动效（彗星边框、「思考中」、骨架的扫光）和生成中的光标（ResultText）都是 LoopLayer：渐变 / 色块各是一层
+// 只画一次的子图层，循环是加在它上面的 CABasicAnimation（旋转、平移、透明度），整个交给渲染服务——主线程一帧都不管
+// （美化与提速 P5）。SwiftUI 只管摆放、遮罩（边框形状、文字）、淡入淡出和给颜色（强调色、深浅色随环境重取）。
+// 来历：第二轮体检第 1 批之前是逐帧改渐变参数（系统出过 3 份「CPU 占用过高」报告，56–70%，主线程逐帧光栅化环形渐变）；
+// 第 1 批换成 SwiftUI 的 rotationEffect / offset 隐式循环动画，渐变不再重画，但 SwiftUI 每帧还要在主线程推一遍
+// 动画（三张等待卡 9.6%，单看彗星约 4%、光标约 3.6%）；P5 换成这里，三张等待卡 ≤ 1%（数在 mac-whisker §8）。
+// 不能每帧改渐变的参数、不用 TimelineView、不用 SwiftUI 的 repeatForever 驱动这几处。
+// 屏外截图（cacheDisplay）画的是模型值：彗星停在 0°、扫光的带子停在正中（一趟的 1/3 处）、光标全亮。
+// ResultCardLoopTests 锁住「循环是图层上的动画、模型值不动；减弱动态效果时没有动画」。
 
-/// 生成中的彗星边框：一段强调色光沿边框绕行（2.4 s 一圈）；减弱动态效果时静止（出现那一刻看，开着就不转）。
-/// 环形渐变只画一次，放进边长 = 卡片对角线的正方形（怎么转都盖得住四角），整块转，边框形状当遮罩
+/// 生成中的彗星边框：一段强调色光沿边框绕行（2.4 s 一圈）；减弱动态效果时静止在 0°（出现那一刻看，开着就不转）。
+/// 环形渐变放进边长 = 卡片对角线的正方形（怎么转都盖得住四角），整块转，边框形状当遮罩
 private struct CometBorder: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @State private var spins = false
 
   var body: some View {
-    GeometryReader { geometry in
-      let side = hypot(geometry.size.width, geometry.size.height)
-      AngularGradient(
-        stops: [
-          .init(color: .clear, location: 0), .init(color: .clear, location: 0.62),
-          .init(color: Style.brand.opacity(0.35), location: 0.78),
-          .init(color: Style.brand, location: 0.92), .init(color: .clear, location: 1),
-        ], center: .center
-      )
-      .frame(width: side, height: side)
-      .rotationEffect(.degrees(spins ? 360 : 0))
-      // 动画只挂在旋转上：出字时卡片长高（side 跟着变）不带动画，也不打断这一圈
-      .animation(.linear(duration: 2.4).repeatForever(autoreverses: false), value: spins)
-      .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
-    }
-    .mask {
-      RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
-        .strokeBorder(lineWidth: 1.5)
-    }
-    .onAppear { spins = !reduceMotion }
-    .transition(.opacity.animation(.easeOut(duration: 0.35)))
-    .allowsHitTesting(false)
-  }
-}
-
-/// 扫光用的高光带（骨架的两根条、「思考中」共用）：两头透明、正中是 peak 的一条渐变，和要扫的东西一样宽，
-/// 只画一次；出现时贴在左边界外，1.3 s 一趟线性循环——前 2/3 从左扫到右，后 1/3 在右边界外歇着。
-/// 位移是按宽度算的，宽度变了（拖宽浮窗）要重新起：调用处用 .id(宽度) 重建
-private struct SweepBand: View {
-  let peak: Color
-  let width: CGFloat
-  @State private var swept = false
-
-  var body: some View {
-    LinearGradient(
-      stops: [
-        .init(color: .clear, location: 0), .init(color: peak, location: 0.5),
-        .init(color: .clear, location: 1),
-      ], startPoint: .leading, endPoint: .trailing
-    )
-    .frame(width: width)
-    .offset(x: (swept ? 2 : -1) * width)
-    .animation(.linear(duration: 1.3).repeatForever(autoreverses: false), value: swept)
-    .onAppear { swept = true }
+    LoopLayer(kind: .comet, color: Style.brand, animates: !reduceMotion)
+      .mask {
+        RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
+          .strokeBorder(lineWidth: 1.5)
+      }
+      .transition(.opacity.animation(.easeOut(duration: 0.35)))
+      .allowsHitTesting(false)
   }
 }
 
 /// 推理模型在思考（reasoning 字段或开头的 <think> 段）时骨架上面的「思考中」：12 medium secondary，
-/// 和骨架同一种 1.3 s 的扫光（mac-whisker S3）：高光带在文字后面移过去，文字做遮罩；减弱动态效果时没有高光
+/// 和骨架同一种 1.3 s 的扫光（mac-whisker S3）：高光带（正中 primary 0.55）在文字后面移过去，文字做遮罩；
+/// 减弱动态效果时没有高光
 private struct ThinkingLabel: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -787,11 +745,8 @@ private struct ThinkingLabel: View {
       .foregroundStyle(.secondary)
       .overlay {
         if !reduceMotion {
-          GeometryReader { geometry in
-            SweepBand(peak: .primary.opacity(0.55), width: geometry.size.width)
-              .id(geometry.size.width)
-          }
-          .mask(Text("思考中").font(.system(size: 12, weight: .medium)))
+          LoopLayer(kind: .sweep, color: .primary.opacity(0.55))
+            .mask(Text("思考中").font(.system(size: 12, weight: .medium)))
         }
       }
       .accessibilityLabel("思考中")
@@ -800,7 +755,7 @@ private struct ThinkingLabel: View {
 
 /// 等第一个字时的骨架：两根条（高 8，宽 94 / 58%，约一行半译文高）+ 扫光（1.3 s 一趟）；减弱动态效果时没有高光带。
 /// 条的底色 primary 0.07，高光带正中 primary 0.07 / 0.93：叠在底色上正好是 0.14，和原来直接画 0.07 → 0.14 → 0.07
-/// 的渐变是同一个结果（各相位、深浅色对过，差不超过 1 / 255）
+/// 的渐变是同一个结果（各相位、深浅色对过，差不超过 1 / 255）。条（胶囊）和带子都在 LoopLayer 里，条自己裁带子
 private struct Skeleton: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -808,25 +763,198 @@ private struct Skeleton: View {
     GeometryReader { geometry in
       VStack(alignment: .leading, spacing: 6) {
         ForEach([0.94, 0.58], id: \.self) { width in
-          let length = geometry.size.width * width
-          Color.primary.opacity(0.07)
-            .overlay(alignment: .leading) {
-              if !reduceMotion {
-                SweepBand(peak: .primary.opacity(0.07 / 0.93), width: length).id(length)
-              }
-            }
-            // 先成组再裁，别省：直接 clipShape 的话，SwiftUI（macOS 15.7 实测）会把「裁剪区里一条带 offset 的渐变」
-            // 压成一层贴着裁剪区的渐变层、位移只记在图层的 bounds 原点上，而渐变是照 bounds 铺的——高光带就停在
-            // 条的正中不动，只是到点出现、到点消失（屏外用 CARenderer 把图层树画出来对过）。成组后带子是组里
-            // 一层自己挪位置的图层。「思考中」的遮罩是文字，不走这条路
-            .compositingGroup()
-            .clipShape(Capsule())
-            .frame(width: length, height: 8)
+          LoopLayer(
+            kind: .sweep, color: .primary.opacity(0.07 / 0.93), base: .primary.opacity(0.07),
+            animates: !reduceMotion
+          )
+          .frame(width: geometry.size.width * width, height: 8)
         }
       }
       .padding(.vertical, 2)
     }
     .frame(height: 26)
     .accessibilityLabel("翻译中")
+  }
+}
+
+/// 一层自己循环的图层（翻译卡片的彗星边框、扫光、生成中的光标，P5）：子图层只画一次，循环是它上面的 CABasicAnimation，
+/// 由渲染服务逐帧推，主线程不管。颜色在 updateNSView 里按 SwiftUI 的环境取（深浅色、增强对比度、换了强调色都会再调它）
+struct LoopLayer: NSViewRepresentable {
+  enum Kind {
+    /// 彗星：环形渐变（透明 → 0.62 处起 → 0.78 处 color 0.35 → 0.92 处 color → 透明），放进边长 = 对角线的正方形，
+    /// 2.4 s 顺时针转一圈
+    case comet
+    /// 扫光：两头透明、正中是 color 的一条和自己一样宽的带子，1.3 s 一趟线性循环——从左边界外起，前 2/3 扫到右边界外，
+    /// 后 1/3 在外面歇着；有 base 时它是胶囊条的底色、带子裁在条里
+    case sweep
+    /// 光标：color 的圆角条（圆角 1）摆在 mark 处，透明度 1 ↔ 0.35、0.55 s 一程往返（正弦缓入缓出）
+    case blink
+  }
+
+  let kind: Kind
+  let color: Color
+  var base: Color?
+  /// false：不动（减弱动态效果）——彗星停在 0°、扫光没有带子、光标全亮
+  var animates = true
+  /// 光标在这一层里的位置（blink；nil = 没有字、不画）
+  var mark: CGRect?
+
+  func makeNSView(context: Context) -> LoopLayerView { LoopLayerView(kind: kind) }
+
+  func updateNSView(_ view: LoopLayerView, context: Context) {
+    let environment = context.environment
+    view.update(
+      color: color.resolve(in: environment), base: base?.resolve(in: environment).cgColor,
+      animates: animates, mark: mark)
+  }
+}
+
+/// LoopLayer 的视图：clip（裁到自己的边界，光标除外：它贴在最后一个字后面，可能伸出正文右边；扫光条的底色和胶囊圆角
+/// 在它上面）里放一层 moving，循环的动画挂在 moving 上。坐标翻转成左上原点（同 SwiftUI），旋转的正方向就是顺时针
+final class LoopLayerView: NSView {
+  /// 动画的 key（单测按它找）
+  static let animationKey = "loop"
+
+  let kind: LoopLayer.Kind
+  private let clip = CALayer()
+  private let moving: CALayer
+  private var animates = false
+  /// 扫光是骨架的胶囊条（有底色）：圆角 = 半高
+  private var isBar = false
+  /// 扫光是按宽度平移的：宽度变了（拖宽浮窗）要按新宽度重起
+  private var animatedWidth: CGFloat = 0
+
+  init(kind: LoopLayer.Kind) {
+    self.kind = kind
+    switch kind {
+    case .comet:
+      let gradient = CAGradientLayer()
+      gradient.type = .conic
+      gradient.startPoint = CGPoint(x: 0.5, y: 0.5)
+      gradient.endPoint = CGPoint(x: 1, y: 0.5)
+      gradient.locations = [0, 0.31, 0.62, 0.7, 0.78, 0.85, 0.92, 0.96, 1]
+      moving = gradient
+    case .sweep:
+      let gradient = CAGradientLayer()
+      gradient.startPoint = CGPoint(x: 0, y: 0.5)
+      gradient.endPoint = CGPoint(x: 1, y: 0.5)
+      gradient.locations = [0, 0.25, 0.5, 0.75, 1]
+      moving = gradient
+    case .blink:
+      moving = CALayer()
+      moving.cornerRadius = 1
+      moving.cornerCurve = .continuous
+    }
+    super.init(frame: .zero)
+    wantsLayer = true
+    if case .blink = kind {} else { clip.masksToBounds = true }
+    clip.cornerCurve = .continuous
+    clip.addSublayer(moving)
+    layer?.addSublayer(clip)
+  }
+
+  required init?(coder: NSCoder) { nil }
+
+  override var isFlipped: Bool { true }
+
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+  /// 自己加的子图层 AppKit 不管倍率：换到别的屏（1x / 2x）时跟上，渐变别按 1x 画了再放大
+  override func viewDidChangeBackingProperties() {
+    super.viewDidChangeBackingProperties()
+    let scale = window?.backingScaleFactor ?? 2
+    clip.contentsScale = scale
+    moving.contentsScale = scale
+  }
+
+  func update(color: Color.Resolved, base: CGColor?, animates: Bool, mark: CGRect? = nil) {
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    // 色标照 SwiftUI 画这两种渐变时交给图层的那一套（P5 换之前把它建的图层打出来对过）：每一段中间补一个色标。
+    // 透明的那几个也用同一种颜色、只是透明度 0：图层按没预乘的颜色插值，拿黑色的透明去插，两头那一段会发暗
+    // （SwiftUI 自己的渐变层按预乘插值，屏外出图对过：原来差到 17 / 255，这样之后一样）
+    func tint(_ alpha: Double) -> CGColor {
+      var faded = color
+      faded.opacity *= Float(alpha)
+      return faded.cgColor
+    }
+    switch kind {
+    case .comet:
+      (moving as? CAGradientLayer)?.colors = [
+        tint(0), tint(0), tint(0), tint(0.175), tint(0.35), tint(0.675), tint(1), tint(0.5),
+        tint(0),
+      ]
+    case .sweep:
+      (moving as? CAGradientLayer)?.colors = [tint(0), tint(0.5), tint(1), tint(0.5), tint(0)]
+      clip.backgroundColor = base
+      isBar = base != nil
+    case .blink:
+      moving.backgroundColor = color.cgColor
+      if let mark { moving.frame = mark }
+    }
+    // 减弱动态效果时扫光没有带子（同原来的写法：带子整个不画）；光标没有位置就不画
+    switch kind {
+    case .comet: break
+    case .sweep: moving.isHidden = !animates
+    case .blink: moving.isHidden = mark == nil
+    }
+    CATransaction.commit()
+    if animates != self.animates {
+      self.animates = animates
+      restart()
+    }
+  }
+
+  override func layout() {
+    super.layout()
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    clip.frame = bounds
+    switch kind {
+    case .comet:
+      let side = hypot(bounds.width, bounds.height)
+      moving.bounds = CGRect(x: 0, y: 0, width: side, height: side)
+      moving.position = CGPoint(x: bounds.midX, y: bounds.midY)
+    case .sweep:
+      // 胶囊条：圆角 = 半高（同 Capsule）。带子的模型值停在正中：屏外截图画的就是这一帧
+      clip.cornerRadius = isBar ? bounds.height / 2 : 0
+      moving.frame = bounds
+    case .blink: break
+    }
+    CATransaction.commit()
+    // 第一次排出尺寸时才挂得上（彗星、扫光要尺寸）；扫光的宽度变了按新宽度重起
+    let missing = animates && moving.animation(forKey: Self.animationKey) == nil
+    if missing || (kind == .sweep && abs(bounds.width - animatedWidth) > 0.5) { restart() }
+  }
+
+  /// 按现在的开关、尺寸重挂循环的动画（从头起：同原来 .id(宽度) 重建）
+  private func restart() {
+    moving.removeAnimation(forKey: Self.animationKey)
+    animatedWidth = bounds.width
+    guard animates, bounds.width > 0 || kind == .blink else { return }
+    let animation: CABasicAnimation
+    switch kind {
+    case .comet:
+      animation = CABasicAnimation(keyPath: "transform.rotation.z")
+      animation.fromValue = 0
+      animation.toValue = 2 * Double.pi
+      animation.duration = 2.4
+      animation.timingFunction = CAMediaTimingFunction(name: .linear)
+    case .sweep:
+      animation = CABasicAnimation(keyPath: "transform.translation.x")
+      animation.fromValue = -bounds.width
+      animation.toValue = 2 * bounds.width
+      animation.duration = 1.3
+      animation.timingFunction = CAMediaTimingFunction(name: .linear)
+    case .blink:
+      animation = CABasicAnimation(keyPath: "opacity")
+      animation.fromValue = 1
+      animation.toValue = 0.35
+      animation.duration = 0.55
+      animation.autoreverses = true
+      animation.timingFunction = CAMediaTimingFunction(controlPoints: 0.37, 0, 0.63, 1)
+    }
+    animation.repeatCount = .infinity
+    moving.add(animation, forKey: Self.animationKey)
   }
 }

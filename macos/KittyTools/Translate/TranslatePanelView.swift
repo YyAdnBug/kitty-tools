@@ -2,7 +2,8 @@
 // 顶栏（N6，对标 Bob）：两个 28 pt 语言胶囊（显示实际语言，自动时带「自动」标签）+ 圆形互换钮（转半圈，两个胶囊
 // 按 glide 交换位置，体检 B26），右边只有复制即译开着时的品牌粉状态胶囊（点一下关掉）、图钉、「⋯」菜单
 // （翻译历史 ⌘Y、条数、清空与导出、复制即译、设置 ⌘,）；
-// 原文卡片（15 pt，↩ 就是翻译，⇧↩ / ⌘↩ 换行；只在出乎所选时写一行方向说明）+ 原文操作（收藏、划词来的可「替换原文」），
+// 原文卡片（15 pt，↩ 就是翻译，⇧↩ / ⌘↩ 换行；只在出乎所选时写一行方向说明；平时中性，点进去改字才亮焦点环，美化 V7）
+// + 原文操作（收藏、划词来的可「替换原文」），
 // 没有常驻「翻译」按钮（N5）：原文改过还没重译时右下角才弹出品牌粉「翻译 ↩」胶囊（pop），开始翻译就收回（settle）；
 // 下方是各服务结果卡片（折叠状态记住；折叠着的不自动翻译，点开才翻；查单个词时最上面多一张系统词典卡）。翻译历史（N7，HistoryView）整块替换结果区，
 // 开 / 关时只有这块 settle 交叉淡变、原文区不动。高度随内容伸缩（Bob 的做法：只让人拖宽度），结果卡不超过三张时
@@ -41,7 +42,7 @@ struct TranslatePanelView: View {
   @State private var thirdCardBottom: CGFloat = 0
   /// 互换钮转了几个半圈
   @State private var swaps = 0
-  /// 原文框拿着焦点：输入框底画焦点环（和历史搜索框只有一个亮）
+  /// 原文框拿着焦点（焦点环还要看在不在改：showsSourceFocus；和历史搜索框只有一个亮）
   @State private var sourceFocused = false
   /// 原文框里输入法正在组字（组着的字还没进 sourceText）：占位先藏起来（issue #16）
   @State private var sourceComposing = false
@@ -133,6 +134,13 @@ struct TranslatePanelView: View {
       cap > 0
       ? min(max(cap, minHeight), visible - 24) : min(max(visible * 0.85, mustFit), visible - 24)
     return min(max(height, minHeight), limit)
+  }
+
+  /// 改浮窗高度带不带动画（纯函数，配单测）：有卡正在出字时一律不带，跟着行数一行一行直接长到位（美化与提速 P5：
+  /// 窗口帧动画那 0.14–0.18 s 里每帧整块浮窗都要重排一遍，几张卡轮流换行时窗口一直在动画里、和后面来的字抢主线程；
+  /// 同启动器、剪贴板打字时）；别的时候变化 8 pt 以上才带（小变化直接设）
+  static func animatesResize(from old: CGFloat, to new: CGFloat, streaming: Bool) -> Bool {
+    !streaming && abs(new - old) >= 8
   }
 
   /// 浮窗最矮多高（也是拖下边的下限）
@@ -320,8 +328,12 @@ struct TranslatePanelView: View {
         coordinator.start()
       } onFocusChange: {
         sourceFocused = $0
+        // 丢了焦点（开历史、点进别的输入框）就不算在改了：回来要再点一下或打一个字（美化 V7）
+        if !$0, coordinator.sourceTouched { coordinator.sourceTouched = false }
       } onComposingChange: {
         sourceComposing = $0
+      } onUserEdit: {
+        if !coordinator.sourceTouched { coordinator.sourceTouched = true }
       }
       .frame(height: 76)
       .overlay(alignment: .topLeading) {
@@ -415,7 +427,17 @@ struct TranslatePanelView: View {
     }
     .padding(.top, 8)
     .padding(.bottom, 8)
-    .modifier(InputBox(isFocused: sourceFocused))
+    .modifier(
+      InputBox(
+        isFocused: Self.showsSourceFocus(
+          focused: sourceFocused, touched: coordinator.sourceTouched, composing: sourceComposing)))
+  }
+
+  /// 原文框画不画强调色焦点环（美化 V7，用户拍板「平时中性发丝线，点进去改字才换焦点框」；mac-whisker 翻译）：拿着焦点，
+  /// 并且在改——这次呼出后在框里点过或改过字（touched = TranslateCoordinator.sourceTouched），或者输入法正在组字。
+  /// 呼出时带进来的原文、按 ↩ 重翻都不算（那时 touched 被清零），键盘焦点照旧在框里。纯函数，配单测
+  static func showsSourceFocus(focused: Bool, touched: Bool, composing: Bool) -> Bool {
+    focused && (touched || composing)
   }
 
   /// 只在出乎所选时写一行：固定目标正好是原文语言而改译了另一端；固定源和检测结果对不上（照所选发出，只提示）
@@ -557,7 +579,7 @@ struct TranslatePanelView: View {
   }
 }
 
-/// 28 pt 语言胶囊：语言名 +（自动且已知实际语言时）「自动」标签 + 10 pt 下拉箭头，间距 4；窄时语言名截断
+/// 28 pt 语言胶囊：语言名 +（自动且已知实际语言时）灰字「自动」+ 10 pt 下拉箭头，间距 4；窄时语言名截断
 private struct LanguageCapsule: View {
   let title: String
   let showsAutoTag: Bool
@@ -571,13 +593,12 @@ private struct LanguageCapsule: View {
         .truncationMode(.middle)
         .contentTransition(.interpolate)
         .layoutPriority(-1)
+      // 次要灰字、没有底（美化 V7：原来是强调色小胶囊，顶上粉的地方太多；强调色只标现在该操作的东西）
       if showsAutoTag {
         Text("自动")
           .font(.system(size: 10, weight: .semibold))
-          .foregroundStyle(Style.brandInk)
+          .foregroundStyle(Style.noteText)
           .padding(.horizontal, 4)
-          .padding(.vertical, 1)
-          .background(Style.brand.opacity(0.16), in: .capsule)
           .fixedSize()
       }
       Image(systemName: "chevron.down")

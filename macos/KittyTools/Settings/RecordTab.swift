@@ -7,6 +7,7 @@
 // 按键不写进页里（N11）：一句话 +「查看全部快捷键…」；菜单栏、快捷键页、速查表里录屏录音仍和截图同在「截图与录制」一节。
 // 2026-11-18 设置改版 S4：帧率、编码、显示按键时、按快捷键后立即开始录音收进「高级…」（文件嫌大、录音怎么开始，一年改一次）。
 
+import AVFoundation
 import SwiftUI
 
 struct RecordTab: View {
@@ -21,7 +22,8 @@ struct RecordTab: View {
   @AppStorage(Prefs.audioRecordSource) private var audioSource = AudioRecorder.Source.microphone
   @AppStorage(Prefs.audioRecordStartsImmediately) private var startsImmediately = false
   @AppStorage(Prefs.screenRecordMicrophoneDevice) private var microphoneDevice: String?
-  /// 接着的麦克风（打开这一页时读一次；插拔后重新打开这一页才更新）。onAppear 里读：@State 的初值每次建视图都会算一遍
+  /// 接着的麦克风：打开这一页时读一次，插拔时（系统的接上 / 拔掉通知，2026-11-23 美化与提速 P6）再读。onAppear 里读：
+  /// @State 的初值每次建视图都会算一遍
   @State private var microphones: [(id: String, name: String)] = []
 
   var body: some View {
@@ -105,7 +107,16 @@ struct RecordTab: View {
     .formStyle(.grouped)
     .settingsScrollTarget()
     .onAppear { microphones = ScreenRecorder.microphones() }
+    .task { await reloadMicrophones(on: AVCaptureDevice.wasConnectedNotification) }
+    .task { await reloadMicrophones(on: AVCaptureDevice.wasDisconnectedNotification) }
     .advancedSheet(.record, summary: "文件大小和录音怎么开始", inline: drawsAdvanced) { advanced }
+  }
+
+  /// 插上 / 拔掉设备时重读选单（异步序列在主线程上接：通知不一定在主线程上发）
+  private func reloadMicrophones(on name: Notification.Name) async {
+    for await _ in NotificationCenter.default.notifications(named: name) {
+      microphones = ScreenRecorder.microphones()
+    }
   }
 
   /// 「高级…」表单：帧率、编码、显示按键时；录音的立即开始
