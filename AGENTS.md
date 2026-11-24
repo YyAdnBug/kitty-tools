@@ -243,6 +243,12 @@ TEST_RUNNER_KITTY_LAUNCHPAD_PROBE=1 xcodebuild -project macos/KittyTools.xcodepr
 TEST_RUNNER_KITTY_LIVE_SELF_CAPTURE=/tmp/kitty-self xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/SelfCaptureLiveTests/ownWindowInEveryPath()'
 
+# 界面卡顿与玻璃观感的量测探针（按需；2026-11-23 美化与提速，用法和开关在文件头）：-O 构建、面板真上屏（右上角透明度 0.05）
+# 量启动器 / 剪贴板 / 翻译浮窗 / 设置窗主线程忙多久，报告在 <目录>/report.md；_ONLY 只量几块、_LOOP 来回做给 sample 用；
+# glass() 是屏上真玻璃（屏幕左下角出现两扇窗口，跑之前先说一声），_GLASS_TINT=0 / 1 临时覆盖「透明」「着色」
+TEST_RUNNER_KITTY_POLISH_PROBE=/tmp/kitty-polish TEST_RUNNER_KITTY_POLISH_PROBE_ONSCREEN=1 xcodebuild -project macos/KittyTools.xcodeproj \
+  -scheme KittyTools test SWIFT_OPTIMIZATION_LEVEL=-O -only-testing:'KittyToolsTests/PolishProbeTests/measure()'
+
 # 启动台布局的随机操作测试：随机挪 / 建文件夹 / 拖出 / 删 / 装新 App / 卸 App / 改行列数，每步查不变式；
 # 步数随手给（默认 1500，2 万步几秒钟），换种子加 TEST_RUNNER_KITTY_LAUNCHPAD_FUZZ_SEED=<种子>
 TEST_RUNNER_KITTY_LAUNCHPAD_FUZZ=20000 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
