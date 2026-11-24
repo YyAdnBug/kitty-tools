@@ -31117,6 +31117,16 @@
         }
       }
     },
+    "放大" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zoom In"
+          }
+        }
+      }
+    },
     "放大 / 缩小" : {
       "localizations" : {
         "en" : {
@@ -42397,6 +42407,16 @@
         }
       }
     },
+    "缩小" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zoom Out"
+          }
+        }
+      }
+    },
     "缩小字号" : {
       "localizations" : {
         "en" : {
@@ -48202,6 +48222,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Opacity"
+          }
+        }
+      }
+    },
+    "透明度 %lld%%" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opacity %lld%%"
           }
         }
       }

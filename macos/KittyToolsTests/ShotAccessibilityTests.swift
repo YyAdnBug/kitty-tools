@@ -118,12 +118,15 @@ struct ShotAccessibilityTests {
     #expect(view.accessibilityLabel() == "钉图")
     #expect(view.accessibilityValue() as? String == "200 × 100 点，透明度 80%")
     let actions = try #require(view.accessibilityCustomActions())
+    // 翻译这个功能关着（跟本机的功能开关）时没有「翻译」这一项
+    let translates = Feature.translate.isOn
     #expect(
-      actions.map(\.name) == [
-        "拷贝", "识字并拷贝", "翻译", ScreenshotOutput.saveTitle, "另存为…", "原始大小", "关闭",
-      ])
-    for action in actions.prefix(5) { #expect(action.handler?() == true) }
-    #expect(outputs == [.copy, .recognize, .translate, .save, .saveAs])
+      actions.map(\.name)
+        == ["拷贝", "识字并拷贝"] + (translates ? ["翻译"] : []) + [
+          ScreenshotOutput.saveTitle, "另存为…", "放大", "缩小", "原始大小", "关闭",
+        ])
+    for action in actions.prefix(translates ? 5 : 4) { #expect(action.handler?() == true) }
+    #expect(outputs == [.copy, .recognize] + (translates ? [.translate] : []) + [.save, .saveAs])
     #expect(actions.last?.handler?() == true)
     #expect(board.panels.isEmpty)
   }

@@ -18,9 +18,9 @@ import Carbon.HIToolbox
   /// 出图：动作、合成好的图、像素 / 点、画了哪些标注（AppDelegate 接到截图那条路上，顺手把标注回写进历史）
   typealias Output = @MainActor (RegionSelector.Action, CGImage, CGFloat, [Annotation]) -> Void
 
-  /// 缩放的上下限和一档（⌘+ / ⌘-）
+  /// 缩放的上下限和一档（⌘+ / ⌘-；钉图的 ⌘+ / ⌘- 也用这一档）
   private static let zoomRange: ClosedRange<CGFloat> = 0.1...4
-  private static let zoomStep: CGFloat = 1.25
+  static let zoomStep: CGFloat = 1.25
   private static var saveMenuLabel: String { String(localized: "存储选项") }
 
   private let image: CGImage
