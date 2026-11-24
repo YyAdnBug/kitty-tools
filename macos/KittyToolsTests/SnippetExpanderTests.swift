@@ -120,14 +120,14 @@ struct SnippetExpanderTests {
   }
 
   @Test func settingsWarnings() {
-    #expect(SnippetExpandTab.warning(clipboardOn: true, secure: nil) == nil)
-    #expect(SnippetExpandTab.warning(clipboardOn: false, secure: nil)?.contains("剪贴板关着") == true)
-    let warning = SnippetExpandTab.warning(
-      clipboardOn: true, secure: .init(holder: "终端", bundleID: "com.apple.Terminal"))
+    #expect(SnippetExpandSection.warning(secure: nil) == nil)
+    #expect(SnippetExpandSection.warning(secure: nil, failed: true)?.contains("听不到键盘") == true)
+    let warning = SnippetExpandSection.warning(
+      secure: .init(holder: "终端", bundleID: "com.apple.Terminal"))
     #expect(warning?.contains("「终端」开着安全输入") == true)
     #expect(warning?.contains("安全键盘输入") == true)
     #expect(
-      SnippetExpandTab.warning(clipboardOn: true, secure: nil, duplicated: true)?.contains("重复")
+      SnippetExpandSection.warning(secure: nil, duplicated: true)?.contains("重复")
         == true)
   }
 

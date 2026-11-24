@@ -897,7 +897,8 @@ struct PolishProbeTests {
         var high = 0
         for x in stride(from: Int(16 * scale), to: min(Int(300 * scale), rep.pixelsWide), by: 2) {
           guard let color = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
-          let value = Int(color.redComponent * 255 + color.greenComponent * 255 + color.blueComponent * 255)
+          let value = Int(
+            color.redComponent * 255 + color.greenComponent * 255 + color.blueComponent * 255)
           low = min(low, value)
           high = max(high, value)
         }
@@ -1110,7 +1111,6 @@ struct PolishProbeTests {
       case .smoothScroll: AnyView(SmoothScrollTab(smoothScroll: SmoothScroll(observes: false)))
       case .appShortcuts: AnyView(AppShortcutsTab(trusted: false))
       case .keyRemapping: AnyView(EmptyView())
-      case .snippetExpand: AnyView(SnippetExpandTab(store: store, authorized: false))
       case .translate:
         AnyView(TranslateTab(services: services, history: history, speaker: speaker))
       case .hotkeys: AnyView(HotkeysTab(center: hotKeys))
@@ -1135,7 +1135,7 @@ struct PolishProbeTests {
     let pages: [SettingsPage] = [
       .clipboard, .translate, .screenshot, .record, .notes, .hotkeys, .statusScreen, .plugins,
       .island, .dockPreview, .about, .general, .bluetoothSnooze, .smoothScroll, .appShortcuts,
-      .snippetExpand, .finderMenu,
+      .keyRemapping, .finderMenu,
     ]
     let opened = Self.footprint()
     if looping(

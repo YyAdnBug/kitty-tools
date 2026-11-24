@@ -42,7 +42,7 @@ struct SettingsListTests {
       pages == [
         .general, .clipboard, .launcher, .translate, .screenshot, .record, .plugins, .notes,
         .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .keepAwake,
-        .bluetoothSnooze, .smoothScroll, .appShortcuts, .keyRemapping, .snippetExpand, .island,
+        .bluetoothSnooze, .smoothScroll, .appShortcuts, .keyRemapping, .island,
         .hotkeys, .about,
       ])
     // 分组盖住侧栏里的每一页（插件的页算「插件」那一行）、和 allCases 同序

@@ -851,7 +851,6 @@ private final class Probe {
       case .smoothScroll: AnyView(SmoothScrollTab(smoothScroll: SmoothScroll(observes: false)))
       case .appShortcuts: AnyView(AppShortcutsTab(trusted: false))
       case .keyRemapping: AnyView(EmptyView())
-      case .snippetExpand: AnyView(SnippetExpandTab(store: store, authorized: false))
       case .translate:
         AnyView(TranslateTab(services: services, history: history, speaker: speaker))
       case .hotkeys: AnyView(HotkeysTab(center: hotKeys))
@@ -892,7 +891,7 @@ private final class Probe {
     let pages: [SettingsPage] = [
       .clipboard, .translate, .screenshot, .record, .notes, .hotkeys, .statusScreen, .plugins,
       .island, .dockPreview, .about, .general, .bluetoothSnooze, .smoothScroll, .appShortcuts,
-      .snippetExpand, .finderMenu,
+      .keyRemapping, .finderMenu,
     ]
     var round = 0
     let directory = report.directory

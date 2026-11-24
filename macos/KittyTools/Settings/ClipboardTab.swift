@@ -1,6 +1,7 @@
 // 设置 › 剪贴板（2026-11-18 设置改版 S4）：外面是常用的——保留普通历史（一行按时间，体检 A4）与普通图片占用；怎么粘贴（单击直接
 // 粘贴、默认纯文本）；隐私（敏感文本、自动清空（退出 / 锁屏两个开关合成一个选单，S6）、立即清空）；不记录的 App（按 bundle ID
-// 精确匹配，体检 A11）。「高级…」：面板（带实时示意图的透镜、链接预览、位置、大小）和图片里的文字。
+// 精确匹配，体检 A11）；片段（打关键词展开片段，2026-11-22 片段展开，SnippetExpandSection）。「高级…」：面板（带实时示意图的透镜、
+// 链接预览、位置、大小）、图片里的文字、在这些 App 里不展开片段。
 // 上限类设置改了立即生效（执行一次清理）；会删掉东西时先问（第四轮体检 E4，取消就不改）。控件分工（Whisker §6）：
 // > 5 项弹出菜单、3–5 项单选（选项字长、英文横排放不下的用弹出菜单）。排除的 App 跟着偏好走：同步 / 导入换了列表，开着的
 // 页面跟上，改的时候也从偏好现读（E19）。
@@ -9,6 +10,8 @@ import UniformTypeIdentifiers
 
 struct ClipboardTab: View {
   let store: ClipboardStore
+  /// 片段展开（设置页里刷新授权时让它重建拦截）；截图自检传 nil
+  var expander: SnippetExpander?
   /// 截图自检直接画「高级…」表单（sheet 画不进屏外截图）
   var drawsAdvanced = false
   @AppStorage(Prefs.clipboardRetentionDays) private var retentionDays = 7
@@ -80,6 +83,8 @@ struct ClipboardTab: View {
         .settingsAnchor(.clipboardPastePlain)
       }
       .gated(by: .clipboard)
+      SnippetExpandSection(store: store, expander: expander)
+        .gated(by: .clipboard)
       Section("隐私") {
         Toggle("不记录疑似密钥和银行卡号", isOn: $blockSensitive)
           .gated(by: .clipboard)
@@ -162,7 +167,7 @@ struct ClipboardTab: View {
     }
   }
 
-  /// 「高级…」表单：面板（实时示意图、透镜、链接预览、位置、大小）和图片里的文字
+  /// 「高级…」表单：面板（实时示意图、透镜、链接预览、位置、大小）、图片里的文字、不展开片段的 App
   @ViewBuilder private var advanced: some View {
     Section("面板") {
       ClipboardPanelSketch(showsLens: showPreview, showsLinkPreview: linkPreview)
@@ -213,6 +218,8 @@ struct ClipboardTab: View {
         .settingsAnchor(.clipboardOCR)
     }
     .gated(by: .clipboard)
+    SnippetExcludedSection()
+      .gated(by: .clipboard)
   }
 
   /// 「自动清空普通历史」（设置改版 S6：原来退出时、锁屏时两个开关）：读写的照旧是那两个键，只写变了的那个

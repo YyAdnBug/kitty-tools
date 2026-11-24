@@ -461,13 +461,6 @@ extension AppDelegate {
       }
     }
 
-    // 片段展开：起停在 snippetExpander.apply（偏好监听里调）。运行中添加时缺授权就当场要（同平滑滚动；启动时、欢迎引导里不问）
-    if turnedOn.contains(.snippetExpand), !launching, !settingsNavigation.showsOnboarding,
-      !Permissions.isAccessibilityTrusted
-    {
-      Permissions.requestAccessibility()
-    }
-
     guard !launching else { return }
     // 正在录快捷键时热键停着，录完它自己会重新注册；只是复制即译开关变了不用重新注册
     if now != before, hotKeys.recording == nil { hotKeys.reload() }

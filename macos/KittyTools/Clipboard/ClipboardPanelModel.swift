@@ -61,7 +61,7 @@ import Observation
     case edit(UUID)
     case newSnippet, manageGroups
     case newGroup(Set<UUID>)
-    /// 片段的关键词（片段展开插件添加着时）
+    /// 片段的关键词（设置 › 剪贴板「打关键词展开片段」开着时）
     case keyword(UUID)
     /// 片段里有 {input}：粘贴 / 复制前一个个填（X20）
     case fill(Fill)
@@ -1014,6 +1014,7 @@ import Observation
       keywordCheck(keyword, editing: saved.id).problem == nil
     {
       store.update([saved.id]) { $0.keyword = keyword }
+      WhatsNew.touch(section: "打关键词展开片段", of: .clipboard)
     }
     guard !visibleItems.contains(where: { $0.id == saved.id }) else { return }
     island?.show("已存为片段", detail: "\(Island.excerpt(text))", symbol: "text.badge.star")
@@ -1041,8 +1042,8 @@ import Observation
     island.show(text, symbol: pinning ? "pin.fill" : "pin")
   }
 
-  /// 片段展开插件添加着没有（新建片段那一行关键词、⌘K「关键词…」看它）；截图自检换成固定的，不读宿主 App 的偏好
-  @ObservationIgnored var keywordsOn: () -> Bool = { Feature.snippetExpand.isOn }
+  /// 打关键词展开片段开着没有（新建片段那一行关键词、⌘K「关键词…」看它）；截图自检换成固定的，不读宿主 App 的偏好
+  @ObservationIgnored var keywordsOn: () -> Bool = { SnippetExpander.isOn() }
 
   /// 片段展开里带 {input} 的片段（关键词已经删掉）：选中这一条，走粘贴，粘贴前照常一个个问（面板已经呼出来了）
   func fillSnippet(_ item: ClipItem) {
@@ -1253,6 +1254,8 @@ import Observation
     let keyword = SnippetKeyword.normalized(raw)
     guard keyword == nil || keywordCheck(raw, editing: id).problem == nil else { return }
     store.update([id]) { $0.keyword = keyword }
+    // 0.10.3 的「新」挂在 设置 › 剪贴板「打关键词展开片段」：存过一个关键词就算看过
+    if keyword != nil { WhatsNew.touch(section: "打关键词展开片段", of: .clipboard) }
     noteActivity()
   }
 
@@ -1424,7 +1427,7 @@ import Observation
     if let single {
       // 备注：所有条目都能写（体检 A3），不设快捷键（⌘R 给了在访达中显示）
       add("备注…", "note.text", section: 2) { [unowned self] in dialog = .note(single.id) }
-      // 片段的关键词：片段展开插件添加着才有（关键词只在它那里有用）
+      // 片段的关键词：打关键词展开片段开着才有（关键词只在它那里有用）
       if single.isSnippet, keywordsOn() {
         add("关键词…", "keyboard", section: 2) { [unowned self] in dialog = .keyword(single.id) }
       }

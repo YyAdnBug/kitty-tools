@@ -1,4 +1,4 @@
-// 片段展开的事件拦截（插件，2026-11-22，拍板页 https://claude.ai/artifact/PNApPJNxAgNG36JcSC1q1B Q3 Q4 Q12；PLAN §10「片段展开」）：
+// 片段展开的事件拦截（剪贴板的一项，2026-11-22，拍板页 https://claude.ai/artifact/PNApPJNxAgNG36JcSC1q1B Q3 Q4 Q12；PLAN §10「片段展开」）：
 // **全仓库第五处事件拦截**（mac-overlay-panel §11）。它看得到每一个按键，红线：
 // - 不吞、不改任何事件：先建「只听」的（系统不等它，Kitty 卡住也绝不拖慢打字）；只有辅助功能、建不起只听的时，换成
 //   会话层不吞键的那种（同访达那处，只要辅助功能，第 0 批实测）

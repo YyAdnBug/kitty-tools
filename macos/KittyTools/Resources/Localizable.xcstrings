@@ -5629,6 +5629,40 @@
         }
       }
     },
+    "search.clipboard.snippetExcluded" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Don’t Expand,Password Manager,Terminal"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "不展开,密码管理器,终端"
+          }
+        }
+      }
+    },
+    "search.clipboard.snippetExpand" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snippet,Keyword,Expand,Auto Expand,Abbreviation,Text Expansion,Text Replacement"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "片段,关键词,展开,自动展开,缩写,文本扩展,文字替换"
+          }
+        }
+      }
+    },
     "search.dockPreview.cmdTab" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -8346,23 +8380,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "平滑,惯性"
-          }
-        }
-      }
-    },
-    "search.snippetExpand.excluded" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Don’t Expand,Turn Off,Password Manager,Terminal"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "不展开,停用,密码管理器,终端"
           }
         }
       }
@@ -13871,6 +13888,16 @@
         }
       }
     },
+    "关键词在剪贴板面板里设：新建片段时填上，已有的片段在 ⌘K 里选「关键词…」。打完关键词的最后一个字就展开，前面紧挨着字母或数字时不展开；密码框里、输入法正在打拼音时不展开。只在内存里留最近打的十几个字用来比对，不存盘、不上传、不写进日志；没有片段设关键词时完全不听键盘。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set keywords in Clipboard History: fill one in when you create a snippet, or choose “Keyword…” in ⌘K for an existing one. A keyword expands as soon as you type its last character, but not right after a letter or digit, in password fields, or while an input method is still composing. Only the last dozen or so characters you type stay in memory for matching; nothing is saved, uploaded or logged, and when no snippet has a keyword the keyboard isn’t watched at all."
+          }
+        }
+      }
+    },
     "关键词最多 %lld 个字" : {
       "localizations" : {
         "en" : {
@@ -15637,16 +15664,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Clipboard & Launcher"
-          }
-        }
-      }
-    },
-    "剪贴板关着：片段在剪贴板里，打开剪贴板才会展开。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clipboard History is off: snippets live in Clipboard History, so turn it on to expand them."
           }
         }
       }
@@ -19279,6 +19296,16 @@
         }
       }
     },
+    "在任何 App 里打出片段的关键词，换成片段的内容" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type a snippet’s keyword in any app to replace it with the snippet"
+          }
+        }
+      }
+    },
     "在任何 App 里按下这些键，对应的功能就会出来。\n现在按一下，按过的会打勾。" : {
       "localizations" : {
         "en" : {
@@ -19385,36 +19412,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Search Clipboard History for “%@”"
-          }
-        }
-      }
-    },
-    "在剪贴板面板里新建片段时填上关键词，已有的片段在 ⌘K 里选「关键词…」" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fill in a keyword when you create a snippet in Clipboard History, or choose “Keyword…” in ⌘K for an existing one"
-          }
-        }
-      }
-    },
-    "在剪贴板面板里新建片段时填上关键词，已有的片段在 ⌘K 里选「关键词…」。在任何 App 里打完关键词的最后一个字，它就换成片段的内容；关键词前面紧挨着字母或数字时不展开。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fill in a keyword when you create a snippet in Clipboard History, or choose “Keyword…” in ⌘K for an existing one. In any app, as soon as you type the last character of a keyword, it’s replaced with the snippet. A keyword right after a letter or digit doesn’t expand."
-          }
-        }
-      }
-    },
-    "在单独一条线程上看着打的字：只在内存里留最近十几个字用来比对关键词，不存盘、不上传、不写进日志，切换 App 或点一下鼠标就清空。一条片段都没设关键词时完全不听键盘" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watches what you type on a separate thread: only the last dozen or so characters stay in memory to match keywords. Nothing is saved, uploaded, or logged, and it’s cleared when you switch apps or click. When no snippet has a keyword, it doesn’t listen to the keyboard at all"
           }
         }
       }
@@ -19901,12 +19898,12 @@
         }
       }
     },
-    "在这些 App 里不展开" : {
+    "在这些 App 里不展开片段" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Don’t Expand in These Apps"
+            "value" : "Don’t Expand Snippets in These Apps"
           }
         }
       }
@@ -21221,16 +21218,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "密码是 %1$lld–%2$lld 位数字"
-          }
-        }
-      }
-    },
-    "密码框、密码管理器里不展开；中文输入法正在打拼音时也不展开" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Doesn’t expand in password fields or password managers, or while an input method is still composing"
           }
         }
       }
@@ -27234,12 +27221,12 @@
         }
       }
     },
-    "打出片段的关键词，换成片段的内容" : {
+    "打关键词展开片段" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Type a snippet’s keyword to replace it with the snippet"
+            "value" : "Expand snippets by keyword"
           }
         }
       }
@@ -32038,16 +32025,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Log files"
-          }
-        }
-      }
-    },
-    "日期、剪贴板、光标停在哪这些占位符照样展开；带填空的会先打开剪贴板面板问你" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Placeholders like the date, the clipboard, and where the cursor lands still work; snippets with fill-ins open Clipboard History to ask you first"
           }
         }
       }
@@ -38787,16 +38764,6 @@
         }
       }
     },
-    "片段,关键词,展开,自动展开,替换,缩写,文本扩展,文字替换,邮箱,签名,模板,占位符,停用,密码,密码管理器,输入法,snippet,expand" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Snippet,Keyword,Expand,Auto Expand,Replace,Abbreviation,Text Expansion,Text Replacement,Email,Signature,Template,Placeholder,Turn Off,Password,Password Manager,Input Method"
-          }
-        }
-      }
-    },
     "片段、收藏、生词和便签原样写在里面。" : {
       "localizations" : {
         "en" : {
@@ -38833,16 +38800,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "More than %lld snippets and text favorites. Deselect “Snippets and Favorites” first."
-          }
-        }
-      }
-    },
-    "片段展开" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Snippet Expansion"
           }
         }
       }
@@ -40773,16 +40730,6 @@
         }
       }
     },
-    "移除后打关键词不再展开，也不再听键盘；片段和它们的关键词都留着，再添加就回来" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Once removed, keywords no longer expand and the keyboard isn’t watched; snippets and their keywords stay for when you add it again"
-          }
-        }
-      }
-    },
     "移除后按住那个键不再弹出，快捷键页里也没有它；设置留着，再添加就回来" : {
       "localizations" : {
         "en" : {
@@ -42014,12 +41961,12 @@
         }
       }
     },
-    "给剪贴板里的片段设一个关键词，比如 ;mail，在任何 App 里打出它就换成片段的内容" : {
+    "给了才能认出打的关键词、换成片段" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Give a snippet in Clipboard History a keyword like ;mail, then type it in any app to replace it with the snippet"
+            "value" : "Needed to recognize keywords as you type and replace them with snippets"
           }
         }
       }
@@ -42030,16 +41977,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Give apps names you like, then type them in the Launcher to find the apps"
-          }
-        }
-      }
-    },
-    "给片段设一个关键词，在任何 App 里打出它就换成片段的内容" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Give a snippet a keyword, then type it in any app to replace it with the snippet"
           }
         }
       }
@@ -44005,16 +43942,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Can’t tell how long"
-          }
-        }
-      }
-    },
-    "认出你打的关键词，再把它换成片段的内容；没有它用不了" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Recognizes the keywords you type and replaces them with snippets; without it, this plugin can’t work"
           }
         }
       }

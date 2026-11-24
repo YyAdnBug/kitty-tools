@@ -137,7 +137,7 @@ LaunchServices 按调用方 App 自己的语言给，界面定成中文时英文
 | 睡眠关蓝牙 | Bluetooth Sleep | 插件 |
 | 平滑滚动 | Smooth Scrolling | 插件 |
 | App 快捷键 / 显示 App 快捷键 | App Shortcuts / Show App Shortcuts | 插件（2026-11-17）；句子里说「当前 App 的快捷键」时照常写 the app’s shortcuts |
-| 片段展开 / （片段的）关键词 | Snippet Expansion / Keyword | 插件（2026-11-22）；「展开」动词写 expand |
+| 打关键词展开片段 / （片段的）关键词 | Expand snippets by keyword / Keyword | 剪贴板的一项（2026-11-22；11-24 起不是插件）；「展开」动词写 expand |
 | 键盘与鼠标（全部插件的分组） | Keyboard and Mouse | 同「记录与提醒」Notes and Reminders |
 | 刘海岛 / 打开刘海岛 | Notch / Open Notch | 不用 Dynamic Island |
 | 提示 / 活动（刘海岛上） | Notices / Activities | |

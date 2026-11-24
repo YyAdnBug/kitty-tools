@@ -24,17 +24,14 @@ struct FeatureTests {
   }
 
   /// 每个动作恰好归一个功能，就是它所在那一节里的；每个功能至少一个动作（程序坞预览除外：它停在程序坞上就弹，
-  /// 没有快捷键，拍板 D1；访达右键也是，入口在访达里；睡眠关蓝牙也是，跟着睡眠自己动；平滑滚动也是，跟着滚轮自己动；片段展开也是，
-  /// 跟着打的字自己动）；和设置页同名。打开主界面（全部功能的入口，2026-10-29）不归哪个功能；
+  /// 没有快捷键，拍板 D1；访达右键也是，入口在访达里；睡眠关蓝牙也是，跟着睡眠自己动；平滑滚动也是，跟着滚轮自己动；键位映射也是）；
+  /// 和设置页同名。打开主界面（全部功能的入口，2026-10-29）不归哪个功能；
   /// 打开刘海岛 2026-11-13 起归刘海岛插件（原来不归哪个功能）
   @Test func everyActionBelongsToOneFeature() {
     for feature in Feature.allCases {
       #expect(
         HotKeyAction.allCases.contains { $0.feature == feature }
-          == ![
-            .dockPreview, .finderMenu, .bluetoothSnooze, .smoothScroll, .keyRemapping,
-            .snippetExpand,
-          ].contains(
+          == ![.dockPreview, .finderMenu, .bluetoothSnooze, .smoothScroll, .keyRemapping].contains(
             feature))
       #expect(feature.page.rawValue == feature.rawValue)
     }
@@ -218,7 +215,7 @@ struct FeatureTests {
     #expect(
       Feature.allCases.filter { !$0.defaultOn } == [
         .dockPreview, .finderMenu, .keepAwake, .bluetoothSnooze, .smoothScroll, .appShortcuts,
-        .keyRemapping, .snippetExpand,
+        .keyRemapping,
       ])
     #expect(
       [Feature.notes, .reminders, .statusScreen, .launchpad, .island].allSatisfy {

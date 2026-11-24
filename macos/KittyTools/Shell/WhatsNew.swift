@@ -121,12 +121,13 @@ enum WhatsNew {
     Entry(
       id: "screenshot-corner-radius", version: "0.10.2", feature: .screenshot, page: .screenshot,
       section: "截图圆角"),
-    // 0.10.3：两个新插件（片段展开、键位映射；没添加时在侧栏「插件」那一行标，添加了算碰过，两个算一个）和新的全局动作
+    // 0.10.3：新插件「键位映射」（没添加时在侧栏「插件」那一行标，添加了算碰过）、剪贴板的片段展开和新的全局动作
     // 「暂停 / 继续录制」（不设默认快捷键，录制时菜单、主界面、快捷键页标，用过一次算看过）。启动台「隐藏的 App」
     // （推进行没接「新」）、录屏暂停本身（HUD 上的按钮）、美化与提速（改样子、提速）不标，交给更新日志
+    // 片段展开（11-24 起是剪贴板的一项，不是插件）：设置 › 剪贴板「打关键词展开片段」那一行标，拨过、存过一个关键词算看过
     Entry(
-      id: "plugin-snippet-expand", version: "0.10.3", feature: nil, page: .plugins,
-      plugin: .snippetExpand),
+      id: "snippet-expand", version: "0.10.3", feature: .clipboard, page: .clipboard,
+      section: "打关键词展开片段"),
     Entry(
       id: "plugin-key-remapping", version: "0.10.3", feature: nil, page: .plugins,
       plugin: .keyRemapping),

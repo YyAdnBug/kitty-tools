@@ -198,7 +198,7 @@ TEST_RUNNER_KITTY_LIVE_FINDER_KEYS=1 xcodebuild -project macos/KittyTools.xcodep
 TEST_RUNNER_KITTY_LIVE_SMOOTH_SCROLL=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/SmoothScrollTests/liveProbe()'
 
-# 片段展开插件：测试宿主（= Dev 版的授权）建得起哪一种事件拦截（只听的 / 不吞键的），建了马上撤、不发键，打印辅助功能和输入监控
+# 剪贴板的片段展开：测试宿主（= Dev 版的授权）建得起哪一种事件拦截（只听的 / 不吞键的），建了马上撤、不发键，打印辅助功能和输入监控
 # 给没给（按需，不到 1 秒）。真的打字展开在 macos/build/research/snippet-expand-2026-11-22/run.sh（探针自己的窗口，约 40 秒，
 # 会临时切 ABC / 系统拼音再切回；跑之前先跟用户说）
 TEST_RUNNER_KITTY_LIVE_SNIPPET_TAP=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \

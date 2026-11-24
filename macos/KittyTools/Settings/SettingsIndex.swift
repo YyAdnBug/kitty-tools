@@ -46,6 +46,8 @@ enum SettingsItem: String, CaseIterable, Identifiable {
   case clipboardAutoClear = "clipboard.autoClear"
   case clipboardClearNow = "clipboard.clearNow"
   case clipboardExcludedApps = "clipboard.excludedApps"
+  case clipboardSnippetExpand = "clipboard.snippetExpand"
+  case clipboardSnippetExcluded = "clipboard.snippetExcluded"
   // 启动器
   case launcherRomanInput = "launcher.romanInput"
   case launcherPanelPosition = "launcher.panelPosition"
@@ -194,8 +196,6 @@ enum SettingsItem: String, CaseIterable, Identifiable {
   case appShortcutsKey = "appShortcuts.key"
   case appShortcutsDelay = "appShortcuts.delay"
   case keyRemappingKeyboard = "keyRemapping.keyboard"
-  // 片段展开
-  case snippetExpandExcluded = "snippetExpand.excluded"
   // 刘海岛
   case islandNowPlaying = "island.nowPlaying"
   case islandTrackPeek = "island.trackPeek"
@@ -450,6 +450,17 @@ enum SettingsItem: String, CaseIterable, Identifiable {
       Self.row(
         .clipboard, "不记录这些 App 里的复制",
         LocalizedStringResource("search.clipboard.excludedApps", defaultValue: "排除,不记录"))
+    case .clipboardSnippetExpand:
+      Self.row(
+        .clipboard, "打关键词展开片段",
+        LocalizedStringResource(
+          "search.clipboard.snippetExpand", defaultValue: "片段,关键词,展开,自动展开,缩写,文本扩展,文字替换"),
+        keys: [Prefs.clipboardSnippetExpand])
+    case .clipboardSnippetExcluded:
+      Self.row(
+        .clipboard, "在这些 App 里不展开片段",
+        LocalizedStringResource("search.clipboard.snippetExcluded", defaultValue: "不展开,密码管理器,终端"),
+        keys: [Prefs.clipboardSnippetExcluded], place: .advanced)
     case .launcherRomanInput:
       Self.row(
         .launcher, "呼出时切到英文输入法",
@@ -1049,10 +1060,6 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         .appShortcuts, "按住多久",
         LocalizedStringResource("search.appShortcuts.delay", defaultValue: "多久"),
         keys: [Prefs.appShortcutsDelay])
-    case .snippetExpandExcluded:
-      Self.row(
-        .snippetExpand, "在这些 App 里不展开",
-        LocalizedStringResource("search.snippetExpand.excluded", defaultValue: "不展开,停用,密码管理器,终端"))
     case .islandNowPlaying:
       Self.row(
         .island, "在刘海上显示正在播放",

@@ -44,7 +44,7 @@ extension Feature {
     switch self {
     case .notes, .reminders: .notesAndReminders
     case .launchpad, .dockPreview, .finderMenu, .island: .desktop
-    case .smoothScroll, .appShortcuts, .keyRemapping, .snippetExpand: .keyboardAndMouse
+    case .smoothScroll, .appShortcuts, .keyRemapping: .keyboardAndMouse
     case .statusScreen, .keepAwake, .bluetoothSnooze: .sleepAndScreen
     default: nil
     }
@@ -72,8 +72,6 @@ extension Feature {
       [PluginPermission(kind: .accessibility, reason: "接住鼠标滚轮再滑出去；没有它用不了")]
     case .appShortcuts:
       [PluginPermission(kind: .accessibility, reason: "知道那个键有没有按住、读当前 App 的菜单；没有它用不了")]
-    case .snippetExpand:
-      [PluginPermission(kind: .accessibility, reason: "认出你打的关键词，再把它换成片段的内容；没有它用不了")]
     case .island:
       [
         PluginPermission(kind: .calendar, reason: "打开「下一个日程」时读日历", option: Prefs.islandNextEvent),
@@ -96,13 +94,13 @@ extension Feature {
   }
 
   /// 添加状态跟不跟同步（拍板 F2）：一添加就要这台弹授权框、去系统设置打开的（程序坞预览、访达右键、睡眠关蓝牙、平滑滚动、
-  /// App 快捷键、片段展开——同步
+  /// App 快捷键——同步
   /// 过去会在那台凭空弹框；平滑滚动还跟这台接没接鼠标有关），和跟这台的屏幕、触控板有关的（启动台，连同它整页的设置）只在这台。
   /// 状态屏只在进入时才要辅助功能，跟着同步
   var syncsAddition: Bool {
     ![
       .launchpad, .dockPreview, .finderMenu, .bluetoothSnooze, .smoothScroll, .appShortcuts,
-      .keyRemapping, .snippetExpand,
+      .keyRemapping,
     ]
     .contains(self)
   }
@@ -145,11 +143,6 @@ extension Feature {
         "点一下搜索框能留住，打字搜菜单里的名字；启动器里打字也搜得到当前 App 的菜单项，没有快捷键的也算")
     case .keyRemapping:
       Self.points("为每把键盘分别选择源键和目标键", "支持 F1–F24 和苹果的 🌐 Globe / Fn")
-    case .snippetExpand:
-      Self.points(
-        "给剪贴板里的片段设一个关键词，比如 ;mail，在任何 App 里打出它就换成片段的内容",
-        "日期、剪贴板、光标停在哪这些占位符照样展开；带填空的会先打开剪贴板面板问你",
-        "密码框、密码管理器里不展开；中文输入法正在打拼音时也不展开")
     case .island:
       Self.points(
         "点刘海叫出快捷动作和最近的提示", "录屏计时、提醒倒数、正在播放的歌挂在刘海两边", "能另外打开下一个日程、音量和亮度")
@@ -171,7 +164,6 @@ extension Feature {
     case .smoothScroll: "添加后拨鼠标滚轮就是；按住 ⌥ 滚动临时不平滑，按住 ⇧ 左右滚"
     case .appShortcuts: "单独按住 ⌘ 约 1 秒（按哪个键、多久都能改）；不想长按的话在快捷键页另设一个组合"
     case .keyRemapping: "选中键盘，再添加一条映射规则"
-    case .snippetExpand: "在剪贴板面板里新建片段时填上关键词，已有的片段在 ⌘K 里选「关键词…」"
     case .island: "点刘海、指针停在刘海上，或用快捷键打开"
     default: nil
     }
@@ -191,8 +183,6 @@ extension Feature {
     case .smoothScroll: "接住鼠标滚轮，在单独一条线程上滑出去；不碰触控板，没在滚时什么都不做"
     case .appShortcuts: "看着设的那个键有没有单独按住；按够了、或者在启动器里打字时才读一次前台 App 的菜单，启动器收起半分钟后丢掉"
     case .keyRemapping: "映射交给系统做，不看你按了什么键；只在键盘连上、断开和电脑醒来时核对一遍"
-    case .snippetExpand:
-      "在单独一条线程上看着打的字：只在内存里留最近十几个字用来比对关键词，不存盘、不上传、不写进日志，切换 App 或点一下鼠标就清空。一条片段都没设关键词时完全不听键盘"
     case .island:
       "看着指针有没有停在刘海上；打开了系统提示才听电源、耳机、网络，打开了正在播放才起一个读播放信息的小进程，打开了下一个日程才读日历，打开了音量和亮度才接那五个键。不添加时提示照常弹"
     default: nil

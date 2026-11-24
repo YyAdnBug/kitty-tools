@@ -90,7 +90,6 @@ struct PluginAboutSection: View {
     case .smoothScroll: "移除后鼠标滚轮回到系统原样（也不反向）；设置留着，再添加就回来"
     case .appShortcuts: "移除后按住那个键不再弹出，快捷键页里也没有它；设置留着，再添加就回来"
     case .keyRemapping: "移除后撤掉这个插件写进系统的映射；规则留着，再添加就回来"
-    case .snippetExpand: "移除后打关键词不再展开，也不再听键盘；片段和它们的关键词都留着，再添加就回来"
     default: "移除后菜单栏、主界面、启动器、快捷键里都没有它，设置和数据留着，再添加就回来"
     }
   }

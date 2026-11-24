@@ -140,7 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 平滑滚动（插件，SmoothScroll/）：起停跟着插件添没添加和辅助功能授权（apply），滚动那条线程由它管
   private(set) lazy var smoothScroll = SmoothScroll()
   lazy var keyRemapping = KeyRemapping(rulesKey: Prefs.keyRemappingRules)
-  /// 片段展开插件（2026-11-22）：起停在 apply（启动、偏好变了、剪贴板条目变了）
+  /// 片段展开（剪贴板的一项，2026-11-22）：起停在 apply（启动、偏好变了、剪贴板条目变了）
   private(set) lazy var snippetExpander = SnippetExpander(store: clipboardStore)
   /// 应用内更新（读本仓库的 GitHub release）
   let updater = Updater()
@@ -975,7 +975,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           .environment(island))
       case .island: AnyView(IslandTab(mediaKeys: mediaKeys))
       case .plugins: AnyView(PluginsPage())
-      case .clipboard: AnyView(ClipboardTab(store: clipboardStore).environment(island))
+      case .clipboard:
+        AnyView(
+          ClipboardTab(store: clipboardStore, expander: snippetExpander).environment(island))
       case .launcher:
         AnyView(
           LauncherTab(scripts: scriptLibrary) { [unowned self] in
@@ -1023,8 +1025,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       case .smoothScroll: AnyView(SmoothScrollTab(smoothScroll: smoothScroll))
       case .appShortcuts: AnyView(AppShortcutsTab())
       case .keyRemapping: AnyView(KeyRemappingTab(remapping: keyRemapping))
-      case .snippetExpand:
-        AnyView(SnippetExpandTab(store: clipboardStore, expander: snippetExpander))
       case .translate:
         AnyView(
           TranslateTab(services: serviceStore, history: historyStore, speaker: speaker)

@@ -1,5 +1,5 @@
-// 片段展开（插件，2026-11-22，拍板页 https://claude.ai/artifact/PNApPJNxAgNG36JcSC1q1B「全部按推荐」；PLAN §10「片段展开」）的主线程这一半：
-// 跟着插件添没添加、剪贴板开没开、授权、有没有片段设了关键词起停那条拦截线程（KeywordTap），把关键词写给它；它认出一个关键词时
+// 片段展开（剪贴板的一项，2026-11-22 拍板页；11-24 用户「没必要做成插件，直接在剪贴板历史里加」，拍板页 https://claude.ai/artifact/PNApPJNxAgNG36JcSC1q1B「全部按推荐」；PLAN §10「片段展开」）的主线程这一半：
+// 跟着 设置 › 剪贴板「打关键词展开片段」、剪贴板开没开、授权、有没有片段设了关键词起停那条拦截线程（KeywordTap），把关键词写给它；它认出一个关键词时
 // 在这里决定展不展开、怎么填进去。
 // - 起停只有 apply 一个口子：启动时、偏好一变（AppDelegate 的偏好监听）、剪贴板的条目变了（看着 store.items）都调，没变不动。
 //   一条片段都没设关键词时不建拦截（Q13 页的「完全不听键盘」）
@@ -28,7 +28,7 @@ import Synchronization
 
 @MainActor @Observable final class SnippetExpander: NSObject {
   enum Status: Equatable {
-    /// 插件没添加
+    /// 「打关键词展开片段」关着，或者剪贴板关着
     case off
     /// 添加了，没有辅助功能授权
     case needsPermission
@@ -113,20 +113,23 @@ import Synchronization
     Set(items.lazy.filter { $0.isSnippet && $0.kind == .text }.compactMap(\.keyword))
   }
 
-  /// 照插件开关、剪贴板开关、授权和关键词起 / 停（启动时、偏好变了、条目变了时调）：没变不动
+  /// 打关键词展开片段开没开（设置 › 剪贴板；默认开）、剪贴板开没开：两样都开着才算（剪贴板面板的关键词入口也看它）
+  static func isOn(_ defaults: UserDefaults = .standard) -> Bool {
+    (defaults.object(forKey: Prefs.clipboardSnippetExpand) as? Bool ?? true)
+      && (defaults.object(forKey: Feature.clipboard.prefsKey) as? Bool
+        ?? Feature.clipboard.defaultOn)
+  }
+
+  /// 照开关、授权和关键词起 / 停（启动时、偏好变了、条目变了时调）：没变不动
   func apply() {
     if let thread, thread.isFinished {
       // 线程自己退了 = 拦截没建起来（授权显示有、系统却不给）或者端口失效了：记下，不每次变化都重起
       self.thread = nil
       gaveUp = true
     }
-    let added =
-      defaults.object(forKey: Feature.snippetExpand.prefsKey) as? Bool
-      ?? Feature.snippetExpand.defaultOn
-    let clipboard =
-      defaults.object(forKey: Feature.clipboard.prefsKey) as? Bool ?? Feature.clipboard.defaultOn
+    let added = Self.isOn(defaults)
     if !added { gaveUp = false }
-    let keywords = added && clipboard ? Self.keywords(in: store.items) : []
+    let keywords = added ? Self.keywords(in: store.items) : []
     shared.keywords.withLock { if $0 != keywords { $0 = keywords } }
     let next: Status =
       if !added {
@@ -201,7 +204,7 @@ import Synchronization
       return expand(snippet, keyword: match.keyword, in: note)
     }
     if let id = NSRunningApplication(processIdentifier: match.pid)?.bundleIdentifier,
-      Set(defaults.stringArray(forKey: Prefs.snippetExpandExcluded) ?? []).contains(id)
+      Set(defaults.stringArray(forKey: Prefs.clipboardSnippetExcluded) ?? []).contains(id)
     {
       return skip("名单里的 App")
     }

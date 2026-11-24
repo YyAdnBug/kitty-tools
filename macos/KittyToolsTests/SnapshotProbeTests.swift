@@ -607,12 +607,6 @@ struct SnapshotProbeTests {
       case .appShortcuts: AnyView(AppShortcutsTab(trusted: false))
       // 没 start()：不列键盘、不碰系统的键位
       case .keyRemapping: AnyView(KeyRemappingTab(remapping: KeyRemapping(rulesKey: "unused")))
-      // 授权、名单、安全输入按固定的画
-      case .snippetExpand:
-        AnyView(
-          SnippetExpandTab(
-            store: store, authorized: false, excluded: ClipboardFilter.defaultExcluded,
-            secure: .some(nil)))
       case .translate:
         AnyView(TranslateTab(services: services, history: history, speaker: speaker))
       case .hotkeys: AnyView(HotkeysTab(center: hotKeys))
@@ -5741,9 +5735,9 @@ struct SnapshotProbeTests {
     }
   }
 
-  /// 设置 › 片段展开（插件，2026-11-22）：没授权、还没有关键词（浅 / 深）；授权了、三条关键词里两条重复、有 App 开着安全输入
-  /// （橙字），浅 / 深。几秒，图以 snippet- 开头：-only-testing:'KittyToolsTests/SnapshotProbeTests/snippetExpandSettings()'。
-  /// 偏好读临时偏好域；授权、名单、安全输入传固定的
+  /// 设置 › 剪贴板「片段」一节（片段展开，2026-11-22；11-24 起不是插件）：开着、还没有关键词、没授权（浅 / 深）；授权了、
+  /// 三条关键词里两条重复、有 App 开着安全输入（橙字），浅 / 深；关着；「高级…」里不展开的 App。几秒，图以 snippet- 开头：
+  /// -only-testing:'KittyToolsTests/SnapshotProbeTests/snippetExpandSettings()'。偏好读临时偏好域；授权、安全输入传固定的
   @Test(.enabled(if: directory != nil)) func snippetExpandSettings() throws {
     let out = try #require(Self.directory)
     try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
@@ -5751,18 +5745,18 @@ struct SnapshotProbeTests {
     let name = "kitty-snapshot-snippet-\(UUID().uuidString)"
     let prefs = try #require(UserDefaults(suiteName: name))
     defer { prefs.removePersistentDomain(forName: name) }
-    prefs.set(true, forKey: Feature.snippetExpand.prefsKey)
     let dir = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let store = try ClipboardStore(
       db: Database(path: ":memory:"), images: ImageStore(directory: dir))
+    func section(trusted: Bool, secure: HotKeyCenter.SecureInputBlock?) -> some View {
+      Form { SnippetExpandSection(store: store, trusted: trusted, secure: .some(secure)) }
+        .formStyle(.grouped)
+        .defaultAppStorage(prefs)
+    }
     for dark in [false, true] {
       try snapshot(
-        SnippetExpandTab(
-          store: store, authorized: false, excluded: ClipboardFilter.defaultExcluded,
-          secure: .some(nil)
-        ).defaultAppStorage(prefs),
-        size: NSSize(width: 640, height: 900), dark: dark,
+        section(trusted: false, secure: nil), size: NSSize(width: 640, height: 400), dark: dark,
         to: "\(out)/snippet-settings\(dark ? "-dark" : "").png")
     }
     for (text, note, keyword) in [
@@ -5779,13 +5773,18 @@ struct SnapshotProbeTests {
     }
     for dark in [false, true] {
       try snapshot(
-        SnippetExpandTab(
-          store: store, authorized: true, excluded: ["com.apple.Terminal"],
-          secure: .init(holder: "终端", bundleID: "com.apple.Terminal")
-        ).defaultAppStorage(prefs),
-        size: NSSize(width: 640, height: 900), dark: dark,
+        section(trusted: true, secure: .init(holder: "终端", bundleID: "com.apple.Terminal")),
+        size: NSSize(width: 640, height: 500), dark: dark,
         to: "\(out)/snippet-settings-any\(dark ? "-dark" : "").png")
     }
+    prefs.set(false, forKey: Prefs.clipboardSnippetExpand)
+    try snapshot(
+      section(trusted: true, secure: nil), size: NSSize(width: 640, height: 300), dark: false,
+      to: "\(out)/snippet-settings-off.png")
+    try snapshot(
+      Form { SnippetExcludedSection() }.formStyle(.grouped).defaultAppStorage(prefs),
+      size: NSSize(width: 640, height: 500), dark: false, to: "\(out)/snippet-settings-excluded.png"
+    )
   }
 
   /// App 快捷键（插件，2026-11-17）：面板（访达那样的几张卡、两段式和 🌐 的键帽，浅 / 深；221 条要竖着滚；一条都没有、
