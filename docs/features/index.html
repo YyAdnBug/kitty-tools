@@ -49,7 +49,7 @@
 
 <nav class="subnav" aria-label="功能目录">
   <div class="wrap subnav-in">
-    <a href="#home">主界面</a><a href="#clipboard">剪贴板</a><a href="#launcher">启动器</a><a href="#translate">翻译</a><a href="#screenshot">截图</a><a href="#record">录屏录音</a><a href="#notes">便签</a><a href="#reminders">提醒</a><a href="#launchpad">启动台</a><a href="#status-screen">状态屏</a><a href="#dock-preview">程序坞预览</a><a href="#finder-menu">访达右键</a><a href="#island">刘海岛</a><a href="#keep-awake">保持唤醒</a><a href="#smooth-scroll">平滑滚动</a><a href="#app-shortcuts">App 快捷键</a><a href="#bluetooth-snooze">睡眠关蓝牙</a><a href="#settings">设置与同步</a><a href="#shortcuts">快捷键</a>
+    <a href="#home">主界面</a><a href="#clipboard">剪贴板</a><a href="#launcher">启动器</a><a href="#translate">翻译</a><a href="#screenshot">截图</a><a href="#record">录屏录音</a><a href="#notes">便签</a><a href="#reminders">提醒</a><a href="#launchpad">启动台</a><a href="#status-screen">状态屏</a><a href="#dock-preview">程序坞预览</a><a href="#finder-menu">访达右键</a><a href="#island">刘海岛</a><a href="#keep-awake">保持唤醒</a><a href="#smooth-scroll">平滑滚动</a><a href="#app-shortcuts">App 快捷键</a><a href="#key-remapping">键位映射</a><a href="#bluetooth-snooze">睡眠关蓝牙</a><a href="#settings">设置与同步</a><a href="#shortcuts">快捷键</a>
   </div>
 </nav>
 
@@ -79,6 +79,7 @@
       <li>选中哪条就原地展开预览：代码带行号和着色，颜色给出 HEX / RGB / HSL，链接带标题和头图，⌘Y 放大看</li>
       <li>正文、图片里的字（本机识别）、文件路径、备注、来源 App 都能搜；Tab 按类型、来源、收藏夹筛选</li>
       <li>收藏夹、片段和备注；片段能带日期、时间、光标位置、前几条剪贴板这类占位符；收藏和片段不会被自动清理</li>
+      <li>Mac 版的片段能设关键词：在任何 App 里打出它就换成片段的内容，便签里也行；要辅助功能授权，不想要能在 设置 › 剪贴板 关掉</li>
       <li>文件 ⌘O 打开、⌘R 在访达中显示，⌘T 翻译这一条，图片和文字都能钉到屏幕上，条目直接拖进别的 App</li>
       <li>面板出现在屏幕上方、跟着鼠标，或停在上次拖到的地方；拖边改大小</li>
       <li>跳过密码管理器和带隐私标记的内容，拦下看着像密钥、银行卡号的文本；能排除 App、暂停记录，退出或锁屏时清空</li>
@@ -94,7 +95,7 @@
     <p class="fsec-lead">一个搜索框，打开 App、找文件、算算数、搜网页。</p>
     <ul class="points">
       <li>搜 App：中文名、英文名、拼音全拼和首字母都认（「hdjsq」就是活动监视器），按使用频率排，收藏的排最前；Mac 版同一个字选过一次下次就排第一，iPad App 也能用中文名搜到</li>
-      <li>搜文件：「open 文件名」打开，「find 文件名」在访达里选中；⌘Y 快速查看，⌘K 换个 App 打开</li>
+      <li>搜文件：「open 文件名」打开，「find 文件名」在访达里选中；⌘Y 快速查看，⌘K 换个 App 打开；Mac 版能勾好几个（⇧↑↓、⌘ 点按），↩ 一起打开、⌘↩ 一起在访达中显示，打开后 90 秒内再呼出还在原来的搜索</li>
       <li>计算和换算：四则运算、百分比、函数；「10 km to mi」「30 摄氏度 转 华氏度」「255 in hex」，汇率「100 usd」「100美元转人民币」，↩ 把结果粘出去</li>
       <li>脚本命令：脚本文件夹里的每个脚本就是一条命令，能带参数，结果拷贝、粘贴、显示全文或列成列表；Mac 版自带 8 个（时间戳、Base64、JSON 格式化、UUID……），AI 写好的脚本复制过来就能用</li>
       <li>内置命令和脚本都能改要打的词、关掉不用的，每条命令还能设一个快捷键；Mac 版的 App 也能起别名（给微信填「wx」）</li>
@@ -154,6 +155,7 @@
     <ul class="points">
       <li>录系统声音和麦克风（Mac 版能选用哪个麦克风），能显示点按和按下的键</li>
       <li>菜单栏里计时，再按一次快捷键停止并保存</li>
+      <li>Mac 版录屏、录音都能暂停 / 继续：暂停时不录、不计时，停止时拼成一个文件；「暂停 / 继续录制」能设一个快捷键</li>
       <li>录音先出控制条：选好来源（麦克风、系统声音或两者）再开始，看得到电平，存成 m4a</li>
       <li>录完的视频卡停在屏幕角落：拷贝、拖走、转成 GIF 或压缩</li>
       <li>帧率、清晰度、编码格式都能在设置里选</li>
@@ -207,6 +209,7 @@
       <li>拖动排序，拖到一起建文件夹</li>
       <li>按住图标进入抖动模式，删掉从 App Store 装的 App</li>
       <li>四指或五指捏合触控板打开，画面跟着手指走；也能设一个触发角</li>
+      <li>不想看到的 App 能藏起来，搜索照样搜得到；顶上还能放一排常用的 App，按用得多少排（默认关）</li>
       <li>第一次打开时照系统原来的启动台排好页和文件夹；macOS 15 上用系统自带的，这一项不出现</li>
     </ul>
   </div>
@@ -321,6 +324,19 @@
   </div>
 </section>
 
+<section class="fsec wide" id="key-remapping">
+  <div class="fsec-copy">
+    <div class="fsec-head"><span class="ico lg i-key-remapping" style="--c:var(--orange)"></span><div><h2>键位映射</h2><p class="plat"><span>仅 Mac</span><span>插件</span></p></div></div>
+    <p class="fsec-lead">给某一把键盘单独改键，交给系统去做，不看你按了什么。</p>
+    <ul class="points cols">
+      <li>F1–F24、Caps Lock、左右的修饰键、字母数字、方向键、小键盘、媒体键都能换</li>
+      <li>能映射成 🌐 Globe / Fn，让外接键盘也有一颗 Fn 键</li>
+      <li>键盘重新连上、电脑醒来后自动补上；移除插件时撤销它写进去的规则</li>
+      <li>改字母、数字这类键时，系统要「输入监听」授权</li>
+    </ul>
+  </div>
+</section>
+
 <section class="fsec wide" id="bluetooth-snooze">
   <div class="fsec-copy">
     <div class="fsec-head"><span class="ico lg i-bluetooth-snooze" style="--c:var(--navy)"></span><div><h2>睡眠关蓝牙</h2><p class="plat"><span>仅 Mac</span><span>插件</span><span>MacBook</span></p></div></div>
@@ -338,8 +354,8 @@
     <div class="fsec-head"><span class="ico lg i-general" style="--c:var(--gray)"></span><div><h2>设置、同步与备份</h2><p class="plat"><span>Mac</span><span>Windows</span></p></div></div>
     <p class="fsec-lead">外观、快捷键、各个功能的细节都在设置窗里，侧栏能搜设置项。</p>
     <ul class="points">
-      <li>外观跟随系统，或固定浅色、深色；强调色可以自己挑</li>
-      <li>功能开关：用不上的功能整个关掉，它的入口、快捷键和后台工作一起停，打开立刻回来；Mac 版的便签、提醒、刘海岛、平滑滚动这些是插件，在 设置 › 全部插件 里添加，没添加的点进去先看能做什么、要什么授权</li>
+      <li>外观跟随系统，或固定浅色、深色；强调色可以自己挑；Mac 版在 macOS 26 起，App 图标跟着系统的图标风格（深色、着色、透明）变</li>
+      <li>功能开关：用不上的功能整个关掉，它的入口、快捷键和后台工作一起停，打开立刻回来；Mac 版的便签、提醒、刘海岛、平滑滚动这些是插件，在 设置 › 插件 里添加，没添加的点进去先看能做什么、要什么授权</li>
       <li>Mac 版的界面有简体中文和 English，在 设置 › 通用「语言」里选，默认跟系统</li>
       <li>全局快捷键都能改，也能设成连按两下某个修饰键；Mac 版能在指定的 App 里停用快捷键、把按键让给它；快捷键速查表按功能分类、能搜</li>
       <li>Mac 版的设置每页外面只放常用的，成组的点进下一页，不常改的收进「高级…」，细节点每一行右边的 ⓘ 看；搜索直接落到那一项，停在几项设置上能看到效果演示</li>
@@ -354,7 +370,7 @@
 <section class="fsec-table" id="shortcuts">
   <div class="section-head">
     <h2>默认快捷键</h2>
-    <p class="muted">都能在 设置 › 快捷键 里改。没列出来的（录音、截图历史、划词翻译并替换、新建便签、新建提醒、启动台、状态屏……）默认不设，需要时自己录一个。功能关着、插件没添加时它的快捷键不生效，Mac 版新装默认只开剪贴板、启动器、翻译、截图。</p>
+    <p class="muted">都能在 设置 › 快捷键 里改。没列出来的（录音、暂停 / 继续录制、截图历史、划词翻译并替换、新建便签、新建提醒、启动台、状态屏……）默认不设，需要时自己录一个。功能关着、插件没添加时它的快捷键不生效，Mac 版新装默认只开剪贴板、启动器、翻译、截图。</p>
   </div>
   <div class="table-scroll">
     <table class="keys">

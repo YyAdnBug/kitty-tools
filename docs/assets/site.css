@@ -801,6 +801,9 @@ body::before {
 .i-app-shortcuts {
   --i: url("icons/kitty.app.shortcuts.svg");
 }
+.i-key-remapping {
+  --i: url("icons/kitty.hotkeys.svg");
+}
 .i-launcher {
   --i: url("icons/kitty.launcher.svg");
 }

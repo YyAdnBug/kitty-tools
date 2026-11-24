@@ -9,7 +9,7 @@
 <h1 align="center">Kitty Tools</h1>
 
 <p align="center">
-  Native productivity tools, written separately for macOS and Windows: Clipboard History · Launcher · Translate · Screenshot · Screen and Audio Recording · Notes · Reminders · Launchpad · Status Screen · Dock Preview · Finder Menu · Notch · Keep Awake · Smooth Scrolling · App Shortcuts · Bluetooth Sleep
+  Native productivity tools, written separately for macOS and Windows: Clipboard History · Launcher · Translate · Screenshot · Screen and Audio Recording · Notes · Reminders · Launchpad · Status Screen · Dock Preview · Finder Menu · Notch · Keep Awake · Smooth Scrolling · App Shortcuts · Key Remapping · Bluetooth Sleep
 </p>
 
 <p align="center">
@@ -32,7 +32,7 @@
   <img src="docs/images/en/welcome.png" width="580" alt="First launch: pick the features you want">
 </p>
 
-The macOS version is written in Swift 6 with SwiftUI and AppKit. It lives in the menu bar: click the menu bar icon to open Home, where every feature sits in its own tile (just start typing to search in the Launcher), or call any of them up with a global shortcut or from the Launcher. Panels don’t take focus from the app you’re using, so what you pick can be pasted straight back into it. There are five features—Clipboard, Launcher, Translate, Screenshot and Recording (new installs turn on the first four)—while Notes, Reminders, Status Screen, Launchpad, Dock Preview, Finder Menu, the Notch, Keep Awake, Bluetooth Sleep, Smooth Scrolling and App Shortcuts are plugins: add them in Settings › All Plugins when you want them, and until then they don’t appear or run. First-run setup lets you pick both. The interface is available in English and Simplified Chinese and follows the system language by default. Text recognition, language detection and sensitive-content detection all happen on your Mac, and keys are stored in the system keychain. Notices grow out of the notch at the top of the screen, settings and data are backed up every day, and everything can sync between Macs (through a folder on a synced drive or a WebDAV server). Light and dark appearance are supported, you can choose the accent color, and new versions install from inside the app in one click.
+The macOS version is written in Swift 6 with SwiftUI and AppKit. It lives in the menu bar: click the menu bar icon to open Home, where every feature sits in its own tile (just start typing to search in the Launcher), or call any of them up with a global shortcut or from the Launcher. Panels don’t take focus from the app you’re using, so what you pick can be pasted straight back into it. There are five features—Clipboard, Launcher, Translate, Screenshot and Recording (new installs turn on the first four)—while Notes, Reminders, Status Screen, Launchpad, Dock Preview, Finder Menu, the Notch, Keep Awake, Bluetooth Sleep, Smooth Scrolling, App Shortcuts and Key Remapping are plugins: add them in Settings › Plugins when you want them, and until then they don’t appear or run. First-run setup lets you pick both. The interface is available in English and Simplified Chinese and follows the system language by default. Text recognition, language detection and sensitive-content detection all happen on your Mac, and keys are stored in the system keychain. Notices grow out of the notch at the top of the screen, settings and data are backed up every day, and everything can sync between Macs (through a folder on a synced drive or a WebDAV server). Light and dark appearance are supported and you can choose the accent color; from macOS 26 the app icon is a layered icon that follows the system icon style (Dark, Tinted, Clear). New versions install from inside the app in one click.
 
 > A personal project, updated regularly. The macOS version runs on macOS 15 or later, with separate packages for Apple silicon and Intel (Intel from 0.10.0); the Windows version runs on Windows 11 22H2 or later (x64 / ARM64). The Windows version is currently in Chinese only.
 
@@ -69,6 +69,7 @@ Clipboard History, Launcher, Translate, Screenshot and Screen and Audio Recordin
 - **Images you can see**: image items show as small pictures (you can see the top of long or phone screenshots) and grow in place when selected; turn this off in Settings if you prefer
 - **Search**: text, text inside images (recognized on your Mac, no network), file paths, labels and source apps are all searchable; press Tab to filter by type, kind of content, source app or collection
 - **Collections, snippets and labels**: favorites can go into several collections and any item can have a label; snippets support placeholders such as `{date}`, `{time}`, `{uuid}`, `{clipboard:N}` and `{cursor}`, dates and times can be offset and formatted (`{date+1d}`, `{date-1w:yyyy/MM/dd}`), and `{input:Name}` asks you to fill in a blank before pasting; favorites and snippets are never cleaned up automatically
+- **Expand snippets by keyword**: give a snippet a keyword and typing it in any app replaces it with the snippet (`{cursor}` and `{input}` still work, and it works in Notes too); set it when creating a snippet, or choose Keyword… from ⌘K for an existing one. Needs Accessibility access; turn off “Expand snippets by keyword” in Settings › Clipboard if you don’t want it
 - **Handy actions**: ⌘O opens a file and ⌘R shows it in Finder, ⌘T translates the selected item, images and text can be pinned to the screen, and items can be dragged straight into other apps
 - **Where the panel appears**: at the top of the screen, at the pointer, or wherever you last dragged it; drag the left, right or bottom edge to resize
 - **Privacy**: skips password managers and content marked private, lets you exclude apps and pause recording (the menu bar icon shows a pause badge), and automatically blocks sensitive text such as API keys, bearer tokens and bank card numbers; regular history is kept from 1 day to forever, image storage can be capped, and history can be cleared when you quit or lock the screen
@@ -84,7 +85,7 @@ Clipboard History, Launcher, Translate, Screenshot and Screen and Audio Recordin
 </p>
 
 - **Find apps**: by English name, Chinese name, full pinyin or initials, ranked by how you use them (pick an app once for what you typed and it comes first next time); iPad apps are found too, and English and Chinese names both work whichever language the interface is in; ⌘D adds favorites, which come first when the field is empty
-- **File search**: `open name` opens a file and `find name` selects it in Finder; ⌘Y for Quick Look, ⌘K to open it with another app or move it to the Trash
+- **File search**: `open name` opens a file and `find name` selects it in Finder; ⌘Y for Quick Look, ⌘K to open it with another app or move it to the Trash; select several with ⇧↑↓ or ⌘-click (also when browsing folders), then press ↩ to open them all or ⌘↩ to show them in Finder; bring the Launcher back within 90 seconds of opening a file and you’re back at the same search and row
 - **Browse folders**: type a path starting with `/` or `~` to list what’s in the folder, filtered by what you’ve typed so far; Tab goes into a folder, ⇧Tab goes up a level, ↩ opens. A file’s ⌘K menu can also open it in Terminal, copy the file, or copy its path in terminal form
 - **Calculator and conversions**: arithmetic, percentages, powers and functions; units (`10 km to mi`, `30 c to f`), number bases (`255 in hex`) and currency (`100 usd`, fetched online, using the last saved rates when offline); ↩ pastes the result
 - **Script Commands**: every script in your scripts folder is a command, with optional arguments (pop-up choices, passwords); results can be copied, pasted, shown in full (live as the script runs, with terminal colors) or listed as rows that open links and files. 8 come built in (Unix timestamps, Base64, URL encoding, JSON formatting, number bases, regex testing, UUIDs, toggling Dark Mode). Copy a script an AI wrote for you and click “New from Clipboard” to use it
@@ -139,6 +140,7 @@ Clipboard History, Launcher, Translate, Screenshot and Screen and Audio Recordin
 
 - **Record Screen**: select an area or a whole screen just like a screenshot and press ↩; recording starts after a 3-second countdown by default. Records system audio and the microphone (choose which microphone), and can show clicks and keys pressed; a timer runs in the menu bar, and pressing the shortcut again stops and saves
 - **Record Audio**: a control bar comes up first so you can choose the source (microphone, system audio or both) before starting, with live levels; saved as m4a
+- **Pause and resume**: screen and audio recordings can both be paused; while paused nothing is recorded and the microphone is released, the timer doesn’t count the pause, and stopping joins everything into one file. Pause / Resume Recording can be given a shortcut in Settings › Shortcuts
 - The finished video card waits in a corner of the screen: copy it, drag it away, **convert it to GIF** or compress it; frame rate, quality and H.264 / HEVC are in Settings › Recording
 
 ### ⚙️ Settings
@@ -149,7 +151,7 @@ Clipboard History, Launcher, Translate, Screenshot and Screen and Audio Recordin
 
 Appearance (Auto / Light / Dark), 8 accent colors, launch at login, permission status and recording global shortcuts are all in the Settings window, whose sidebar is grouped by feature: each page shows what you use most, groups open on their own page, rarely changed options are under Advanced…, and details are behind the ⓘ at the end of each row. Search in the sidebar takes you straight to a setting, and resting on a few settings plays a preview of the effect. A shortcut can also be a double press of ⌘, ⌥, ⌃ or ⇧, and shortcuts can be turned off in specific apps, handing the keys to them. The menu bar icon can be shown in color or hidden entirely (shortcuts keep working).
 
-- **Features and Plugins**: Settings › General › Features has a switch for each feature; turning one off stops its entry points, shortcuts and background work, and turning it back on brings them back right away. Plugins have their own page, All Plugins (first in the sidebar’s Plugins group), grouped by what they’re for; open one you haven’t added to see what it does and what it needs before adding it. First-run setup takes you through both
+- **Features and Plugins**: Settings › General › Features has a switch for each feature; turning one off stops its entry points, shortcuts and background work, and turning it back on brings them back right away. Plugins live on the Plugins page in the sidebar, with the ones you’ve added at the top and the rest grouped by what they’re for; open one you haven’t added to see what it does and what it needs before adding it. First-run setup takes you through both
 - **Language**: choose System Language, 简体中文 or English in Settings › General › Language. New installs follow the system; Macs updating from an earlier version stay in Chinese
 - **Sync**: choose a folder (iCloud Drive, for example) or connect straight to a WebDAV server (WebDAV from a cloud storage provider, or your own NAS), and settings and shortcuts, snippets and favorites, the Word List, web searches, translation services, Status Screen statuses, Launcher Favorites, notes and reminders sync between Macs, with a switch for each kind; keys don’t sync
 - **Backup and export**: a backup is made every day (the latest 7 are kept, and a copy can also go to another folder); settings and data can be exported to a single file and imported again (keys can be included, encrypted)
@@ -158,7 +160,7 @@ Appearance (Auto / Light / Dark), 8 accent colors, launch at login, permission s
 
 ## macOS plugins
 
-These are plugins: add them in Settings › All Plugins. A plugin you haven’t added doesn’t appear or run; once added it has entry points, shortcuts and a settings page just like a feature. New installs start with none added; Macs updating from an earlier version keep the ones that were on.
+These are plugins: add them in Settings › Plugins. A plugin you haven’t added doesn’t appear or run; once added it has entry points, shortcuts and a settings page just like a feature. New installs start with none added; Macs updating from an earlier version keep the ones that were on.
 
 ### 🗒️ Notes
 
@@ -190,6 +192,7 @@ These are plugins: add them in Settings › All Plugins. A plugin you haven’t 
 - A full-screen grid of app icons over a blurred version of your wallpaper: page through it, and just start typing to search
 - Drag to rearrange, drop icons onto each other to make folders, and hold an icon to jiggle and delete apps installed from the App Store
 - Opens with a four- or five-finger pinch on the trackpad, following your fingers; a hot corner works too
+- Hide apps you don’t want to see in Settings › Launchpad › Hidden Apps (they still show up in search), and add a row of frequently used apps at the top, ordered by how often you open them (off by default)
 - The first time it opens, pages and folders are arranged the way the system Launchpad had them; it doesn’t appear on macOS 15 (use the system’s own)
 
 ### ✋ Status Screen
@@ -254,6 +257,12 @@ Copied, saved, something went wrong—notices grow out of the notch, and hoverin
 - Press another key while holding and it goes to the app as usual; click a row to run it, or click the search field to keep the list open and type to search
 - Needs Accessibility access
 
+### 🔀 Key Remapping
+
+- Set system-level key mappings for one specific keyboard: F1–F24, Caps Lock, the left and right modifier keys, letters and numbers, arrow keys, the keypad and media keys can all be remapped, including to 🌐 Globe / Fn (say, to give an external keyboard a Fn key)
+- The system does the mapping, so your keystrokes aren’t watched; mappings come back after the keyboard reconnects or your Mac wakes, and removing the plugin undoes the rules it wrote
+- Remapping letters, numbers and similar keys needs Input Monitoring access (the system requires it)
+
 ### 🌙 Bluetooth Sleep (MacBook)
 
 - Turns Bluetooth off when you close the lid and your Mac sleeps, so a Bluetooth mouse or keyboard won’t wake it in your bag; on waking, only the Bluetooth it turned off comes back on
@@ -274,7 +283,7 @@ Copied, saved, something went wrong—notices grow out of the notch, and hoverin
 | Record Screen | `⌥R` |
 | Quick Note (Notes) | `⌥N` |
 
-Translate and Replace Selection, Record Audio, Screenshot History, Clothesline, Pin Clipboard Content, New Note, All Notes, New Reminder, Launchpad, Status Screen, Open Notch, Open Home, Keep Awake, App Shortcuts and the notes stack on the screen edge have no shortcut by default—record one in Settings › Shortcuts when you need it. Every shortcut can be changed there, including to a double press of a modifier key. Shortcuts don’t work while their feature is off or their plugin isn’t added: new installs only turn on Clipboard, Launcher, Translate and Screenshot, so turn on Recording in Settings › General › Features for Record Screen, and add the Notes plugin for Quick Note. macOS 15.0 and 15.1 don’t allow shortcuts with only ⌥; on those versions, use a combination with ⌘ or ⌃ (the Shortcuts page tells you).
+Translate and Replace Selection, Record Audio, Pause / Resume Recording, Screenshot History, Clothesline, Pin Clipboard Content, New Note, All Notes, New Reminder, Launchpad, Status Screen, Open Notch, Open Home, Keep Awake, App Shortcuts and the notes stack on the screen edge have no shortcut by default—record one in Settings › Shortcuts when you need it. Every shortcut can be changed there, including to a double press of a modifier key. Shortcuts don’t work while their feature is off or their plugin isn’t added: new installs only turn on Clipboard, Launcher, Translate and Screenshot, so turn on Recording in Settings › General › Features for Record Screen, and add the Notes plugin for Quick Note. macOS 15.0 and 15.1 don’t allow shortcuts with only ⌥; on those versions, use a combination with ⌘ or ⌃ (the Shortcuts page tells you).
 
 While another app is taking a password (macOS has Secure Input on), shortcuts that use only ⌥ with a letter, number or symbol can’t fire—macOS doesn’t allow it, and there’s no way around it. When that happens, the menu bar icon shows a small orange lock; hover over it to see which app has Secure Input on and how to turn it off. To use a shortcut even in password fields, give it ⌃ or ⌘, or make it a double press of a modifier (⌥Space isn’t affected).
 
@@ -287,13 +296,14 @@ While another app is taking a password (macOS has Secure Input on), shortcuts th
    xattr -dr com.apple.quarantine "/Applications/Kitty Tools.app"
    ```
 4. Follow first-run setup to grant permissions (it only asks for what the features you picked need):
-   - **Accessibility**: pasting back into the app you were using, Translate Selection, replacing the original text, auto-scrolling in Scrolling Capture, showing keys while recording, Dock Preview, detecting elements while capturing, double-pressing modifier keys, showing volume and brightness on the notch, Smooth Scrolling, App Shortcuts
+   - **Accessibility**: pasting back into the app you were using, Translate Selection, replacing the original text, auto-scrolling in Scrolling Capture, showing keys while recording, Dock Preview, detecting elements while capturing, double-pressing modifier keys, expanding snippets by keyword, showing volume and brightness on the notch, Smooth Scrolling, App Shortcuts
    - **Screen Recording**: Screenshot, Translate Screenshot, Capture Text, Scrolling Capture, Record Screen, recording system audio, Dock Preview thumbnails (you may need to reopen the app after granting it)
    - **Microphone**: recording your voice with Record Screen and Record Audio, asked the first time it’s needed
    - **Files and Folders**: requested only when the Launcher searches files
    - **Full Disk Access** (optional): only needed to search Safari bookmarks and history
    - **Calendars** (optional): asked only when you turn on Next Event for the Notch
    - **Bluetooth** (optional): asked only when you add Bluetooth Sleep
+   - **Input Monitoring** (optional): only when Key Remapping remaps letters, numbers and similar keys
    - **Finder extension** (for Finder Menu): after adding the plugin, click “Turn On…” in Settings › Finder Menu and turn it on once in System Settings
 
 You only need to allow it the first time. After that, when a new version is out, the menu bar shows “Update to x.y.z…” and it updates in one click, with no need to allow it again.
@@ -330,7 +340,7 @@ On the `macos` branch:
 
 ```
 macos/
-├── KittyTools/          # App/ Shell/ Storage/ Clipboard/ Launcher/ Launchpad/ Translate/ Screenshot/ StatusScreen/ Notes/ Reminders/ DockPreview/ FinderMenu/ Settings/ Resources/
+├── KittyTools/          # App/ Shell/ Storage/ Clipboard/ SnippetExpand/ Launcher/ Launchpad/ Translate/ Screenshot/ StatusScreen/ Notes/ Reminders/ DockPreview/ FinderMenu/ KeepAwake/ SmoothScroll/ AppShortcuts/ KeyRemapping/ BluetoothSnooze/ Settings/ Resources/
 ├── KittyToolsFinder/    # Finder extension: only draws the context menu and hands clicks to the app
 ├── KittyToolsNowPlaying/ # XPC service for the Notch’s Now Playing: reads what’s playing and sends playback commands for the app
 ├── KittyToolsTests/     # Unit tests and UI snapshots (Swift Testing)

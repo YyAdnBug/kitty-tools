@@ -49,7 +49,7 @@
 
 <nav class="subnav" aria-label="Features">
   <div class="wrap subnav-in">
-    <a href="#home">Home</a><a href="#clipboard">Clipboard</a><a href="#launcher">Launcher</a><a href="#translate">Translate</a><a href="#screenshot">Screenshot</a><a href="#record">Recording</a><a href="#notes">Notes</a><a href="#reminders">Reminders</a><a href="#launchpad">Launchpad</a><a href="#status-screen">Status Screen</a><a href="#dock-preview">Dock Preview</a><a href="#finder-menu">Finder Menu</a><a href="#island">Notch</a><a href="#keep-awake">Keep Awake</a><a href="#smooth-scroll">Smooth Scrolling</a><a href="#app-shortcuts">App Shortcuts</a><a href="#bluetooth-snooze">Bluetooth Sleep</a><a href="#settings">Settings &amp; Sync</a><a href="#shortcuts">Shortcuts</a>
+    <a href="#home">Home</a><a href="#clipboard">Clipboard</a><a href="#launcher">Launcher</a><a href="#translate">Translate</a><a href="#screenshot">Screenshot</a><a href="#record">Recording</a><a href="#notes">Notes</a><a href="#reminders">Reminders</a><a href="#launchpad">Launchpad</a><a href="#status-screen">Status Screen</a><a href="#dock-preview">Dock Preview</a><a href="#finder-menu">Finder Menu</a><a href="#island">Notch</a><a href="#keep-awake">Keep Awake</a><a href="#smooth-scroll">Smooth Scrolling</a><a href="#app-shortcuts">App Shortcuts</a><a href="#key-remapping">Key Remapping</a><a href="#bluetooth-snooze">Bluetooth Sleep</a><a href="#settings">Settings &amp; Sync</a><a href="#shortcuts">Shortcuts</a>
   </div>
 </nav>
 
@@ -79,6 +79,7 @@
       <li>The selected item expands in place: code with line numbers and coloring, colors in HEX / RGB / HSL, links with a title and image; ⌘Y for a closer look</li>
       <li>Search text, text inside images (recognized on your device), file paths, labels and source apps; press Tab to filter by type, source or collection</li>
       <li>Collections, snippets and labels; snippets can include placeholders for the date, the time, where the cursor goes or earlier clipboard items; favorites and snippets are never cleaned up automatically</li>
+      <li>On the Mac, snippets can have keywords: type one in any app, Notes included, and it’s replaced with the snippet; needs Accessibility access, and can be turned off in Settings › Clipboard</li>
       <li>⌘O opens a file and ⌘R shows it in Finder, ⌘T translates the item; images and text can be pinned to the screen, and items drag straight into other apps</li>
       <li>The panel appears at the top of the screen, at the pointer, or where you last left it; drag its edges to resize</li>
       <li>Skips password managers and content marked private, and blocks text that looks like keys or bank card numbers; exclude apps, pause recording, or clear history when you quit or lock the screen</li>
@@ -94,7 +95,7 @@
     <p class="fsec-lead">One search field to open apps, find files, do math and search the web.</p>
     <ul class="points">
       <li>Find apps by name (Chinese names, pinyin and initials work too), ranked by how often you use them, with favorites first; on the Mac, pick an app once for what you typed and it comes first next time, and iPad apps are found too</li>
-      <li>Find files: “open name” opens a file and “find name” selects it in Finder; ⌘Y for Quick Look, ⌘K to open it with another app</li>
+      <li>Find files: “open name” opens a file and “find name” selects it in Finder; ⌘Y for Quick Look, ⌘K to open it with another app; on the Mac, select several (⇧↑↓, ⌘-click) and press ↩ to open them all or ⌘↩ to show them in Finder, and within 90 seconds of opening a file the Launcher comes back to the same search</li>
       <li>Math and conversions: arithmetic, percentages and functions; “10 km to mi”, “30 c to f”, “255 in hex”, and currency like “100 usd”; ↩ pastes the result</li>
       <li>Script Commands: every script in your scripts folder is a command, with optional arguments; results can be copied, pasted, shown in full or listed. Eight come built in on the Mac (timestamps, Base64, JSON formatting, UUIDs…), and a script an AI wrote for you works as soon as you copy it in</li>
       <li>Change the keyword for any built-in command or script, turn off the ones you don’t use, and give each command a shortcut; on the Mac, apps can have aliases too</li>
@@ -154,6 +155,7 @@
     <ul class="points">
       <li>Records system audio and the microphone (on the Mac, choose which microphone), and can show clicks and the keys you press</li>
       <li>A timer runs in the menu bar; press the shortcut again to stop and save</li>
+      <li>On the Mac, screen and audio recordings can be paused and resumed: nothing is recorded or timed while paused, and stopping joins everything into one file; Pause / Resume Recording can have its own shortcut</li>
       <li>Record Audio starts with a control bar: choose the source (microphone, system audio or both), watch the levels, and save as m4a</li>
       <li>The finished video card waits in a corner of the screen: copy it, drag it away, convert it to GIF or compress it</li>
       <li>Frame rate, quality and format are all in Settings</li>
@@ -207,6 +209,7 @@
       <li>Drag to rearrange, and drop icons onto each other to make folders</li>
       <li>Hold an icon to make them jiggle, and delete apps installed from the App Store</li>
       <li>Pinch with four or five fingers on the trackpad to open it, following your fingers; a hot corner works too</li>
+      <li>Hide apps you don’t want to see (they still show up in search), and add a row of frequently used apps at the top, ordered by how often you open them (off by default)</li>
       <li>The first time it opens, pages and folders match the system Launchpad you had; on macOS 15 it doesn’t appear (use the system’s own)</li>
     </ul>
   </div>
@@ -321,6 +324,19 @@
   </div>
 </section>
 
+<section class="fsec wide" id="key-remapping">
+  <div class="fsec-copy">
+    <div class="fsec-head"><span class="ico lg i-key-remapping" style="--c:var(--orange)"></span><div><h2>Key Remapping</h2><p class="plat"><span>Mac only</span><span>Plugin</span></p></div></div>
+    <p class="fsec-lead">Remap keys on one specific keyboard. The system does the mapping, so your keystrokes aren’t watched.</p>
+    <ul class="points cols">
+      <li>F1–F24, Caps Lock, the left and right modifier keys, letters and numbers, arrow keys, the keypad and media keys can all be remapped</li>
+      <li>Map a key to 🌐 Globe / Fn to give an external keyboard a Fn key</li>
+      <li>Mappings come back after the keyboard reconnects or your Mac wakes; removing the plugin undoes the rules it wrote</li>
+      <li>Remapping letters, numbers and similar keys needs Input Monitoring access</li>
+    </ul>
+  </div>
+</section>
+
 <section class="fsec wide" id="bluetooth-snooze">
   <div class="fsec-copy">
     <div class="fsec-head"><span class="ico lg i-bluetooth-snooze" style="--c:var(--navy)"></span><div><h2>Bluetooth Sleep</h2><p class="plat"><span>Mac only</span><span>Plugin</span><span>MacBook</span></p></div></div>
@@ -338,8 +354,8 @@
     <div class="fsec-head"><span class="ico lg i-general" style="--c:var(--gray)"></span><div><h2>Settings, Sync and Backup</h2><p class="plat"><span>Mac</span><span>Windows</span></p></div></div>
     <p class="fsec-lead">Appearance, shortcuts and every feature’s details are in the Settings window, whose sidebar can search for any setting.</p>
     <ul class="points">
-      <li>Follow the system appearance, or stay light or dark; choose your own accent color</li>
-      <li>Turn off features you don’t need: their entry points, shortcuts and background work stop together and come back the moment you turn them on; on the Mac, Notes, Reminders, the Notch, Smooth Scrolling and others are plugins you add in Settings › All Plugins, where you can see what each one does and needs before adding it</li>
+      <li>Follow the system appearance, or stay light or dark; choose your own accent color; on the Mac from macOS 26, the app icon follows the system icon style (Dark, Tinted, Clear)</li>
+      <li>Turn off features you don’t need: their entry points, shortcuts and background work stop together and come back the moment you turn them on; on the Mac, Notes, Reminders, the Notch, Smooth Scrolling and others are plugins you add in Settings › Plugins, where you can see what each one does and needs before adding it</li>
       <li>The Mac version’s interface is available in English and Simplified Chinese: choose in Settings › General › Language, which follows the system by default</li>
       <li>Change any global shortcut, including to a double press of a modifier key; on the Mac, shortcuts can be turned off in specific apps, handing the keys to them; Keyboard Shortcuts lists them all by feature, searchable</li>
       <li>On the Mac, each Settings page shows what you use most, groups open on their own page, rarely changed options are under Advanced…, and details are behind the ⓘ at the end of each row; search takes you straight to a setting, and resting on a few settings plays a preview of the effect</li>
@@ -354,7 +370,7 @@
 <section class="fsec-table" id="shortcuts">
   <div class="section-head">
     <h2>Default shortcuts</h2>
-    <p class="muted">Change any of them in Settings › Shortcuts. The ones not listed (Record Audio, Screenshot History, Translate and Replace Selection, New Note, New Reminder, Launchpad, Status Screen…) have no shortcut by default; record one when you need it. A shortcut doesn’t work while its feature is off or its plugin isn’t added, and new Mac installs only turn on Clipboard, Launcher, Translate and Screenshot.</p>
+    <p class="muted">Change any of them in Settings › Shortcuts. The ones not listed (Record Audio, Pause / Resume Recording, Screenshot History, Translate and Replace Selection, New Note, New Reminder, Launchpad, Status Screen…) have no shortcut by default; record one when you need it. A shortcut doesn’t work while its feature is off or its plugin isn’t added, and new Mac installs only turn on Clipboard, Launcher, Translate and Screenshot.</p>
   </div>
   <div class="table-scroll">
     <table class="keys">
