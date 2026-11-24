@@ -2618,7 +2618,7 @@ Alfred 的 Related Apps、BetterTouchTool 按 App 停用，调研和测开销的
 
 外部用户只说「UI 可以更美化一些，还有些卡顿」。先自己体检（-O 构建、面板真上屏量主线程，`sample` 拍原因；27 上屏上抓真玻璃的
 「透明」「着色」两档），拍板页 https://claude.ai/artifact/QVaU65sZ6qmawDLtsLwey8（P1–P8 卡顿、V1–V8 美化），用户「全部按推荐」，
-P8、V8 以后。材料（追问稿、实测报告、sample、对标、图标样稿）在 `build/research/polish-2026-11-23/`。在 polish-wip 上串行五批，
+P8、V8 以后。材料（追问稿、实测报告、sample、对标、图标样稿）在 `build/research/polish-2026-11-23/`。在 polish-wip 上串行五批（图标挑定后另一批进包），
 一批一个提交；量测探针 `KittyToolsTests/PolishProbeTests.swift`（用法在文件头）前后各跑一遍、基线和改后交替两轮。
 手测在 HANDTEST「美化与提速手测」1–56。更新日志等发版时写（没改版本号）。
 
@@ -2630,7 +2630,7 @@ P8、V8 以后。材料（追问稿、实测报告、sample、对标、图标样
 | 3 剪贴板列表 | `98621c58` | P1–P3 | ↓ 14.8 → 8.3 ms；滚动 600 步里超过 16.7 ms 的 100–129 → 26–40；打字每字 55–94 → 32–61 ms；三项目标（6 / 8 / 16 ms）都没到 |
 | 4 翻译流式 | `686d2bf7` | P5 | 等结果时 16.5–18.9% → 0.0%（动效换 CALayer）；三卡出字 49% → 44%，目标 15% 没到 |
 | 5 翻译减粉 + 图标样稿 | `5a937500` | V7（V6 样稿） | 原文框点进去才亮焦点环、「自动」灰字；`.icon` 三个变体的样稿（挑图页 https://claude.ai/artifact/U119QQwH4VFx8A69JqGhJc），用户 2026-11-24 选 A（品牌粉 + 奶油卡片） |
-| 6 图标进包 | （本批，待提交） | V6 | A 进包：`brand-icons.swift` 直接写 `Resources/AppIcon.icon`，`Base.xcconfig` 加 `ASSETCATALOG_COMPILER_STANDALONE_ICON_BEHAVIOR = all`；菜单栏彩色图标和设置「关于」那一行改读固定的 `ColorIcon16` / `ColorIcon20`（不再取 `NSApp.applicationIconImage`）；平面 PNG、StatusIcon、DMG 背景逐字节不变 |
+| 6 图标进包 | `1a801cfc` | V6 | A 进包：`brand-icons.swift` 直接写 `Resources/AppIcon.icon`，`Base.xcconfig` 加 `ASSETCATALOG_COMPILER_STANDALONE_ICON_BEHAVIOR = all`；菜单栏彩色图标和设置「关于」那一行改读固定的 `ColorIcon16` / `ColorIcon20`（不再取 `NSApp.applicationIconImage`）；平面 PNG、StatusIcon、DMG 背景逐字节不变 |
 
 跨批的结论（别重查）：
 - **剩下的卡在 SwiftUI 本身**：剪贴板 ↑↓ / 滚动剩的是焦点链（`FocusBridge`）、新行的手势 / 右键菜单 / 无障碍修饰和排字画字；翻译出字剩的是每次把三张卡的正文整段重排重画（每张 5–6 ms、跟着字数涨）。再往下要换渲染方式（剪贴板换 NSTableView、翻译生成中用 TextKit 追加），另议。剪贴板打完字偶尔一下 80–150 ms，改前改后都有，原因没找到。
@@ -2650,8 +2650,8 @@ P8、V8 以后。材料（追问稿、实测报告、sample、对标、图标样
 > 2026-10-28（第三轮体检第 7 批）：2026-10-22 及更早的进度记录、做完的「已知的小毛病」、旧的「现状」「下一步」原样挪到 `docs/archive/PLAN-batches-2026-10.md` §12；AGENTS.md「项目概述」原来的长段原样挪到本节末尾「各族进度摘要（原 AGENTS 项目概述）」。
 
 **2026-11-23–24：美化与提速**（外部反馈「UI 可以更美、有些卡」，用户「全部按推荐」）：分支 `polish-wip`（工作树 `kitty-tools-macos-polish`，
-从 origin/macos `bbd78015`），六个提交 `0ae5c297`…`5a937500`，没 push、没升版本、没写更新日志、没打包；做了什么、数字和没达到的目标见 §10「美化与提速」。
-App 图标的 `.icon` 样稿用户选了 A（`build/research/polish-2026-11-23/icon/overview.png`），第 6 批已进包（待提交）。待手测：HANDTEST「美化与提速手测」1–56。
+从 origin/macos `7c94b0f1`；之后 origin/macos 又进了录制暂停两个提交，并回去前要先合），提交 `0ae5c297`…`1a801cfc`，没 push、没升版本、没写更新日志、没打包；做了什么、数字和没达到的目标见 §10「美化与提速」。
+App 图标的 `.icon` 样稿用户选了 A（`build/research/polish-2026-11-23/icon/overview.png`），第 6 批 `1a801cfc` 已进包。待手测：HANDTEST「美化与提速手测」1–56。
 
 **2026-11-20：0.10.2 开头**（用户「放到0.10.2里面去」）：分支 `claude/settings-feedback-120ed5`（工作树 `.claude/worktrees/settings-feedback-120ed5`，
 从 origin/macos `41ef6134` = 0.10.1 + 发布记录）。0.10.1 装上后用户看设置窗口报的两处：`2f28573d` 平滑滚动「滚动」一组页脚的「恢复默认」、
