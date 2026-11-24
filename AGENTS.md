@@ -129,7 +129,8 @@ TEST_RUNNER_KITTY_LIVE_LAUNCHPAD_ANIM=/tmp/kitty-launchpad-anim xcodebuild -proj
   test -only-testing:'KittyToolsTests/LaunchpadAnimationLiveTests/recordAnimations()'
 
 # 内存探针（按需，约 7 分钟，屏外量缓存 / 识字 / 各面板 / 回收接口各占多少；报告追加在 <目录>/report.md，用法和四个坑见测试文件头；
-# 量面板的图层要再加 TEST_RUNNER_KITTY_MEMORY_PROBE_ONSCREEN=1：屏外的窗口系统不画图层，开了之后屏幕右上角有一块几乎透明的面板）
+# 量面板的图层要再加 TEST_RUNNER_KITTY_MEMORY_PROBE_ONSCREEN=1：屏外的窗口系统不画图层，开了之后屏幕右上角有一块几乎透明的面板；
+# 只量设置窗各页看两遍、关窗、放掉（约 3 分钟，-O 加 SWIFT_OPTIMIZATION_LEVEL=-O 和单独的 -derivedDataPath）：TEST_RUNNER_KITTY_MEMORY_PROBE_ONLY=settings）
 TEST_RUNNER_KITTY_MEMORY_PROBE_DIR=/tmp/kitty-memory xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/MemoryProbeTests/measure()'
 

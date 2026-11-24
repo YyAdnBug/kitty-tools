@@ -9,13 +9,16 @@
 //   ⑤ 截图 / 转 GIF 那样的重活之后堆脏页留多少、malloc_zone_pressure_relief 能还多少
 //   ⑥ 便签（调优 T2，2026-10-18）：300 条便签、50 张图的便签墙打开 → 滚到底再滚回来 → 关窗口 → 清图片缩略图缓存 →
 //     放掉窗口 → 重开要多久；屏幕边缘那叠打开一条带 5 张图的便签 → 收起 → 清缓存。
+//   ⑦ 设置窗各页看两遍（2026-11-24）：17 页各看两遍 → 关窗 → 清内容 → 放掉窗口，三轮，另记建窗口、再打开各多久；屏上模式时
+//     摆在主屏右上角（另加 TEST_RUNNER_KITTY_MEMORY_PROBE_PAUSE=<秒> 在第一轮刚打开、关窗后、放掉后各停一会儿，给外面拍
+//     memgraph，见 settings()）。
 // 每一步读 task_info(TASK_VM_INFO) 的 phys_footprint（活动监视器的口径），旁边列 footprint 工具的分类（它不用 root 就能看
 // 自己的进程）；每项做两遍。窗口都摆在屏幕外（-20000, -20000）、不当 key、不激活本 App、不出声；图片、库、偏好都是临时的
 // （临时目录、内存库、临时偏好域），不读写用户的数据目录和钥匙串，跑完删干净。全程约 7 分钟。输出目录写绝对路径：
 //   TEST_RUNNER_KITTY_MEMORY_PROBE_DIR=/tmp/kitty-memory xcodebuild -project macos/KittyTools.xcodeproj \
 //     -scheme KittyTools test -only-testing:'KittyToolsTests/MemoryProbeTests/measure()'
 // 报告追加在 <目录>/report.md（每跑一次一段，段头写时间）。只跑其中几项（在干净的进程里量，排除前面几项的影响）：
-// 另加 TEST_RUNNER_KITTY_MEMORY_PROBE_ONLY=thumbnails,icons,ocr,panels,relief,notes 里的几个（逗号分隔）。
+// 另加 TEST_RUNNER_KITTY_MEMORY_PROBE_ONLY=thumbnails,icons,ocr,panels,relief,notes,settings 里的几个（逗号分隔）。
 // 量面板的图层另加 TEST_RUNNER_KITTY_MEMORY_PROBE_ONSCREEN=1（屏上模式，见第 4 个坑）。
 //
 // 四个坑（都是先量出对不上的数、再用临时实验查出来的，改探针前先看）：
@@ -143,6 +146,7 @@ private final class Probe {
     if runs("panels") { try panels(prefs) }
     if runs("relief") { relief() }
     if runs("notes") { try notes(prefs) }
+    if runs("settings") { try settings(prefs) }
   }
 
   // MARK: - 1. 缩略图缓存
@@ -563,6 +567,8 @@ private final class Probe {
     var hide: () -> Void
     /// 显示之后还要量的（设置窗把几页都点一遍）：每个一行
     var extras: [(label: String, run: () -> Void)] = []
+    /// 收起之后、清内容之前还要量的（设置窗：窗口留着时调回收接口，同 App 关窗后）：每个一行
+    var afterHide: [(label: String, run: () -> Void)] = []
     /// 这一轮的模型：窗口放掉之后才放（真 App 里模型一直在）
     var models: [AnyObject] = []
 
@@ -572,6 +578,7 @@ private final class Probe {
       show = {}
       hide = {}
       extras = []
+      afterHide = []
     }
   }
 
@@ -792,49 +799,10 @@ private final class Probe {
         })
     }
 
-    let hotKeys = HotKeyCenter()
-    let speaker = Speaker()
     rounds("设置窗（780 × 600，先看通用页，再把另外五页点一遍）") {
-      let navigation = SettingsNavigation(defaults: nil)
-      let root = SettingsRoot(navigation: navigation) { page in
-        switch page {
-        case .general: AnyView(GeneralTab())
-        case .island: AnyView(IslandTab())
-        case .plugins: AnyView(PluginsPage())
-        case .clipboard: AnyView(ClipboardTab(store: store))
-        case .launcher: AnyView(EmptyView())
-        case .launchpad: AnyView(EmptyView())
-        case .screenshot: AnyView(ScreenshotTab(shots: nil))
-        // 录制页 2026-10-03 才拆出来，下面点的还是原来那五页（和以前的数可比）
-        case .record: AnyView(RecordTab())
-        case .notes: AnyView(NotesTab {})
-        case .statusScreen: AnyView(StatusScreenTab())
-        case .reminders: AnyView(EmptyView())
-        case .dockPreview: AnyView(DockPreviewTab())
-        case .finderMenu: AnyView(FinderMenuTab(extensionEnabled: false))
-        case .keepAwake: AnyView(EmptyView())
-        case .bluetoothSnooze: AnyView(BluetoothSnoozeTab(requestAccess: {}, authorized: false))
-        case .smoothScroll: AnyView(SmoothScrollTab(smoothScroll: SmoothScroll(observes: false)))
-        case .appShortcuts: AnyView(AppShortcutsTab(trusted: false))
-        case .keyRemapping: AnyView(EmptyView())
-        case .snippetExpand: AnyView(SnippetExpandTab(store: store, authorized: false))
-        case .translate:
-          AnyView(TranslateTab(services: services, history: history, speaker: speaker))
-        case .hotkeys: AnyView(HotkeysTab(center: hotKeys))
-        case .about: AnyView(AboutTab(updater: Updater()))
-        }
-      } onboarding: {
-        AnyView(EmptyView())
-      }
-      // 照 SettingsWindow.init 的参数建（不用它本身：show() 会激活本 App，窗口位置会记进用户偏好）
-      let window = ParkedWindow(
-        contentViewController: .windowContent(root.defaultAppStorage(prefs)))
-      window.title = navigation.page.title
-      window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-      window.toolbarStyle = .unified
-      window.isReleasedWhenClosed = false
-      window.collectionBehavior = [.fullScreenAuxiliary]
-      window.setContentSize(NSSize(width: 780, height: 600))
+      let (window, navigation) = Self.settingsWindow(
+        store: store, services: services, history: history, hotKeys: HotKeyCenter(),
+        speaker: Speaker(), prefs: prefs)
       let pages: [SettingsPage] = [.clipboard, .translate, .screenshot, .hotkeys, .about, .general]
       return Stage(
         window: window,
@@ -856,10 +824,162 @@ private final class Probe {
     }
   }
 
+  /// 照 SettingsWindow.init 的参数建一扇设置窗（不用它本身：show() 会激活本 App，窗口位置会记进用户偏好）；
+  /// 启动器、启动台、提醒、保持唤醒、改键这几页是空的（启动器一出现就读浏览器数据、可能弹文件夹授权框）
+  private static func settingsWindow(
+    store: ClipboardStore, services: TranslateServiceStore, history: HistoryStore,
+    hotKeys: HotKeyCenter, speaker: Speaker, prefs: UserDefaults
+  ) -> (NSWindow, SettingsNavigation) {
+    let navigation = SettingsNavigation(defaults: nil)
+    let root = SettingsRoot(navigation: navigation) { page in
+      switch page {
+      case .general: AnyView(GeneralTab())
+      case .island: AnyView(IslandTab())
+      case .plugins: AnyView(PluginsPage())
+      case .clipboard: AnyView(ClipboardTab(store: store))
+      case .launcher: AnyView(EmptyView())
+      case .launchpad: AnyView(EmptyView())
+      case .screenshot: AnyView(ScreenshotTab(shots: nil))
+      case .record: AnyView(RecordTab())
+      case .notes: AnyView(NotesTab {})
+      case .statusScreen: AnyView(StatusScreenTab())
+      case .reminders: AnyView(EmptyView())
+      case .dockPreview: AnyView(DockPreviewTab())
+      case .finderMenu: AnyView(FinderMenuTab(extensionEnabled: false))
+      case .keepAwake: AnyView(EmptyView())
+      case .bluetoothSnooze: AnyView(BluetoothSnoozeTab(requestAccess: {}, authorized: false))
+      case .smoothScroll: AnyView(SmoothScrollTab(smoothScroll: SmoothScroll(observes: false)))
+      case .appShortcuts: AnyView(AppShortcutsTab(trusted: false))
+      case .keyRemapping: AnyView(EmptyView())
+      case .snippetExpand: AnyView(SnippetExpandTab(store: store, authorized: false))
+      case .translate:
+        AnyView(TranslateTab(services: services, history: history, speaker: speaker))
+      case .hotkeys: AnyView(HotkeysTab(center: hotKeys))
+      case .about: AnyView(AboutTab(updater: Updater()))
+      }
+    } onboarding: {
+      AnyView(EmptyView())
+    }
+    let window = ParkedWindow(
+      contentViewController: .windowContent(root.defaultAppStorage(prefs)))
+    window.title = navigation.page.title
+    window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+    window.toolbarStyle = .unified
+    window.isReleasedWhenClosed = false
+    window.collectionBehavior = [.fullScreenAuxiliary]
+    window.setContentSize(NSSize(width: 780, height: 600))
+    return (window, navigation)
+  }
+
+  // MARK: - 7. 设置窗各页看两遍
+
+  /// 设置窗各页看两遍（2026-11-24：美化与提速那一轮量到看两遍后比刚打开多 110–160 MB、关窗不回落）。三轮，每轮一扇新窗口：
+  /// 建（记建窗口对象、到第一帧各多久）→ 显示（屏上模式摆在主屏右上角、透明度 0.05、不接鼠标）→ 各页看一遍 → 再看一遍
+  /// （都回到通用页）→ 关窗（窗口对象留着，同改之前的 App）→ 调回收接口 → 窗口留着时再打开一次（多久）→ 清内容 → 放掉窗口
+  /// （同 App 闲下来时的 releaseClosedSettingsWindow）。第一轮带着进程里第一次用到这些界面的开销，第 2、3 轮是放掉后重建。
+  /// 另加 TEST_RUNNER_KITTY_MEMORY_PROBE_PAUSE=<秒>：第一轮刚打开、关窗后、放掉后各停这么久，<目录>/pid 里写「pid 阶段」，
+  /// 好在外面 `leaks <pid> -outputGraph=…` 各拍一份（停的时候文件在，停完删掉）
+  private func settings(_ prefs: UserDefaults) throws {
+    report.heading("7. 设置窗（780 × 600，各页看两遍 → 关窗 → 清内容 → 放掉窗口）")
+    let store = try ClipboardStore(
+      db: Database(path: ":memory:"), images: ImageStore(directory: scratch.appending(path: "s")))
+    let services = TranslateServiceStore(services: [.zhipu, .builtin(.google), .builtin(.deepl)])
+    let history = try HistoryStore(db: Database(path: ":memory:"))
+    // App 里一直在的几样，各轮共用（不算进建窗口的时间）
+    let hotKeys = HotKeyCenter()
+    let speaker = Speaker()
+    // 同美化与提速那一轮的探针（PolishProbeTests）点的那 17 页
+    let pages: [SettingsPage] = [
+      .clipboard, .translate, .screenshot, .record, .notes, .hotkeys, .statusScreen, .plugins,
+      .island, .dockPreview, .about, .general, .bluetoothSnooze, .smoothScroll, .appShortcuts,
+      .snippetExpand, .finderMenu,
+    ]
+    var round = 0
+    let directory = report.directory
+    let seconds = ProcessInfo.processInfo.environment["KITTY_MEMORY_PROBE_PAUSE"].flatMap(
+      Double.init)
+    /// 第一轮停一下给外面拍 memgraph
+    func pause(_ stage: String) {
+      guard let seconds, round == 1 else { return }
+      let file = directory.appending(path: "pid")
+      try? "\(getpid()) \(stage)".write(to: file, atomically: true, encoding: .utf8)
+      spin(seconds)
+      try? FileManager.default.removeItem(at: file)
+    }
+    /// 摆上屏（或屏外）、到第一帧画完提交多久（ms）
+    func present(_ window: NSWindow) -> Double {
+      let start = CACurrentMediaTime()
+      window.orderFrontRegardless()
+      window.contentView?.layoutSubtreeIfNeeded()
+      window.displayIfNeeded()
+      CATransaction.flush()
+      return (CACurrentMediaTime() - start) * 1000
+    }
+    let atEnd: [(label: String, run: () -> Void)] =
+      seconds == nil ? [] : [("暂停（给外面拍 memgraph）", { pause("released") })]
+    // 第 1 轮带着进程里第一次用到这些界面的开销；第 2、3 轮是放掉之后重建（App 改成关窗闲下来放掉以后，再打开就是这样）
+    rounds("设置窗（\(pages.count) 页各看两遍、最后回到通用页）", count: 3, atEnd: atEnd) {
+      round += 1
+      let started = CACurrentMediaTime()
+      let (window, navigation) = Self.settingsWindow(
+        store: store, services: services, history: history, hotKeys: hotKeys, speaker: speaker,
+        prefs: prefs)
+      let built = (CACurrentMediaTime() - started) * 1000
+      // 看完回到通用页：关窗时停在通用页，和重建出来的那一页一样，再打开的时间才好比
+      let visit = {
+        for page in pages + [.general] {
+          navigation.page = page
+          spin(0.5)
+        }
+      }
+      return Stage(
+        window: window,
+        show: {
+          if onscreen {
+            let visible = NSScreen.main?.visibleFrame ?? .zero
+            window.setFrameTopLeftPoint(
+              NSPoint(x: visible.maxX - window.frame.width - 8, y: visible.maxY - 8))
+            window.ignoresMouseEvents = true
+            window.alphaValue = 0.05
+          } else {
+            window.setFrameOrigin(offscreen)
+          }
+          let first = present(window)
+          self.report.line(
+            String(
+              format: "第 %d 轮：建窗口对象 %.0f ms，显示到第一帧画完 %.0f ms（通用页）", round, built, first))
+          spin(1)
+          pause("shown")
+        },
+        hide: { [weak window] in
+          window?.close()
+          steady()
+          pause("closed")
+        },
+        extras: [("各页看一遍", visit), ("各页再看一遍", visit)],
+        afterHide: [
+          ("调回收接口（窗口还留着，同 App 关窗后）", { _ = relieve() }),
+          (
+            "窗口留着时再打开一次、再关上",
+            { [weak window] in
+              guard let window else { return }
+              let again = present(window)
+              self.report.line(
+                String(format: "第 %d 轮：窗口留着时再打开到第一帧画完 %.0f ms（通用页）", round, again))
+              spin(0.5)
+              window.close()
+            }
+          ),
+        ],
+        models: [navigation])
+    }
+  }
+
   /// 一块面板量 count 轮（每轮一个新实例；App 里这几块是一直留着的，这里量的是「要是放掉能省多少」）。
   /// cache：它用过、量完要清掉的缓存。每个阶段一个自动释放池（像真 App 里事件循环转了一圈，文件头第 2 个坑）
   private func rounds(
-    _ name: String, count: Int = 2, cache: Cache? = nil, make: () throws -> Stage
+    _ name: String, count: Int = 2, cache: Cache? = nil,
+    atEnd: [(label: String, run: () -> Void)] = [], make: () throws -> Stage
   ) {
     report.line("**\(name)**")
     var shown: [Int] = []
@@ -943,6 +1063,15 @@ private final class Probe {
       last = Reading.now()
       kept.append(last.footprint - base.footprint)
       report.row("收起后", last, note: "还比建之前多 \(mb(last.footprint - base.footprint))")
+      for step in stage?.afterHide ?? [] {
+        autoreleasepool {
+          step.run()
+          steady()
+        }
+        let now = Reading.now()
+        report.row(step.label, now, note: "比上一步 \(signed(now.footprint - last.footprint))")
+        last = now
+      }
       // 只清内容：窗口对象还留着
       let hidden = last
       autoreleasepool {
@@ -972,6 +1101,19 @@ private final class Probe {
       steady()
       let end = Reading.now()
       report.row("放掉模型后", end, note: "比建之前多 \(signed(end.footprint - base.footprint))")
+      var previous = end
+      for step in atEnd {
+        autoreleasepool {
+          step.run()
+          steady()
+        }
+        let now = Reading.now()
+        report.row(
+          step.label, now,
+          note: "比上一步 \(signed(now.footprint - previous.footprint))，比建之前多 "
+            + signed(now.footprint - base.footprint))
+        previous = now
+      }
     }
     guard count > 1 else { return }
     report.summary.append(
@@ -1861,6 +2003,7 @@ nonisolated private struct Reading: Sendable {
 /// 一步一行攒在内存里，每节结束追加进 <目录>/report.md；同时打到标准输出（xcodebuild 的输出里也看得到）
 private final class Report {
   private let file: URL
+  var directory: URL { file.deletingLastPathComponent() }
   private var text = ""
   private var inTable = false
   private var last: Reading?
