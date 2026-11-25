@@ -6,7 +6,8 @@
 // 全文输出的脚本边跑边看（脚本命令第三轮 A1）：给了 live 就把错误输出并进标准输出（同终端），每 0.25 秒交一次写到现在的。
 // 访达右键的压缩、解压、复制要进度条：watch 在跑着的时候每 0.25 秒给一次子进程的进程号和标准错误里新写完的几行
 // （同样是看临时文件，不接管道；和 live 不一起用——live 把两路并成一个文件了）。
-// 标准输入一律接空设备：等输入的脚本读到的是文件结尾，不会一直挂着。
+// 标准输入一般接空设备：等输入的脚本读到的是文件结尾，不会一直挂着；给了 input 时接一根管子、写完就关（访达右键做带密码的 DMG、
+// 挂带密码的映像：hdiutil -stdinpass 从这里读密码，不放在命令行上，2026-11-25 格式扩充第 3 批）。
 // 一直跑着的那种（lines，2026-11-17：专注模式读系统日志的 log stream）：不等它结束，标准输出按行交出来。
 
 import Foundation
@@ -48,20 +49,21 @@ enum Subprocess {
   /// stopsOnCancel：调用它的任务被取消时停掉子进程（SIGTERM；脚本的「停止」、列表打字时撤掉上一次）——别的调用方
   /// 照旧跑完（应用内更新解包、验签那一两秒不能停）；outputLimit：输出只读前这么多字节；
   /// live：边跑边拿输出（要和 captures、outputLimit 一起给）：错误输出并进标准输出，结果的 error 是空的；
-  /// watch：跑着的时候每 0.25 秒叫一次，给子进程的进程号和标准错误里新写完的几行（要 captures、不给 live；半行留到下一次）
+  /// watch：跑着的时候每 0.25 秒叫一次，给子进程的进程号和标准错误里新写完的几行（要 captures、不给 live；半行留到下一次）；
+  /// input：起来之后写进它的标准输入、写完就关（几个字节的密码这类，管子的缓冲放得下；不给就是空设备）
   static func run(
     _ tool: String, _ arguments: [String], captures: Bool = false,
     environment: [String: String]? = nil, timeout: Duration? = nil,
     quality: QualityOfService = .default, directory: URL? = nil, stopsOnCancel: Bool = false,
     outputLimit: Int? = nil, live: ((String) -> Void)? = nil,
-    watch: ((pid_t, String) -> Void)? = nil
+    watch: ((pid_t, String) -> Void)? = nil, input: Data? = nil
   ) async throws -> Result {
     let running = Running()
     return try await withTaskCancellationHandler {
       try await run(
         tool, arguments, captures: captures, environment: environment, timeout: timeout,
         quality: quality, directory: directory, outputLimit: outputLimit, live: live,
-        running: running, stopsOnCancel: stopsOnCancel, watch: watch)
+        running: running, stopsOnCancel: stopsOnCancel, watch: watch, input: input)
     } onCancel: {
       if stopsOnCancel { Task { @MainActor in running.process.map(stop) } }
     }
@@ -71,13 +73,14 @@ enum Subprocess {
     _ tool: String, _ arguments: [String], captures: Bool, environment: [String: String]?,
     timeout: Duration?, quality: QualityOfService, directory: URL?, outputLimit: Int?,
     live: ((String) -> Void)?, running: Running, stopsOnCancel: Bool,
-    watch: ((pid_t, String) -> Void)?
+    watch: ((pid_t, String) -> Void)?, input: Data?
   ) async throws -> Result {
     let process = Process()
     process.executableURL = URL(filePath: tool)
     process.arguments = arguments
     process.qualityOfService = quality
-    process.standardInput = FileHandle.nullDevice
+    let pipe = input.map { _ in Pipe() }
+    process.standardInput = pipe ?? FileHandle.nullDevice
     if let environment { process.environment = environment }
     if let directory { process.currentDirectoryURL = directory }
     let watchdog = timeout.map { limit in
@@ -162,6 +165,12 @@ enum Subprocess {
       do {
         try process.run()
         running.process = process
+        if let input, let pipe {
+          // 子进程已经退出、没人读了时，写管子默认会收到 SIGPIPE、把整个 App 带走：这一端关掉 SIGPIPE，写不进去只是个错误
+          _ = fcntl(pipe.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
+          try? pipe.fileHandleForWriting.write(contentsOf: input)
+          try? pipe.fileHandleForWriting.close()
+        }
         // 起之前就取消了：取消处理那时还拿不到进程
         if stopsOnCancel, Task.isCancelled { stop(process) }
       } catch {

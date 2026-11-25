@@ -6095,6 +6095,13 @@ struct SnapshotProbeTests {
       ),
       // 打开时是 ZIP（一行小字），再换成 TAR（最长的那句）：框是按最长的量的，不裁字（第 2 批评审）
       ("switch", [URL(filePath: "/a/资料")], .init(format: .zip, level: .normal, separately: false)),
+      // DMG、带密码、勾着移到废纸篓（危险色）
+      (
+        "dmg", [URL(filePath: "/a/照片"), URL(filePath: "/a/文稿")],
+        .init(
+          format: .dmg, level: .small, separately: false, password: "secret",
+          trashOriginals: true)
+      ),
     ]
     for (state, items, start) in samples {
       for dark in [false, true] {

@@ -239,7 +239,7 @@ final class FinderMenu: FIFinderSync {
   private static let archiveSuffixes = [
     ".zip", ".7z", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz", ".tbz2", ".gz",
     ".bz2", ".rar", ".tar.lzma", ".tlz", ".tar.lz", ".tar.z", ".taz", ".cpio", ".cpgz", ".xar",
-    ".xz", ".z", ".lz", ".lzma", ".aar",
+    ".xz", ".z", ".lz", ".lzma", ".aar", ".iso", ".dmg", ".cdr",
   ]
 
   private static func isArchive(_ url: URL) -> Bool {

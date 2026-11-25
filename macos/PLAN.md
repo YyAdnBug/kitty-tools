@@ -1985,7 +1985,28 @@ https://claude.ai/artifact/NQLWKFVipMqoqDabJ2ZQTf 当时没回，11-18 拍板页
       带着这次临时文件夹名字的映像、`detach -force`（`attachedDevices` / `detachImages`；取名字最短的整块设备，第一个实体有时是
       分区）；启动时清上次没收尾的临时文件夹前也先卸一遍。27 上 hdiutil 每次都说一句「过时了，用 diskutil image」（15 上没有那个命令），
       出错原因里滤掉。单测 `formatsAndLevels`、
-      `moreFormatsRoundTrip`、`diskImage`。
+      `moreFormatsRoundTrip`、`diskImage`、`compressEachMakesOnePerItem`。
+    - 第 3 批（U3 U5 U6、F3 的 ISO / DMG）：**密码**只给 ZIP（tar 的 `zip:encryption=aes256`，密码照解压那边放在命令行上）和 DMG
+      （`-encryption AES-256 -stdinpass`；`Subprocess.run` 加了 `input`：起来后写进标准输入、写完就关，DMG 的密码不上命令行）；面板里
+      两个密码框，不一样就带着别的选择再问一遍；ZIP 下面说明对方可能要另装解压软件。7Z 不给（系统 tar 收了密码却悄悄不加密）。有密码的
+      只压一个 App 也走 tar（ditto 不会加密）。**压完把原件移到废纸篓**（面板里勾，危险色，不记住）：`packChecked` 先 `verify`（tar
+      解到 /dev/null，DMG 用 `hdiutil verify`），过了才一样一样 `trashItem`，刘海岛「放回原件」；没过、移不了的照实说、原件不动。单测在
+      测试自己建的可写映像上做（移进的是那块卷自己的 .Trashes，不碰用户的废纸篓）。**ISO / DMG / CDR 解压**：不交给 tar，
+      `copyOutOfImage`：`hdiutil attach -readonly -nobrowse -noautoopen -noverify -plist -stdinpass -mountrandom <临时>`，把第一个卷最上层
+      看得见的（不是隐藏的、不是替身——装 App 的映像里指向「应用程序」的替身不要）一样一样 `ditto -V` 拷进临时文件夹、`chmod -R u+w`
+      （ISO 里全是只读的，只读的文件夹落不到包旁边：改名要写它自己的「..」，实测），卸掉（卸不掉再 -force），挂载点只 rmdir。带密码的
+      DMG 没给、给错 hdiutil 都说 Authentication error → 走 zip 那套问密码。拷出来的自动带隔离标记（挂上的卷标着 quarantine）。
+      ponytail：带许可协议的映像挂不上（没样本）。单测 `encryptedZipRoundTrip`、`diskImagesExtract`、
+      `trashOriginalsAfterCheck`、`compressPanelPasswords`。
+      第 3 批独立评审后改了：映像里**除了系统放的杂东西**（.background、.DS_Store、.VolumeIcon.icns、.fseventsd、.Trashes、
+      .Spotlight-V100 这类，`volumeJunk`）**和指到卷外面的绝对替身**，隐藏的、相对的替身都照拷（原来一律跳过隐藏的，会丢 .git、.env）；
+      几个卷各拷进一个用卷名命名的文件夹；什么都没有是失败（空映像）；只认挂在自己临时文件夹下面的挂载点（映像早被用户挂着时
+      27 上说 Resource busy → 「映像正打开着，先推出再解压」，不碰那份）；卸的时候按挂载点里这次的名字在 `hdiutil info` 里找
+      （`detachMounts`：被停时 hdiutil 被杀、挂载在后台才做完、结果读不出来的都找得到），名字带 bundle id，启动时扫一遍上次没卸的
+      （跳过这次正在用的 `activeMounts`）。移原件前另外拦两种：包落在要移走的文件夹里面、原件之间互相包含（`tangled`；列表视图里同时选了
+      文件夹和它里面的东西时 tar 照样退出 0），「压缩时跳过」真跳过了东西；检查中途停了说「停了，原件没动」。两次密码不一样时就在这一个
+      框里拦（「压缩」变灰），不关了再弹——关了前台先还给访达，第二个框不一定拿得到键盘。`Subprocess` 写标准输入前给那一端设
+      `F_SETNOSIGPIPE`（子进程先退出时不 SIGPIPE 把 App 带走）。
 
 ### 截图识别元素（下一版，2026-11-08）
 

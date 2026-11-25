@@ -155,6 +155,13 @@ import AppKit
   /// 启动时：上次没收尾的临时名删掉。等半分钟再动：更新重启、退出后马上重开时，上一次的 ditto / tar 可能还在往里写，
   /// 一起删会删不干净。所在的文件夹不在（盘没接上）的留着账，下次再看
   static func cleanLeftovers(after delay: Duration = .seconds(30)) {
+    // 解 ISO、DMG 时退出了（或者被停时挂载在后台才做完）：映像还挂在临时目录里，先卸掉（只认本 App 的挂载点名字）
+    if ledger != nil {
+      Task {
+        try? await Task.sleep(for: delay)
+        await Archives.detachMounts(under: Archives.mountPrefix)
+      }
+    }
     guard let list = ledger?.stringArray(forKey: Prefs.finderTemporaries) else { return }
     Task {
       try? await Task.sleep(for: delay)
