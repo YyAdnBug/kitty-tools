@@ -149,11 +149,14 @@ import Foundation
     return Int64(info.st_size)
   }
 
-  /// 出错原因只看工具自己报的那几行（「tar: …」「ditto: …」）：-v / -V 的成千上万行里有文件名，名字里带「Permission denied」
+  /// 出错原因只看工具自己报的那几行（「tar: …」「ditto: …」；hdiutil 在 27 上每次都说一句「过时了」，那句不算）：-v / -V 的成千上万行里有文件名，名字里带「Permission denied」
   /// 这类字样会被认错（评审）
   nonisolated static func errors(_ stderr: String) -> String {
     stderr.split(whereSeparator: \.isNewline)
-      .filter { $0.hasPrefix("tar:") || $0.hasPrefix("ditto:") || $0.hasPrefix("gunzip:") }
+      .filter {
+        ($0.hasPrefix("tar:") || $0.hasPrefix("ditto:") || $0.hasPrefix("gunzip:")
+          || $0.hasPrefix("hdiutil:")) && !$0.contains("deprecated")
+      }
       .joined(separator: "\n")
   }
 

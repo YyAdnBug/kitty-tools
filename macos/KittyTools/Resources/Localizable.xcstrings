@@ -1213,6 +1213,22 @@
         }
       }
     },
+    "%lld 个做好了，%lld 个没成：%@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld 个做好了，%2$lld 个没成：%3$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld done, %lld failed: %@"
+          }
+        }
+      }
+    },
     "%lld 个关键词命令" : {
       "localizations" : {
         "en" : {
@@ -1285,6 +1301,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "%lld 个压缩包" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld archives"
           }
         }
       }
@@ -2993,6 +3019,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kitty Tools Settings %@.json"
+          }
+        }
+      }
+    },
+    "Linux 和开发者常用" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Common on Linux and among developers"
           }
         }
       }
@@ -10962,6 +10998,16 @@
         }
       }
     },
+    "不压缩，只打成一个包；照片、视频这类已经压过的最快" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No compression; fastest for photos and videos that are already compressed"
+          }
+        }
+      }
+    },
     "不填就只导入服务，不导入密钥。" : {
       "localizations" : {
         "en" : {
@@ -12907,6 +12953,16 @@
         }
       }
     },
+    "做好了 %lld 个" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld done"
+          }
+        }
+      }
+    },
     "停一下就展开，不用点" : {
       "localizations" : {
         "en" : {
@@ -13364,6 +13420,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Confirm before running"
+          }
+        }
+      }
+    },
+    "光盘映像，给虚拟机、刻录用" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disc image for virtual machines and burning"
           }
         }
       }
@@ -14482,6 +14548,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Click Restore within a few seconds to bring it back"
+          }
+        }
+      }
+    },
+    "分别压缩每一项（%lld 个包）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compress each item separately (%lld archives)"
           }
         }
       }
@@ -16410,6 +16486,26 @@
         }
       }
     },
+    "压缩 %lld 项" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compress %lld Items"
+          }
+        }
+      }
+    },
+    "压缩「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compress “%@”"
+          }
+        }
+      }
+    },
     "压缩包不在了，或者不是能解的格式" : {
       "localizations" : {
         "en" : {
@@ -16450,6 +16546,16 @@
         }
       }
     },
+    "压缩包放在旁边，重名时名字加「 2」。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The archive goes next to the items; if the name is taken, “ 2” is added."
+          }
+        }
+      }
+    },
     "压缩包放在旁边，重名的自动加「 2」；zip 里的中文名到别的系统上解开也不乱码，也不夹带 Mac 的隐藏文件（.DS_Store、._*、__MACOSX）。解压时只有一样东西就直接放在包旁边，几样就放进和包同名的文件夹；按住 ⌥ 右键是「解压到…」，自己选放在哪；别的系统打的 zip，中文名也解得对。修复乱码文件名之后，刘海岛上能撤销。包里不带访达的标签、替身和自定义图标，要在 Mac 之间原样传，用访达自带的「压缩」。" : {
       "localizations" : {
         "en" : {
@@ -16476,6 +16582,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Skip When Compressing"
+          }
+        }
+      }
+    },
+    "压缩级别：" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compression:"
           }
         }
       }
@@ -17762,12 +17878,12 @@
         }
       }
     },
-    "右键文件、文件夹：打成 zip、7z 或 tar.gz 放在旁边" : {
+    "右键文件、文件夹：一键打成 zip、7z、tar.gz；「其他格式和选项…」里还有 tar.xz、dmg、iso 和压缩级别" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Right-click files or folders to pack them into a zip, 7z, or tar.gz next to them"
+            "value" : "Right-click files or folders to make a zip, 7z, or tar.gz in one click; “Other Formats and Options…” adds tar.xz, dmg, iso, and compression levels"
           }
         }
       }
@@ -18752,6 +18868,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bilibili"
+          }
+        }
+      }
+    },
+    "哪儿都能直接打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opens anywhere without extra software"
           }
         }
       }
@@ -22486,6 +22612,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Turned Off (%lld)"
+          }
+        }
+      }
+    },
+    "已分别压缩" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compressed separately"
           }
         }
       }
@@ -32951,6 +33087,26 @@
         }
       }
     },
+    "更小" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Smaller"
+          }
+        }
+      }
+    },
+    "更快" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Faster"
+          }
+        }
+      }
+    },
     "更改…" : {
       "localizations" : {
         "en" : {
@@ -33691,6 +33847,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Numbered List"
+          }
+        }
+      }
+    },
+    "有文件太大，这种格式放不下" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A file is too large for this format"
           }
         }
       }
@@ -34794,6 +34960,16 @@
         }
       }
     },
+    "格式：" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Format:"
+          }
+        }
+      }
+    },
     "桃" : {
       "comment" : "便签纸色的名字",
       "localizations" : {
@@ -35123,6 +35299,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Preparing text recognition…"
+          }
+        }
+      }
+    },
+    "正在分别压缩 %lld 项…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compressing %lld items separately…"
           }
         }
       }
@@ -35901,6 +36087,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "At an Interval"
+          }
+        }
+      }
+    },
+    "比 TAR.GZ 小一点、慢一点" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A little smaller and slower than TAR.GZ"
+          }
+        }
+      }
+    },
+    "比 TAR.GZ 小得多，也慢得多" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Much smaller than TAR.GZ, and much slower"
+          }
+        }
+      }
+    },
+    "比 ZIP 小；Mac 和 Windows 11 自带的工具都能打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Smaller than ZIP; opens with the built-in tools on Mac and Windows 11"
           }
         }
       }
@@ -37318,6 +37534,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn’t back up the current settings and data first (%@), so nothing was imported"
+          }
+        }
+      }
+    },
+    "没能全部压缩" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t compress everything"
           }
         }
       }
@@ -40710,6 +40936,16 @@
         }
       }
     },
+    "磁盘映像，Mac 上双击就能打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disk image that opens with a double-click on a Mac"
+          }
+        }
+      }
+    },
     "磁盘空间不够了" : {
       "localizations" : {
         "en" : {
@@ -40720,12 +40956,12 @@
         }
       }
     },
-    "磁盘空间不够了（7z 还要先在启动盘上暂存一份）" : {
+    "磁盘空间不够了（7z、ISO 还要先在启动盘上暂存一份）" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Not enough disk space (7z also needs room for a temporary copy on the startup disk)"
+            "value" : "Not enough disk space (7z and ISO also need room for a temporary copy on the startup disk)"
           }
         }
       }

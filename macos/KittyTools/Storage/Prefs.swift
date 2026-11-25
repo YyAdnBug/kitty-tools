@@ -527,6 +527,11 @@ enum Prefs {
   nonisolated static let finderTemporaries = "finderTemporaries"
   /// 访达右键「新建文件 ▸ 自定义后缀…」上次填的后缀（框里先填好它）。这台电脑自己的、不注册默认值
   nonisolated static let finderLastSuffix = "finderLastSuffix"
+  /// 访达右键「压缩为 ▸ 其他格式和选项…」上次选的格式（Archives.Format 的 rawValue）、级别（Archives.Level 的 rawValue）、
+  /// 分别压缩每一项（2026-11-25 格式扩充第 2 批）。框里的界面状态，同 finderLastSuffix：这台电脑自己的、不注册默认值
+  nonisolated static let finderCompressFormat = "finderCompressFormat"
+  nonisolated static let finderCompressLevel = "finderCompressLevel"
+  nonisolated static let finderCompressSeparately = "finderCompressSeparately"
 
   /// 看过的版本号：没有 = 首次安装（打开欢迎引导），和当前不同 = 刚更新（刘海岛「已更新到 x」+ 本版摘要，不开设置窗，体检 A29）。
   /// 首次安装时**引导走完才记**（点「开始使用」或关掉引导；第四轮体检 E1）：中途退出（授权屏幕录制后系统要求重开）下次接着开

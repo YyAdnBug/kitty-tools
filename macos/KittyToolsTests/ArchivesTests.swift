@@ -354,7 +354,7 @@ import Testing
       Archives.packFailure("tar: Failed to open '/x/.kitty-1'", format: .tarGz) == "没有权限读写这个位置")
     #expect(
       Archives.packFailure("tar: No space left on device", format: .sevenZip)
-        == "磁盘空间不够了（7z 还要先在启动盘上暂存一份）")
+        == "磁盘空间不够了（7z、ISO 还要先在启动盘上暂存一份）")
     #expect(Archives.packFailure("tar: 别的", format: .zip) == "有文件读不到（被移走、改名了，或者没有权限）")
   }
 
@@ -550,11 +550,16 @@ import Testing
     #expect(list == [FileMoves.plainPath(left)])
     ledger.set(list + [FileMoves.plainPath(mine)], forKey: Prefs.finderTemporaries)
     FileMoves.cleanLeftovers(after: .zero)
-    for _ in 0..<200 where ledger.stringArray(forKey: Prefs.finderTemporaries) != nil {
+    // 只看这两条：同时在跑的别的测试（做 DMG 要几秒）会往换上来的这本账里记它们自己的临时名
+    let gone = {
+      let now = ledger.stringArray(forKey: Prefs.finderTemporaries) ?? []
+      return !now.contains(FileMoves.plainPath(left)) && !now.contains(FileMoves.plainPath(mine))
+    }
+    for _ in 0..<200 where !gone() {
       try await Task.sleep(for: .milliseconds(20))
     }
     list = ledger.stringArray(forKey: Prefs.finderTemporaries) ?? []
-    #expect(list.isEmpty)
+    #expect(gone(), "\(list)")
     #expect(!FileMoves.occupied(left))
     #expect(FileMoves.occupied(mine.appending(path: "留着.txt")))
   }
@@ -734,6 +739,149 @@ import Testing
     #expect(Archives.caseClashes(["Src", "Src/a.txt", "src", "src/b.txt"]).isEmpty)
     #expect(Archives.caseClashes(["Read", "read"]) == ["Read"])
     #expect(Archives.caseClashes(["BUILD", "build", "build/x"]) == ["BUILD"])
+  }
+
+  /// 格式扩充第 2 批：各格式、各级别交给 tar / hdiutil 的参数，ISO 的卷名，两段扩展名的重名
+  @Test func formatsAndLevels() {
+    let items = [URL(filePath: "/p/资料")]
+    let out = URL(filePath: "/p/.tmp")
+    let options = { (format: Archives.Format, level: Archives.Level) -> String? in
+      let arguments = Archives.compressArguments(
+        items, format: format, to: out, level: level, volume: "资料")
+      return arguments.firstIndex(of: "--options").map { arguments[$0 + 1] }
+    }
+    // 标准 = 和原来一样（不写级别）
+    #expect(options(.zip, .normal) == "zip:hdrcharset=UTF-8")
+    #expect(options(.zip, .fast) == "zip:hdrcharset=UTF-8,zip:compression-level=1")
+    #expect(options(.sevenZip, .small) == "7zip:compression=lzma2,7zip:compression-level=9")
+    #expect(options(.tarGz, .normal) == nil)
+    #expect(options(.tarBz2, .fast) == "bzip2:compression-level=1")
+    // 这种格式没有的级别照标准：bzip2 默认就是 9，「更小」不给
+    #expect(options(.tarBz2, .small) == nil)
+    #expect(Archives.Format.tarBz2.levels == [.fast, .normal])
+    #expect(Archives.Format.dmg.levels == [.normal, .small])
+    #expect(options(.tarXz, .small) == "xz:compression-level=9")
+    // iso-level 3：单个文件可以超过 4 GB（2 级时 tar 跳过大文件还退出 0，评审实测）
+    #expect(options(.iso, .small) == "iso9660:volume-id=资料,iso9660:iso-level=3")
+    for (format, flag) in [(Archives.Format.tarGz, "-z"), (.tarBz2, "-j"), (.tarXz, "-J")] {
+      let arguments = Archives.compressArguments(items, format: format, to: out)
+      #expect(arguments.contains(flag) && arguments.contains("--no-xattrs"), "\(format)")
+    }
+    let tar = Archives.compressArguments(items, format: .tar, to: out)
+    #expect(
+      !tar.contains("-z") && !tar.contains("-j") && !tar.contains("-J") && !tar.contains("--format")
+    )
+    #expect(tar.contains("--no-xattrs"))
+    #expect(!Archives.Format.tar.hasLevels && !Archives.Format.iso.hasLevels)
+    #expect(Archives.Format.dmg.hasLevels && Archives.Format.tarXz.title == "TAR.XZ")
+    // 面板里列全了，每种都有一句说明
+    #expect(Set(CompressOptions.formats) == Set(Archives.Format.allCases))
+    #expect(Archives.Format.allCases.allSatisfy { !CompressOptions.hint(for: $0).isEmpty })
+
+    // ISO 的卷名：32 个字节以内、不带逗号（tar 的限制）；DMG 原样
+    let long = String(repeating: "长", count: 40) + ".iso"
+    let volume = Archives.volumeName(of: long, format: .iso)
+    #expect(volume.utf8.count <= 32 && volume.hasPrefix("长长"))
+    #expect(Archives.volumeName(of: "a,b.iso", format: .iso) == "ab")
+    #expect(Archives.volumeName(of: ",.iso", format: .iso) == "ISO")
+    #expect(Archives.volumeName(of: "归档 2.dmg", format: .dmg) == "归档 2")
+
+    // DMG：级别对应映像格式，每一样一个 -srcfolder
+    let image = Archives.imageArguments(
+      [URL(filePath: "/p/a"), URL(filePath: "/q/b.txt")], to: URL(filePath: "/p/.t/x.dmg"),
+      volume: "x", level: .small)
+    #expect(image.prefix(5) == ["create", "-fs", "APFS", "-volname", "x"])
+    #expect(image.contains("ULMO") && image.suffix(2) == ["-o", "/p/.t/x.dmg"])
+    #expect(image.filter { $0 == "-srcfolder" }.count == 2)
+    let fast = Archives.imageArguments(
+      [URL(filePath: "/p/a")], to: URL(filePath: "/x.dmg"), volume: "x", level: .fast)
+    #expect(fast.contains("ULFO") && !fast.contains("UDZO"))  // DMG 没有「更快」，照标准
+  }
+
+  /// TAR.BZ2、TAR.XZ、TAR、ISO 真压、真解（ISO 用 tar 列出来看）；两段扩展名的重名加在整个扩展名前面
+  @Test func moreFormatsRoundTrip() async throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let folder = root.appending(path: "资料")
+    try write("中文内容", to: folder.appending(path: "子/说明.txt"))
+    try write("x", to: folder.appending(path: ".DS_Store"))
+    for format in [Archives.Format.tarBz2, .tarXz, .tar] {
+      for level in Archives.Level.allCases where format.hasLevels || level == .normal {
+        let name = Archives.archiveName(for: [folder], format: format)
+        let target = root.appending(path: Archives.freeName(name, format: format, in: root))
+        let archive = try #require(
+          await Archives.pack([folder], format: format, to: target, level: level).url,
+          "\(format) \(level)")
+        let placed = try #require(await Archives.unpack(archive, password: nil, gbk: false).url)
+        #expect(
+          try String(contentsOf: placed.appending(path: "子/说明.txt"), encoding: .utf8) == "中文内容")
+        #expect(!FileManager.default.fileExists(atPath: placed.appending(path: ".DS_Store").path))
+        try FileManager.default.removeItem(at: placed)
+      }
+    }
+    // 三种级别各打了一个：「资料.tar.xz」「资料 2.tar.xz」「资料 3.tar.xz」（「 2」在整个扩展名前面），再解压时还认得出是 tar 包
+    #expect(try Set(["资料.tar.xz", "资料 2.tar.xz", "资料 3.tar.xz"]).isSubset(of: names(in: root)))
+    let next = Archives.freeName("资料.tar.xz", format: .tarXz, in: root)
+    #expect(next == "资料 4.tar.xz")
+    #expect(Archives.tool(for: root.appending(path: next)) == .tar)
+
+    let iso = try #require(
+      await Archives.pack(
+        [folder], format: .iso, to: root.appending(path: "资料.iso")
+      ).url)
+    let listing = try await Subprocess.run(
+      "/usr/bin/tar", ["-tf", iso.path(percentEncoded: false)], captures: true,
+      environment: ByteMeter.utf8Environment)
+    #expect(listing.status == 0 && listing.output.contains("资料/子/说明.txt"))
+    #expect(!listing.output.contains(".DS_Store"))
+  }
+
+  /// 分别压缩每一项：一样一个包、各放在旁边，排成一批（等它们出现）
+  @Test func compressEachMakesOnePerItem() async throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    try write("甲", to: root.appending(path: "甲/a.txt"))
+    try write("乙", to: root.appending(path: "乙.txt"))
+    Archives.compressEach(
+      [root.appending(path: "甲"), root.appending(path: "乙.txt")], format: .tarXz, level: .fast,
+      island: nil)
+    let wanted = ["甲.tar.xz", "乙.txt.tar.xz"]
+    for _ in 0..<500 where !(try Set(wanted).isSubset(of: names(in: root))) {
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(try names(in: root) == ["乙.txt", "乙.txt.tar.xz", "甲", "甲.tar.xz"])
+  }
+
+  /// DMG：hdiutil 做映像、校验得过；临时文件夹不留
+  @Test func diskImage() async throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let one = root.appending(path: "甲")
+    try write("一", to: one.appending(path: "一.txt"))
+    try write("二", to: root.appending(path: "二.txt"))
+    let archive = try #require(
+      await Archives.pack(
+        [one, root.appending(path: "二.txt")], format: .dmg, to: root.appending(path: "归档.dmg"),
+        level: .fast
+      ).url)
+    #expect(archive.lastPathComponent == "归档.dmg")
+    let verify = try await Subprocess.run(
+      "/usr/bin/hdiutil", ["verify", "-quiet", archive.path(percentEncoded: false)])
+    #expect(verify.status == 0)
+    #expect(try names(in: root) == ["二.txt", "归档.dmg", "甲"])
+    // 没做完时找自己挂着的临时映像：只认路径里带着这次临时文件夹名字的，给整块的那个设备
+    let info: [String: Any] = [
+      "images": [
+        [
+          "image-path": "/Users/a/.kitty-ABC/归档.dmg",
+          "system-entities": [["dev-entry": "/dev/disk4s1"], ["dev-entry": "/dev/disk4"]],
+        ],
+        ["image-path": "/Users/a/别的.dmg", "system-entities": [["dev-entry": "/dev/disk6"]]],
+      ]
+    ]
+    let data = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+    #expect(Archives.attachedDevices(data, containing: "/.kitty-ABC/") == ["/dev/disk4"])
+    #expect(Archives.attachedDevices(Data("不是 plist".utf8), containing: "/.kitty-ABC/").isEmpty)
   }
 
   /// 坏的包：说原因，不留临时文件夹

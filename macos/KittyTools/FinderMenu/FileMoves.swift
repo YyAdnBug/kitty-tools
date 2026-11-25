@@ -163,6 +163,8 @@ import AppKit
         if !isTemporary(url) {
           release(url)
         } else if occupied(url) {
+          // 做 DMG 时退出了：映像可能还挂在这个临时文件夹里，先卸掉再删（Archives.detachImages）
+          await Archives.detachImages(containing: "/" + url.lastPathComponent + "/")
           await discard(url)
         } else if occupied(url.deletingLastPathComponent()) {
           release(url)
