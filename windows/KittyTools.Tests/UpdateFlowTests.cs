@@ -140,6 +140,22 @@ public sealed class UpdateFlowTests
     }
 
     [TestMethod]
+    public async Task ManifestSha256IsTheOnlyHashChecked()
+    {
+        // PLAN-gitcode：清单里带了 sha256（GitCode 那份签过名）就只核它，不去取 .sha256（GitCode 上的 .sha256 没签名）
+        BuildPackage(("KittyTools.exe", "new-exe"));
+        Task<string> NoHashFile(string url, CancellationToken token) => throw new AssertFailedException("不该再取 .sha256");
+        var good = Plan() with { Sha256 = UpdateHash.ComputeFile(_zip).ToUpperInvariant() };
+        var prepared = await UpdateFlow.PrepareAsync(good, _downloads, _staging, DownloadAsync, NoHashFile, _ => new Version(0, 2, 0));
+        Assert.IsTrue(prepared.Ok, prepared.Error);
+
+        var bad = Plan() with { Sha256 = new string('0', 64) };
+        var rejected = await UpdateFlow.PrepareAsync(bad, _downloads, _staging, DownloadAsync, NoHashFile, _ => new Version(0, 2, 0));
+        Assert.IsFalse(rejected.Ok);
+        Assert.AreEqual(UpdateStep.Hash, rejected.Step);
+    }
+
+    [TestMethod]
     public async Task Sha256MismatchLeavesInstallUntouched()
     {
         BuildPackage(("KittyTools.exe", "new-exe"), ("KittyTools.Core.dll", "new-dll"));

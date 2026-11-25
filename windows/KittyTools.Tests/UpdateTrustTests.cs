@@ -68,6 +68,12 @@ public sealed class UpdateTrustTests
             "https://github.com:8443/YyAdnBug/kitty-tools/releases/download/x/y.zip",
             "https://user:pass@github.com/YyAdnBug/kitty-tools/releases/download/x/y.zip",
             "https://objects.githubusercontent.com.evil.com/x/y.zip",
+            // GitCode（PLAN-gitcode）：只认本仓库的 releases/download
+            "https://gitcode.com/someone/kitty-tools/releases/download/x/y.zip",
+            "https://gitcode.com/yyandbug/kitty-tools/releases/windows-v0.3.0",
+            "https://gitcode.com.evil.com/yyandbug/kitty-tools/releases/download/x/y.zip",
+            "https://raw.gitcode.com/yyandbug/kitty-tools/raw/main/y.zip",
+            "https://file-cdn.gitcode.com.evil.com/x/y.zip",
             "https://github.com/\u0000x",
             "//github.com/YyAdnBug/kitty-tools/releases/download/x/y.zip",
         };
@@ -75,6 +81,30 @@ public sealed class UpdateTrustTests
         {
             Assert.IsFalse(UpdateTrust.IsAllowedDownloadUrl(url), url ?? "(null)");
         }
+    }
+
+    [TestMethod]
+    public void GitCodeMirror()
+    {
+        // GitCode 国内分发（PLAN-gitcode）：GitCode 上本仓库的附件、跳转过去的 file-cdn 都认；两个站之间只换前缀
+        foreach (var url in new[]
+        {
+            "https://gitcode.com/yyandbug/kitty-tools/releases/download/windows-v0.3.0/KittyTools-0.3.0-windows-x64.zip",
+            "https://atomgit.com/yyandbug/kitty-tools/releases/download/windows-v0.3.0/KittyTools-0.3.0-windows-x64.zip",
+            "https://GITCODE.COM/YyAndBug/kitty-tools/releases/download/x/y.zip",
+            "https://file-cdn.gitcode.com/7745477/releases/untagger_c5a2/KittyTools.zip?auth_key=1795590784-abc-0-def",
+        })
+        {
+            Assert.IsTrue(UpdateTrust.IsAllowedDownloadUrl(url), url);
+        }
+
+        const string github = "https://github.com/YyAdnBug/kitty-tools/releases/download/windows-v0.3.0/KittyTools-0.3.0-windows-x64.zip";
+        const string gitcode = "https://gitcode.com/yyandbug/kitty-tools/releases/download/windows-v0.3.0/KittyTools-0.3.0-windows-x64.zip";
+        Assert.AreEqual(gitcode, UpdateTrust.Mirror(github));
+        Assert.AreEqual(github, UpdateTrust.Mirror(gitcode));
+        Assert.IsNull(UpdateTrust.Mirror("https://objects.githubusercontent.com/x/y.zip"));
+        Assert.IsNull(UpdateTrust.Mirror("https://github.com/OtherUser/kitty-tools/releases/download/x/y.zip"));
+        Assert.IsNull(UpdateTrust.Mirror(null));
     }
 
     [TestMethod]
