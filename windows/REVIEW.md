@@ -48,6 +48,80 @@
    表情包 `emoji-pack-1-win` 照旧不动（要用户点头）。
 8. 做到第 12 批：0.4.0 的包（版本号、更新日志、`build-release.ps1`、`--update-live`），**不发布**；给用户的真机清单（≤ 30 条）写在本节最后。
 
+### 第 0 批 → 已做（`6f5edad6`、`9412f096`、`cec31fea`；Claude 在 Windows 上，2026-11-25）
+
+**结论**：三块都编过了、单测全过、AOT 零警告；两条分支用 `--no-ff` 并进 `windows`。只有 R114 有编译错（两处 unsafe 里 await），改法见 `cec31fea`，逻辑没动。
+**这台机器只有一块屏**（2560 × 1440、100 %）：R112、R113 要两块屏的那几步都没法走，留给用户（见下面「要用户走的」）。
+
+- **R112**（`b5996436`，并之前就在 `windows` 上）：Debug x64 0 警告、`dotnet test` 1106 全过、x64 / ARM64 AOT 0 警告、PRI 各 4 个。
+  Release 测试档 `--status-screen-probe`（单屏）：熄屏、告示两种的 `status.probe-frame … window=0,0,2560,1440 client=2560x1440 fits=True`；透出（dim）是 Win32 压暗窗、没有这一行（照设计）。
+  第 2 步（拿 0.3.0 的包两块屏复现、换三种摆法）、第 4 步（HANDTEST 1759–1768）**没测**：要第二块屏。
+- **R113 + PLAN-v24 Core**（`6f5edad6`）：冲突只在 `AGENTS.md`（第 24 条，排在 26 前面）和本文件顶上，两边都留。一次编过，`ScreenSpanTests` 8 条全过（总 1114）。
+  R113 第 2、3 步（两块屏）**没测**；第 4 步单屏回归（HANDTEST 1777）要按键，留给用户（不在用户桌面上发合成按键）。代码只在两块屏以上才走新路径（`PollCursor` 里 `screens >= 2`），单屏的截图自检路径没变。
+- **R114 / PLAN-v25**（`9412f096` 合并、`cec31fea` 修编译）：
+  - 「先核对再跑」1、2 条对着 Windows SDK 10.0.26100 的 `um/SearchAPI.h` 数过：`ISearchManager.GetCatalog` 10、`ISearchCatalogManager.GetCatalogStatus` 6 / `NumberOfItems` 15 / `NumberOfItemsToIndex` 16 / `GetCrawlScopeManager` 28、
+    `ISearchCrawlScopeManager.HasChildScopeRule` 12 / `IncludedInCrawlScope` 13，**全对**；参数（`CatalogStatus*`、`CatalogPausedReason*`、`LONG*`、`BOOL*`）和 CLSID / IID 也对；`CATALOG_STATUS_*` 0–6、`CATALOG_PAUSED_REASON_*`（4 电池、8 用户在用）和 `FileSearchHints` 一致。
+  - 第 5 条：`--file-search-status` → `service=Running catalog=0 paused=0 pending=0 items=39030 drives-out=D: folders-out=0 ms=15`（经典模式，C: 算在、没收的 D: 算不在，没有误报）。
+  - 第 3、4 条（Everything 的项标志、回包的发送窗口）**没测**：这台没装 Everything，按红线不在用户的机器上装；`--everything-probe` → `version=none`。
+  - 编译错：`EverythingSearch`、`SearchIndexStatus` 整个类是 `unsafe`，里面的 `async` 方法不能 `await`（CS4004），`SearchAsync` 还对局部变量取地址（CS9123）。两个异步方法挪进同一个类另一段不带 `unsafe` 的 `partial`，
+    发 `WM_COPYDATA`（`fixed` + `&copy`）拆成同步的 `Send`、取 `HWND.Value` 拆成 `ReplyWindow`。
+  - 单测 1139 全过（多了 25 条文件搜索的）。
+  - `--file-search=`（Debug 测试档，各 5 次，`source=Index` 即 OLE DB）：`jpg` 194 / 116 / 116 / 117 / 100 ms（**P50 116**，< 150 → 留 TOP 500）、`报告` 66 / 60 / 59 / 55 / 63（P50 60，0 条，提示 `file-hint:settings` = 「D: 不在索引里」）、`Inno` 79 / 61 / 54 / 54 / 56（P50 56，0 条）。
+  - 第 3 步（停 WSearch）没在用户的机器上做；用 `KITTY_FS_FORCE_FALLBACK=1` 走扫目录那条路：`lnk` 62 ms、16 条、走过 1185 项；`jpg` 28 ms、20 条、641 项。
+  - Release x64 `--smoke` ok（设置八页、面板都开过）。
+- **推送**：三步一起推，`origin/windows` 没动过，没有 rebase（合并提交原样上去）。
+- **内存**（Release、`KITTY_MEMORY_PROBE=1`，基线是 `build/release/0.3.0` 的 x64 包，同一台机器、前后各跑一次）：见第 1 批那一节的表（第 0、1 批一起量的）。
+
+**要用户走的（第 0 批）**：两块屏的 R112 第 2–4 步（HANDTEST 1759–1768）、R113 第 2–4 步（1769–1777）；文件搜索的 1800–1829（停服务、装 Everything 的几条在测试机上）。
+
+### 第 1 批 → 已做（`9b2c4063`；0.3.1 的包打好了，**没发布、没打 tag**）
+
+**结论**：mac 0.10.x 写的提醒（`duringFocus`、跨半夜的 `overnight`）、翻译服务（`explainsSentences` / `extraPrompt`）、片段（`keyword`）Windows 都读得进、编回去一字不差，三类不再整类停；
+WebDAV 一次 401 之后自动的轮不再发请求。**要用户看**：D1 照推荐打了 0.3.1，发不发、什么时候发等你说；样本是照 mac 的编码规则手写的，审查方从 mac 单测宿主真编一份替换（I5 后一半）。
+
+- **I1 提醒**：`Reminder.DuringFocus`（一定写，排在 `detail` 和 `fullSeconds` 之间；Windows 不认专注模式，不显示开关，只存、同步、导出）；
+  跨半夜照 mac 0.10.1 U10：间隔类 `until < time` 是跨半夜、`Sanitized` 留着，编码在 `kind` 后面多写 `"overnight":true`，`WindowContaining` 也看前一天开始的那段，
+  「比间隔还短」按 `WindowMinutes`。0.9 以前没有 `duringFocus` 的记录现在编回去对不上、那一类停下——和 mac 0.10 自己一样（对面先更新）。
+- **I2 翻译服务**：`SyncService` / `TranslateServiceConfig` 加两项（讲解三态、关着不写）；新 `Core/ExtraPrompt`（去 NUL、按字素截到 1000、空的 null）；
+  导出只写 true、附加要求 `Cleaned`；导入时讲解照文件、附加要求文件里没有就留本机的（mac `mergeServices`）。界面在第 3 批（T3）。
+- **I3 片段关键词**：`clips.keyword`（Schema 第 11 步 `ALTER TABLE … ADD COLUMN`，`user_version` 10 → 11；0.3.0 打开新库照常能用：读写都写明列名、比代码新的库一步不跑）；
+  `ClipSync` 只给片段发、键在 `group` 和 `note` 之间、来的不合 `SnippetKeyword.IsValid` 整类不落、同正文合并时缺的从输的那条补；新 `Core/SnippetKeyword`（照 mac，第 4 批的界面用）；
+  导出导入照 mac（只给片段、合规、文件里重复的只留第一条、本机已被别的片段用了的不要）；每日备份是 `VACUUM INTO`，跟着库走；搜索搜得到关键词。
+- **I4 WebDAV**：401 / 403 → `_rejected`，定时、唤醒的轮不发请求、停在原来那句；「立即同步」「更新密码…」照发。同步那一行「更新密码…」（只换凭据管理器、镜像和账留着）；
+  新 `Core/Sync/SyncAttention`：要你处理的（密码 / 权限 / 没密码 / 不是那个文件夹 / 更新版本写的）马上底部轻提示带「打开同步设置」，别的停满 30 分钟才说
+  （`QueryUnbiasedInterruptTime`，睡眠不算），一段停着里同一种只说一次，主界面「设置」挂橙点、好了自己收。连服务器时「停止同步…」先确认（默认「取消」）；http 标「未加密」；
+  测试连接 / 连接时能「取消」、Esc（请求在后台走完、结果丢掉、不开同步）。
+- **I5 样本**：`PlanV26SyncTests`：三条照 mac 0.10.3 编码规则手写的记录各自「读进来 → 编回去逐字节一样」；一个临时同步文件夹里假 Mac + 两台 Windows 跑六轮三类都不停、再合一轮谁都不写、
+  Mac 那份原样；不认识的键、不合规的关键词照旧停。`SyncAttentionTests` 4 条。
+- **改了的老单测**（格式真变了，不是凑绿）：`ReminderTests` 的 6 条 golden 换成 0.10 的写法（每条多 `"duringFocus":false`，mac 0.10 起合成的 Codable 一定写）；
+  `Sanitized_AndLoad` 里间隔类 2000 → 10 原来断言 1440，按 U10 改成留着 10，另加一条每周类照旧 1440、一条 0 照旧 1440。
+- **验**：Debug x64 0 警告；`dotnet test` 1154 全过；x64 / ARM64 AOT 0 警告、PRI 各 4 个；本机 WebDAV 测试服务器（Python 标准库、127.0.0.1、Basic，第 22 秒起拒这组密码）
+  跑 `--sync-server-probe` 9 轮：第 6 轮一个 `PROPFIND 401`，之后三轮零请求；（第一遍发现跳过的那几轮状态留在「同步中」，已修：跳过时停在 `stopped`。）
+- **数**（Release AOT、测试档、`KITTY_MEMORY_PROBE=1`；0.3.0 是 `build/release/0.3.0` 的 x64 包、同一台机器前后各跑一次；第 0、1 批的改动都在里面）：
+
+  | 步骤 | 0.3.0 | 并完第 0 批 |
+  |---|---|---|
+  | 只有托盘 | 48.8 MB | 50.0 |
+  | 5000 条剪贴板数据 / 面板 | 53.8 / 56.4 | 53.9 / 56.4 |
+  | 启动器 / 翻译窗 | 58.9 / 59.2 | 58.9 / 59.2 |
+  | 截图 / 第二次 / 五次后 | 75.8 / 79.4 / 84.2 | 76.0 / 79.4 / 85.0 |
+  | 设置五次 / 静置 | 95.1 / 96.0 | 95.9 / 96.9 |
+
+  都在 1.2 MB 以内（托盘那一步多 1.2 MB：文件搜索的 Core 和 Everything 的代码多进来的那点，没有常驻缓存）。空闲 CPU（0.3.1 的 x64 包、只托盘、静置 20 s 后量 60 s）：0 ms。
+- **0.3.1 的包**（在单独的 worktree `../kitty-rel-031` 打的，`9b2c4063`；`build-release.ps1` 0 警告；两个 exe 里都有内置智谱 key、只数了次数；`--update-live=0.3.0` 退出码 0、下载 50 007 019 字节、sha256 对得上）：
+
+  | 文件 | sha256 |
+  |---|---|
+  | KittyTools-0.3.1-windows-x64.zip（47.8 MB） | `3c621f8c335f28c4282071bf6a24bcbb38a8400a12015bb3107446278f39abba` |
+  | KittyTools-0.3.1-windows-x64-setup.exe（37.9 MB） | `727899feccc7f3e494885e82d8ef28fc8571e2811c7ff8b49ed5a921a6e0b018` |
+  | KittyTools-0.3.1-windows-arm64.zip（46.7 MB） | `512e89be6c65e3e54245e7a683a1377773794aecb6185cac283684369042869d` |
+  | KittyTools-0.3.1-windows-arm64-setup.exe（37.6 MB） | `7b8f1ae7d9af7a56d31a158a8042549ce220083a600777219ab743a265257eec` |
+
+  路径 `D:\yy\Codes\Tauri\kitty-rel-031\windows\build\release\0.3.1\`（发布目录 x64 105.5 MB / ARM64 111.2 MB，各 159 个文件，不含 pdb）。
+- **截图**：`windows-shots` 的 `0.3.1-v26-batch-1/`（设置 › 通用「同步」：连着 http 的服务器「未加密」、「更新密码…」那一行、换密码的对话框，浅 / 深）。高对比度要改系统设置，没截（同以前，留给手测）。
+- **没测**：真 Mac 0.10.3（HANDTEST 1830–1834 要 mac）、真 NAS 封 IP、拔 U 盘 / 断网满 30 分钟的提示（1838，逻辑有单测）、Digest 服务器上的 401（Basic 测了）。
+- **替用户定的**：同步停了的提示在底部轻提示上（mac 刘海岛，MAC-DIFF 已有这条长期例外）；`duringFocus` 开关在 Windows 上不显示（E4 先不跟，MAC-DIFF 记了）。
+
 ## 多屏截图：只能在光标那块屏上框选、扩展屏过不去（审查方在 Mac 上写、没编译，2026-11-22）
 
 用户反馈：Windows 版截图只能在光标所在的那块屏上框选，框不到扩展屏上，也不能一个选区跨两块屏。
