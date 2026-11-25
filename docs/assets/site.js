@@ -2,12 +2,16 @@
 // 数据都在浏览器里现读 GitHub（不用密钥，每个 IP 每小时 60 次，读到的存 10 分钟），所以发版后官网不用改。
 // Mac 取版本号最大的 macos-v*（DMG），Windows 取最大的 windows-v*（Windows 的 release 故意不标 latest，
 // 不能用 releases/latest）。读不到时什么都不改：按钮本来就链着 GitHub 的发布页。
+// 国内（2026-11-25）：同样的文件由 publish-gitcode.sh 搬到了 GitCode 镜像（附件名一样）。中文下载页的「国内下载（GitCode）」
+// 链到 GitCode 上同一个文件；GitHub 的接口读不到时（多半是国内），主按钮和版本信息也换成 GitCode 的。GitCode 的接口不用密钥、
+// 允许跨域，列表按发布时间正序。
 (function () {
   "use strict";
   var REPO = "YyAdnBug/kitty-tools";
   // 英文页（docs/en/）：<html lang="en">。页面里的字都写在 HTML 里，这里只有脚本自己填的几句
   var EN = document.documentElement.lang.indexOf("en") === 0;
   var API = "https://api.github.com/repos/" + REPO;
+  var GITCODE_API = "https://api.gitcode.com/api/v5/repos/yyandbug/kitty-tools";
   var TTL = 10 * 60 * 1000;
 
   function cached(key, load) {
@@ -64,6 +68,37 @@
             };
           });
       });
+    });
+  }
+
+  // GitCode 镜像上的 release，整理成和上面一样的形状（没有 html_url，发布页是 …/releases/<tag>）
+  function gitcodeReleases() {
+    return cached("kt-releases-gitcode", function () {
+      return fetch(GITCODE_API + "/releases?per_page=100")
+        .then(function (r) {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.json();
+        })
+        .then(function (list) {
+          return list
+            .filter(function (r) {
+              return !r.prerelease && r.release_status !== "pre";
+            })
+            .map(function (r) {
+              return {
+                tag: r.tag_name,
+                url: "https://gitcode.com/yyandbug/kitty-tools/releases/" + r.tag_name,
+                date: r.created_at,
+                assets: (r.assets || [])
+                  .filter(function (a) {
+                    return a.browser_download_url && String(a.type).toLowerCase() !== "source";
+                  })
+                  .map(function (a) {
+                    return { name: a.name, url: a.browser_download_url, size: a.size };
+                  }),
+              };
+            });
+        });
     });
   }
 
@@ -157,24 +192,57 @@
     if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, function () {});
   });
 
+  // 这个列表里最新的 Mac / Windows 版和各个要链的文件
+  function pick(list, arm) {
+    var mac = latest(list, "macos-v"), win = latest(list, "windows-v");
+    var dmg = find(mac, /_arm64\.dmg$/), intel = find(mac, /_x86_64\.dmg$/);
+    var x64 = find(win, /-windows-x64-setup\.exe$/), arm64 = find(win, /-windows-arm64-setup\.exe$/);
+    var x64zip = find(win, /-windows-x64\.zip$/), arm64zip = find(win, /-windows-arm64\.zip$/);
+    return {
+      mac: mac,
+      win: win,
+      dmg: dmg,
+      x64: x64,
+      links: {
+        mac: dmg,
+        "mac-intel": intel,
+        win: arm ? arm64 || x64 : x64 || arm64,
+        "win-x64": x64,
+        "win-arm64": arm64,
+        "win-x64-zip": x64zip,
+        "win-arm64-zip": arm64zip,
+      },
+    };
+  }
+
+  // 「国内下载（GitCode）」：链到 GitCode 上这台电脑该下的那个文件（读不到就留着链发布页）
+  function fillGitcode(arm) {
+    if (!document.querySelector("[data-gc]")) return Promise.resolve();
+    return gitcodeReleases().then(function (list) {
+      var got = pick(list, arm);
+      document.querySelectorAll("[data-gc]").forEach(function (a) {
+        var asset = got.links[a.dataset.gc];
+        if (asset) a.href = asset.url;
+      });
+    });
+  }
+
   var needsReleases = document.querySelector("[data-dl], [data-fill]");
   if (needsReleases) {
-    Promise.all([releases(), armWindows])
+    armWindows.then(function (arm) {
+      fillGitcode(arm).catch(function () {});
+    });
+    Promise.all([
+      releases().catch(function () {
+        // GitHub 读不到（多半是国内）：换 GitCode 镜像的
+        return gitcodeReleases();
+      }),
+      armWindows,
+    ])
       .then(function (got) {
-        var list = got[0], arm = got[1];
-        var mac = latest(list, "macos-v"), win = latest(list, "windows-v");
-        var dmg = find(mac, /_arm64\.dmg$/), intel = find(mac, /_x86_64\.dmg$/);
-        var x64 = find(win, /-windows-x64-setup\.exe$/), arm64 = find(win, /-windows-arm64-setup\.exe$/);
-        var x64zip = find(win, /-windows-x64\.zip$/), arm64zip = find(win, /-windows-arm64\.zip$/);
-        var links = {
-          mac: dmg,
-          "mac-intel": intel,
-          win: arm ? arm64 || x64 : x64 || arm64,
-          "win-x64": x64,
-          "win-arm64": arm64,
-          "win-x64-zip": x64zip,
-          "win-arm64-zip": arm64zip,
-        };
+        var arm = got[1];
+        var chosen = pick(got[0], arm);
+        var mac = chosen.mac, win = chosen.win, dmg = chosen.dmg, x64 = chosen.x64, links = chosen.links;
         document.querySelectorAll("[data-dl]").forEach(function (a) {
           var asset = links[a.dataset.dl];
           if (!asset) return;

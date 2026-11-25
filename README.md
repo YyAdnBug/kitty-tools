@@ -24,6 +24,7 @@
 <p align="center">
   <a href="https://yyadnbug.github.io/kitty-tools/"><b>官网</b></a> ·
   <a href="https://yyadnbug.github.io/kitty-tools/download/">下载与安装</a> ·
+  <a href="https://gitcode.com/yyandbug/kitty-tools/releases">国内下载（GitCode）</a> ·
   <a href="https://yyadnbug.github.io/kitty-tools/changelog/">更新日志</a> ·
   <a href="https://yyadnbug.github.io/kitty-tools/faq/">常见问题</a>
 </p>
@@ -51,7 +52,7 @@ macOS 版用 Swift 6 + SwiftUI / AppKit 写成，常驻菜单栏、不占程序�
 
 常驻托盘，全局快捷键呼出，界面跟着 Windows 11 的样子走（亚克力、Segoe 字体），功能和 mac 版对齐：剪贴板历史（片段、收藏夹、多选粘贴、拖出去）、翻译（八个服务、流式、划词 / 输入 / 复制即译、历史与生词本）、启动器（应用、设置页、系统命令、计算、文件搜索、浏览器书签、kill / port）、截图（标注、识字、钉图、截图翻译、长截图、截图历史）、录屏与录音、便签、提醒、状态屏，以及保持唤醒插件；截图能悬停认出窗口里的按钮、侧栏这类元素，同步能连 WebDAV 服务器，导出的设置能和 macOS 版互相导入。
 
-从 [Releases](https://github.com/YyAdnBug/kitty-tools/releases) 里找 `windows-v` 开头的版本，下载 `KittyTools-x.y.z-windows-x64-setup.exe`（ARM 电脑下载 arm64 那个）双击安装，以后在程序里自动更新。代码、规矩和计划在 [`windows`](https://github.com/YyAdnBug/kitty-tools/tree/windows/windows) 分支的 `windows/` 下，入口是 `windows/AGENTS.md`。
+从 [Releases](https://github.com/YyAdnBug/kitty-tools/releases) 里找 `windows-v` 开头的版本，下载 `KittyTools-x.y.z-windows-x64-setup.exe`（ARM 电脑下载 arm64 那个）双击安装，以后在程序里自动更新。打不开 GitHub 的话，到 [GitCode 镜像](https://gitcode.com/yyandbug/kitty-tools/releases) 下载同样的文件。代码、规矩和计划在 [`windows`](https://github.com/YyAdnBug/kitty-tools/tree/windows/windows) 分支的 `windows/` 下，入口是 `windows/AGENTS.md`。
 
 ## macOS 版的功能
 
@@ -289,7 +290,7 @@ macOS 版用 Swift 6 + SwiftUI / AppKit 写成，常驻菜单栏、不占程序�
 
 ## 安装 macOS 版
 
-1. 从 [Releases](https://github.com/YyAdnBug/kitty-tools/releases/latest) 下载 `Kitty.Tools_x.y.z_arm64.dmg`（Intel 芯片的 Mac 下载 `_x86_64.dmg`；`.zip` 和 `macos-update.json` 是 App 内更新用的，不用手动下载），或按下面的步骤自己打包。
+1. 从 [Releases](https://github.com/YyAdnBug/kitty-tools/releases/latest) 下载 `Kitty.Tools_x.y.z_arm64.dmg`（Intel 芯片的 Mac 下载 `_x86_64.dmg`；`.zip` 和 `macos-update.json` 是 App 内更新用的，不用手动下载），或按下面的步骤自己打包。打不开 GitHub 的话，到 [GitCode 镜像](https://gitcode.com/yyandbug/kitty-tools/releases) 下载同样的文件。
 2. 把 `Kitty Tools.app` 拖进「应用程序」。
 3. App 使用 Apple Development 签名、没有公证，第一次打开会被系统拦下（提示「未打开」，不是「已损坏」）：到「系统设置 › 隐私与安全」里点「仍要打开」。也可以在终端执行：
    ```bash
