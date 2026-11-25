@@ -296,7 +296,40 @@ internal static unsafe partial class SearchIndexStatus
         => ((delegate* unmanaged[Stdcall]<void*, uint>)(*(void***)self)[2])(self);
 
     // ---- F10 启用服务
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ServiceStatus
+    {
+        public uint ServiceType;
+        public uint CurrentState;
+        public uint ControlsAccepted;
+        public uint Win32ExitCode;
+        public uint ServiceSpecificExitCode;
+        public uint CheckPoint;
+        public uint WaitHint;
+    }
 
+    [LibraryImport("advapi32.dll", EntryPoint = "OpenSCManagerW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    private static partial IntPtr OpenSCManagerW(string? machine, string? database, uint access);
+
+    [LibraryImport("advapi32.dll", EntryPoint = "OpenServiceW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    private static partial IntPtr OpenServiceW(IntPtr manager, string name, uint access);
+
+    [LibraryImport("advapi32.dll", EntryPoint = "QueryServiceStatus", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool QueryServiceStatus(IntPtr service, out ServiceStatus status);
+
+    [LibraryImport("advapi32.dll", EntryPoint = "QueryServiceConfigW", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool QueryServiceConfigW(IntPtr service, byte* config, uint size, out uint needed);
+
+    [LibraryImport("advapi32.dll", EntryPoint = "CloseServiceHandle")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool CloseServiceHandle(IntPtr handle);
+}
+
+// 异步的部分单独一段、不带 unsafe：unsafe 上下文里不能 await（CS4004）。
+internal static partial class SearchIndexStatus
+{
     /// <summary>
     /// 以管理员身份把 WSearch 改回「自动（延迟启动）」并启动（系统弹 UAC）。true = 服务起来了；false = 没成；
     /// null = 用户在 UAC 里点了「否」（不算失败、不弹错）。UI 线程调（只在等的时候让出去）。
@@ -350,34 +383,4 @@ internal static unsafe partial class SearchIndexStatus
         Log.Warn("files.enable-service not-running");
         return false;
     }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct ServiceStatus
-    {
-        public uint ServiceType;
-        public uint CurrentState;
-        public uint ControlsAccepted;
-        public uint Win32ExitCode;
-        public uint ServiceSpecificExitCode;
-        public uint CheckPoint;
-        public uint WaitHint;
-    }
-
-    [LibraryImport("advapi32.dll", EntryPoint = "OpenSCManagerW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
-    private static partial IntPtr OpenSCManagerW(string? machine, string? database, uint access);
-
-    [LibraryImport("advapi32.dll", EntryPoint = "OpenServiceW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
-    private static partial IntPtr OpenServiceW(IntPtr manager, string name, uint access);
-
-    [LibraryImport("advapi32.dll", EntryPoint = "QueryServiceStatus", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool QueryServiceStatus(IntPtr service, out ServiceStatus status);
-
-    [LibraryImport("advapi32.dll", EntryPoint = "QueryServiceConfigW", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool QueryServiceConfigW(IntPtr service, byte* config, uint size, out uint needed);
-
-    [LibraryImport("advapi32.dll", EntryPoint = "CloseServiceHandle")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool CloseServiceHandle(IntPtr handle);
 }

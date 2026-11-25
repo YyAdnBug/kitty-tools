@@ -54,68 +54,24 @@ internal static unsafe partial class EverythingSearch
 
         return $"{Ask(window, IpcGetMajorVersion)}.{Ask(window, IpcGetMinorVersion)}.{Ask(window, IpcGetRevision)}.{Ask(window, IpcGetBuildNumber)}";
     }
+    /// <summary>回包发到的那扇隐藏窗口。</summary>
+    private static IntPtr ReplyWindow() => (IntPtr)HiddenWindow.Hwnd.Value;
 
-    /// <summary>搜一次；用不了时返回 null（调用方退回索引）。线程池里调。</summary>
-    public static async Task<List<EverythingHit>?> SearchAsync(IReadOnlyList<string> tokens, CancellationToken cancellationToken)
+    /// <summary>发查询（WM_COPYDATA）。指针只能在同步方法里取，所以从 SearchAsync 里拆出来。</summary>
+    private static bool Send(IntPtr window, IntPtr reply, byte[] query)
     {
-        var reply = (IntPtr)HiddenWindow.Hwnd.Value;
-        var window = Find();
-        if (window == IntPtr.Zero || reply == IntPtr.Zero)
+        fixed (byte* data = query)
         {
-            return null;
+            var copy = new CopyData { Data = EverythingIpc.CopyDataQuery2W, Size = (uint)query.Length, Pointer = data };
+            if (SendMessageTimeoutW(window, WmCopyData, reply, (IntPtr)(&copy), SmtoAbortIfHung, 1000, out var accepted) == IntPtr.Zero ||
+                accepted == IntPtr.Zero)
+            {
+                Log.Warn($"everything.send-failed {Marshal.GetLastPInvokeError()}");
+                return false;
+            }
         }
 
-        if (Ask(window, IpcIsDbLoaded) != 1)
-        {
-            Log.Info("everything.not-loaded");
-            return null;
-        }
-
-        GetWindowThreadProcessId(window, out var processId);
-        var pending = new Pending { Id = NewId(), ProcessId = processId, Window = window };
-        Interlocked.Exchange(ref _pending, pending)?.Reply.TrySetResult(null);
-        try
-        {
-            var query = EverythingIpc.Query(EverythingIpc.SearchText(tokens), (uint)reply, pending.Id);
-            fixed (byte* data = query)
-            {
-                var copy = new CopyData { Data = EverythingIpc.CopyDataQuery2W, Size = (uint)query.Length, Pointer = data };
-                if (SendMessageTimeoutW(window, WmCopyData, reply, (IntPtr)(&copy), SmtoAbortIfHung, 1000, out var accepted) == IntPtr.Zero ||
-                    accepted == IntPtr.Zero)
-                {
-                    Log.Warn($"everything.send-failed {Marshal.GetLastPInvokeError()}");
-                    return null;
-                }
-            }
-
-            byte[]? bytes;
-            try
-            {
-                bytes = await pending.Reply.Task.WaitAsync(ReplyTimeout, cancellationToken);
-            }
-            catch (TimeoutException)
-            {
-                Log.Warn("everything.reply-timeout");
-                return null;
-            }
-
-            if (bytes is null)
-            {
-                return null; // 被新的查询顶掉了，或者回包太大
-            }
-
-            var hits = EverythingIpc.Parse(bytes);
-            if (hits is null)
-            {
-                Log.Warn($"everything.reply-bad bytes={bytes.Length}");
-            }
-
-            return hits;
-        }
-        finally
-        {
-            Interlocked.CompareExchange(ref _pending, null, pending);
-        }
+        return true;
     }
 
     /// <summary>
@@ -197,4 +153,65 @@ internal static unsafe partial class EverythingSearch
 
     [LibraryImport("user32.dll", EntryPoint = "GetWindowThreadProcessId")]
     private static partial uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+}
+
+// 异步的部分单独一段、不带 unsafe：unsafe 上下文里不能 await（CS4004）。
+internal static partial class EverythingSearch
+{
+    /// <summary>搜一次；用不了时返回 null（调用方退回索引）。线程池里调。</summary>
+    public static async Task<List<EverythingHit>?> SearchAsync(IReadOnlyList<string> tokens, CancellationToken cancellationToken)
+    {
+        var reply = ReplyWindow();
+        var window = Find();
+        if (window == IntPtr.Zero || reply == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        if (Ask(window, IpcIsDbLoaded) != 1)
+        {
+            Log.Info("everything.not-loaded");
+            return null;
+        }
+
+        GetWindowThreadProcessId(window, out var processId);
+        var pending = new Pending { Id = NewId(), ProcessId = processId, Window = window };
+        Interlocked.Exchange(ref _pending, pending)?.Reply.TrySetResult(null);
+        try
+        {
+            var query = EverythingIpc.Query(EverythingIpc.SearchText(tokens), (uint)reply, pending.Id);
+            if (!Send(window, reply, query))
+            {
+                return null;
+            }
+
+            byte[]? bytes;
+            try
+            {
+                bytes = await pending.Reply.Task.WaitAsync(ReplyTimeout, cancellationToken);
+            }
+            catch (TimeoutException)
+            {
+                Log.Warn("everything.reply-timeout");
+                return null;
+            }
+
+            if (bytes is null)
+            {
+                return null; // 被新的查询顶掉了，或者回包太大
+            }
+
+            var hits = EverythingIpc.Parse(bytes);
+            if (hits is null)
+            {
+                Log.Warn($"everything.reply-bad bytes={bytes.Length}");
+            }
+
+            return hits;
+        }
+        finally
+        {
+            Interlocked.CompareExchange(ref _pending, null, pending);
+        }
+    }
 }
