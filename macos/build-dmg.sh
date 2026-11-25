@@ -9,7 +9,8 @@
 #   Updater.release(fromManifest:)：只加新键，要改已有键的意思就换文件名、旧名字的照发）。传完核一遍（两条都要 200）：
 #     curl -fsSL https://github.com/YyAdnBug/kitty-tools/releases/latest/download/macos-update.json
 #     curl -fsIL "$(curl -fsSL https://github.com/YyAdnBug/kitty-tools/releases/latest/download/macos-update.json | jq -r .url)"
-#   核过之后跑 macos/publish-gitcode.sh macos-v<版本>（2026-11-25）：把这个 release 原样搬到 GitCode 镜像、换上那边的
+#   核过之后先到 GitCode 项目设置 › 仓库镜像 点「同步」（镜像隔几个小时才自己拉一次，新 tag 不会马上过去；2026-11-25 实测），
+#   再跑 macos/publish-gitcode.sh macos-v<版本>（2026-11-25）：把这个 release 原样搬到 GitCode 镜像、换上那边的
 #   macos-update.json，给打不开 GitHub 的国内用户下载和 App 内更新（Updater 两边一起问）。传 GitHub 时文件名别改：
 #   两边的下载地址只差主机，Updater 靠这一点换站。
 #   发布说明固定附「系统设置 › 隐私与安全 › 仍要打开」步骤（只有第一次安装要；之后 App 内更新下载的包不带隔离标记，不用再放行）。

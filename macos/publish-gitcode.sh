@@ -7,7 +7,7 @@
 #   命令就是补发：已经在 GitCode 上、大小对得上的附件跳过。
 # 做的事：
 #   1. 每个 tag：读 GitHub 上那个 release（标题、说明、附件）。GitCode 上还没有这个标签就跳过它——镜像（项目设置 › 仓库镜像，
-#      只同步分支、标签、提交，不带 release）还没同步过来，等一会或去点同步后重跑；不在 GitCode 上自己建标签（两边会不一样）。
+#      只同步分支、标签、提交，不带 release；隔几个小时才自己拉一次、没有触发同步的接口）还没同步过来：先去点「同步」再重跑；不在 GitCode 上自己建标签（两边会不一样）。
 #      建 / 改同名 release（标题、说明照搬；GitHub 上的 latest 那个标 latest，*-update 标 pre），附件用 gh 拉下来原样传上去，
 #      文件名照 GitHub 上的（空格已经是「.」），所以两边的下载地址只差 https://github.com/YyAdnBug/ ↔ https://gitcode.com/yyandbug/
 #      （Updater / Windows 的 UpdateManifest 靠这一点换站）。传完匿名下载核一遍大小。
@@ -141,7 +141,7 @@ publish_tag() {
   local tag=$1 info status existing name size line
   info=$(gh release view "$tag" -R "$GH_REPO" --json name,body,assets) || { fail "GitHub 上没有 release $tag" && return; }
   grep -qxF "$tag" <<<"$GC_TAGS" || {
-    fail "GitCode 上还没有标签 $tag：镜像还没同步过来，等一会或到 项目设置 › 仓库镜像 点同步后重跑"
+    fail "GitCode 上还没有标签 $tag：镜像还没同步过来，到 GitCode 项目设置 › 仓库镜像 点「同步」后重跑"
     return
   }
   status=""
@@ -184,7 +184,7 @@ refresh_channel() {
       { fail "$file 指的 ${url##*/} 在 GitCode 上还下不到：先搬那一版（publish-gitcode.sh <那一版的 tag>）" && return; }
   done < <(jq -r '.. | objects | .url? // empty' "$TMP/$file")
   grep -qxF "$tag" <<<"$GC_TAGS" || {
-    fail "GitCode 上还没有标签 $tag：先在 GitHub 推这个标签（git tag $tag && git push origin $tag），等镜像同步后重跑"
+    fail "GitCode 上还没有标签 $tag：先在 GitHub 推这个标签（git tag $tag && git push origin $tag），到 GitCode 项目设置 › 仓库镜像 点「同步」后重跑"
     return
   }
   # Windows 的要带签名（W1：Windows 包没有代码签名，Windows 版只认签名对得上的 GitCode 清单）：钥匙串里有钥匙才签
