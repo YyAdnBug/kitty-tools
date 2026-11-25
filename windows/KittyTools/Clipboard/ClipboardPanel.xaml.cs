@@ -623,6 +623,27 @@ public sealed partial class ClipboardPanel : UserControl
             case "clip-new-snippet":
                 ShowNewSnippet();
                 break;
+            case "clip-images":
+                // PLAN-v26 C2：图片行（选中一条文字，两张图都是没选中的图片行）
+                SelectWhere(entry => entry.Kind == ClipKind.Text);
+                break;
+            case "clip-images-selected":
+                SelectWhere(entry => entry.Kind == ClipKind.Image);
+                break;
+            case "clip-keyword":
+                // PLAN-v26 C4：关键词对话框（撞了别的片段的前缀，橙字）
+                SelectWhere(entry => entry.Snippet && entry.Keyword == ProbeKeyword);
+                if (SelectedEntry is { Snippet: true } keyed)
+                {
+                    ShowKeyword(keyed);
+                }
+
+                break;
+            case "clip-inputs":
+                // PLAN-v26 C1：{input:…} 填空
+                SelectWhere(entry => entry.Snippet && entry.Keyword == ProbeKeyword);
+                Paste(false);
+                break;
             case "clip-groups":
                 foreach (var group in new[] { "工作", "灵感" })
                 {
@@ -645,6 +666,9 @@ public sealed partial class ClipboardPanel : UserControl
                 break;
         }
     }
+
+    /// <summary>截图自检塞的那条片段的关键词（UiSnapshotProbe.SeedSampleExtras）。</summary>
+    internal const string ProbeKeyword = ";meet";
 
     private void SelectWhere(Func<ClipEntry, bool> match)
     {

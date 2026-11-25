@@ -122,6 +122,12 @@ internal static class UiSnapshotProbe
                     await MeasureClipboardAsync(root);
                 }
 
+                // PLAN-v26 第 4 批：两张图（图片行）、一条带关键词和填空的片段
+                if (!dark)
+                {
+                    await SeedSampleExtrasAsync();
+                }
+
                 // PLAN-v9-clipboard 6b：命中高亮、片段范围的「＋ 新建片段」行、收藏标签、滚动后吸顶的分组标题。
                 foreach (var state in new[]
                          {
@@ -129,6 +135,7 @@ internal static class UiSnapshotProbe
                              "clip-lens-text", "clip-lens-code", "clip-lens-json", "clip-lens-color", "clip-lens-link",
                              "clip-actions", "clip-actions-multi", "clip-filter", "clip-chips",
                              "clip-note", "clip-edit", "clip-new-snippet", "clip-groups",
+                             "clip-images", "clip-images-selected", "clip-keyword", "clip-inputs",
                          })
                 {
                     await SafeRenderAsync(root, () => new ClipboardPanel(), state, dark, directory);
@@ -434,6 +441,59 @@ internal static class UiSnapshotProbe
         Log.Info($"clip.scroll median={result.Median:F2}ms p95={result.P95:F2}ms n={result.Count} items={store.Count}");
         panel.OnHidden();
         root.Children.Remove(panel);
+    }
+
+    /// <summary>
+    /// PLAN-v26 第 4 批的截图要的：一张横图、一张手机截图那么窄长的图（图片行），一条带关键词和填空的片段、一条撞前缀的。
+    /// 只在自检档、只塞一次（已经有图就不塞）。
+    /// </summary>
+    private static async Task SeedSampleExtrasAsync()
+    {
+        if (!Paths.IsTestProfile || ClipboardService.Instance?.Store is not { } store)
+        {
+            return;
+        }
+
+        if (!store.Items.Any(item => item.Kind == ClipKind.Image))
+        {
+            foreach (var (width, height) in new[] { (1600, 800), (585, 1266) })
+            {
+                await store.RecordImageAsync(await SamplePngAsync(width, height), width, height, null, "截图");
+            }
+        }
+
+        if (!store.Items.Any(item => item.Keyword == ClipboardPanel.ProbeKeyword))
+        {
+            store.AddSnippet("你好 {input:称呼}，{date+1d:M月d日} 下午三点在 {input:地点} 见。{cursor}", "约见", ClipboardPanel.ProbeKeyword);
+            store.AddSnippet("Kitty Tools\n上海市浦东新区", "地址", ";meetup");
+        }
+    }
+
+    /// <summary>一张渐变 + 横条的 PNG（只用来看图片行怎么裁）。</summary>
+    private static async Task<byte[]> SamplePngAsync(int width, int height)
+    {
+        var pixels = new byte[width * height * 4];
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                var index = (y * width + x) * 4;
+                var band = y * 12 / height % 2 == 0;
+                pixels[index] = (byte)(band ? 230 : 120 + 100 * x / width);
+                pixels[index + 1] = (byte)(80 + 150 * y / height);
+                pixels[index + 2] = (byte)(band ? 90 : 255 - 120 * x / width);
+                pixels[index + 3] = 255;
+            }
+        }
+
+        using var stream = new InMemoryRandomAccessStream();
+        var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, stream);
+        encoder.SetPixelData(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied, (uint)width, (uint)height, 96, 96, pixels);
+        await encoder.FlushAsync();
+        var bytes = new byte[stream.Size];
+        stream.Seek(0);
+        await stream.ReadAsync(bytes.AsBuffer(), (uint)bytes.Length, InputStreamOptions.None);
+        return bytes;
     }
 
     /// <summary>
