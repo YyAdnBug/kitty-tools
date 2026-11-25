@@ -2522,13 +2522,24 @@ internal sealed partial class SettingsWindow : Window
         _content.Children.Add(SettingsUi.Section("应用"));
         AddSubpageRow("应用", AppsSummary(settings), () => OpenLauncherSubpage("apps"));
 
-        // 文件搜索
+        // 文件搜索（PLAN-v25：索引的状态写在第一行的说明里；装了 Everything 并且它在运行时用它）
         _content.Children.Add(SettingsUi.Section("文件搜索"));
-        _content.Children.Add(SettingsUi.Card(
-            "建了索引的位置", "设置 › 隐私和安全性 › 搜索 Windows", null,
-            () => LauncherOpeners.Start("ms-settings:cortana-windowssearch")));
+        var indexCard = SettingsUi.Card(
+            "建了索引的位置", "正在读取 Windows 搜索的状态…", null,
+            () => LauncherOpeners.Start("ms-settings:cortana-windowssearch"));
+        _content.Children.Add(indexCard);
+        var everythingCard = AddToggle("装了 Everything 并且它在运行时用它搜", "正在查找 Everything…",
+            settings.LauncherUseEverything,
+            isOn =>
+            {
+                settings.LauncherUseEverything = isOn;
+                SettingsService.Save();
+            });
         _content.Children.Add(SettingsUi.Footnote(
-            "「open 文件名」搜文件并打开，「find 文件名」在资源管理器中显示；搜的是 Windows 搜索建了索引的位置，不想被搜到的文件夹从索引里去掉。"));
+            "「open 文件名」搜文件并打开，「find 文件名」在资源管理器中显示，空格开头同 open；没有匹配的应用时，最后也有一行「在文件里找」。" +
+            "搜的是 Windows 搜索建了索引的所有位置（不含系统文件夹和 node_modules 这类），点上面那一行可以选「增强」或加位置；" +
+            "搜索服务没开时只找桌面、文档这几个文件夹。装了 Everything 并且它在运行时改用它搜：所有本地硬盘、更快。文件名要用汉字搜，拼音搜不到。"));
+        _ = FillFileSearchStatusAsync(indexCard, everythingCard);
 
         // 浏览器书签与历史
         _content.Children.Add(SettingsUi.Section("浏览器书签与历史"));
@@ -4987,6 +4998,16 @@ internal sealed partial class SettingsWindow : Window
         var card = SettingsUi.Card(title, subtitle, SettingsUi.Toggle(value, changed, title));
         _content.Children.Add(card);
         return card;
+    }
+
+    /// <summary>设置 › 启动器「文件搜索」两行的说明（PLAN-v25 第 2、3 批）：索引的状态、找没找到正在运行的 Everything。线程池里读，回来再填。</summary>
+    private static async Task FillFileSearchStatusAsync(Border indexCard, Border everythingCard)
+    {
+        SearchIndexStatus.Forget();
+        var (status, version) = await Task.Run(() => (SearchIndexStatus.Get(), EverythingSearch.RunningVersion()));
+        var (text, problem) = FileSearchHints.Status(status);
+        SettingsUi.SetDescription(indexCard, text, problem);
+        SettingsUi.SetDescription(everythingCard, version is null ? "没找到正在运行的 Everything：用 Windows 搜索" : $"找到了 Everything {version}");
     }
 
     /// <summary>剪贴板、启动器的「面板位置」（mac 的值 top / mouse / last，认不出的按屏幕上方）：下次打开面板时生效。</summary>

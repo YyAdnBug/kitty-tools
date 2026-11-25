@@ -1,20 +1,24 @@
 // 文件搜索的 Windows Search SQL 生成（纯函数，配单测）：
-// 用 SYSTEMINDEX 里的 System.FileName 做过匹配、System.ItemUrl 限桌面 / 文档等根目录，
-// 结果按修改时间倒序。PLAN-v6 第 4 批把 WinRT 的 StorageFile 查询换成 OLE DB，这是它的 SQL 部分。
+// 用 SYSTEMINDEX 里的 System.FileName 做子串匹配，范围是整个索引里的文件（SCOPE='file:'，不含邮件这类别的协议），
+// 结果按修改时间倒序；去掉系统文件夹、node_modules 这类在调用方按路径做（FileSearchFilter.IsExcluded）。
+// PLAN-v6 第 4 批把 WinRT 的 StorageFile 查询换成 OLE DB，这是它的 SQL 部分；PLAN-v25 F2 起不再只查七个根目录。
 // 注意：
-// - 单引号要写成两个（SQL 字符串），其余字符原样（% 和 _ 会被当成 LIKE 通配符，搜索里无所谓）；
+// - 单引号要写成两个（SQL 字符串）；% _ [ 用字符类转义（REVIEW R30）；
 // - System.ItemUrl 是 file:C:/Users/... 这种正斜杠形式，不是 System.ItemPathDisplay
 //   （后者在本机是「C:\用户\YY\…」这种本地化显示路径，文件系统里不存在）。
 namespace KittyTools.Core;
 
 public static class FileSearchSql
 {
-    /// <summary>一次最多取多少行；调用方再排序截断。</summary>
-    public const int DefaultLimit = 100;
+    /// <summary>
+    /// 一次最多取多少行（PLAN-v25 F4，原来 100）：按修改时间取最新的这么多条，调用方再按名字打分、截成 20 条。
+    /// ponytail: 词很常见时（上万个文件名都含它）名字最像的老文件仍可能排不进来；慢了先降到 300，再慢换 CONTAINS(…"词*") OR LIKE。
+    /// </summary>
+    public const int DefaultLimit = 500;
 
     public const int MaxTokens = 4;
 
-    public static string Build(IReadOnlyList<string> tokens, IReadOnlyList<string> roots, int limit = DefaultLimit)
+    public static string Build(IReadOnlyList<string> tokens, int limit = DefaultLimit)
     {
         var words = tokens
             .Where(token => !string.IsNullOrWhiteSpace(token))
@@ -26,16 +30,10 @@ public static class FileSearchSql
             return string.Empty;
         }
 
-        var conditions = new List<string>();
+        var conditions = new List<string> { "SCOPE='file:'" };
         foreach (var word in words)
         {
             conditions.Add($"System.FileName LIKE '%{EscapeLike(word)}%'");
-        }
-
-        var rootFilter = RootFilter(roots);
-        if (rootFilter.Length > 0)
-        {
-            conditions.Add(rootFilter);
         }
 
         var top = Math.Clamp(limit, 1, 1000);
@@ -43,29 +41,6 @@ public static class FileSearchSql
                " System.ItemUrl, System.FileName FROM SYSTEMINDEX WHERE " +
                string.Join(" AND ", conditions) +
                " ORDER BY System.DateModified DESC";
-    }
-
-    /// <summary>把资源管理器路径转成 SYSTEMINDEX 的 System.ItemUrl 前缀。空列表返回空串。</summary>
-    public static string RootFilter(IReadOnlyList<string> roots)
-    {
-        var parts = new List<string>();
-        foreach (var root in roots)
-        {
-            if (string.IsNullOrWhiteSpace(root))
-            {
-                continue;
-            }
-
-            var normalized = root.Trim().TrimEnd('\\', '/').Replace('\\', '/');
-            if (normalized.Length == 0)
-            {
-                continue;
-            }
-
-            parts.Add($"SCOPE='{Escape("file:" + normalized)}'");
-        }
-
-        return parts.Count == 0 ? string.Empty : "(" + string.Join(" OR ", parts) + ")";
     }
 
     /// <summary>System.ItemUrl（file:C:/a/b.txt）→ 本地路径（C:\a\b.txt）。</summary>

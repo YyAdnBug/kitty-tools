@@ -391,6 +391,12 @@ internal sealed class Settings
     /// <summary>把运行过的程序也列出来（§6 A3 / P1，读资源管理器的 UserAssist）：默认开，只在本机、不导出。</summary>
     public bool LauncherRecentPrograms { get; set; } = true;
 
+    /// <summary>
+    /// 装了 Everything 并且它在运行时，启动器的文件搜索用它（PLAN-v25 F11）：默认开，检测不到就照旧用 Windows 搜索的索引。
+    /// 跟着设置导出导入（launcherUseEverything，Windows 自己的键，mac 不认）。
+    /// </summary>
+    public bool LauncherUseEverything { get; set; } = true;
+
     /// <summary>书签开着的浏览器 id；null = 从没设过（Edge、Chrome，PLAN-v9 V1）。</summary>
     public List<string>? LauncherBookmarkBrowsers { get; set; }
 

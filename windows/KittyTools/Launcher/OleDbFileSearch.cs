@@ -1,7 +1,7 @@
 // 文件搜索走 Windows Search 的 OLE DB 提供程序（PLAN-v6 第 4 批，取代 880 ms 的 WinRT StorageFile 查询）。
 //
 // 直连 Search.CollatorDSO + SYSTEMINDEX，只查两件事：System.ItemUrl（真实路径）和文件名，
-// 由 FileSearchSql 生成 SQL，结果交给启动器再打分。
+// 由 FileSearchSql 生成 SQL（PLAN-v25 起是整个索引、最多 500 条），结果交给启动器过滤、打分。
 //
 // 两个坑（2026-10-26 用独立探针试出来的）：
 // 1. **x64 上 DBBINDING 的偏移 / 长度字段是 8 字节**（DBORDINAL / DBBYTEOFFSET / DBLENGTH 都是 ULONGLONG），
@@ -62,9 +62,9 @@ internal static unsafe class OleDbFileSearch
     /// 查索引。成功返回路径（可能为空）；索引服务不可用 / SQL 出错返回 null，调用方退回 WinRT 查询。
     /// 这个方法是同步的，调用方应放到线程池上。
     /// </summary>
-    public static List<string>? Search(IReadOnlyList<string> tokens, IReadOnlyList<string> roots)
+    public static List<string>? Search(IReadOnlyList<string> tokens)
     {
-        var sql = FileSearchSql.Build(tokens, roots);
+        var sql = FileSearchSql.Build(tokens);
         if (sql.Length == 0)
         {
             return null;
@@ -361,7 +361,8 @@ internal static unsafe class OleDbFileSearch
         => ((delegate* unmanaged[Stdcall]<void*, void*, void*, void*, int>)(*(void***)self)[4])(
             self, row, accessor, data);
 
+    /// <summary>rows：GetNextRows 给的 HROW 数组本身（以前传的是 &amp;rows，放的是栈上读出来的错句柄，REVIEW R114 第 7 条）。</summary>
     private static void ReleaseRows(void* self, ulong count, void* rows)
-        => ((delegate* unmanaged[Stdcall]<void*, ulong, void**, void*, void*, void*, int>)(*(void***)self)[6])(
-            self, count, &rows, null, null, null);
+        => ((delegate* unmanaged[Stdcall]<void*, ulong, void*, void*, void*, void*, int>)(*(void***)self)[6])(
+            self, count, rows, null, null, null);
 }
