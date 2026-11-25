@@ -211,6 +211,12 @@ TEST_RUNNER_KITTY_LIVE_SNIPPET_TAP=1 xcodebuild -project macos/KittyTools.xcodep
 TEST_RUNNER_KITTY_ISLAND_FRAMES=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/IslandFrameProbeTests/measure()'
 
+# 边框提醒和刘海上那张卡的屏上探针（按需，约 50 秒，issue #51；**跑之前先问用户**、手离开键鼠）：真的岛 + 真的边框，
+# 岛上几种状态 × 进出全屏空间（一扇测试窗口全屏六次）的动画中途到点 / 收起，报岛窗口在不在屏上、卡画没画出来（要「屏幕录制」授权）、
+# 边框收没收干净；grep「reminder-glow」。改了 Island 的 pin / 窗口、ReminderGlow 后跑
+TEST_RUNNER_KITTY_LIVE_REMINDER_GLOW=/tmp/kitty-glow xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:'KittyToolsTests/ReminderGlowLiveTests/cardShowsWithGlow()'
+
 # 访达右键新建文件后进入改名的是不是新文件的实机自检（按需，约 20 秒，要测试宿主有「辅助功能」授权；issue #34；**跑之前先问用户**、
 # 跑的时候手离开键鼠；开始前就开着的访达窗口收尾时不关）：访达到前台，在临时文件夹里
 # 分栏（两种位置）/ 列表 / 图标 / 画廊各新建一个，看进入改名的是新文件、别的没被改名，Esc 退出、关掉新开的窗口。改了
