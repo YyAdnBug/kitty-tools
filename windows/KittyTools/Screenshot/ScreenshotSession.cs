@@ -41,6 +41,20 @@ internal sealed class ScreenshotSession
     /// <summary>结束当前会话（含内存探针这种没有遮罩交互的调用方）。</summary>
     public static void FinishCurrent() => _current?.Finish();
 
+    /// <summary>
+    /// 框选期间插拔显示器、改分辨率（WM_DISPLAYCHANGE）：冻结帧和遮罩都对不上现在的屏幕了（拔掉那块屏的遮罩会被系统挪到剩下的屏上盖着），
+    /// 直接退出这次截图。长截图已经收了遮罩，不动它。
+    /// </summary>
+    public static void DisplaysChanged()
+    {
+        if (_current is { _overlays.Count: > 0 } session)
+        {
+            Log.Info("screenshot.displays-changed");
+            session.Finish();
+            NoticeHost.Show("截图已取消", "显示器变了，再截一次", NoticeTone.Normal);
+        }
+    }
+
     public static void AuditAccessibility()
     {
         if (_current is not null)
@@ -302,9 +316,29 @@ internal sealed class ScreenshotSession
 
         SetSelection(target.Screen, new RectD(
             global.Left - target.ScreenBounds.Left, global.Top - target.ScreenBounds.Top, global.Width, global.Height));
-        target.TakeKeyboard();
+        GiveKeyboard(target);
         return true;
     }
+
+    /// <summary>
+    /// 这块屏的遮罩拿键盘（提示、放大镜、按键跟过去），别的屏放下（mac mouseMoved / selectLastRegion 里 makeKey）。
+    /// 以前只有 D 键会换、而且旧的那块不放下；鼠标挪到别的屏，放大镜和提示还留在按快捷键时那块屏的边上（多屏反馈 2026-11-22）。
+    /// </summary>
+    public void GiveKeyboard(SelectionOverlayWindow target)
+    {
+        foreach (var overlay in _overlays)
+        {
+            if (overlay != target)
+            {
+                overlay.DropKeyboard();
+            }
+        }
+
+        target.TakeKeyboard();
+    }
+
+    /// <summary>哪块屏正按着鼠标拖（拖框、拖边、画标注、还没拖开的按下）：这时键盘不换屏。</summary>
+    public bool IsDragging => _overlays.Any(overlay => overlay.IsDragging);
 
     /// <summary>
     /// 截图调整时按 R / 点工具栏「录屏」（mac switchToRecording）：会话切成录屏，每块屏的工具栏原地换成录制条，选区不变。
