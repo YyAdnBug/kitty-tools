@@ -180,6 +180,13 @@ public partial class App : Application
                 return;
             }
 
+            if (PinTextProbe.DirectoryFrom(commandLine) is { } pinTextProbe)
+            {
+                // PLAN-v26 S8：钉一张文字卡、认字、全选和选一行，抓下钉图（只在测试档），跑完就退。
+                _ = PinTextProbe.RunAsync(pinTextProbe);
+                return;
+            }
+
             if (WindowShadowProbe.DirectoryFrom(commandLine) is { } shadowProbe)
             {
                 // PLAN-v26 S3：单独抓设置窗、带阴影出图，量四角和阴影（只在测试档），跑完就退。

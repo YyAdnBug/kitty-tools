@@ -37,14 +37,56 @@ internal static class ElementFinder
     }
 
     /// <summary>新的一次框选：之前问到的全扔掉（窗口里的东西会变）。</summary>
-    public static void Reset() => Asked.Clear();
+    public static void Reset()
+    {
+        Asked.Clear();
+        Woken.Clear();
+    }
+
+    /// <summary>
+    /// 也认网页里的元素（PLAN-v26 S6，同 mac 0.10.0 8eaf90b0：设置 › 截图「也认网页里的元素」，默认关）：浏览器内核的窗口（Chromium、
+    /// Edge、WebView2、Electron）要有 UIA 客户端来问才建网页里的那棵树，第一次读只有很粗的几块。开着时这种窗口读回来不到 40 个框就在
+    /// 0.4 s、1.2 s 后各忘掉一次、让下次悬停重读；关着不重读（不让它为我们一直开着辅助功能）。窗口句柄 → 重读过几次。
+    /// </summary>
+    private static readonly ConcurrentDictionary<IntPtr, int> Woken = new();
+
+    private static readonly string[] BrowserClasses = { "Chrome_WidgetWin_1", "Chrome_WidgetWin_0", "MozillaWindowClass" };
+
+    private static unsafe bool IsBrowser(IntPtr hwnd)
+    {
+        var buffer = stackalloc char[64];
+        var length = PInvoke.GetClassName(new HWND((void*)hwnd), buffer, 64);
+        var name = new string(buffer, 0, Math.Max(0, length));
+        return BrowserClasses.Contains(name);
+    }
+
+    private static void MaybeWake(IntPtr hwnd, int found)
+    {
+        if (!SettingsService.Current.ScreenshotFindsWebElements || found >= 40 || !IsBrowser(hwnd))
+        {
+            return;
+        }
+
+        var round = Woken.AddOrUpdate(hwnd, 1, (_, count) => count + 1);
+        if (round > 2)
+        {
+            return;
+        }
+
+        _ = Task.Delay(round == 1 ? 400 : 800).ContinueWith(_ => Asked.TryRemove(hwnd, out var _), TaskScheduler.Default);
+    }
 
     /// <summary>这扇窗口读好了的框；还在读、没问过的给 null（第一次问会在后台开始读，读完 ready 回调一次，在线程池上）。</summary>
     public static List<(int Left, int Top, int Right, int Bottom)>? Elements(IntPtr hwnd, Action ready)
     {
         var task = Asked.GetOrAdd(hwnd, handle =>
         {
-            var started = Task.Run(() => Read(handle));
+            var started = Task.Run(() =>
+            {
+                var read = Read(handle);
+                MaybeWake(handle, read?.Count ?? 0);
+                return read;
+            });
             started.ContinueWith(_ => ready(), TaskScheduler.Default);
             return started;
         });

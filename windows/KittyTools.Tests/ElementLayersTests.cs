@@ -40,6 +40,24 @@ public sealed class ElementLayersTests
         CollectionAssert.AreEqual(new[] { Window }, ElementLayers.At(500, 500, Window, Array.Empty<(int, int, int, int)>()), "还没读到元素：只有窗口");
     }
 
+    /// <summary>PLAN-v26 S6：宽或高不到 16、长边不到 20（DIP）的不算一层；按缩放换成像素。</summary>
+    [TestMethod]
+    public void MinimumFollowsMac()
+    {
+        var elements = new[]
+        {
+            (200, 200, 322, 218), // 文件名框 122×18：算
+            (200, 200, 216, 216), // 16×16 的图标：不算
+            (200, 200, 236, 216), // 开关 36×16：算
+        };
+        var layers = ElementLayers.At(205, 205, Window, elements);
+        CollectionAssert.AreEqual(new[] { (200, 200, 236, 216), (200, 200, 322, 218), Window }, layers);
+        // 200% 缩放：36×16 DIP 的开关是 72×32 像素才算，36×16 像素的不算
+        CollectionAssert.AreEqual(new[] { Window }, ElementLayers.At(205, 205, Window, new[] { (200, 200, 236, 232) }, 2), "36×32 像素：短边够 32、长边不到 40");
+        CollectionAssert.AreEqual(new[] { (200, 200, 272, 232), Window }, ElementLayers.At(205, 205, Window, new[] { (200, 200, 272, 232) }, 2), "72×32 像素算");
+        Assert.AreEqual(1, ElementLayers.At(205, 205, Window, elements, 2).Count, "200% 下这几个都太小，只剩窗口");
+    }
+
     [TestMethod]
     public void StepStaysInside()
     {

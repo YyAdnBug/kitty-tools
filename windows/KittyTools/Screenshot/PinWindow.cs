@@ -1,5 +1,7 @@
 // 钉图：截完的图钉在屏幕上（无边框、置顶、可拖、滚轮 10%–500%、双击 / Esc 关闭）。
 // Ctrl+C 拷贝、Ctrl+S 存储、Ctrl+Shift+S 另存为、O 识字并拷贝、Ctrl+0 原始大小、Ctrl+W 关闭；右键菜单同这些（同 mac PinPanel，REVIEW R97）。
+// 钉图上的字能直接拖选（PLAN-v26 S8，设置 › 截图「钉图上的字可以直接选」）：指针第一次进来时在后台识字，字上按下拖选、Ctrl+C 拷选中的、
+// Ctrl+A 全选、右键翻译 / 搜索 / 查词；空白处照旧拖着挪，按住 Alt 在哪都能挪。
 using KitTools = KittyTools;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
@@ -24,8 +26,17 @@ internal sealed partial class PinWindow : Window
 {
     private readonly byte[] _png;
     private readonly PixelBounds _origin;
-    private readonly Grid _root;
+    private readonly CursorHost _root;
     private readonly Image _image;
+    /// <summary>选中的字的高亮（一行一块，PinTextSelection.Boxes）。</summary>
+    private readonly Canvas _marks = new() { IsHitTestVisible = false };
+    /// <summary>识字给的词（原图像素）；null = 还没认（或认不了）。</summary>
+    private List<(int Line, OcrWord Word)>? _words;
+    private bool _reading;
+    private int? _anchor;
+    private int? _focus;
+    private bool _selecting;
+    private bool _onText;
     private readonly Border _hover;
     private Microsoft.UI.Dispatching.DispatcherQueueTimer _hoverTimer = null!;
     /// <summary>图的不透明度 0.1–1（PLAN-v9 S10：滑块 10–100%，同 mac PinPanel；以前四档循环）。</summary>
@@ -43,7 +54,7 @@ internal sealed partial class PinWindow : Window
     {
         _png = png;
         _origin = origin;
-        _root = new Grid
+        _root = new CursorHost
         {
             Background = new SolidColorBrush(Colors.Black),
             IsTabStop = true,
@@ -51,6 +62,8 @@ internal sealed partial class PinWindow : Window
         };
         _image = new Image { IsHitTestVisible = false, Stretch = Stretch.Fill };
         _root.Children.Add(_image);
+        _root.Children.Add(_marks);
+        _root.SizeChanged += (_, _) => DrawSelection();
         _hover = BuildHoverBar();
         _root.Children.Add(_hover);
         Content = _root;
@@ -71,6 +84,7 @@ internal sealed partial class PinWindow : Window
         _root.PointerMoved += OnMoved;
         _root.PointerReleased += OnReleased;
         _root.PointerWheelChanged += OnWheel;
+        _root.PointerEntered += (_, _) => _ = ReadWordsAsync();
         _root.DoubleTapped += (_, _) => Close();
         _root.KeyDown += OnKeyDown;
         _root.RightTapped += OnRightTapped;
@@ -200,11 +214,129 @@ internal sealed partial class PinWindow : Window
         return bar;
     }
 
+    /// <summary>
+    /// 在后台认一次钉图里的字、留下词框（S8）。设置关着、没装识字组件、图比识字引擎的上限还大（框的坐标要换算，ponytail：
+    /// 长截图钉图常常超过，那时只能整张挪；要支持就让 OcrService 把缩放比例一起返回）都不认。认码不在这里：选字不拷码。
+    /// </summary>
+    private async Task ReadWordsAsync()
+    {
+        if (_words is not null || _reading || !SettingsService.Current.PinSelectsText || !OcrService.HasEngine)
+        {
+            return;
+        }
+
+        _reading = true;
+        try
+        {
+            var decoded = await ImageCodec.PngToBgraAsync(_png);
+            if (decoded is not { } image || Math.Max(image.Width, image.Height) > (int)Windows.Media.Ocr.OcrEngine.MaxImageDimension)
+            {
+                return;
+            }
+
+            var (_, lines) = await OcrService.RecognizeAsync(image.Bgra, image.Width, image.Height, joined: false);
+            _imageWidth = image.Width;
+            _imageHeight = image.Height;
+            _words = PinTextSelection.Flatten(lines);
+            Log.Info($"pin.words count={_words.Count}");
+        }
+        catch (Exception ex)
+        {
+            Log.Error("pin.words-failed", ex);
+        }
+        finally
+        {
+            _reading = false;
+        }
+    }
+
+    private int _imageWidth = 1;
+    private int _imageHeight = 1;
+
+    /// <summary>指针在钉图上的位置换成原图的像素。</summary>
+    private (double X, double Y) ImagePoint(PointerRoutedEventArgs e)
+    {
+        var point = e.GetCurrentPoint(_root).Position;
+        var width = Math.Max(1, _root.ActualWidth);
+        var height = Math.Max(1, _root.ActualHeight);
+        return (point.X * _imageWidth / width, point.Y * _imageHeight / height);
+    }
+
+    /// <summary>词框外扩多少原图像素也算点在字上（屏幕上约 3 DIP）。</summary>
+    private double Slack => 3 * _imageWidth / Math.Max(1, _root.ActualWidth);
+
+    private bool HasSelection => _words is { Count: > 0 } && _anchor is not null && _focus is not null;
+
+    private string SelectedText => HasSelection ? PinTextSelection.Text(_words!, _anchor!.Value, _focus!.Value) : string.Empty;
+
+    private void ClearSelection()
+    {
+        _anchor = _focus = null;
+        DrawSelection();
+    }
+
+    private void SelectAll()
+    {
+        if (_words is { Count: > 0 } words)
+        {
+            _anchor = 0;
+            _focus = words.Count - 1;
+            DrawSelection();
+        }
+    }
+
+    private void DrawSelection()
+    {
+        _marks.Children.Clear();
+        if (!HasSelection)
+        {
+            return;
+        }
+
+        var scaleX = _root.ActualWidth / _imageWidth;
+        var scaleY = _root.ActualHeight / _imageHeight;
+        var brush = new SolidColorBrush(Theme.AccentColor) { Opacity = 0.35 };
+        foreach (var box in PinTextSelection.Boxes(_words!, _anchor!.Value, _focus!.Value))
+        {
+            var mark = new Microsoft.UI.Xaml.Shapes.Rectangle
+            {
+                Width = Math.Max(1, (box.Width + 2) * scaleX),
+                Height = Math.Max(1, (box.Height + 2) * scaleY),
+                Fill = brush,
+                RadiusX = 2,
+                RadiusY = 2,
+            };
+            Canvas.SetLeft(mark, (box.X - 1) * scaleX);
+            Canvas.SetTop(mark, (box.Y - 1) * scaleY);
+            _marks.Children.Add(mark);
+        }
+    }
+
+    private static bool AltDown() => Microsoft.UI.Input.InputKeyboardSource
+        .GetKeyStateForCurrentThread(VirtualKey.Menu).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+
     private void OnPressed(object sender, PointerRoutedEventArgs e)
     {
         if (e.GetCurrentPoint(_root).Properties.IsRightButtonPressed)
         {
             return;
+        }
+
+        // 字上按下：开始选（按住 Alt 照旧挪）；空白处按下：清掉选区、挪钉图
+        var (x, y) = ImagePoint(e);
+        if (!AltDown() && _words is { } words && PinTextSelection.Hit(words, x, y, Slack) is { } hit)
+        {
+            _selecting = true;
+            _anchor = _focus = hit;
+            _root.CapturePointer(e.Pointer);
+            DrawSelection();
+            e.Handled = true;
+            return;
+        }
+
+        if (HasSelection)
+        {
+            ClearSelection();
         }
 
         _dragging = true;
@@ -220,8 +352,31 @@ internal sealed partial class PinWindow : Window
 
     private void OnMoved(object sender, PointerRoutedEventArgs e)
     {
+        if (_selecting && _words is { } selecting)
+        {
+            var (x, y) = ImagePoint(e);
+            if (PinTextSelection.Nearest(selecting, x, y) is { } focus && focus != _focus)
+            {
+                _focus = focus;
+                DrawSelection();
+            }
+
+            e.Handled = true;
+            return;
+        }
+
         if (!_dragging)
         {
+            // 停在字上是 I 形光标、按住 Alt 或在空白处是箭头（按下就挪）
+            var (x, y) = ImagePoint(e);
+            var onText = !AltDown() && _words is { } words && PinTextSelection.Hit(words, x, y, Slack) is not null;
+            if (onText != _onText)
+            {
+                _onText = onText;
+                _root.SetCursor(Microsoft.UI.Input.InputSystemCursor.Create(
+                    onText ? Microsoft.UI.Input.InputSystemCursorShape.IBeam : Microsoft.UI.Input.InputSystemCursorShape.Arrow));
+            }
+
             return;
         }
 
@@ -234,6 +389,14 @@ internal sealed partial class PinWindow : Window
 
     private void OnReleased(object sender, PointerRoutedEventArgs e)
     {
+        if (_selecting)
+        {
+            _selecting = false;
+            _root.ReleasePointerCaptures();
+            e.Handled = true;
+            return;
+        }
+
         if (_dragging)
         {
             _dragging = false;
@@ -271,11 +434,32 @@ internal sealed partial class PinWindow : Window
         {
             case VirtualKey.Escape:
                 e.Handled = true;
-                Close();
+                if (HasSelection)
+                {
+                    ClearSelection();
+                }
+                else
+                {
+                    Close();
+                }
+
                 break;
             case VirtualKey.C when control:
                 e.Handled = true;
-                _ = CopyAsync();
+                if (HasSelection)
+                {
+                    CopySelected();
+                }
+                else
+                {
+                    _ = CopyAsync();
+                }
+
+                break;
+            case VirtualKey.A when control && SettingsService.Current.PinSelectsText:
+                e.Handled = true;
+                await ReadWordsAsync();
+                SelectAll();
                 break;
             case VirtualKey.S when control:
                 e.Handled = true;
@@ -310,7 +494,31 @@ internal sealed partial class PinWindow : Window
     {
         // 同 mac PinPanel.commands 的叫法和先后（REVIEW R97）：拷贝 / 识字并拷贝 / 翻译 / 存储到「X」/ 另存为… ｜ 透明度 / 原始大小 ｜ 关闭
         var menu = new MenuFlyout();
-        Add(menu, "拷贝", () => _ = CopyAsync(), "Ctrl+C");
+        if (HasSelection && SelectedText is { Length: > 0 } selected)
+        {
+            // 选着字：先是对这段字的几样（S8，同 mac 19180341）
+            Add(menu, "拷贝选中的文字", CopySelected, "Ctrl+C");
+            if (Features.IsOn(Feature.Translate))
+            {
+                Add(menu, "翻译选中的文字", () => TranslateHost.ShowRecognized(selected));
+                if (WordLookup.IsWord(selected))
+                {
+                    Add(menu, "查词", () => TranslateHost.ShowText(selected));
+                }
+            }
+
+            if (Features.IsOn(Feature.Launcher) &&
+                WebSearch.Primary(SettingsService.Current.LauncherSearchEngines ?? WebSearch.Defaults()) is { } engine)
+            {
+                var title = selected.Length > 12 ? selected[..12] + "…" : selected;
+                Add(menu, $"用{WebSearch.Title(engine)}搜索「{title.Replace('\n', ' ')}」",
+                    () => LauncherOpeners.Start(WebSearch.OpenUrl(WebSearch.Url(engine, selected))));
+            }
+
+            menu.Items.Add(new MenuFlyoutSeparator());
+        }
+
+        Add(menu, "拷贝", () => _ = CopyAsync(), HasSelection ? null : "Ctrl+C");
         Add(menu, "识字并拷贝", () => _ = RecognizeAsync(), "O");
         if (Features.IsOn(Feature.Translate))
         {
@@ -357,6 +565,47 @@ internal sealed partial class PinWindow : Window
         var item = new MenuFlyoutItem { Text = text, KeyboardAcceleratorTextOverride = key ?? string.Empty };
         item.Click += (_, _) => action();
         menu.Items.Add(item);
+    }
+
+    /// <summary>自检用（PinTextProbe）：认过的词有几个。</summary>
+    public int ProbeWordCount => _words?.Count ?? -1;
+
+    /// <summary>自检用：认字后全选（line 为 null）或只选那一行，返回选中的字。</summary>
+    public async Task<string> ProbeSelectAsync(int? line)
+    {
+        await ReadWordsAsync();
+        if (_words is not { Count: > 0 } words)
+        {
+            return string.Empty;
+        }
+
+        if (line is { } only && words.FindIndex(word => word.Line == only) is var first and >= 0)
+        {
+            _anchor = first;
+            _focus = words.FindLastIndex(word => word.Line == only);
+            DrawSelection();
+        }
+        else
+        {
+            SelectAll();
+        }
+
+        return SelectedText;
+    }
+
+    /// <summary>拷贝选中的字（识出来的新文字，记进剪贴板历史）。</summary>
+    private void CopySelected()
+    {
+        var text = SelectedText;
+        if (text.Length == 0 || !ClipboardWriter.WriteText(text))
+        {
+            return;
+        }
+
+        ClipboardService.Instance?.MarkOwnWrite();
+        ClipboardService.Instance?.Store.RecordOwnText(text);
+        var preview = text.Replace('\n', ' ').Trim();
+        NoticeHost.Show("已复制选中的文字", preview.Length > 30 ? preview[..30] + "…" : preview, NoticeTone.Normal);
     }
 
     private async Task CopyAsync()
@@ -454,6 +703,9 @@ internal sealed partial class PinWindow : Window
 internal static class PinHost
 {
     private static readonly List<PinWindow> Windows = new();
+
+    /// <summary>最后钉上的那张（自检用）。</summary>
+    public static PinWindow? Last => Windows.Count > 0 ? Windows[^1] : null;
 
     /// <summary>屏幕上有几张钉图（托盘、启动器里「隐藏 / 关闭全部钉图」只在有钉图时列出来）。</summary>
     public static int Count => Windows.Count;

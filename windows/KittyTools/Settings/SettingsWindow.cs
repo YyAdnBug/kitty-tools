@@ -3300,6 +3300,12 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Current.ScreenshotFindsElements = value;
                 SettingsService.Save();
             });
+        AddToggle("也认网页里的元素", "浏览器、用网页做界面的程序要被问一次才交出网页里的元素；打开后第一次停到这种窗口上时多问一两次，那个程序会一直开着辅助功能的那一档到它退出",
+            SettingsService.Current.ScreenshotFindsWebElements, value =>
+            {
+                SettingsService.Current.ScreenshotFindsWebElements = value;
+                SettingsService.Save();
+            });
 
         // 截完图放哪（PLAN-v9 S7）：角落缩略图 / 都不要（mac 还有晾衣绳，Windows 不做）。
         _content.Children.Add(new Border { Height = 8 });
@@ -3312,6 +3318,12 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Save();
             });
         _content.Children.Add(SettingsUi.Footnote("角落的缩略图可以拖出、钉图、存储；选「都不要」后截完不出缩略图，仍然进截图历史。"));
+        AddToggle("钉图上的字可以直接选", "在字上拖选、Ctrl+C 拷贝、Ctrl+A 全选，右键翻译、搜索、查词；空白处照旧拖着挪，按住 Alt 在哪都能挪",
+            SettingsService.Current.PinSelectsText, value =>
+            {
+                SettingsService.Current.PinSelectsText = value;
+                SettingsService.Save();
+            });
 
         // 识字
         _content.Children.Add(new Border { Height = 8 });

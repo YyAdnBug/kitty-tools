@@ -150,6 +150,8 @@ internal static class SettingsSyncFields
         Text("ScrollCaptureSpeed", s => s.ScrollCaptureSpeed, (s, v) => s.ScrollCaptureSpeed = v ?? "normal");
         Flag("ScreenshotKeepsColors", s => s.ScreenshotKeepsColors, (s, v) => s.ScreenshotKeepsColors = v);
         Flag("ScreenshotShowsHint", s => s.ScreenshotShowsHint, (s, v) => s.ScreenshotShowsHint = v);
+        Flag("ScreenshotFindsWebElements", s => s.ScreenshotFindsWebElements, (s, v) => s.ScreenshotFindsWebElements = v);
+        Flag("PinSelectsText", s => s.PinSelectsText, (s, v) => s.PinSelectsText = v);
         Text("ScreenshotLoupe", s => s.ScreenshotLoupe, (s, v) => s.ScreenshotLoupe = v ?? "full");
         Flag("ScreenshotWindowShadow", s => s.ScreenshotWindowShadow, (s, v) => s.ScreenshotWindowShadow = v);
         Number("ScreenshotDelay", s => s.ScreenshotDelay, (s, v) => s.ScreenshotDelay = v);

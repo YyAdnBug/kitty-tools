@@ -190,6 +190,8 @@ public static class SettingsSyncMap
         Flag("screenshotKeepsColors", "ScreenshotKeepsColors");
         // PLAN-v26 S1–S3（mac 0.10.x）；截图圆角两边默认不一样（D5），不同步
         Flag("screenshotShowsHint", "ScreenshotShowsHint");
+        Flag("screenshotFindsWebElements", "ScreenshotFindsWebElements");
+        Flag("pinSelectsText", "PinSelectsText");
         Choice("screenshotLoupe", "ScreenshotLoupe", "full", "loupe", "off");
         Flag("screenshotWindowShadow", "ScreenshotWindowShadow");
         keys.Add(new(PrefPrefix + "screenshotDelay", "ScreenshotDelay", SettingType.Int, true, Same,

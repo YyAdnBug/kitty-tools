@@ -6,8 +6,13 @@ namespace KittyTools.Core;
 
 public static class ElementLayers
 {
-    /// <summary>元素宽高至少这么多像素（更小的是图标里的一个点、分隔线，框它没意义）。</summary>
-    public const int MinSide = 8;
+    /// <summary>
+    /// 一层的下限（DIP，PLAN-v26 S6，同 mac 0.10.0 239243d6 A1）：宽或高不到 16、或长边不到 20 的不算——文件名框 122×18、开关 36×16 算一层，
+    /// 16×16 的图标不单算。按屏幕缩放换成像素。
+    /// </summary>
+    public const double MinShortSide = 16;
+
+    public const double MinLongSide = 20;
 
     /// <summary>四条边都差不到这么多像素的两层当一层（嵌套的容器常常一样大）。</summary>
     public const int Merge = 4;
@@ -17,8 +22,11 @@ public static class ElementLayers
     /// 指针不在窗口里时只有窗口那一层。
     /// </summary>
     public static List<(int Left, int Top, int Right, int Bottom)> At(
-        int x, int y, (int Left, int Top, int Right, int Bottom) window, IEnumerable<(int Left, int Top, int Right, int Bottom)> elements)
+        int x, int y, (int Left, int Top, int Right, int Bottom) window, IEnumerable<(int Left, int Top, int Right, int Bottom)> elements,
+        double scale = 1)
     {
+        var shortest = MinShortSide * scale;
+        var longest = MinLongSide * scale;
         var layers = new List<(int Left, int Top, int Right, int Bottom)>();
         if (x < window.Left || x >= window.Right || y < window.Top || y >= window.Bottom)
         {
@@ -30,7 +38,9 @@ public static class ElementLayers
             var clipped = (
                 Left: Math.Max(element.Left, window.Left), Top: Math.Max(element.Top, window.Top),
                 Right: Math.Min(element.Right, window.Right), Bottom: Math.Min(element.Bottom, window.Bottom));
-            if (clipped.Right - clipped.Left < MinSide || clipped.Bottom - clipped.Top < MinSide)
+            var width = clipped.Right - clipped.Left;
+            var height = clipped.Bottom - clipped.Top;
+            if (Math.Min(width, height) < shortest || Math.Max(width, height) < longest)
             {
                 continue;
             }

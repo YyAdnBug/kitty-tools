@@ -302,6 +302,12 @@ internal sealed class Settings
     /// </summary>
     public bool ScreenshotKeepsColors { get; set; }
 
+    /// <summary>钉图上的字可以直接选（PLAN-v26 S8，mac pinSelectsText，默认开）。</summary>
+    public bool PinSelectsText { get; set; } = true;
+
+    /// <summary>识别元素时也认网页里的元素（PLAN-v26 S6，mac screenshotFindsWebElements，默认关）。</summary>
+    public bool ScreenshotFindsWebElements { get; set; }
+
     /// <summary>框选时显示操作提示（PLAN-v26 S1，mac screenshotShowsHint，默认开）。</summary>
     public bool ScreenshotShowsHint { get; set; } = true;
 

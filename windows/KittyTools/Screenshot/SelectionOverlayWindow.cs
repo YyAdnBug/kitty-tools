@@ -197,7 +197,8 @@ internal sealed partial class SelectionOverlayWindow : Window
             }
         }
 
-        _elementsOn = SettingsService.Current.ScreenshotFindsElements && !session.AutoTranslate &&
+        // 截图翻译盖回截图（AutoTranslate）也认元素，单击就翻那一块（PLAN-v26 S7，同 mac 7736c944）
+        _elementsOn = SettingsService.Current.ScreenshotFindsElements &&
                       session.Mode is not (ScreenshotMode.Ocr or ScreenshotMode.Translate);
 
         Activated += OnActivated;
@@ -1924,7 +1925,8 @@ internal sealed partial class SelectionOverlayWindow : Window
         {
             ScreenshotMode.Ocr => "拖动框选要识别的文字或二维码 · Esc 取消",
             ScreenshotMode.Translate => "拖动框选要翻译的区域 · Esc 取消",
-            _ when _session.AutoTranslate && !_session.HasSelection => "拖动框选要翻译的文字 · Esc 取消",
+            _ when _session.AutoTranslate && !_session.HasSelection =>
+                "拖动框选要翻译的文字 · " + (_elementsOn && !_windowsOnly ? "单击翻这一块" : "单击翻整扇窗口") + layers + " · Esc 取消",
             ScreenshotMode.Record when _session.HasSelection => "Enter / 双击选区开始录制" + last + " · Esc 取消",
             ScreenshotMode.Record => "拖动框选要录的区域 · " + (_elementsOn && !_windowsOnly ? "单击选中" : "单击窗口录这个窗口") + layers + last + " · Esc 取消",
             _ when _session.HasSelection =>
@@ -2963,7 +2965,7 @@ internal sealed partial class SelectionOverlayWindow : Window
 
         var left = _screen.Bounds.Left;
         var top = _screen.Bounds.Top;
-        var layers = ElementLayers.At((int)_cursor.X, (int)_cursor.Y, (window.Left, window.Top, window.Right, window.Bottom),
+        var layers = ElementLayers.At((int)_cursor.X, (int)_cursor.Y, (window.Left, window.Top, window.Right, window.Bottom), scale: _scale, elements:
             elements.Select(element => (element.Left - left, element.Top - top, element.Right - left, element.Bottom - top)));
         var kept = _layerPinned && _layerChosen is { } chosen && chosen.Window == _windowHandles[index]
             ? layers.FindIndex(layer => layer == (chosen.Rect.Left, chosen.Rect.Top, chosen.Rect.Right, chosen.Rect.Bottom))
