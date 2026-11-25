@@ -15,6 +15,8 @@
 #      地址换成 GitCode 的（sha256 不变：同一份字节；发布页 …/releases/tag/<tag> → …/releases/<tag>，GitCode 的页面没有 tag/），
 #      它指的包在 GitCode 上都能下才换上（先删旧的再传：同名附件再传会被拒）。GitCode 没有 releases/latest/download/<文件>
 #      （那个地址返回网页），所以 mac 也要一个固定标签 macos-update（GitHub 上一个轻量标签、不建 release，镜像带过去）。
+#      windows-update.json 另外用 sign-manifest.swift 签名、传 windows-update.json.sig（W1：Windows 包没有代码签名，Windows 版只认
+#      签名对得上写死公钥的 GitCode 清单）；钥匙串里还没有签名钥匙时只传清单、提示一句。
 # 令牌（D1）：你自己在 GitCode 个人设置 › 访问令牌 里建（只勾仓库读写、设到期时间），自己存进钥匙串（会提示粘贴，不进 shell 历史）：
 #     security add-generic-password -a "$USER" -s kitty-tools-gitcode -w
 #   脚本只从钥匙串读（读不到再看环境变量 GITCODE_TOKEN），经 curl -K - 从标准输入交给 curl：不进命令行参数、网址和输出；
@@ -27,6 +29,7 @@ GH_REPO="YyAdnBug/kitty-tools"
 GH_WEB="https://github.com/$GH_REPO"
 GC_WEB="https://gitcode.com/yyandbug/kitty-tools"
 API="https://api.gitcode.com/api/v5/repos/yyandbug/kitty-tools"
+SIGN="$(cd "$(dirname "$0")" && pwd)/sign-manifest.swift"
 DRY="${DRY_RUN:-0}"
 FAILED=0
 TMP=$(mktemp -d) && trap 'rm -rf "$TMP"' EXIT
@@ -184,18 +187,40 @@ refresh_channel() {
     fail "GitCode 上还没有标签 $tag：先在 GitHub 推这个标签（git tag $tag && git push origin $tag），等镜像同步后重跑"
     return
   }
+  # Windows 的要带签名（W1：Windows 包没有代码签名，Windows 版只认签名对得上的 GitCode 清单）：钥匙串里有钥匙才签
+  local signed="" same=""
+  if [[ "$file" == windows-update.json ]]; then
+    if swift "$SIGN" public-key >/dev/null 2>&1; then
+      signed=1
+    else
+      echo "  ! 钥匙串里没有清单签名钥匙（swift macos/sign-manifest.swift new-key）：这份不带签名，Windows 版不会用它"
+    fi
+  fi
   if curl -fsSL "$GC_WEB/releases/download/$tag/$file" -o "$TMP/gc-$file" 2>/dev/null && cmp -s "$TMP/$file" "$TMP/gc-$file"; then
-    echo "  · 没变"
-    return
+    same=1
+    # 签名每次签出来都不一样（ECDSA），只看在不在
+    if [[ -z "$signed" ]] || curl -fsSL -o /dev/null "$GC_WEB/releases/download/$tag/$file.sig" 2>/dev/null; then
+      echo "  · 没变"
+      return
+    fi
   fi
   ensure_release "$tag" "$title" "App 内更新读的清单，别删" pre || { fail "$tag：建 / 改 release 没成" && return; }
-  line=$(gc_assets "$tag" | awk -F'\t' -v n="$file" '$1 == n') || true
-  [[ -z "$line" ]] || delete_asset "$tag" "$file" "$(cut -f3 <<<"$line")" || { fail "$tag/$file：删不掉旧的" && return; }
-  if upload "$tag" "$TMP/$file" "$file" && verify_size "$tag" "$file" "$(stat -f%z "$TMP/$file")"; then
-    echo "  ✓ 换成 $(jq -r .version "$TMP/$file")"
-  else
-    fail "$tag/$file：没传上去"
+  replace_asset "$tag" "$file" "$TMP/$file" "$same" || return
+  [[ -z "$same" ]] && echo "  ✓ 换成 $(jq -r .version "$TMP/$file")"
+  if [[ -n "$signed" ]]; then
+    if [[ "$DRY" == 1 ]]; then echo "  （试跑）签名、传 $file.sig" && return; fi
+    swift "$SIGN" sign "$TMP/$file" || { fail "$tag/$file：签不了名" && return; }
+    replace_asset "$tag" "$file.sig" "$TMP/$file.sig" "" && echo "  ✓ 签名"
   fi
+}
+
+# 换掉 release 上的一个附件（先删旧的：同名再传会被拒）；same 非空时不动它
+replace_asset() {
+  local tag=$1 name=$2 path=$3 same=$4 line
+  [[ -z "$same" ]] || return 0
+  line=$(gc_assets "$tag" | awk -F'\t' -v n="$name" '$1 == n') || true
+  [[ -z "$line" ]] || delete_asset "$tag" "$name" "$(cut -f3 <<<"$line")" || { fail "$tag/$name：删不掉旧的" && return 1; }
+  upload "$tag" "$path" "$name" && verify_size "$tag" "$name" "$(stat -f%z "$path")" || { fail "$tag/$name：没传上去" && return 1; }
 }
 
 GC_TAGS=$(gc_tags) || { echo "读不到 GitCode 上的标签（网络？）"; exit 1; }

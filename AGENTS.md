@@ -49,6 +49,7 @@ macos/                       # 本分支唯一开发区
 ├── Config/                  # Base/Debug/Release.xcconfig、Info.plist（局部）、Secrets.xcconfig（不入库）
 ├── build-dmg.sh             # 打包：archive → 自检 → DMG + App 内更新用的 zip → notes
 ├── publish-gitcode.sh       # 发版后把 GitHub 上的 release 原样搬到 GitCode 镜像（国内用户）、换上那边的更新清单
+├── sign-manifest.swift      # Windows 更新清单的签名（P-256，私钥只在钥匙串）：new-key / public-key / sign，publish-gitcode.sh 调
 ├── sync-strings.sh          # 构建一遍、把代码里能本地化的字面量并进 String Catalog（xcstringstool sync）
 ├── TRANSLATION.md           # 多语言：代码怎么写、每批的流程、英文口径、术语表、不翻的清单
 ├── status-emoji.swift       # 状态屏打进包里的那几个动画表情（自带的状态和示例提醒用的 + 眼睛）：下载好的动画 PNG → Resources/status-emoji-*.heics（只用 ImageIO）；别的在 release emoji-pack-1，用到时下载

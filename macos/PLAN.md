@@ -2724,6 +2724,7 @@ P8、V8 以后。材料（追问稿、实测报告、sample、对标、图标样
 |---|---|---|
 | 1 | `8d19c396` | A1 + D1：`publish-gitcode.sh`、build-dmg.sh 头部、mac-native §7 |
 | 2 | — | B1 + E1：`Updater.Site`、`firstManifest`（两个站一起问；任务组的写法 Swift 6.2 的区域隔离检查器认不出，改成两个主线程任务 + AsyncStream）、`sources` / 下载换站、`Prefs.updateSite`；`EmojiPack` 先找 `Site.preferred`。HANDTEST「GitCode 国内分发」1–6 |
+| 3 | — | W1 mac 这一半：`sign-manifest.swift`（CryptoKit P-256，私钥存钥匙串；`selftest` 出的测试向量用 openssl 交叉核过，Windows 单测用同一组）、`publish-gitcode.sh` 给 GitCode 的 windows-update.json 签名。Windows 那一半在 windows 分支 `claude/gitcode-win`（`windows/PLAN-gitcode.md`） |
 
 ## 11½. Whisker 设计语言改造（2026-09-25 起）
 
