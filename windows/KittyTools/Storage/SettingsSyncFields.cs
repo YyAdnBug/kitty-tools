@@ -95,6 +95,7 @@ internal static class SettingsSyncFields
         Flag("ClipboardClearOnQuit", s => s.ClipboardClearOnQuit, (s, v) => s.ClipboardClearOnQuit = v);
         Flag("ClipboardClearOnLock", s => s.ClipboardClearOnLock, (s, v) => s.ClipboardClearOnLock = v);
         Flag("ClipboardShowLens", s => s.ClipboardShowLens, (s, v) => s.ClipboardShowLens = v);
+        Flag("ClipboardImageRows", s => s.ClipboardImageRows, (s, v) => s.ClipboardImageRows = v);
         Flag("LinkPreviews", s => s.LinkPreviews, (s, v) => s.LinkPreviews = v);
         Flag("ClipboardPasteOnClick", s => s.ClipboardPasteOnClick, (s, v) => s.ClipboardPasteOnClick = v);
         Text("ClipboardPanelPosition", s => s.ClipboardPanelPosition, (s, v) => s.ClipboardPanelPosition = v ?? "top");

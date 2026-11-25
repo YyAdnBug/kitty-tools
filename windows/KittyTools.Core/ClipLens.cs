@@ -12,6 +12,18 @@ public static class ClipLens
 
     public const double Bottom = 8;
 
+    /// <summary>
+    /// 列表里直接显示图片（PLAN-v26 C2，mac 0.10.2 940ea65c）：图片条目没选中时是 64 高的一行，标题那一格是一张 48 高、
+    /// 按比例（宽 0.75–5 倍高）从顶上裁的图；选中时回到普通的行头 + 透镜（透镜里照旧是 108 高的图）。
+    /// </summary>
+    public const double ImageRow = 64;
+
+    public const double ImageStrip = 48;
+
+    /// <summary>图片行里那张图的宽（DIP）：按原图比例，夹在高的 0.75–5 倍。宽高不知道时按正方形。</summary>
+    public static double StripWidth(int width, int height)
+        => width > 0 && height > 0 ? Math.Clamp(ImageStrip * width / height, ImageStrip * 0.75, ImageStrip * 5) : ImageStrip;
+
     /// <summary>最高的透镜（代码 / JSON）比普通行多出来的：窗口一直按它预留，↑↓ 永远不改窗口高度。</summary>
     public const double Reserve = 128 + Meta + Bottom;
 

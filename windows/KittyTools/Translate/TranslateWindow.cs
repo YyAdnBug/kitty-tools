@@ -188,7 +188,6 @@ internal sealed partial class TranslateWindow : Window
         {
             if (!_quietSource)
             {
-                SourceRing(true);
                 _coordinator.SetSource(_source.Text);
             }
         };
@@ -755,6 +754,12 @@ internal sealed partial class TranslateWindow : Window
     /// <summary>原文框：Enter 翻译，Shift+Enter / Ctrl+Enter 换行（组字时的 Enter 是上屏，不管）。</summary>
     private void OnSourceKeyDown(object sender, KeyRoutedEventArgs e)
     {
+        // 在框里打字、粘贴才亮焦点环（TextChanged 在 WinUI 里是异步发的，程序填进去的原文也会触发它，不能拿它认）
+        if (e.Key is not (VirtualKey.Enter or VirtualKey.Escape or VirtualKey.Tab))
+        {
+            SourceRing(true);
+        }
+
         if (e.Key != VirtualKey.Enter || _composing || IsDown(VirtualKey.Menu))
         {
             return;

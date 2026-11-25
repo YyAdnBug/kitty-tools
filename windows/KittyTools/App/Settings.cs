@@ -47,6 +47,9 @@ internal sealed class Settings
     /// <summary>显示透镜：选中的条目原地展开预览；关掉就是纯列表（mac clipboardShowPreview，默认开）。</summary>
     public bool ClipboardShowLens { get; set; } = true;
 
+    /// <summary>列表里直接显示图片（PLAN-v26 C2，mac clipboardImageRows，默认开）。</summary>
+    public bool ClipboardImageRows { get; set; } = true;
+
     /// <summary>单击条目直接粘贴（mac clipboardPasteOnClick，默认关）。</summary>
     public bool ClipboardPasteOnClick { get; set; }
 

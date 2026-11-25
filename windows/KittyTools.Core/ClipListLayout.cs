@@ -26,13 +26,17 @@ public sealed class ClipListLayout
 
     private readonly double[] _tops;
     private readonly int[] _rowEntry;
+    private readonly IReadOnlyList<double>? _rowHeights;
 
     /// <param name="dayKeys">每个条目（按列表顺序）所在的那一天；相邻相同的归一组。</param>
     /// <param name="lensItem">展开透镜的条目下标（没有为 -1）。</param>
     /// <param name="lensHeight">透镜总高（含行头 40）。</param>
     /// <param name="newSnippetRow">片段范围的第一行「＋ 新建片段」。</param>
-    public ClipListLayout(IReadOnlyList<long> dayKeys, int lensItem, double lensHeight, bool newSnippetRow = false)
+    /// <param name="rowHeights">每个条目没选中时的行高（PLAN-v26 C2：图片行 64）；null = 都是 40。</param>
+    public ClipListLayout(
+        IReadOnlyList<long> dayKeys, int lensItem, double lensHeight, bool newSnippetRow = false, IReadOnlyList<double>? rowHeights = null)
     {
+        _rowHeights = rowHeights is { } heights && heights.Count == dayKeys.Count ? heights : null;
         var entries = new List<ClipListEntry>(dayKeys.Count + 8);
         var tops = new List<double>(dayKeys.Count + 9);
         var sectionTops = new List<double>();
@@ -61,7 +65,7 @@ public sealed class ClipListLayout
             _rowEntry[item] = entries.Count;
             entries.Add(new ClipListEntry(ClipListEntryKind.Row, sectionTops.Count - 1, item));
             tops.Add(y);
-            y += item == lensItem ? lensHeight : RowHeight;
+            y += item == lensItem ? lensHeight : PlainHeight(item);
         }
 
         tops.Add(y);
@@ -97,7 +101,10 @@ public sealed class ClipListLayout
     /// <summary>条目行的顶。</summary>
     public double RowTop(int item) => _tops[_rowEntry[item]];
 
-    public double RowHeightOf(int item) => item == LensItem ? LensHeight : RowHeight;
+    public double RowHeightOf(int item) => item == LensItem ? LensHeight : PlainHeight(item);
+
+    /// <summary>没选中时这一行多高。</summary>
+    public double PlainHeight(int item) => _rowHeights is { } heights && item >= 0 && item < heights.Count ? heights[item] : RowHeight;
 
     public int EntryOfItem(int item) => _rowEntry[item];
 

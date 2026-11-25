@@ -2037,6 +2037,13 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Save();
                 RedrawSketch();
             });
+        AddToggle("列表里直接显示图片", "图片条目是一张小图（长截图、手机截图看得到顶上一截），选中时在下面放大；关掉就是一行文字加小图标",
+            settings.ClipboardImageRows,
+            isOn =>
+            {
+                settings.ClipboardImageRows = isOn;
+                SettingsService.Save();
+            });
         AddToggle("链接显示网页标题和图片", "选中链接时联网读取；本机、内网和带登录令牌的网址不读",
             settings.LinkPreviews,
             isOn =>

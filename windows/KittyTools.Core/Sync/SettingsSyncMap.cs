@@ -133,6 +133,7 @@ public static class SettingsSyncMap
         Flag("clipboardClearOnExit", "ClipboardClearOnQuit");
         Flag("clipboardClearOnLock", "ClipboardClearOnLock");
         Flag("clipboardShowPreview", "ClipboardShowLens");
+        Flag("clipboardImageRows", "ClipboardImageRows");
         Flag("clipboardLinkPreview", "LinkPreviews");
         Flag("clipboardPasteOnClick", "ClipboardPasteOnClick");
         Choice("clipboardPanelPosition", "ClipboardPanelPosition", Positions);

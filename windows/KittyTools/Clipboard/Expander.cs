@@ -7,7 +7,12 @@ namespace KittyTools;
 
 internal static class Expander
 {
-    public static SnippetExpansion? Of(ClipEntry? entry, ClipboardStore? store)
+    /// <summary>片段里要先问的空（PLAN-v26 C1）；不是片段、没有空的是空表。</summary>
+    public static IReadOnlyList<string> InputsOf(ClipEntry? entry)
+        => entry is { Snippet: true, Kind: ClipKind.Text, Text: { Length: > 0 } text } ? SnippetRules.Inputs(text) : Array.Empty<string>();
+
+    /// <param name="inputs">填空填的字；null = 没问过（多条一起粘贴、拖出去）：{input…} 原样留着。</param>
+    public static SnippetExpansion? Of(ClipEntry? entry, ClipboardStore? store, IReadOnlyDictionary<string, string>? inputs = null)
     {
         if (entry is not { Snippet: true, Kind: ClipKind.Text } || string.IsNullOrEmpty(entry.Text))
         {
@@ -23,7 +28,9 @@ internal static class Expander
             n => store?.Items
                 .Where(item => item.Kind == ClipKind.Text && !item.Snippet && !string.IsNullOrEmpty(item.Text))
                 .Skip(n - 1)
-                .FirstOrDefault()?.Text);
+                .FirstOrDefault()?.Text,
+            inputs,
+            askedInputs: inputs is not null);
         return expansion;
     }
 }

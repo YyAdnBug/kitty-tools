@@ -41,6 +41,11 @@ internal static class ClipIcons
             return await File.ReadAllBytesAsync(path);
         }, decodePixels: (int)Math.Round(72 * Math.Max(1, scale / 1.5)));
 
+    /// <summary>列表里直接显示图片那一张（PLAN-v26 C2）：解码宽 = 图那一格的像素宽（调用方算好，最多 640），同一条不同宽各记一份。</summary>
+    public static ImageSource? Strip(long id, string path, int pixelWidth, Action<ImageSource> ready)
+        => Get($"strip:{id}:{pixelWidth}", ready, async () => File.Exists(path) ? await File.ReadAllBytesAsync(path) : null,
+            decodePixels: Math.Clamp(pixelWidth, 16, 640));
+
     private static ImageSource? Get(string key, Action<ImageSource> ready, Func<Task<byte[]?>> load, int decodePixels = 0)
     {
         if (Cache.TryGetValue(key, out var node))
@@ -128,6 +133,15 @@ internal static class ClipIcons
         if (Cache.Remove("img:" + id, out var node))
         {
             Recent.Remove(node);
+        }
+
+        var prefix = $"strip:{id}:";
+        foreach (var key in Cache.Keys.Where(key => key.StartsWith(prefix, StringComparison.Ordinal)).ToList())
+        {
+            if (Cache.Remove(key, out var strip))
+            {
+                Recent.Remove(strip);
+            }
         }
     }
 }

@@ -21,7 +21,8 @@ internal sealed partial class ClipDialogHost : Grid
     /// <summary>新建片段的占位符说明（同 mac Snippet.placeholderHelp）。</summary>
     public const string PlaceholderHelp =
         "{date} 日期、{time} 时间、{datetime} 日期和时间、{weekday} 星期几、{uuid} 随机编号、" +
-        "{clipboard} 当前剪贴板、{clipboard:1}–{clipboard:9} 历史第 N 条文字（不算片段）、{cursor} 粘贴后光标停在这里";
+        "{clipboard} 当前剪贴板、{clipboard:1}–{clipboard:9} 历史第 N 条文字（不算片段）、{input:称呼} 粘贴前填空、{cursor} 粘贴后光标停在这里；" +
+        "日期时间能加偏移和格式：{date+1d}、{date-1w:yyyy/MM/dd}（单位 m 分钟、h 小时、d 天、w 周、M 月、y 年）";
 
     private readonly Grid _card;
     /// <summary>保存：返回 false = 留着对话框（比如名字不能用，原因已经显示出来）。</summary>
@@ -137,6 +138,114 @@ internal sealed partial class ClipDialogHost : Grid
         {
             body.SelectionStart = body.Text.Length;
         }
+    }
+
+    /// <summary>
+    /// 片段的填空（PLAN-v26 C1，mac 0.10.0 X20 的 {input:称呼}）：粘贴 / 复制前一个空一个输入框（同名只问一次，没写名字的叫「填空」），
+    /// Enter 跳到下一个、最后一个的 Enter 粘贴；Esc 不粘。
+    /// </summary>
+    public void ShowInputs(IReadOnlyList<string> names, string verb, Action<IReadOnlyDictionary<string, string>> done)
+    {
+        var boxes = names.Select(name => Input(name.Length == 0 ? "填空" : name, string.Empty)).ToList();
+        for (var index = 0; index < boxes.Count - 1; index++)
+        {
+            var next = boxes[index + 1];
+            boxes[index].KeyDown += (_, args) =>
+            {
+                if (args.Key == VirtualKey.Enter)
+                {
+                    args.Handled = true;
+                    Focus(next);
+                }
+            };
+        }
+
+        Open("填一下再" + verb, boxes, () =>
+        {
+            done(names.Select((name, index) => (name, boxes[index].Text)).ToDictionary(pair => pair.name, pair => pair.Text, StringComparer.Ordinal));
+            return true;
+        }, () => true, hint: null, singleLine: boxes[^1], saveText: verb);
+        Focus(boxes[0]);
+    }
+
+    /// <summary>
+    /// 片段的关键词（PLAN-v26 C4，照 mac SnippetKeyword）：单行，Enter 保存、空着保存 = 去掉；打不出来、太短太长、和别的片段一样时红字、「保存」置灰；
+    /// 撞前缀、全是字母数字时橙字提醒，照样能存。
+    /// </summary>
+    public void ShowKeyword(string? current, IReadOnlyList<SnippetKeyword.Other> others, Action<string?> save)
+    {
+        var (box, message, check) = KeywordField(current, others);
+        box.TextChanged += (_, _) => RefreshSave();
+        Open("关键词", new FrameworkElement[] { box, message }, () =>
+        {
+            save(SnippetKeyword.Normalized(box.Text));
+            return true;
+        }, () => check().Problem is null, hint: null, singleLine: box);
+        Focus(box);
+    }
+
+    /// <summary>新建片段（PLAN-v26 C4 多一行关键词）：名称（可选）+ 关键词（可选）+ 正文；名称、关键词框里 Enter 跳到下一格。</summary>
+    public void ShowNewSnippet(IReadOnlyList<SnippetKeyword.Other> others, string hint, Action<string?, string?, string> save)
+    {
+        var name = Input("名称（可选，用于搜索）", string.Empty);
+        var (keyword, message, check) = KeywordField(null, others);
+        var body = new TextBox
+        {
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.Wrap,
+            Height = 200,
+            FontSize = 14,
+            IsSpellCheckEnabled = false,
+        };
+        ScrollViewer.SetVerticalScrollBarVisibility(body, ScrollBarVisibility.Auto);
+        StyleInput(body);
+        foreach (var (from, to) in new (TextBox, Control)[] { (name, keyword), (keyword, body) })
+        {
+            from.KeyDown += (_, args) =>
+            {
+                if (args.Key == VirtualKey.Enter && !IsDown(VirtualKey.Control))
+                {
+                    args.Handled = true;
+                    Focus(to);
+                }
+            };
+        }
+
+        keyword.TextChanged += (_, _) => RefreshSave();
+        body.TextChanged += (_, _) => RefreshSave();
+        Open("新建片段", new FrameworkElement[] { name, keyword, message, body }, () =>
+        {
+            save(name.Text, SnippetKeyword.Normalized(keyword.Text), body.Text);
+            return true;
+        }, () => body.Text.Trim().Length > 0 && check().Problem is null, hint, singleLine: null);
+        Focus(name);
+    }
+
+    /// <summary>关键词输入框 + 下面那一行说明（红字 = 存不了、橙字 = 提醒）+ 现在的检查结果。</summary>
+    private static (TextBox Box, TextBlock Message, Func<SnippetKeyword.Check> Check) KeywordField(
+        string? current, IReadOnlyList<SnippetKeyword.Other> others)
+    {
+        var box = Input("关键词（可选，如 ;addr）：在任何程序里打出来就换成这条片段", current ?? string.Empty);
+        box.MaxLength = 64;
+        AutomationProperties.SetName(box, "关键词");
+        var message = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
+        SnippetKeyword.Check Check() => SnippetKeyword.Evaluate(box.Text, others);
+        void Show()
+        {
+            var check = Check();
+            var text = check.Problem is { } problem ? SnippetKeyword.Message(problem)
+                : check.Warnings.Count > 0 ? string.Join("；", check.Warnings.Select(SnippetKeyword.Message))
+                : null;
+            message.Text = text ?? string.Empty;
+            message.Visibility = text is null ? Visibility.Collapsed : Visibility.Visible;
+            message.Foreground = check.Problem is not null
+                ? new SolidColorBrush(Theme.Value(0xFF3B30, 0xFF453A))
+                : Theme.Caution();
+        }
+
+        box.TextChanged += (_, _) => Show();
+        Show();
+        return (box, message, Check);
     }
 
     /// <summary>新建收藏夹：名字去空白、不重名、最多 24 字（满了右边显示「24/24」，不悄悄截断）。</summary>

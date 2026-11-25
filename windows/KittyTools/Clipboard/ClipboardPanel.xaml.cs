@@ -380,7 +380,8 @@ public sealed partial class ClipboardPanel : UserControl
         ShowsGroupPill: _groupFilterId is null,
         ShowsKeyHints: _showKeyHints,
         Multi: _checked.Count > 0,
-        Scale: XamlRoot?.RasterizationScale ?? 1.0);
+        Scale: XamlRoot?.RasterizationScale ?? 1.0,
+        ImageRows: SettingsService.Current.ClipboardImageRows);
 
     private IReadOnlySet<long>? CheckedOrNull() => _checked.Count > 0 ? new HashSet<long>(_checked) : null;
 
@@ -1189,6 +1190,11 @@ public sealed partial class ClipboardPanel : UserControl
                 e.Handled = true;
                 ToggleQuickLook();
                 break;
+            case VirtualKey.Space when !control && !shift && !_composing && SearchBox.Text.Length == 0 && SelectedEntry is not null:
+                // PLAN-v26 C3（mac 58a336b4）：搜索框空着时空格开关放大预览（有字时空格照常打进搜索框）
+                e.Handled = true;
+                ToggleQuickLook();
+                break;
             case VirtualKey.C when control && _quickLook?.SelectedText is { } selection:
                 // 放大卡里选中了字：只拷选中的纯文本（mac 体检 B11）。
                 e.Handled = true;
@@ -1391,7 +1397,10 @@ public sealed partial class ClipboardPanel : UserControl
         Select(next, repeat ? MotionCurve.Instant : MotionCurve.Snap);
     }
 
-    private async void Paste(bool plain)
+    private async void Paste(bool plain) => await PasteAsync(plain, null);
+
+    /// <summary>inputs：片段的填空填好的字（PLAN-v26 C1）；片段里有 {input…} 而 inputs 是 null 时先在面板里问。</summary>
+    private async Task PasteAsync(bool plain, IReadOnlyDictionary<string, string>? inputs)
     {
         var selected = SelectedEntries;
         if (selected.Count > 1)
@@ -1401,6 +1410,12 @@ public sealed partial class ClipboardPanel : UserControl
         }
 
         var entry = SelectedEntry;
+        if (inputs is null && Expander.InputsOf(entry) is { Count: > 0 } names)
+        {
+            _dialogs.ShowInputs(names, "粘贴", filled => _ = PasteAsync(plain, filled));
+            return;
+        }
+
         if (entry is null)
         {
             return;
@@ -1415,14 +1430,14 @@ public sealed partial class ClipboardPanel : UserControl
         var target = OverlayHost.PasteTarget;
         if (target == default)
         {
-            Copy(entry);
+            Copy(entry, inputs);
             return;
         }
 
         try
         {
             // 片段先展开占位符（第三版 §4），粘贴完再按 {cursor} 往左挪。
-            var expansion = Expander.Of(entry, Store);
+            var expansion = Expander.Of(entry, Store, inputs ?? new Dictionary<string, string>());
             var dib = entry.Kind == ClipKind.Image ? await PrepareDibAsync(entry) : null;
             var rich = RichOf(entry);
             var service = ClipboardService.Instance;
@@ -1634,8 +1649,17 @@ public sealed partial class ClipboardPanel : UserControl
         _ => true,
     };
 
-    private async void Copy(ClipEntry entry)
+    private void Copy(ClipEntry entry) => Copy(entry, null);
+
+    /// <summary>inputs 同 PasteAsync：片段里有 {input…} 而 inputs 是 null 时先问。</summary>
+    private async void Copy(ClipEntry entry, IReadOnlyDictionary<string, string>? inputs)
     {
+        if (inputs is null && Expander.InputsOf(entry) is { Count: > 0 } names)
+        {
+            _dialogs.ShowInputs(names, "复制", filled => Copy(entry, filled));
+            return;
+        }
+
         if (!EntryUsable(entry))
         {
             NoticeHost.Show("没能复制", entry.Kind == ClipKind.Image ? "图片文件丢了" : "文件已经不在原处", NoticeTone.Warning);
@@ -1646,7 +1670,7 @@ public sealed partial class ClipboardPanel : UserControl
         {
             var dib = entry.Kind == ClipKind.Image ? await PrepareDibAsync(entry) : null;
             var rich = RichOf(entry);
-            var expansion = Expander.Of(entry, Store);
+            var expansion = Expander.Of(entry, Store, inputs ?? new Dictionary<string, string>());
             var wrote = expansion is { } expanded
                 ? ClipboardWriter.WriteText(expanded.Text)
                 : ClipboardWriter.WriteEntry(entry, rich.Html, rich.Rtf, plainText: false, dib);
@@ -2089,6 +2113,10 @@ public sealed partial class ClipboardPanel : UserControl
         if (single is not null)
         {
             items.Add(new PaletteItem("备注…", Glyphs.Edit, 2, () => ShowNote(single)));
+            if (single.Snippet)
+            {
+                items.Add(new PaletteItem(single.Keyword is null ? "关键词…" : $"关键词（{single.Keyword}）…", Glyphs.Edit, 2, () => ShowKeyword(single)));
+            }
             if (single.Kind == ClipKind.Text)
             {
                 items.Add(new PaletteItem("编辑内容…", Glyphs.Edit, 2, () => ShowEditContent(single), "Ctrl+E"));
@@ -2493,9 +2521,9 @@ public sealed partial class ClipboardPanel : UserControl
     /// <summary>新建片段（Ctrl+N）：名称（可选，存成备注）+ 正文；被当前范围 / 筛选 / 搜索挡住时底栏说「已存为片段」（mac）。</summary>
     private void ShowNewSnippet()
     {
-        _dialogs.ShowText("新建片段", string.Empty, asksName: true, "占位符：" + ClipDialogHost.PlaceholderHelp, (name, body) =>
+        _dialogs.ShowNewSnippet(Store?.KeywordOthers(null) ?? Array.Empty<SnippetKeyword.Other>(), "占位符：" + ClipDialogHost.PlaceholderHelp, (name, keyword, body) =>
         {
-            if (Store?.AddSnippet(body, name) is not { } entry)
+            if (Store?.AddSnippet(body, name, keyword) is not { } entry)
             {
                 return;
             }
@@ -2524,6 +2552,23 @@ public sealed partial class ClipboardPanel : UserControl
             store.UpdateText(entry.Id, body);
             Refresh(entry.Id);
             Footer.ShowNotice("已保存");
+        });
+        OnDialogOpened();
+    }
+
+    /// <summary>片段的关键词（PLAN-v26 C4）：Ctrl+K「关键词…」、右键同名一项；只给片段。</summary>
+    private void ShowKeyword(ClipEntry entry)
+    {
+        if (Store is not { } store || !entry.Snippet)
+        {
+            return;
+        }
+
+        _dialogs.ShowKeyword(entry.Keyword, store.KeywordOthers(entry.Id), keyword =>
+        {
+            store.SetKeyword(entry.Id, keyword);
+            Refresh(entry.Id);
+            Footer.ShowNotice(keyword is null ? "已去掉关键词" : "已设关键词 " + keyword);
         });
         OnDialogOpened();
     }

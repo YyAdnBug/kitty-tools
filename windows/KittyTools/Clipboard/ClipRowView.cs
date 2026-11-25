@@ -19,7 +19,8 @@ using Windows.UI;
 namespace KittyTools;
 
 /// <summary>建一行时要知道的面板状态。</summary>
-internal sealed record ClipRowContext(string Query, bool ShowsGroupPill, bool ShowsKeyHints, bool Multi, double Scale);
+/// <param name="ImageRows">列表里直接显示图片（PLAN-v26 C2，设置 › 剪贴板「列表里直接显示图片」）。</param>
+internal sealed record ClipRowContext(string Query, bool ShowsGroupPill, bool ShowsKeyHints, bool Multi, double Scale, bool ImageRows = false);
 
 internal sealed partial class ClipRowView : Grid
 {
@@ -30,6 +31,10 @@ internal sealed partial class ClipRowView : Grid
     private bool _hovered;
     private bool _checked;
     private bool _selected;
+
+    /// <summary>图片行（PLAN-v26 C2）：没选中时 64 高、标题那一格换成图；选中时回到普通行头。</summary>
+    private readonly FrameworkElement? _strip;
+    private readonly FrameworkElement? _title;
 
     public ClipRowView(ClipEntry entry, int index, ClipRowContext context)
     {
@@ -76,6 +81,14 @@ internal sealed partial class ClipRowView : Grid
         var title = TitleBlock(entry, form, context.Query);
         SetColumn(title, 1);
         Children.Add(title);
+        if (context.ImageRows && entry.Kind == ClipKind.Image)
+        {
+            _title = title;
+            _strip = Strip(entry, context.Scale);
+            SetColumn(_strip, 1);
+            Children.Add(_strip);
+            ApplyImageRow();
+        }
 
         // 右侧文字（备注优先）。
         var hasNote = !string.IsNullOrWhiteSpace(entry.Note);
@@ -148,6 +161,7 @@ internal sealed partial class ClipRowView : Grid
     public void SetSelected(bool selected)
     {
         _selected = selected;
+        ApplyImageRow();
         ApplyBackground();
         AutomationProperties.SetItemStatus(this, selected ? "已选中" : string.Empty);
     }
@@ -316,6 +330,61 @@ internal sealed partial class ClipRowView : Grid
 
     /// <summary>分组按的那一天（本地零点的 ticks）：过了午夜只改标题不换组。</summary>
     public static long DayKey(long copiedAt) => DateTimeOffset.FromUnixTimeMilliseconds(copiedAt).ToLocalTime().Date.Ticks;
+
+    /// <summary>图片行：没选中时 64 高、露出图那一格；选中时 40 高、露出原来的标题（透镜在下面接着画大图）。</summary>
+    private void ApplyImageRow()
+    {
+        if (_strip is null || _title is null)
+        {
+            return;
+        }
+
+        Height = _selected ? ClipLens.Head : ClipLens.ImageRow;
+        _strip.Visibility = _selected ? Visibility.Collapsed : Visibility.Visible;
+        _title.Visibility = _selected ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>图片行标题那一格：48 高、按比例的图（从顶上裁）+ 宽×高。解码到这张图自己的像素宽（最多 640）。</summary>
+    private static FrameworkElement Strip(ClipEntry entry, double scale)
+    {
+        var width = ClipLens.StripWidth(entry.Width, entry.Height);
+        var image = new Border
+        {
+            Width = width,
+            Height = ClipLens.ImageStrip,
+            CornerRadius = Theme.Corner("Kitty.Corner.Control"),
+            Background = Theme.Family.Tint(Theme.Family.Capture, 40),
+            BorderBrush = Theme.Brush("Kitty.Hairline", Color.FromArgb(20, 128, 128, 128)),
+            BorderThickness = new Thickness(1),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        void Show(ImageSource source) => image.Background = new ImageBrush
+        {
+            ImageSource = source,
+            Stretch = Stretch.UniformToFill,
+            AlignmentY = AlignmentY.Top,
+        };
+        var pixels = (int)Math.Min(640, Math.Ceiling(width * Math.Max(1, scale)));
+        if (ClipIcons.Strip(entry.Id, Paths.ImagesFile(entry.Id), pixels, Show) is { } cached)
+        {
+            Show(cached);
+        }
+
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = Spacing, VerticalAlignment = VerticalAlignment.Center };
+        row.Children.Add(image);
+        if (entry.Width > 0)
+        {
+            row.Children.Add(new TextBlock
+            {
+                Text = $"{entry.Width}×{entry.Height}",
+                FontSize = Theme.FontSize("Kitty.FontSize.Meta"),
+                Foreground = Theme.SecondaryText(),
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+        }
+
+        return row;
+    }
 
     /// <summary>行首 24 的图标块。</summary>
     public static FrameworkElement IconTile(ClipEntry entry, double scale)

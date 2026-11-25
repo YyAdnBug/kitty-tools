@@ -29,6 +29,7 @@ internal sealed partial class ClipListView : Grid
     private ClipRowContext _context = new(string.Empty, false, false, false, 1);
     private IReadOnlySet<long>? _checked;
     private bool _newSnippetRow;
+    private IReadOnlyList<double>? _rowHeights;
     private int _selected = -1;
     private FrameworkElement? _lens;
     private double _lensHeight;
@@ -102,12 +103,16 @@ internal sealed partial class ClipListView : Grid
     {
         _items = items;
         _days = days;
+        // 列表里直接显示图片（PLAN-v26 C2）：图片行没选中时 64 高
+        _rowHeights = context.ImageRows && items.Any(item => item.Kind == ClipKind.Image)
+            ? items.Select(item => item.Kind == ClipKind.Image ? ClipLens.ImageRow : ClipListLayout.RowHeight).ToArray()
+            : null;
         _newSnippetRow = newSnippetRow;
         _context = context;
         _checked = checkedIds;
         _selected = selected;
         SetLensElement(lens, lensHeight);
-        _layout = new ClipListLayout(days, lens is null ? -1 : selected, lensHeight, newSnippetRow);
+        _layout = new ClipListLayout(days, lens is null ? -1 : selected, lensHeight, newSnippetRow, _rowHeights);
         ClearRealized();
         _stickySection = -2;
         Realize(force: true);
@@ -124,7 +129,12 @@ internal sealed partial class ClipListView : Grid
 
         _selected = selected;
         SetLensElement(lens, lensHeight);
-        _layout = new ClipListLayout(_days, lens is null ? -1 : selected, lensHeight, _newSnippetRow);
+        _layout = new ClipListLayout(_days, lens is null ? -1 : selected, lensHeight, _newSnippetRow, _rowHeights);
+        if (_selected >= 0 && _realized.TryGetValue(_layoutEntry(_selected), out var current) && current is ClipRowView currentRow)
+        {
+            currentRow.SetSelected(true);
+        }
+
         Realize(force: true);
         MoveHighlight(curve);
         if (lens is not null && curve != MotionCurve.Instant)

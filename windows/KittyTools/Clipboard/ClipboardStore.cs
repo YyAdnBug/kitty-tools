@@ -204,7 +204,36 @@ internal sealed class ClipboardStore
 
             entry.Snippet = snippet;
             _database.SetSnippet(entry.Id, snippet);
+            // 重新存成片段：它留着的关键词要是已经被别的片段用了就不要（同 mac markSnippet，PLAN-v26 C4）
+            if (snippet && entry.Keyword is { } keyword &&
+                _items.Any(other => other.Id != entry.Id && other.Snippet && other.Keyword == keyword))
+            {
+                entry.Keyword = null;
+                entry.Folded = null;
+                _database.SetKeyword(entry.Id, null);
+            }
         });
+
+    /// <summary>别的片段的关键词和叫法（SnippetKeyword.Evaluate 用，不含 id 这一条）。</summary>
+    public IReadOnlyList<SnippetKeyword.Other> KeywordOthers(long? id)
+        => _items.Where(item => item.Snippet && item.Keyword is not null && item.Id != id)
+            .Select(item => new SnippetKeyword.Other(item.Keyword!, SnippetKeyword.Title(item.Note, item.Text)))
+            .ToList();
+
+    /// <summary>设关键词（PLAN-v26 C4）：调用方先过 SnippetKeyword.Evaluate（有问题的不让存）；null = 去掉。</summary>
+    public void SetKeyword(long id, string? keyword)
+    {
+        if (_items.FirstOrDefault(item => item.Id == id) is not { } entry || entry.Keyword == keyword)
+        {
+            return;
+        }
+
+        entry.Keyword = keyword;
+        entry.Folded = null;
+        EnsureUid(entry);
+        _database.SetKeyword(id, keyword);
+        Changed?.Invoke();
+    }
 
     /// <summary>
     /// 改收藏 / 片段这类决定保留的字段（照 mac changeRetention）：改完不再留下、又已超过保留天数的条目，
@@ -306,8 +335,8 @@ internal sealed class ClipboardStore
             ? OcrHit.Snippet(entry.OcrText, Search.Tokens(query))
             : null;
 
-    /// <summary>新建片段（第三版 §4）：正文 + 可选名称（存成备注），一定是收藏并带 uid。</summary>
-    public ClipEntry? AddSnippet(string text, string? note)
+    /// <summary>新建片段（第三版 §4）：正文 + 可选名称（存成备注）+ 可选关键词（PLAN-v26 C4，调用方先查过），一定是收藏并带 uid。</summary>
+    public ClipEntry? AddSnippet(string text, string? note, string? keyword = null)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
@@ -324,6 +353,7 @@ internal sealed class ClipboardStore
             Uid = Guid.NewGuid().ToString("D").ToUpperInvariant(),
             CopiedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             SourceName = "片段",
+            Keyword = keyword,
         };
         entry.Id = _database.Insert(entry);
         _items.Insert(0, entry);
