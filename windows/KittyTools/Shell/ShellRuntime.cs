@@ -1399,6 +1399,19 @@ internal sealed class ShellRuntime
                 return;
             }
 
+            // 指针停在角落缩略图上时临时挂的 Ctrl+C / Ctrl+S / Esc（PLAN-v26 S5）。
+            if (ScreenshotCard.HandleKey((int)wParam.Value))
+            {
+                return;
+            }
+
+            // 延时截图倒数期间 Esc 取消（PLAN-v26 S2）。
+            if (DelayedShot.Active && (int)wParam.Value == DelayedShot.EscapeId)
+            {
+                DelayedShot.Cancel();
+                return;
+            }
+
             // 长截图期间 Enter 是临时注册的（第三版 §7；Esc 走 EscapeKeyWatch，PLAN-v11 M13）。
             if (ScrollingCapture.Active && (int)wParam.Value == ScrollingCapture.EnterId)
             {
@@ -1532,6 +1545,9 @@ internal sealed class ShellRuntime
                 break;
             case HotKeyActions.ScreenshotLast:
                 ScreenshotSession.StartLast();
+                break;
+            case HotKeyActions.DelayedScreenshot:
+                DelayedShot.Toggle();
                 break;
             case HotKeyActions.Record:
                 RecordingHost.Toggle();

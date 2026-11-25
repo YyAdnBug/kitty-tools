@@ -194,6 +194,12 @@ internal sealed partial class SelectionOverlayWindow
                 SelectLastRegion();
                 return true;
             case "pickColor":
+                // 不显示色值时 C 不取色、不结束截图（PLAN-v26 S1，同 mac）；标注里的吸管不走这里
+                if (SettingsService.Current.ScreenshotLoupe != "full")
+                {
+                    return false;
+                }
+
                 _session.CopyColor(_screen.HexAt((int)_cursor.X, (int)_cursor.Y));
                 return true;
             default:

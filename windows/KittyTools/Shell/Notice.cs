@@ -287,6 +287,15 @@ internal sealed unsafe partial class NoticeHost
         _hideTimer.Tick += (_, _) => Hide();
     }
 
+    /// <summary>马上收起正露着的这一条（延时截图到点：提示不能进冻结帧）。挂着的那条（Pin）不动。</summary>
+    public static void HideNow()
+    {
+        if (_current is { _visible: true, _showingPin: false } host)
+        {
+            host.Hide();
+        }
+    }
+
     public static void Show(string title, string detail, NoticeTone tone, params NoticeAction[] actions)
     {
         _current ??= new NoticeHost();

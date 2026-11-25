@@ -45,6 +45,9 @@ internal static class HotKeyActions
 
     /// <summary>保持唤醒（插件，PLAN-v20 K1）：按一下开无限期、再按停；不设默认键（同 mac）。</summary>
     public const string KeepAwake = "keepAwake";
+
+    /// <summary>延时截图（PLAN-v26 S2，同 mac 名字）：倒数几秒再进框选；不设默认键。</summary>
+    public const string DelayedScreenshot = "delayedScreenshot";
 }
 
 internal sealed record HotKeyDefault(
@@ -81,6 +84,7 @@ internal static class SettingsDefaults
         new(HotKeyActions.NoteNew, "新建便签", HotKeyModifiers.None, 0),
         new(HotKeyActions.NoteAll, "全部便签", HotKeyModifiers.None, 0),
         new(HotKeyActions.KeepAwake, "保持唤醒（再按一次停止）", HotKeyModifiers.None, 0),
+        new(HotKeyActions.DelayedScreenshot, "延时截图", HotKeyModifiers.None, 0),
     };
 
     public static void Apply(Settings settings)

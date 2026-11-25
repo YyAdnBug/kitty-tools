@@ -21,6 +21,7 @@ internal static class LauncherActions
     public const string Screenshot = "action:screenshot";
     public const string ScreenshotTranslate = "action:screenshot-translate";
     public const string ScreenshotLast = "action:screenshot-last";
+    public const string DelayedScreenshot = "action:delayed-screenshot";
     public const string Ocr = "action:ocr";
     public const string ShotHistory = "action:shot-history";
     public const string PinClipboard = "action:pin-clipboard";
@@ -85,6 +86,7 @@ internal static class LauncherActions
         {
             items.Add(Item(new(Screenshot, "截图", "Screenshot Capture", FeatureIcons.Screenshot, "capture", HotKeyActions.Screenshot)));
             items.Add(Item(new(ScreenshotLast, "截取上次区域", "Capture Last Region", FeatureIcons.ScreenshotLast, "capture", HotKeyActions.ScreenshotLast)));
+            items.Add(Item(new(DelayedScreenshot, "延时截图", "Delayed Screenshot Timer", FeatureIcons.Screenshot, "capture", HotKeyActions.DelayedScreenshot)));
             items.Add(Item(new(Ocr, "识字", "OCR Recognize Text", FeatureIcons.ScreenshotText, "capture", HotKeyActions.Ocr)));
         }
 
@@ -257,6 +259,9 @@ internal static class LauncherActions
                 break;
             case ScreenshotLast:
                 StartLater(ScreenshotSession.StartLast);
+                break;
+            case DelayedScreenshot:
+                DelayedShot.Toggle();
                 break;
             case Ocr:
                 StartLater(() => ScreenshotSession.Start(ScreenshotMode.Ocr));

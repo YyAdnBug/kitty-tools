@@ -302,6 +302,23 @@ internal sealed class Settings
     /// </summary>
     public bool ScreenshotKeepsColors { get; set; }
 
+    /// <summary>框选时显示操作提示（PLAN-v26 S1，mac screenshotShowsHint，默认开）。</summary>
+    public bool ScreenshotShowsHint { get; set; } = true;
+
+    /// <summary>框选时的放大镜（mac screenshotLoupe）：full 放大镜和色值 / loupe 只显示放大镜 / off 不显示。</summary>
+    public string ScreenshotLoupe { get; set; } = "full";
+
+    /// <summary>窗口截图带阴影（PLAN-v26 S3，mac screenshotWindowShadow，默认开）。</summary>
+    public bool ScreenshotWindowShadow { get; set; } = true;
+
+    /// <summary>
+    /// 截图圆角（DIP，0–24；PLAN-v26 S4 / D5 = A：Windows 框选默认直角，mac 默认和系统窗口一样）。两边默认不一样，不进设置同步。
+    /// </summary>
+    public double ScreenshotCornerRadius { get; set; }
+
+    /// <summary>延时截图等几秒（mac screenshotDelay，5 / 10，默认 5）。</summary>
+    public int ScreenshotDelay { get; set; } = 5;
+
     /// <summary>
     /// 框选时悬停识别窗口里的元素（PLAN-v20 E1，mac screenshotFindsElements，跟着导出导入）：指针停在按钮、侧栏、列表上就框出那一块，
     /// 滚轮换一层大小，Tab 只认窗口。默认关（同 mac）。截图翻译、识字不认元素。

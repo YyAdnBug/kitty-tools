@@ -150,11 +150,14 @@ internal sealed partial class ScreenshotCard : Window
             _hovering = true;
             _hideTimer.Stop();
             SetHover(true);
+            _keysTimer.Start();
         };
         _root.PointerExited += (_, _) =>
         {
             _hovering = false;
             SetHover(false);
+            _keysTimer.Stop();
+            ReleaseKeys();
             _hideTimer.Interval = TimeSpan.FromSeconds(2.5);
             _hideTimer.Start();
         };
@@ -779,9 +782,92 @@ internal sealed partial class ScreenshotCard : Window
         }
     }
 
+    // ---- 指针停在卡上时的键盘（PLAN-v26 S5，照 mac 0.10.1 A3 HoverKeyPanel）：停 0.4 秒后临时挂 Ctrl+C 拷贝、Ctrl+S 存储、Esc 关，
+    // 移开 / 关掉就撤。卡片不抢前台（不当 key），所以是临时的全局热键（同录屏倒数的 Esc）。
+    // ponytail: mac 还看「最近 1 秒没打字」才接键盘；这里没看，指针停在卡上时在别处按 Ctrl+C 会被卡片接走。
+
+    public const int CopyKeyId = 932;
+    public const int SaveKeyId = 933;
+    public const int CloseKeyId = 934;
+
+    private static ScreenshotCard? _keyed;
+
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _keysTimerField;
+
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer _keysTimer
+    {
+        get
+        {
+            if (_keysTimerField is null)
+            {
+                _keysTimerField = DispatcherQueue.CreateTimer();
+                _keysTimerField.Interval = TimeSpan.FromMilliseconds(400);
+                _keysTimerField.IsRepeating = false;
+                _keysTimerField.Tick += (_, _) => TakeKeys();
+            }
+
+            return _keysTimerField;
+        }
+    }
+
+    private void TakeKeys()
+    {
+        if (!_hovering)
+        {
+            return;
+        }
+
+        _keyed?.ReleaseKeys();
+        _keyed = this;
+        var hwnd = HiddenWindow.Hwnd;
+        Windows.Win32.PInvoke.RegisterHotKey(hwnd, CopyKeyId, Windows.Win32.UI.Input.KeyboardAndMouse.HOT_KEY_MODIFIERS.MOD_CONTROL, 0x43);
+        Windows.Win32.PInvoke.RegisterHotKey(hwnd, SaveKeyId, Windows.Win32.UI.Input.KeyboardAndMouse.HOT_KEY_MODIFIERS.MOD_CONTROL, 0x53);
+        Windows.Win32.PInvoke.RegisterHotKey(hwnd, CloseKeyId, 0, 0x1B);
+    }
+
+    private void ReleaseKeys()
+    {
+        if (_keyed != this)
+        {
+            return;
+        }
+
+        _keyed = null;
+        var hwnd = HiddenWindow.Hwnd;
+        Windows.Win32.PInvoke.UnregisterHotKey(hwnd, CopyKeyId);
+        Windows.Win32.PInvoke.UnregisterHotKey(hwnd, SaveKeyId);
+        Windows.Win32.PInvoke.UnregisterHotKey(hwnd, CloseKeyId);
+    }
+
+    /// <summary>ShellRuntime 的 WM_HOTKEY：是卡片临时挂的那几个键就交给它，返回 true。</summary>
+    public static bool HandleKey(int id)
+    {
+        if (_keyed is not { } card || id is not (CopyKeyId or SaveKeyId or CloseKeyId))
+        {
+            return false;
+        }
+
+        switch (id)
+        {
+            case CopyKeyId:
+                _ = card.CopyAsync();
+                break;
+            case SaveKeyId:
+                _ = card.SaveAsync();
+                break;
+            default:
+                card.CloseCard();
+                break;
+        }
+
+        return true;
+    }
+
     private void CloseCard()
     {
         _hideTimer.Stop();
+        _keysTimerField?.Stop();
+        ReleaseKeys();
         try
         {
             AppWindow.Hide();

@@ -472,7 +472,7 @@ internal static class ShortcutsSheet
 
         // Screenshot/SelectionOverlayWindow.cs 的 OnKeyDown 和鼠标处理。
         new("screenshot", "截图 · 框选", "capture", FeatureIcons.Screenshot,
-            new[] { HotKeyActions.Screenshot, HotKeyActions.ScreenshotLast, HotKeyActions.Ocr },
+            new[] { HotKeyActions.Screenshot, HotKeyActions.ScreenshotLast, HotKeyActions.DelayedScreenshot, HotKeyActions.Ocr },
             new ShortcutEntry[]
             {
                 new("Shift", "拉框时锁定成正方形（尺寸胶囊锁了比例时按那个比例）"),

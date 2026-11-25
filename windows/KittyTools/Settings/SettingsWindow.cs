@@ -3252,6 +3252,46 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Save();
             });
 
+        // 框选时的提示和放大镜（PLAN-v26 S1，mac 0.10.0 f638e46f）
+        _content.Children.Add(new Border { Height = 8 });
+        AddToggle("框选时显示操作提示", "屏幕上方那一条（拖动框选 · 单击窗口截整窗 · …）；关掉后操作被挡下时的那句照样出",
+            SettingsService.Current.ScreenshotShowsHint, value =>
+            {
+                SettingsService.Current.ScreenshotShowsHint = value;
+                SettingsService.Save();
+            });
+        var loupes = new[] { "full", "loupe", "off" };
+        AddCombo("框选时的放大镜", "不显示色值时 C 不取色、不结束截图；标注里的吸管照常", new[] { "放大镜和色值", "只显示放大镜", "不显示" },
+            Math.Max(0, Array.IndexOf(loupes, SettingsService.Current.ScreenshotLoupe)),
+            index =>
+            {
+                SettingsService.Current.ScreenshotLoupe = loupes[index];
+                SettingsService.Save();
+            });
+        // 截图圆角（PLAN-v26 S4，D5 = A：框选默认直角，单击整扇窗口跟窗口自己的圆角）
+        var radii = new[] { 0, 4, 8, 12, 16, 20, 24 };
+        AddCombo("截图圆角", "框选的框和截出来的图同一个圆角、四角透明；单击截整扇窗口时跟着窗口自己的圆角", radii.Select(radius => radius == 0 ? "直角" : $"{radius}").ToArray(),
+            Math.Max(0, Array.IndexOf(radii, (int)Math.Round(SettingsService.Current.ScreenshotCornerRadius))),
+            index =>
+            {
+                SettingsService.Current.ScreenshotCornerRadius = radii[index];
+                SettingsService.Save();
+            });
+        AddToggle("窗口截图带阴影", "单击窗口截下时单独抓那一扇窗口（被挡住的部分也截得到），四角透明、四周画上阴影；关掉照旧按矩形裁",
+            SettingsService.Current.ScreenshotWindowShadow, value =>
+            {
+                SettingsService.Current.ScreenshotWindowShadow = value;
+                SettingsService.Save();
+            });
+        var delays = new[] { 5, 10 };
+        AddSegmented("延时截图等几秒", "按「延时截图」后倒数这么久再进框选，用来截悬停才出来的提示、展开的菜单", new[] { "5 秒", "10 秒" },
+            SettingsService.Current.ScreenshotDelay == 10 ? 1 : 0,
+            index =>
+            {
+                SettingsService.Current.ScreenshotDelay = delays[index];
+                SettingsService.Save();
+            });
+
         // 框选时悬停识别窗口里的元素（PLAN-v20 E1，mac 6500d9cb；Windows 不用授权）
         _content.Children.Add(new Border { Height = 8 });
         AddToggle("悬停时识别窗口里的元素", "框选时指针停在按钮、侧栏、列表上就框出那一块，单击截下；滚轮换一层大小，Tab 只认窗口。截图翻译、识字不认",
@@ -3591,7 +3631,7 @@ internal sealed partial class SettingsWindow : Window
             }),
             ("截图与录制", new List<string>
             {
-                HotKeyActions.Screenshot, HotKeyActions.ScreenshotLast, HotKeyActions.Ocr, HotKeyActions.Record,
+                HotKeyActions.Screenshot, HotKeyActions.ScreenshotLast, HotKeyActions.DelayedScreenshot, HotKeyActions.Ocr, HotKeyActions.Record,
                 HotKeyActions.Audio, HotKeyActions.PinClipboard, HotKeyActions.ShotHistory,
             }),
             // 便签（PLAN-v13）：三项同名同序（同 mac 那一节、托盘、速查表）。
@@ -4762,6 +4802,7 @@ internal sealed partial class SettingsWindow : Window
             HotKeyActions.InputTranslate => FeatureIcons.TranslateInput,
             HotKeyActions.ScreenshotTranslate => FeatureIcons.TranslateScreenshot,
             HotKeyActions.ScreenshotLast => FeatureIcons.ScreenshotLast,
+            HotKeyActions.DelayedScreenshot => FeatureIcons.Screenshot,
             HotKeyActions.Ocr => FeatureIcons.ScreenshotText,
             HotKeyActions.Record => FeatureIcons.Record,
             HotKeyActions.ShotHistory => FeatureIcons.ScreenshotHistory,

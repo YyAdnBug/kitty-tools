@@ -354,6 +354,7 @@ internal sealed class HomePanel : Window
         {
             third.Add(Global(HotKeyActions.Screenshot, "截图"));
             third.Add(Global(HotKeyActions.ScreenshotLast, "截取上次区域"));
+            third.Add(Global(HotKeyActions.DelayedScreenshot, "延时截图"));
             third.Add(Global(HotKeyActions.Ocr, "识字"));
         }
 

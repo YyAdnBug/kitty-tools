@@ -211,6 +211,7 @@ internal static partial class TrayMenu
                 () => ScreenshotSession.Start(ScreenshotMode.Capture), capture: true);
             // PLAN-v9 G1（同 mac 菜单栏）：截取上次区域、钉图那几项、关于。划词翻译不放：一点托盘原来的程序就不在前台了。
             Add(menu, "截取上次区域", HotKeyActions.ScreenshotLast, ScreenshotSession.StartLast, capture: true);
+            Add(menu, "延时截图", HotKeyActions.DelayedScreenshot, DelayedShot.Toggle);
             Add(menu, "识字", HotKeyActions.Ocr, () => ScreenshotSession.Start(ScreenshotMode.Ocr), capture: true);
         }
 

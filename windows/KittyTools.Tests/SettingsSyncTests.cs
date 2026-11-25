@@ -24,7 +24,8 @@ public sealed class SettingsSyncTests
         "translateForeignLang", "translateDeleteNewline", "autoCopy", "translateCopyRecognized", "translateScreenshotOverlay",
         "translateHistoryEnabled", "translateHistoryLimit", "translatePanelPosition", "translateClipboardMonitor",
         "translateSystemDictionary", "translateWordMode", "translateWordRecording", "translateWordAccent",
-        "translateFontScale", "translateSpeechSpeed", "clipboardImageRows", "clipboardSnippetExpand", "translateCollapsedServices", "ocrJoinLines", "screenshotShutterSound", "screenshotPlacement",
+        "translateFontScale", "translateSpeechSpeed", "clipboardImageRows", "clipboardSnippetExpand",
+        "screenshotShowsHint", "screenshotLoupe", "screenshotWindowShadow", "screenshotDelay", "translateCollapsedServices", "ocrJoinLines", "screenshotShutterSound", "screenshotPlacement",
         "screenshotToolbarAlign", "screenshotCopyAs", "scrollCaptureSpeed", "screenshotKeepsColors", "screenshotFindsElements",
         "shotHistory", "shotHistoryDays", "shotHistoryMegabytes", "screenRecordFrameRate", "screenRecordCountdown",
         "screenRecordShowsCursor", "screenRecordSharpness", "screenRecordCodec", "screenRecordKeysShortcutsOnly",
@@ -53,7 +54,7 @@ public sealed class SettingsSyncTests
     public void MapCoversRealMacKeysOnly()
     {
         var ids = SettingsSyncMap.Shared.Select(key => key.Id).ToList();
-        Assert.AreEqual(85, ids.Count, "PLAN-v21 §1 A、B 组（含 7 个功能开关；R107 起多了 emojiPackDownloads；PLAN-v26 多了 translateSpeechSpeed、clipboardImageRows、clipboardSnippetExpand）");
+        Assert.AreEqual(89, ids.Count, "PLAN-v21 §1 A、B 组（含 7 个功能开关；R107 起多了 emojiPackDownloads；PLAN-v26 多了 translateSpeechSpeed、clipboardImageRows、clipboardSnippetExpand、截图的四项）");
         Assert.AreEqual(15, SettingsSyncMap.WindowsOnly.Count, "C 组（快捷键另算）");
         CollectionAssert.AllItemsAreUnique(ids);
         CollectionAssert.AllItemsAreUnique(SettingsSyncMap.Shared.Select(key => key.Field).ToList());

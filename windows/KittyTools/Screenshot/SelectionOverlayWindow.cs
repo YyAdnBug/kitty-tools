@@ -380,19 +380,36 @@ internal sealed partial class SelectionOverlayWindow : Window
 
         // 打着字就点了拷贝 / 保存 / 钉图：先把字收下（mac output 先 endEditing）
         CommitText();
+        // 单击整扇窗口、没画标注、开着「窗口截图带阴影」：单独抓那一扇窗口（PLAN-v26 S3）；抓不到照旧裁
+        if (SettingsService.Current.ScreenshotWindowShadow && _session.PickedWindow != IntPtr.Zero && _document.Items.Count == 0 &&
+            await WindowShadowShot.CaptureAsync(_session.PickedWindow, _scale) is { } windowPng)
+        {
+            Log.Info("screenshot.window-shadow ok");
+            return windowPng;
+        }
+
         var selection = _session.Selection;
         var width = Math.Max(1, (int)Math.Ceiling(selection.Width));
         var height = Math.Max(1, (int)Math.Ceiling(selection.Height));
+        var corner = CornerRadius * (float)_scale;
         using var target = new CanvasRenderTarget(_canvas, width, height, 96);
         using (var ds = target.CreateDrawingSession())
         {
-            ds.DrawImage(
-                _bitmap,
-                new Windows.Foundation.Rect(0, 0, width, height),
-                new Windows.Foundation.Rect(selection.X, selection.Y, width, height));
-            AnnotationRenderer.Draw(
-                ds, _document.Items, _screen, _bitmap,
-                new PointD(selection.X, selection.Y), 1, _scale, selection);
+            ds.Clear(Windows.UI.Color.FromArgb(0, 0, 0, 0));
+            // 截图圆角（PLAN-v26 S4）：四角透明
+            using var clip = corner > 0
+                ? Microsoft.Graphics.Canvas.Geometry.CanvasGeometry.CreateRoundedRectangle(ds, 0, 0, width, height, corner, corner)
+                : null;
+            using (clip is null ? null : ds.CreateLayer(1, clip))
+            {
+                ds.DrawImage(
+                    _bitmap,
+                    new Windows.Foundation.Rect(0, 0, width, height),
+                    new Windows.Foundation.Rect(selection.X, selection.Y, width, height));
+                AnnotationRenderer.Draw(
+                    ds, _document.Items, _screen, _bitmap,
+                    new PointD(selection.X, selection.Y), 1, _scale, selection);
+            }
         }
 
         try
@@ -1050,7 +1067,7 @@ internal sealed partial class SelectionOverlayWindow : Window
 
         var close = ToolbarButton(Glyphs.Close, _session.Mode == ScreenshotMode.Record ? "取消录屏（Esc）" : "取消（Esc）",
             "取消截图");
-        close.Click += (_, _) => _session.Finish();
+        close.Click += (_, _) => FinishOrArm();
         actions.Children.Add(close);
         if (_session.Mode != ScreenshotMode.Record)
         {
@@ -1661,6 +1678,15 @@ internal sealed partial class SelectionOverlayWindow : Window
             {
                 ds.DrawRectangle(outline, Theme.Shot.Outline, 1.5f);
             }
+            else if (CornerRadius > 0)
+            {
+                // 截图圆角（PLAN-v26 S4）：选区四个角外面那一小块也压暗，看到的就是截出来的样子
+                using var square = Microsoft.Graphics.Canvas.Geometry.CanvasGeometry.CreateRectangle(ds, outline);
+                using var round = Microsoft.Graphics.Canvas.Geometry.CanvasGeometry.CreateRoundedRectangle(ds, outline, CornerRadius, CornerRadius);
+                using var corners = square.CombineWith(round, System.Numerics.Matrix3x2.Identity,
+                    Microsoft.Graphics.Canvas.Geometry.CanvasGeometryCombine.Exclude);
+                ds.FillGeometry(corners, Shade);
+            }
         }
         else
         {
@@ -1678,8 +1704,10 @@ internal sealed partial class SelectionOverlayWindow : Window
             DrawCrop(ds, own);
         }
 
-        // 不拿键盘的屏也要看得见挡下操作的那句（RefuseWipe：别的屏有标注时在这块屏拖框）
-        if (_key || (_flash is not null && Environment.TickCount64 < _flashUntil))
+        // 不拿键盘的屏也要看得见挡下操作的那句（RefuseWipe：别的屏有标注时在这块屏拖框）；
+        // 设置里关了「框选时显示操作提示」（PLAN-v26 S1）只关平时那一条，挡下操作的那句照出
+        var flashing = _flash is not null && Environment.TickCount64 < _flashUntil;
+        if (flashing || (_key && SettingsService.Current.ScreenshotShowsHint))
         {
             DrawHint(ds, width, height);
         }
@@ -1692,7 +1720,10 @@ internal sealed partial class SelectionOverlayWindow : Window
                 DrawCrosshair(ds, width, height);
             }
 
-            DrawMagnifier(ds, width, height);
+            if (SettingsService.Current.ScreenshotLoupe != "off")
+            {
+                DrawMagnifier(ds, width, height);
+            }
         }
     }
 
@@ -1839,10 +1870,36 @@ internal sealed partial class SelectionOverlayWindow : Window
         _canvas.Invalidate();
     }
 
+    /// <summary>
+    /// 退出截图；画过标注时最后一下 Esc / 工具栏 ✕ 先上膛（PLAN-v26 S5，照 mac 0.10.1 E8）：顶上说「再按一次放弃这些标注」，
+    /// 2 秒内再按一次才退出。上膛记在会话上（几块屏共用）。
+    /// </summary>
+    private void FinishOrArm()
+    {
+        if (HasAnnotations && !_session.DiscardArmed)
+        {
+            _session.ArmDiscard();
+            Flash("再按一次放弃这些标注", 2000);
+            return;
+        }
+
+        _session.Finish();
+    }
+
+    /// <summary>截图圆角（DIP，设置 › 截图「截图圆角」，PLAN-v26 S4）：框选的框和出图都按它；单击整扇窗口带阴影出图时按窗口自己的。</summary>
+    private static float CornerRadius => (float)Math.Clamp(SettingsService.Current.ScreenshotCornerRadius, 0, 24);
+
     private void DrawSelection(Microsoft.Graphics.Canvas.CanvasDrawingSession ds, RectD selection)
     {
         var rect = ToDip(selection);
-        ds.DrawRectangle(rect, Accent, 2);
+        if (CornerRadius > 0)
+        {
+            ds.DrawRoundedRectangle(rect, CornerRadius, CornerRadius, Accent, 2);
+        }
+        else
+        {
+            ds.DrawRectangle(rect, Accent, 2);
+        }
         foreach (SelectionHandle handle in Enum.GetValues<SelectionHandle>())
         {
             var point = handle.PointIn(selection);
@@ -1876,13 +1933,16 @@ internal sealed partial class SelectionOverlayWindow : Window
             _ => "拖动框选（按住空格平移）· " + (_elementsOn && !_windowsOnly ? "单击选中" : "单击窗口截整窗") + layers + " · 双击直接拷贝" + last + " · Esc 取消",
         };
         var textWidth = Math.Min(width - 32, 640);
+        // 窄屏上按屏宽折行（PLAN-v26 S5，同 mac U3①）：「Esc 取消」那段不被裁掉
+        using var layout = new Microsoft.Graphics.Canvas.Text.CanvasTextLayout(ds, hint, _small, textWidth - 20, 400)
+        {
+            WordWrapping = CanvasWordWrapping.Wrap,
+        };
+        var textHeight = (float)Math.Max(16, layout.LayoutBounds.Height);
         ds.FillRoundedRectangle(
-            new Windows.Foundation.Rect((width - textWidth) / 2, 14, textWidth, 26),
+            new Windows.Foundation.Rect((width - textWidth) / 2, 14, textWidth, textHeight + 10),
             6, 6, Theme.Shot.LabelBackground);
-        ds.DrawText(
-            hint,
-            new Windows.Foundation.Rect((width - textWidth) / 2 + 10, 19, textWidth - 20, 20),
-            Theme.Shot.HudText, _small);
+        ds.DrawTextLayout(layout, (width - textWidth) / 2 + 10, 19, Theme.Shot.HudText);
     }
 
     /// <summary>放大镜信息卡的两种字：色值（等宽 13 半粗）、坐标（等宽 10）。</summary>
@@ -1912,7 +1972,8 @@ internal sealed partial class SelectionOverlayWindow : Window
         const float side = pixels * cell;
         const float corner = 10;
         const float infoHeight = 40;
-        var info = _session.Mode is not (ScreenshotMode.Ocr or ScreenshotMode.Translate);
+        // 设置里选了「只显示放大镜」（PLAN-v26 S1）也不出色值卡
+        var info = _session.Mode is not (ScreenshotMode.Ocr or ScreenshotMode.Translate) && SettingsService.Current.ScreenshotLoupe == "full";
         var total = side + (info ? 6 + infoHeight : 0);
         var cursorX = (float)(_cursor.X / _scale);
         var cursorY = (float)(_cursor.Y / _scale);
@@ -2590,8 +2651,17 @@ internal sealed partial class SelectionOverlayWindow : Window
         if (wasDraw && moved < 3 && restore is null && _hover is { } hover)
         {
             ResetAnnotations();
-            _session.SetSelection(
-                _screen, new RectD(hover.Left, hover.Top, hover.Width, hover.Height));
+            // 悬停的就是整扇窗口（不是元素那一层）：记下句柄，出图时能单独抓它（PLAN-v26 S3）
+            var whole = _windows.FindIndex(window => window == hover);
+            var rect = new RectD(hover.Left, hover.Top, hover.Width, hover.Height);
+            if (whole >= 0 && _windowHandles[whole] != IntPtr.Zero)
+            {
+                _session.SetWindowSelection(_screen, rect, _windowHandles[whole]);
+            }
+            else
+            {
+                _session.SetSelection(_screen, rect);
+            }
         }
         else if (wasDraw &&
                  (!_session.HasSelection ||
@@ -2778,7 +2848,7 @@ internal sealed partial class SelectionOverlayWindow : Window
                 }
                 else
                 {
-                    _session.Finish();
+                    FinishOrArm();
                 }
 
                 break;

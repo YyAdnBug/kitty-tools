@@ -253,9 +253,30 @@ internal sealed class ScreenshotSession
     {
         SelectionScreen = screen;
         Selection = rect;
+        PickedWindow = IntPtr.Zero;
         SelectionChanged();
         InvalidateAll();
     }
+
+    /// <summary>
+    /// 单击整扇窗口截下（PLAN-v26 S3）：选区是那扇窗口的矩形，另记下它的句柄——出图时「窗口截图带阴影」开着就单独抓它。
+    /// 之后再拖、再改选区（SetSelection）就忘掉。
+    /// </summary>
+    public void SetWindowSelection(FrozenScreen screen, RectD rect, IntPtr window)
+    {
+        SetSelection(screen, rect);
+        PickedWindow = window;
+    }
+
+    /// <summary>单击选中的那扇窗口（本 App 自己的、元素层、拖出来的选区是 0）。</summary>
+    public IntPtr PickedWindow { get; private set; }
+
+    private long _discardArmedUntil;
+
+    /// <summary>画过标注时放弃要按两下（PLAN-v26 S5）：上了膛、还在 2 秒内。</summary>
+    public bool DiscardArmed => Environment.TickCount64 < _discardArmedUntil;
+
+    public void ArmDiscard() => _discardArmedUntil = Environment.TickCount64 + 2000;
 
     /// <summary>选区变了：就地翻译贴上去的译文换回原图（PLAN-v18 S6：译文只属于翻的那个选区）。</summary>
     private void SelectionChanged()

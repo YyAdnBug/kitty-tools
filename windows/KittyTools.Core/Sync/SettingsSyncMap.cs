@@ -188,6 +188,12 @@ public static class SettingsSyncMap
         Choice("screenshotCopyAs", "ScreenshotCopyAs", "image", "file");
         Choice("scrollCaptureSpeed", "ScrollCaptureSpeed", "slow", "normal", "fast");
         Flag("screenshotKeepsColors", "ScreenshotKeepsColors");
+        // PLAN-v26 S1–S3（mac 0.10.x）；截图圆角两边默认不一样（D5），不同步
+        Flag("screenshotShowsHint", "ScreenshotShowsHint");
+        Choice("screenshotLoupe", "ScreenshotLoupe", "full", "loupe", "off");
+        Flag("screenshotWindowShadow", "ScreenshotWindowShadow");
+        keys.Add(new(PrefPrefix + "screenshotDelay", "ScreenshotDelay", SettingType.Int, true, Same,
+            value => value.Number is 5 or 10 ? value : null));
         Flag("screenshotFindsElements", "ScreenshotFindsElements");
         Flag("shotHistory", "ShotHistory");
         Number("shotHistoryDays", "ShotHistoryDays");
