@@ -7,6 +7,7 @@
 // WGC 只抓那一扇窗口；截图遮罩用合成的冻结帧，不抓桌面（REVIEW R33）。
 using System.Runtime.InteropServices.WindowsRuntime;
 using KittyTools.Core;
+using KittyTools.Core.Sync;
 using KittyTools.Infrastructure;
 using KittyTools.Ui;
 using Microsoft.UI.Windowing;
@@ -1019,6 +1020,18 @@ internal static class UiSnapshotProbe
                 settings.RebuildForProbe();
                 settings.ScrollToSectionForProbe("同步");
                 await SyncShotAsync("settings-sync-server-busy", 600);
+                // PLAN-v26 I4：服务器不认密码之后那一行（「更新密码…」）和换密码的对话框
+                syncer.Status.State = "stopped";
+                syncer.Status.Message = new WebDavFailure(WebDavError.Unauthorized).Message + "；先不再自动重试，点「更新密码…」或「立即同步」";
+                syncer.Status.NeedsPassword = true;
+                settings.RebuildForProbe();
+                settings.ScrollToSectionForProbe("同步");
+                await SyncShotAsync("settings-sync-server-password", 600);
+                settings.OpenSyncPasswordForProbe();
+                await SyncShotAsync("settings-sync-password-dialog", 1200);
+                settings.CloseDialogsForProbe();
+                await Task.Delay(400);
+                syncer.Status.NeedsPassword = false;
                 syncer.ForgetServer();
                 SettingsService.Current.SyncEnabled = false;
                 SettingsService.Save();

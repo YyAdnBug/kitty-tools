@@ -87,8 +87,15 @@ public sealed class ReminderSchedule
         => Kind == other.Kind && Date.Equals(other.Date) && Time == other.Time && Until == other.Until &&
            Days.SequenceEqual(other.Days) && Day == other.Day && Every == other.Every;
 
+    /// <summary>间隔的时段跨过半夜（22:00–6:00，mac 0.10.1 U10）。是方法不是属性：设置的 JSON 会把只读属性也写进去。</summary>
+    public bool IsOvernight() => Kind == Interval && Until < Time;
+
+    /// <summary>间隔类的时段有多长（分钟）：跨过半夜的算到第二天（22:00–6:00 = 480）。</summary>
+    public int WindowMinutes() => Until > Time ? Until - Time : Until + 1440 - Time;
+
     /// <summary>
-    /// 收拾成能用的（mac sanitized）：时刻夹进一天里，时段的结束不晚于开始就到半夜，星期去重排序、一天都没勾当七天都勾，
+    /// 收拾成能用的（mac sanitized）：时刻夹进一天里，时段的结束不晚于开始就到半夜——间隔类的结束早于开始（1 起）是跨过半夜，留着
+    /// （mac 0.10.1 U10；别的种类没有时段，照旧到半夜）；星期去重排序、一天都没勾当七天都勾，
     /// 几号夹进 1…31，间隔夹进 5 分钟…12 小时，时刻不是有限数的换成很久以前；不认识的种类当很久以前的一次（不会响）。
     /// </summary>
     public ReminderSchedule Sanitized()
@@ -101,7 +108,8 @@ public sealed class ReminderSchedule
         }
 
         next.Time = Math.Clamp(Time, 0, 1439);
-        next.Until = Until > next.Time && Until <= 1440 ? Until : 1440;
+        var overnight = next.Kind == Interval && Until >= 1 && Until < next.Time;
+        next.Until = (Until > next.Time && Until <= 1440) || overnight ? Until : 1440;
         var days = Days.Where(day => day is >= 1 and <= 7).Distinct().Order().ToList();
         next.Days = days.Count == 0 ? AllDays.ToList() : days;
         next.Day = Math.Clamp(Day, 1, 31);
@@ -154,6 +162,12 @@ public sealed class Reminder
     /// <summary>没理会时每隔几分钟再催一次（NagChoices 里的一个；0 = 不催）。</summary>
     public int NagMinutes { get; set; }
 
+    /// <summary>
+    /// 专注模式时也照常提醒（mac 0.10.0，默认关）。Windows 不认专注模式（PLAN-v26 E4 先不跟），只原样存着、同步、导出，
+    /// 不然 mac 那边设的会被这边编回去时冲掉。
+    /// </summary>
+    public bool DuringFocus { get; set; }
+
     public Reminder Copy()
     {
         var copy = (Reminder)MemberwiseClone();
@@ -164,7 +178,8 @@ public sealed class Reminder
     public bool SameAs(Reminder other)
         => Id == other.Id && Title == other.Title && Detail == other.Detail && Symbol == other.Symbol && IsOn == other.IsOn &&
            Schedule.SameAs(other.Schedule) && Alert == other.Alert && StatusID == other.StatusID &&
-           FullSeconds == other.FullSeconds && Sound == other.Sound && Chime == other.Chime && NagMinutes == other.NagMinutes;
+           FullSeconds == other.FullSeconds && Sound == other.Sound && Chime == other.Chime && NagMinutes == other.NagMinutes &&
+           DuringFocus == other.DuringFocus;
 }
 
 public static class Reminders
@@ -556,7 +571,7 @@ public static class Reminders
             return "这个时间已经过了，不会再提醒";
         }
 
-        return draft.Schedule.Kind == ReminderSchedule.Interval && draft.Schedule.Until - draft.Schedule.Time < draft.Schedule.Every
+        return draft.Schedule.Kind == ReminderSchedule.Interval && draft.Schedule.WindowMinutes() < draft.Schedule.Every
             ? "这段时间比间隔还短，可能一次都不提醒"
             : null;
     }
@@ -645,7 +660,7 @@ public static class Reminders
 
     /// <summary>
     /// 同步里的一条（mac SyncRecords.encoder：键排好序、不转义斜杠和非 ASCII，时刻是数字），也是 decodeExact 的比较基准。
-    /// 没有说明时不写 detail（Swift 的 Codable 不写 nil）。
+    /// 没有说明时不写 detail（Swift 的 Codable 不写 nil）；duringFocus 一定写（mac 0.10.0 起是非可选的 Bool，合成的 Codable 一定写）。
     /// </summary>
     public static string Canonical(Reminder reminder)
     {
@@ -660,6 +675,7 @@ public static class Reminders
             CanonicalJson.WriteString(detail, builder);
         }
 
+        builder.Append(",\"duringFocus\":").Append(reminder.DuringFocus ? "true" : "false");
         builder.Append(",\"fullSeconds\":").Append(reminder.FullSeconds.ToString(CultureInfo.InvariantCulture));
         builder.Append(",\"id\":");
         CanonicalJson.WriteString(reminder.Id, builder);
@@ -678,10 +694,12 @@ public static class Reminders
         return builder.ToString();
     }
 
+    /// <summary>时间规则那一段；跨过半夜的间隔多一个 overnight（mac 只在跨时写，键排在 kind 后面），别的编出来和以前一样。</summary>
     public static string CanonicalSchedule(ReminderSchedule schedule)
         => $"{{\"date\":{ReminderTime.Number(schedule.Date)},\"day\":{schedule.Day.ToString(CultureInfo.InvariantCulture)}," +
            $"\"days\":[{string.Join(',', schedule.Days.Select(day => day.ToString(CultureInfo.InvariantCulture)))}]," +
            $"\"every\":{schedule.Every.ToString(CultureInfo.InvariantCulture)},\"kind\":\"{schedule.Kind}\"," +
+           (schedule.IsOvernight() ? "\"overnight\":true," : string.Empty) +
            $"\"time\":{schedule.Time.ToString(CultureInfo.InvariantCulture)},\"until\":{schedule.Until.ToString(CultureInfo.InvariantCulture)}}}";
 
     /// <summary>设置导出文件里的一条（键名同 mac，时刻写 ISO 8601 字符串；键的顺序无所谓）。</summary>
@@ -711,6 +729,11 @@ public static class Reminders
         writer.WriteEndArray();
         writer.WriteNumber("day", reminder.Schedule.Day);
         writer.WriteNumber("every", reminder.Schedule.Every);
+        if (reminder.Schedule.IsOvernight())
+        {
+            writer.WriteBoolean("overnight", true);
+        }
+
         writer.WriteEndObject();
         writer.WriteString("alert", reminder.Alert);
         writer.WriteString("statusID", reminder.StatusID);
@@ -718,6 +741,7 @@ public static class Reminders
         writer.WriteString("sound", reminder.Sound);
         writer.WriteString("chime", reminder.Chime);
         writer.WriteNumber("nagMinutes", reminder.NagMinutes);
+        writer.WriteBoolean("duringFocus", reminder.DuringFocus);
         writer.WriteEndObject();
     }
 
@@ -746,6 +770,7 @@ public static class Reminders
             Sound = Text(element, "sound") is { } sound && Sounds.Contains(sound) ? sound : Reminder.SoundChime,
             Chime = Text(element, "chime") ?? DefaultChime,
             NagMinutes = Integer(element, "nagMinutes") ?? 0,
+            DuringFocus = element.TryGetProperty("duringFocus", out var focus) && focus.ValueKind is JsonValueKind.True,
         };
         if (element.TryGetProperty("schedule", out var schedule) && schedule.ValueKind == JsonValueKind.Object)
         {

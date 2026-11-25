@@ -4,12 +4,13 @@
 // 别处删了的服务只拿出列表、不删凭据管理器里的密钥。
 // 编码：键按字母排；可空的字段是 null 才不写（空串照写）——两边编 → 落 → 再编都一字不差，写成空串的那台不会被当成
 // 「这一版读不懂」。usesDeepLX 是三态：没写 / false / true，三态都原样编回去（R32）。
+// mac 0.10.1（issue #35）加了 explainsSentences、extraPrompt：关着 / 空着不写，三态 / 原文都原样编回去（PLAN-v26 I2）。
 namespace KittyTools.Core.Sync;
 
 /// <summary>同步里的一个翻译服务（mac TranslateService 的字段；Windows 专有的设置不进来）。</summary>
 public sealed record SyncService(
     string Id, string Kind, string Name, bool Enabled, string? Model, string? BaseUrl, string? Protocol,
-    string? Region, bool? UsesDeepLX);
+    string? Region, bool? UsesDeepLX, bool? ExplainsSentences = null, string? ExtraPrompt = null);
 
 /// <summary>去重掉的本机自建 AI 服务：密钥从 From 搬给 To（To 在本机还没有密钥时）。</summary>
 public sealed record SyncSecretMove(string From, string To);
@@ -37,7 +38,7 @@ public static class ServiceSync
         return values;
     }
 
-    /// <summary>键按字母排：aiProtocol / baseURL / id / isEnabled / kind / model / name / region / usesDeepLX。</summary>
+    /// <summary>键按字母排：aiProtocol / baseURL / explainsSentences / extraPrompt / id / isEnabled / kind / model / name / region / usesDeepLX。</summary>
     public static string Service(SyncService service)
     {
         var builder = new System.Text.StringBuilder("{");
@@ -62,6 +63,16 @@ public static class ServiceSync
         if (service.BaseUrl is not null)
         {
             Field("baseURL", SyncValues.Quote(service.BaseUrl));
+        }
+
+        if (service.ExplainsSentences is { } explains)
+        {
+            Field("explainsSentences", explains ? "true" : "false");
+        }
+
+        if (service.ExtraPrompt is not null)
+        {
+            Field("extraPrompt", SyncValues.Quote(service.ExtraPrompt));
         }
 
         Field("id", SyncValues.Quote(service.Id));
@@ -108,7 +119,8 @@ public static class ServiceSync
                     SyncValues.Text(root, "baseURL"),
                     // 没写协议就是没有（不补 openai）：补了编回去就多一个字段，对不上。
                     SyncValues.Text(root, "aiProtocol"), SyncValues.Text(root, "region"),
-                    SyncValues.FlagOrNull(root, "usesDeepLX"))
+                    SyncValues.FlagOrNull(root, "usesDeepLX"), SyncValues.FlagOrNull(root, "explainsSentences"),
+                    SyncValues.Text(root, "extraPrompt"))
                 : null);
         return service is not null && Service(service) == value ? service : null;
     }

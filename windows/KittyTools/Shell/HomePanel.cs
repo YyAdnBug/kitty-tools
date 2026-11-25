@@ -648,16 +648,30 @@ internal sealed class HomePanel : Window
         }
 
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, VerticalAlignment = VerticalAlignment.Center };
-        actions.Children.Add(BarButton("设置", "Ctrl+,", "设置", () => ShellRuntime.Instance?.ShowSettings(welcome: false)));
+        // 同步停了、该让人知道了（PLAN-v26 I4，同 mac 0.10.1 U1）：「设置」挂一个小橙点，好了自己收
+        var attention = Syncer.Instance?.Status.NeedsAttention == true;
+        actions.Children.Add(BarButton("设置", "Ctrl+,", attention ? "设置（同步停了）" : "设置",
+            () => ShellRuntime.Instance?.ShowSettings(welcome: false, attention ? "general" : null), attention));
         actions.Children.Add(BarButton("退出", null, "退出 Kitty Tools", () => ShellRuntime.Instance?.Exit(installUpdate: true)));
         Grid.SetColumn(actions, 1);
         bar.Children.Add(actions);
         return bar;
     }
 
-    private Button BarButton(string title, string? key, string automationName, Action run)
+    private Button BarButton(string title, string? key, string automationName, Action run, bool dot = false)
     {
         var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        if (dot)
+        {
+            content.Children.Add(new Microsoft.UI.Xaml.Shapes.Ellipse
+            {
+                Width = 6,
+                Height = 6,
+                Fill = Theme.Caution(),
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+        }
+
         content.Children.Add(new TextBlock
         {
             Text = title,

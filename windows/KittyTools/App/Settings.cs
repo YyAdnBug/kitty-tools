@@ -589,6 +589,12 @@ internal sealed class TranslateServiceConfig
 
     /// <summary>DeepL 走自建 DeepLX；null = 从没写过（同步时要和 false 区分，R32）。</summary>
     public bool? UsesDeepLX { get; set; }
+
+    /// <summary>浮窗里遇到一句外文时讲解（mac 0.10.1 issue #35，只有大模型服务有）；关着存 null（同步时不写）。</summary>
+    public bool? ExplainsSentences { get; set; }
+
+    /// <summary>附加要求（ExtraPrompt.Stored 过的；空着是 null）。</summary>
+    public string? ExtraPrompt { get; set; }
 }
 
 internal sealed class HotKeySetting

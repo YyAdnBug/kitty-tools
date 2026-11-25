@@ -43,9 +43,9 @@ public static class ReminderMath
     /// <summary>mac Calendar 的 weekday：1 = 周日 … 7 = 周六。</summary>
     public static int Weekday(DateTime local) => (int)local.DayOfWeek + 1;
 
-    /// <summary>某一天（当地日期）的第几分钟；1440 = 第二天零点。</summary>
+    /// <summary>某一天（当地日期）的第几分钟；1440 = 第二天零点，再往后是第二天的第几分钟（跨过半夜的时段的结束）。</summary>
     public static DateTime Moment(int minutes, DateTime day, TimeZoneInfo zone)
-        => LocalToUtc(day.Date.AddMinutes(Math.Clamp(minutes, 0, 1440)), zone);
+        => LocalToUtc(day.Date.AddMinutes(Math.Clamp(minutes, 0, 2880)), zone);
 
     /// <summary>严格晚于 after 的下一次（一次 / 每周 / 每月）；间隔类走 NextFromAnchor，这里给 null。</summary>
     public static DateTime? NextAfter(ReminderSchedule schedule, DateTime after, TimeZoneInfo zone)
@@ -138,11 +138,22 @@ public static class ReminderMath
         return null;
     }
 
-    /// <summary>date 落在哪个时段里（间隔类）：当天勾了、而且在 time…until 之间。</summary>
+    /// <summary>date 落在哪个时段里（间隔类）：那天勾了、而且在 time…until 之间；跨过半夜的时段是前一天开始的，前一天的也看。</summary>
     public static (DateTime Start, DateTime End)? WindowContaining(ReminderSchedule schedule, DateTime date, TimeZoneInfo zone)
-        => Window(schedule, Local(date, zone).Date, zone) is { } window && window.Start <= date && date < window.End ? window : null;
+    {
+        var day = Local(date, zone).Date;
+        foreach (var start in new[] { day.AddDays(-1), day })
+        {
+            if (Window(schedule, start, zone) is { } window && window.Start <= date && date < window.End)
+            {
+                return window;
+            }
+        }
 
-    /// <summary>某一天（当地日期）的时段；那天没勾给 null。</summary>
+        return null;
+    }
+
+    /// <summary>某一天（当地日期）开始的时段；那天没勾给 null。结束早于开始的跨过半夜、结束在第二天（mac 0.10.1 U10）。</summary>
     private static (DateTime Start, DateTime End)? Window(ReminderSchedule schedule, DateTime day, TimeZoneInfo zone)
     {
         if (!schedule.Days.Contains(Weekday(day)))
@@ -151,7 +162,7 @@ public static class ReminderMath
         }
 
         var start = Moment(schedule.Time, day, zone);
-        var end = Moment(schedule.Until, day, zone);
+        var end = Moment(schedule.Until > schedule.Time ? schedule.Until : schedule.Until + 1440, day, zone);
         return start < end ? (start, end) : null;
     }
 }

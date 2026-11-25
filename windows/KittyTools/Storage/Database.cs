@@ -51,7 +51,7 @@ internal sealed class Database : IDisposable
             """
             SELECT id, kind, text, file_paths, image_hash, width, height, image_bytes,
                    source_exe, source_name, copied_at, favorite,
-                   uid, snippet, note, group_id, ocr_text, (html IS NOT NULL OR rtf IS NOT NULL)
+                   uid, snippet, note, group_id, ocr_text, (html IS NOT NULL OR rtf IS NOT NULL), keyword
             FROM clips ORDER BY copied_at DESC, id DESC
             """);
         while (statement.Step())
@@ -82,6 +82,7 @@ internal sealed class Database : IDisposable
                 GroupId = statement.GetText(15),
                 OcrText = statement.GetText(16),
                 Rich = statement.GetInt64(17) != 0,
+                Keyword = statement.GetText(18),
             });
         }
 
@@ -94,8 +95,8 @@ internal sealed class Database : IDisposable
             """
             INSERT INTO clips(kind, text, file_paths, html, rtf, image_hash, width, height, image_bytes,
                               source_exe, source_name, copied_at, favorite,
-                              uid, snippet, note, group_id)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+                              uid, snippet, note, group_id, keyword)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
             """);
         statement.BindText(1, KindText(entry.Kind))
             .BindText(2, entry.Text)
@@ -113,7 +114,8 @@ internal sealed class Database : IDisposable
             .BindText(14, entry.Uid)
             .BindInt64(15, entry.Snippet ? 1 : 0)
             .BindText(16, entry.Note)
-            .BindText(17, entry.GroupId);
+            .BindText(17, entry.GroupId)
+            .BindText(18, entry.Keyword);
         statement.Step();
         return _connection.LastInsertRowId;
     }
@@ -171,6 +173,13 @@ internal sealed class Database : IDisposable
         statement.Step();
     }
 
+    public void SetKeyword(long id, string? keyword)
+    {
+        using var statement = _connection.Prepare("UPDATE clips SET keyword = ?2 WHERE id = ?1");
+        statement.BindInt64(1, id).BindText(2, keyword);
+        statement.Step();
+    }
+
     public void SetText(long id, string text)
     {
         // 改了正文，原来的格式就不对了：一起清掉（mac「保存后不再保留原来的格式」），不然粘出来还是旧的。
@@ -196,7 +205,7 @@ internal sealed class Database : IDisposable
         using var statement = _connection.Prepare(
             """
             UPDATE clips SET uid = COALESCE(?2, uid), text = ?3, favorite = ?4, snippet = ?5, note = ?6, group_id = ?7,
-                             copied_at = ?8,
+                             copied_at = ?8, keyword = ?10,
                              html = CASE WHEN ?9 = 1 THEN NULL ELSE html END,
                              rtf = CASE WHEN ?9 = 1 THEN NULL ELSE rtf END
             WHERE id = ?1
@@ -209,7 +218,8 @@ internal sealed class Database : IDisposable
             .BindText(6, write.Note)
             .BindText(7, write.Group)
             .BindInt64(8, write.CopiedAt)
-            .BindInt64(9, write.TextChanged ? 1 : 0);
+            .BindInt64(9, write.TextChanged ? 1 : 0)
+            .BindText(10, write.Keyword);
         statement.Step();
     }
 

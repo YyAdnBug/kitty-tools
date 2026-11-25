@@ -190,6 +190,8 @@ internal static class ArchiveService
                     : null,
                 Region = service.Region,
                 UsesDeepLX = service.UsesDeepLX,
+                ExplainsSentences = service.ExplainsSentences == true ? true : null,
+                ExtraPrompt = ExtraPrompt.Cleaned(service.ExtraPrompt),
             }).ToList();
         }
 
@@ -220,6 +222,8 @@ internal static class ArchiveService
                     Snippet = entry.Snippet,
                     Group = clips.GroupName(entry.GroupId),
                     CopiedAt = DateTimeOffset.FromUnixTimeMilliseconds(entry.CopiedAt),
+                    // 关键词只给片段（同 mac：不再是片段的收藏留着的那个不起作用）
+                    Keyword = entry.Snippet ? entry.Keyword : null,
                 })
                 .ToList();
             archive.ClipGroups = clips.Groups
@@ -306,6 +310,9 @@ internal static class ArchiveService
                     service.Protocol = entry.AiProtocol ?? service.Protocol;
                     service.Region = entry.Region ?? service.Region;
                     service.UsesDeepLX = entry.UsesDeepLX ?? service.UsesDeepLX;
+                    // 讲解照文件（没写 = 关，同 mac 整条换成文件的）；附加要求文件里没有时留本机写的（mac mergeServices：旧版本导出的文件不带它）
+                    service.ExplainsSentences = entry.ExplainsSentences == true ? true : null;
+                    service.ExtraPrompt = ExtraPrompt.Cleaned(entry.ExtraPrompt) ?? service.ExtraPrompt;
                 }
 
                 store.Save();
@@ -325,7 +332,8 @@ internal static class ArchiveService
                         clip.CopiedAt,
                         clip.Note,
                         clip.Snippet == true,
-                        clip.Group)).ToList(),
+                        clip.Group,
+                        clip.Keyword)).ToList(),
                     archive.ClipGroups);
                 outcome.ClipsAdded = added;
                 outcome.ClipsUpdated = updated;

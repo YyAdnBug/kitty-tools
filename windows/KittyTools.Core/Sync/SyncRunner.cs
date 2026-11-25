@@ -61,6 +61,8 @@ public sealed class SyncRunner(
 {
     public const string NewerFormat = "同步文件夹是新版本写的，请更新 Kitty Tools";
 
+    public const string ForeignFolder = "这个文件夹里已经有别的东西了";
+
     // ponytail: 四类都没给「真正改的时刻」（剪贴板的复制时间不是改动时间，mac 也不拿它当改于），所以 changed 交空表：
     // 改于用「这一轮发现它变了」的现在（不晚于 now，SyncEngine 里取 min）。以后仓库记了每一项真正改的时刻，再从这里传进去。
     private static readonly Dictionary<string, long> NoChanged = new(StringComparer.Ordinal);
@@ -116,7 +118,7 @@ public sealed class SyncRunner(
 
             if (snapshot.Foreign)
             {
-                return result.Stop("这个文件夹里已经有别的东西了");
+                return result.Stop(ForeignFolder);
             }
 
             library = Guid.NewGuid().ToString("D").ToUpperInvariant();

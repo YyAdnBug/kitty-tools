@@ -158,6 +158,13 @@ public sealed class SettingsArchive
         [JsonPropertyName("usesDeepLX")]
         public bool? UsesDeepLX { get; set; }
 
+        /// <summary>讲解外文句子（mac 0.10.1）：只写 true，关着不写。</summary>
+        [JsonPropertyName("explainsSentences")]
+        public bool? ExplainsSentences { get; set; }
+
+        [JsonPropertyName("extraPrompt")]
+        public string? ExtraPrompt { get; set; }
+
         /// <summary>文件里写的开关（isEnabled，没有退回 enabled；都没有 = null）。</summary>
         [JsonIgnore]
         public bool? On => IsEnabled ?? Enabled;
@@ -218,6 +225,10 @@ public sealed class SettingsArchive
         [JsonPropertyName("copiedAt")]
         [JsonConverter(typeof(ArchiveDateConverter))]
         public DateTimeOffset? CopiedAt { get; set; }
+
+        /// <summary>片段的关键词（mac 0.10.3）：只给片段、只收合规的（SnippetKeyword），没有不写。</summary>
+        [JsonPropertyName("keyword")]
+        public string? Keyword { get; set; }
     }
 
     public sealed class ArchiveWord
@@ -306,6 +317,16 @@ public sealed class SettingsArchive
                 .Where(clip => clip.Text is { Length: > 0 and <= 5_000_000 })
                 .Take(MaxClips)
                 .ToList();
+            // 关键词只给片段、只收合规的；一个文件里两条片段用了同一个的，只留第一条的（同 mac）。不合规的只是不带关键词
+            var keywords = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var clip in copy.Clips)
+            {
+                if (clip.Keyword is { } keyword &&
+                    !(clip.Snippet == true && SnippetKeyword.IsValid(keyword) && keywords.Add(keyword)))
+                {
+                    clip.Keyword = null;
+                }
+            }
         }
 
         if (ClipGroups is not null)

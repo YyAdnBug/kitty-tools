@@ -161,6 +161,12 @@ public static class Schema
             """
             ALTER TABLE launcher_usage ADD COLUMN listed INTEGER NOT NULL DEFAULT 0;
             """),
+        new SchemaStep(
+            11,
+            "clips.keyword：片段的关键词（PLAN-v26 I3，mac 0.10.3；旧版本读写都写明列名、碰不到它）",
+            """
+            ALTER TABLE clips ADD COLUMN keyword TEXT;
+            """),
     };
 
     /// <summary>从 currentVersion 开始还要跑的步骤（升序）。比代码新的库（用户装过更新的版本）一步都不跑。</summary>

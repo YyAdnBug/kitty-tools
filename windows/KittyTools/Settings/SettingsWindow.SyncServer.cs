@@ -1,8 +1,8 @@
 // 设置 › 通用「同步」里「连接服务器…」的对话框（PLAN-v19 V5，照 mac Settings/SyncServerForm.swift）：填 WebDAV 服务器的地址、
 // 文件夹、用户名和密码。「测试连接」看连不连得上、能不能写，结果写在对话框里、不关；「连接」先看服务器上那个文件夹
 // （SyncServer.InspectAsync），已经有别的电脑在同步就在同一个对话框里换成问句（ContentDialog 不能再叠一个），再开
-// （Syncer.EnableServerAsync）。网络都在线程池上。两个按钮都先 args.Cancel = true：对话框只在连成了（Hide）或者点「取消」时关，
-// 正在测试 / 连接时也关不掉。
+// （Syncer.EnableServerAsync）。网络都在线程池上。两个按钮都先 args.Cancel = true：对话框只在连成了（Hide）或者点「取消」时关。
+// 正在测试 / 连接时也能「取消」、Esc（PLAN-v26 I4，照 mac 0.10.1 U2）：请求在后台走完，结果丢掉、什么都不记、不开同步。
 using KittyTools.Core.Notes;
 using KittyTools.Core.Sync;
 using KittyTools.Infrastructure;
@@ -123,6 +123,7 @@ internal sealed partial class SettingsWindow
             };
 
             var working = false;
+            var cancelled = false;
             WebDavAccount? joining = null;
 
             // 填的样子拼成的账号：地址不像（不是 http(s)、没有主机）、没填用户名或密码时是 null
@@ -190,6 +191,11 @@ internal sealed partial class SettingsWindow
                 var dav = syncer.Dav(account);
                 var (test, failure) = await Task.Run(() => SyncServer.TestAsync(dav));
                 working = false;
+                if (cancelled)
+                {
+                    return;
+                }
+
                 Say(
                     test switch
                     {
@@ -205,15 +211,20 @@ internal sealed partial class SettingsWindow
             {
                 working = true;
                 Refresh();
-                var problem = await syncer.EnableServerAsync(account);
+                var problem = await syncer.EnableServerAsync(account, () => cancelled);
                 working = false;
+                if (cancelled)
+                {
+                    return;
+                }
+
                 if (problem is not null)
                 {
                     BackToForm(problem);
                     return;
                 }
 
-                _ = syncer.RoundAsync();
+                _ = syncer.RoundAsync(manual: true);
                 BuildPage("general");
                 dialog.Hide();
             }
@@ -232,6 +243,11 @@ internal sealed partial class SettingsWindow
                 var device = SyncDevice.Instance?.Id ?? string.Empty;
                 var seen = await Task.Run(() => SyncServer.InspectAsync(dav, device));
                 working = false;
+                if (cancelled)
+                {
+                    return;
+                }
+
                 if (seen.Failure is { } failure)
                 {
                     Say(failure.Message, problem: true);
@@ -281,12 +297,13 @@ internal sealed partial class SettingsWindow
                     _ = TestAsync();
                 }
             };
-            dialog.Closing += (_, args) =>
+            dialog.Closing += (_, _) =>
             {
-                // 正在测试 / 连接时不让关（连到一半关掉，设置页会停在旧的样子）
+                // 正在测试 / 连接时关掉（「取消」、Esc）：后台那次请求走完后什么都不记（EnableServerAsync 在写设置之前看 cancelled）
                 if (working)
                 {
-                    args.Cancel = true;
+                    cancelled = true;
+                    Log.Info("settings.sync-server-cancelled");
                 }
             };
             Refresh();
@@ -327,6 +344,86 @@ internal sealed partial class SettingsWindow
         catch (Exception ex)
         {
             Log.Error("settings.sync-server-failed", ex);
+        }
+    }
+
+    /// <summary>UI 截图自检：弹「更新密码…」对话框（关它用 CloseDialogsForProbe）。</summary>
+    internal void OpenSyncPasswordForProbe() => _ = UpdateSyncPasswordAsync();
+
+    /// <summary>连服务器时「停止同步…」先确认（mac 0.10.1 U2）：默认按钮是「取消」。</summary>
+    private async Task<bool> ConfirmStopServerAsync()
+    {
+        var dialog = new ContentDialog
+        {
+            RequestedTheme = Theme.ElementTheme,
+            Title = "停止和服务器同步？",
+            Content = new TextBlock
+            {
+                Text = "服务器上的东西留着，这台电脑上的也不动；凭据管理器里的密码会删掉，以后再连要重新填，同步的东西也要整份重新下载一遍。",
+                TextWrapping = TextWrapping.Wrap,
+                MaxWidth = 420,
+            },
+            PrimaryButtonText = "停止同步",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = _shell.XamlRoot,
+        };
+        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+    }
+
+    /// <summary>
+    /// 「更新密码…」（mac 0.10.1 E1）：服务器不认密码、凭据管理器里没有密码时同步那一行给它。只换凭据管理器里的密码，
+    /// 镜像和它的账都留着；换完马上同步一轮（用户主动的）。
+    /// </summary>
+    private async Task UpdateSyncPasswordAsync()
+    {
+        if (Syncer.Instance is not { } syncer)
+        {
+            return;
+        }
+
+        try
+        {
+            var password = new PasswordBox { Header = "新密码", MaxLength = 256, Width = 360 };
+            var note = new TextBlock
+            {
+                Text = $"用户名 {SettingsService.Current.SyncServerUser}。有的服务要在网页上另外生成给第三方应用用的密码。",
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Theme.SecondaryText(),
+            };
+            var form = new StackPanel { Spacing = 10, Width = 360 };
+            form.Children.Add(password);
+            form.Children.Add(note);
+            var dialog = new ContentDialog
+            {
+                RequestedTheme = Theme.ElementTheme,
+                Title = "更新服务器的密码",
+                Content = form,
+                PrimaryButtonText = "更新并同步",
+                CloseButtonText = "取消",
+                DefaultButton = ContentDialogButton.Primary,
+                IsPrimaryButtonEnabled = false,
+                XamlRoot = _shell.XamlRoot,
+            };
+            password.PasswordChanged += (_, _) => dialog.IsPrimaryButtonEnabled = password.Password.Length > 0;
+            dialog.PrimaryButtonClick += (_, args) =>
+            {
+                if (syncer.UpdatePassword(password.Password) is { } problem)
+                {
+                    args.Cancel = true;
+                    note.Text = problem;
+                    note.Foreground = Theme.Caution();
+                }
+            };
+            if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+            {
+                BuildPage("general");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("settings.sync-password-failed", ex);
         }
     }
 }

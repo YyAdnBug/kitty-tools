@@ -133,7 +133,7 @@ internal sealed class MemoryClipSource : MemorySource
             var uid = write.Uid ?? (index >= 0 ? Rows[index].Uid : null);
             var row = new SyncClipRow(
                 write.Row ?? _nextRow++, uid, write.Text, write.Favorite, write.Snippet, write.Note, write.Group,
-                write.CopiedAt);
+                write.CopiedAt, write.Keyword);
             if (index >= 0)
             {
                 Rows[index] = row;
@@ -244,6 +244,30 @@ internal sealed class MemoryServiceSource : MemorySource
 
         Services = plan.Services;
         Moves.AddRange(plan.SecretMoves);
+        return null;
+    }
+}
+
+/// <summary>提醒（和 Syncer 的 ReminderSource 一样：设置里存的列表，ReminderSync.Values / Plan）。</summary>
+internal sealed class MemoryReminderSource : MemorySource
+{
+    public List<Reminder>? Stored { get; set; }
+
+    public override string Kind => ReminderSync.Kind;
+
+    public override string? JoinKey(string value) => ReminderSync.JoinKey(value);
+
+    protected override Dictionary<string, string> Encode() => ReminderSync.Values(Stored);
+
+    protected override string? Land(IReadOnlyDictionary<string, string?> changes)
+    {
+        var planned = ReminderSync.Plan(changes, Stored, out var failure);
+        if (planned is null)
+        {
+            return failure;
+        }
+
+        Stored = planned;
         return null;
     }
 }

@@ -92,7 +92,7 @@ internal sealed class ClipboardStore
 
             rows.Add(new SyncClipRow(
                 entry.Id, entry.Uid, entry.Text!, entry.Favorite, entry.Snippet, entry.Note, entry.GroupId,
-                entry.CopiedAt));
+                entry.CopiedAt, entry.Keyword));
         }
 
         return rows;
@@ -127,6 +127,7 @@ internal sealed class ClipboardStore
                     {
                         Kind = ClipKind.Text, Text = write.Text, Uid = write.Uid, Favorite = write.Favorite,
                         Snippet = write.Snippet, Note = write.Note, GroupId = write.Group, CopiedAt = write.CopiedAt,
+                        Keyword = write.Keyword,
                     });
                 }
             }
@@ -163,6 +164,7 @@ internal sealed class ClipboardStore
             entry.Note = write.Note;
             entry.GroupId = write.Group;
             entry.CopiedAt = write.CopiedAt;
+            entry.Keyword = write.Keyword;
             entry.Folded = null;
         }
 
@@ -585,16 +587,17 @@ internal sealed class ClipboardStore
     public (int Added, int Updated) AdoptTextClips(
         IReadOnlyList<(string Text, bool Favorite, DateTimeOffset? CopiedAt)> clips)
         => AdoptClips(clips.Select(clip =>
-            (clip.Text, clip.Favorite, clip.CopiedAt, (string?)null, false, (string?)null)).ToList());
+            (clip.Text, clip.Favorite, clip.CopiedAt, (string?)null, false, (string?)null, (string?)null)).ToList());
 
     /// <summary>
     /// 导入片段 / 文字收藏 / 收藏夹（照 mac ClipboardStore.adopt，mac-clipboard §1「导入片段和文字收藏」）：合并，不删本机已有的。
     /// 收藏夹按名字对，没有的新建在最后（groupNames 里空的也建）；条目按正文对，已有的只补标记——收藏、片段取并集，
     /// 原来没备注、没归收藏夹的才用文件里的，时间和位置不动；没有的新建，时间用文件里的但不晚于现在，按时间插到该在的位置
     /// （同一时刻的几条保持文件里的顺序）。先提交撤销栈：删了还没提交的同文条目不该被导入变成两条；导入本身不进撤销栈。
+    /// 关键词（mac 0.10.3）同备注：本机这条没有才用文件里的，别的片段已经用了的不要；只给片段。
     /// </summary>
     public (int Added, int Updated) AdoptClips(
-        IReadOnlyList<(string Text, bool Favorite, DateTimeOffset? CopiedAt, string? Note, bool Snippet, string? Group)>
+        IReadOnlyList<(string Text, bool Favorite, DateTimeOffset? CopiedAt, string? Note, bool Snippet, string? Group, string? Keyword)>
             clips,
         IReadOnlyList<string>? groupNames = null)
     {
@@ -602,7 +605,7 @@ internal sealed class ClipboardStore
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
         // 文件里正文重复的并成一条（标记取并集，备注 / 收藏夹取第一个有的）。
-        var merged = new List<(string Text, bool Favorite, long CopiedAt, string? Note, bool Snippet, string? Group)>();
+        var merged = new List<(string Text, bool Favorite, long CopiedAt, string? Note, bool Snippet, string? Group, string? Keyword)>();
         var byText = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var clip in clips)
         {
@@ -618,13 +621,18 @@ internal sealed class ClipboardStore
             {
                 var old = merged[at];
                 merged[at] = (old.Text, old.Favorite || clip.Favorite, old.CopiedAt, old.Note ?? note, old.Snippet || clip.Snippet,
-                    old.Group ?? group);
+                    old.Group ?? group, old.Keyword ?? clip.Keyword);
                 continue;
             }
 
             byText[clip.Text] = merged.Count;
-            merged.Add((clip.Text, clip.Favorite, time, note, clip.Snippet, group));
+            merged.Add((clip.Text, clip.Favorite, time, note, clip.Snippet, group, clip.Keyword));
         }
+
+        // 已经被片段用了的关键词：文件里的撞上了就不带（本机的不动）
+        var taken = _items.Where(item => item.Snippet && item.Keyword is not null).Select(item => item.Keyword!)
+            .ToHashSet(StringComparer.Ordinal);
+        string? Free(string? keyword) => keyword is not null && SnippetKeyword.IsValid(keyword) && taken.Add(keyword) ? keyword : null;
 
         var added = 0;
         var updated = 0;
@@ -684,6 +692,7 @@ internal sealed class ClipboardStore
                         Snippet = clip.Snippet,
                         Note = clip.Note,
                         GroupId = groupId,
+                        Keyword = clip.Snippet ? Free(clip.Keyword) : null,
                         Uid = Retention.IsRetained(clip.Favorite, clip.Snippet, groupId)
                             ? Guid.NewGuid().ToString("D").ToUpperInvariant()
                             : null,
@@ -693,6 +702,7 @@ internal sealed class ClipboardStore
                 }
 
                 var changed = false;
+                var wasSnippet = existing.Snippet;
                 if (clip.Favorite && !existing.Favorite)
                 {
                     existing.Favorite = true;
@@ -720,6 +730,18 @@ internal sealed class ClipboardStore
                     existing.GroupId = groupId;
                     existing.Favorite = true;
                     _database.SetGroup(existing.Id, groupId);
+                    changed = true;
+                }
+
+                // 本机这条原来不是片段、这次被标成片段：它留着的关键词也要过一遍（同 mac markSnippet）
+                var keyword = wasSnippet ? existing.Keyword ?? Free(clip.Keyword)
+                    : existing.Snippet ? Free(existing.Keyword) ?? Free(clip.Keyword)
+                    : existing.Keyword;
+                if (keyword != existing.Keyword)
+                {
+                    existing.Keyword = keyword;
+                    existing.Folded = null;
+                    _database.SetKeyword(existing.Id, keyword);
                     changed = true;
                 }
 

@@ -1652,17 +1652,37 @@ internal sealed partial class SettingsWindow : Window
             // 服务器那一行悬停看整个网址和用户名（同 mac）
             ToolTipService.SetToolTip(name, server is null ? folder : $"{server}（{settings.SyncServerUser}）");
             controls.Children.Add(name);
-            var stop = new HyperlinkButton { Content = "停止同步" };
+            if (server is not null && server.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+            {
+                // 没加密的连接（mac 0.10.1 U2）：密码和同步的内容在网上都是明文
+                var plain = new TextBlock { Text = "未加密", FontSize = 12, Foreground = Theme.Caution(), VerticalAlignment = VerticalAlignment.Center };
+                ToolTipService.SetToolTip(plain, "这个服务器的地址是 http，密码和同步的内容在网上都是明文的");
+                controls.Children.Add(plain);
+            }
+
+            var stop = new HyperlinkButton { Content = server is null ? "停止同步" : "停止同步…" };
             ToolTipService.SetToolTip(
                 stop, server is null ? "文件夹里的东西留着，这台电脑上的也不动" : "服务器上的东西留着，这台电脑上的也不动");
-            stop.Click += (_, _) =>
+            stop.Click += async (_, _) =>
             {
+                // 连服务器时先确认（mac 0.10.1 U2）：停了要重新填密码、整份重新下载镜像
+                if (server is not null && !await ConfirmStopServerAsync())
+                {
+                    return;
+                }
+
                 Syncer.Instance?.ForgetServer();
                 settings.SyncEnabled = false;
                 SettingsService.Save();
                 BuildPage("general");
             };
             controls.Children.Add(stop);
+            if (server is not null && status?.NeedsPassword == true)
+            {
+                var update = new Button { Content = "更新密码…" };
+                update.Click += (_, _) => _ = UpdateSyncPasswordAsync();
+                controls.Children.Add(update);
+            }
             if (status?.State == "confirm")
             {
                 // 刹车停下的那一类：用户看过要删几条之后放行这一轮。
@@ -1677,7 +1697,7 @@ internal sealed partial class SettingsWindow : Window
             else
             {
                 var now = new Button { Content = "立即同步" };
-                now.Click += (_, _) => _ = Syncer.Instance?.RoundAsync();
+                now.Click += (_, _) => _ = Syncer.Instance?.RoundAsync(manual: true);
                 controls.Children.Add(now);
             }
 

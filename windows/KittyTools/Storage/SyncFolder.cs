@@ -11,7 +11,12 @@
 // 服务器网址、用户名在设置里（SyncServer / SyncServerUser），密码在凭据管理器（PasswordName）。一轮交给 Core 的 SyncServer.RoundAsync：
 // pull → 照上面那样合（MergeAsync，指纹没变照样跳过）→ push。一分钟一轮（ServerInterval：按次数限流的服务器，空闲一轮也要列
 // 3 + 2 × 电脑数次目录）。服务器说请求太多就退避（5、10、20、30 分钟，服务器说了等多久至少等它说的），这期间的一轮直接停在 busy；
-// 连不上、密码不对照常停在那一轮、下一轮再试。日志里不记地址、用户名。
+// 连不上照常停在那一轮、下一轮再试。**服务器不认密码（401）、不让读写（403）就不再自动重试**（PLAN-v26 I4，照 mac 0.10.1
+// f722e397：每一轮都是一两次登录失败，NAS 数够了会封这台电脑的 IP）：定时、唤醒这些自动的轮不发请求、停在原来那句，设置里
+// 「立即同步」、「更新密码…」（用户主动的一轮）照发；「更新密码…」只换凭据管理器里的密码，镜像和它的账留着。
+// ponytail: 拒过的记号只在内存里（_rejected），每次重新打开 App 会再试一次（一次失败的登录）——要更省就存进设置、换密码时清。
+// 停了要让人知道（SyncAttention）：要你处理的马上底部轻提示带「打开同步设置」，别的停满 30 分钟（不含睡眠）才说；主界面「设置」
+// 挂小橙点。日志里不记地址、用户名。
 using KittyTools.Core;
 using KittyTools.Core.Notes;
 using KittyTools.Core.Sync;
@@ -36,9 +41,15 @@ internal sealed class SyncStatus
     public int Uploading { get; set; }
 
     public List<string> Devices { get; set; } = new();
+
+    /// <summary>服务器拒了这组用户名密码（401 / 403）、凭据管理器里没有密码：同步那一行给「更新密码…」。</summary>
+    public bool NeedsPassword { get; set; }
+
+    /// <summary>停了、该让人知道了：主界面底栏「设置」挂小橙点（SyncAttention）。</summary>
+    public bool NeedsAttention { get; set; }
 }
 
-internal sealed class Syncer
+internal sealed partial class Syncer
 {
     private static readonly TimeSpan Interval = TimeSpan.FromSeconds(20);
 
@@ -54,6 +65,16 @@ internal sealed class Syncer
     private DispatcherQueueTimer? _timer;
     private bool _busy;
     private bool _again;
+
+    /// <summary>排在后面的那一轮里有用户主动要的（拒过密码之后只有它发请求）。</summary>
+    private bool _againManual;
+
+    /// <summary>服务器拒了这组用户名密码（401 / 403）：自动的轮不再发请求，等「立即同步」「更新密码…」；连上了、换了服务器清掉。</summary>
+    private bool _rejected;
+
+    /// <summary>这一轮停下来的是哪一种要你处理的（SyncAttention 的常量；多半自己会好的是 null）。</summary>
+    private string? _problem;
+    private readonly SyncAttention _attention = new();
     private bool _shutDown;
     private int _braked;
     private Dictionary<string, int> _pending = new(StringComparer.Ordinal);
@@ -138,13 +159,19 @@ internal sealed class Syncer
     /// 交给 SyncServer.ConnectAsync（没有就建、拿不来同步的说为什么、没有标记的写一个），再建新的镜像目录、存密码和设置，旧镜像在后台删掉。
     /// 返回没开成的原因。
     /// </summary>
-    public async Task<string?> EnableServerAsync(WebDavAccount account)
+    public async Task<string?> EnableServerAsync(WebDavAccount account, Func<bool>? cancelled = null)
     {
         var dav = Dav(account);
         var device = _device.Id;
         if (await Task.Run(() => SyncServer.ConnectAsync(dav, device)) is { } problem)
         {
             return problem;
+        }
+
+        // 表单收起了（「取消」、Esc）：什么都不记（这之后没有 await，过了这里就是开成了）
+        if (cancelled?.Invoke() == true)
+        {
+            return "已取消";
         }
 
         var mirror = Path.Combine(MirrorsRoot, Guid.NewGuid().ToString("D").ToUpperInvariant());
@@ -175,6 +202,8 @@ internal sealed class Syncer
         _pausedUntil = null;
         _backoffs = 0;
         _quiet = null;
+        _rejected = false;
+        Status.NeedsPassword = false;
         Status.Downloading = 0;
         Status.Uploading = 0;
         Log.Info("sync.server-connected");
@@ -199,6 +228,9 @@ internal sealed class Syncer
         _pausedUntil = null;
         _backoffs = 0;
         _quiet = null;
+        _rejected = false;
+        Status.NeedsPassword = false;
+        Recovered();
         Status.Downloading = 0;
         Status.Uploading = 0;
         Credentials.Delete(Credentials.Target(PasswordName));
@@ -209,8 +241,35 @@ internal sealed class Syncer
     /// <summary>这一类勾上会是它第一次和文件夹里的合（账本里还没有它）：设置页先问「合在一起？」（同 mac NoteSyncer.joins）。</summary>
     public bool Joins(string kind) => Enabled && _ledger.Read(kind) is null;
 
-    /// <summary>合一轮（开同步、定时器、唤醒、「立即同步」都走这里）；关着时停掉定时器，开着时确保它在转。</summary>
-    public async Task RoundAsync()
+    /// <summary>
+    /// 「更新密码…」：只换凭据管理器里的密码，镜像和它的账都留着（不用整份重新下载）；换完马上接着同步（用户主动的一轮）。
+    /// 返回没换成的原因。
+    /// </summary>
+    public string? UpdatePassword(string password)
+    {
+        if (!IsServer)
+        {
+            return null;
+        }
+
+        if (!Credentials.Set(Credentials.Target(PasswordName), password))
+        {
+            return "密码存不进凭据管理器";
+        }
+
+        _password = password;
+        _rejected = false;
+        Status.NeedsPassword = false;
+        Log.Info("sync.server-password-updated");
+        _ = RoundAsync(manual: true);
+        return null;
+    }
+
+    /// <summary>
+    /// 合一轮（开同步、定时器、唤醒、「立即同步」都走这里）；关着时停掉定时器，开着时确保它在转。
+    /// manual：用户主动要的（设置里「立即同步」、更新了密码）——服务器拒过这组密码之后只有这种还发请求。
+    /// </summary>
+    public async Task RoundAsync(bool manual = false)
     {
         if (_shutDown)
         {
@@ -220,10 +279,12 @@ internal sealed class Syncer
         if (!Enabled || Folder is not { } folder)
         {
             StopTimer();
+            _againManual = false;
             if (Status.State != "off")
             {
                 Status.State = "off";
                 Status.Message = string.Empty;
+                Recovered();
                 Changed?.Invoke();
             }
 
@@ -234,6 +295,7 @@ internal sealed class Syncer
         if (_busy)
         {
             _again = true;
+            _againManual |= manual;
             return;
         }
 
@@ -245,7 +307,11 @@ internal sealed class Syncer
             do
             {
                 _again = false;
-                await RunOnceAsync(folder);
+                _problem = null;
+                await RunOnceAsync(folder, manual);
+                manual = _againManual;
+                _againManual = false;
+                Attend();
             }
             while (_again && Enabled && !_shutDown && Folder == folder);
         }
@@ -276,7 +342,49 @@ internal sealed class Syncer
     /// <summary>设过「始终保留在此设备上」的同步文件夹（R77）。</summary>
     private string? _pinnedFolder;
 
-    private async Task RunOnceAsync(string folder)
+    /// <summary>这一轮走完：停着的照 SyncAttention 说一声、挂橙点；好好走完、等确认的这一段停着就算完了。</summary>
+    private void Attend()
+    {
+        if (!Enabled)
+        {
+            return;
+        }
+
+        if (Status.State is "stopped" or "busy")
+        {
+            var problem = _problem ?? SyncAttention.Classify(Status.Message);
+            if (_attention.Stopped(problem, Uptime()))
+            {
+                NoticeHost.Show("同步停了", SyncAttention.Notice(problem, Status.Message), NoticeTone.Warning,
+                    NoticeActions.AppSettings("general", "打开同步设置"));
+            }
+        }
+        else
+        {
+            _attention.Recovered();
+        }
+
+        Status.NeedsAttention = _attention.NeedsAttention;
+    }
+
+    private void Recovered()
+    {
+        _attention.Recovered();
+        Status.NeedsAttention = false;
+    }
+
+    /// <summary>不含睡眠的时钟（合盖的那段不算「一直停着」）。</summary>
+    private static TimeSpan Uptime()
+    {
+        QueryUnbiasedInterruptTime(out var ticks);
+        return TimeSpan.FromTicks((long)ticks);
+    }
+
+    [System.Runtime.InteropServices.LibraryImport("kernel32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static partial bool QueryUnbiasedInterruptTime(out ulong unbiasedTime);
+
+    private async Task RunOnceAsync(string folder, bool manual)
     {
         if (!IsServer)
         {
@@ -294,7 +402,17 @@ internal sealed class Syncer
 
         if (Account() is not { } account)
         {
-            Halt("stopped", "凭据管理器里没有服务器的密码，停止同步后重新连接");
+            _problem = SyncAttention.NoPassword;
+            Status.NeedsPassword = true;
+            Halt("stopped", "凭据管理器里没有服务器的密码，点「更新密码…」重新填");
+            return;
+        }
+
+        // 服务器拒过这组用户名密码：自动的轮不再带着它去试（每一次都是一次登录失败），停在原来那句
+        if (_rejected && !manual)
+        {
+            _problem = Status.NeedsPassword ? SyncAttention.Unauthorized : SyncAttention.Forbidden;
+            Status.State = "stopped";
             return;
         }
 
@@ -328,12 +446,15 @@ internal sealed class Syncer
 
         _pausedUntil = null;
         _backoffs = 0;
+        _rejected = false;
+        Status.NeedsPassword = false;
         if (round.Missing)
         {
             Halt("stopped", "服务器上找不到同步的那个文件夹：被挪走或删了，找到了自己接着同步");
         }
         else if (round.MarkerGone)
         {
+            _problem = SyncAttention.NotTheFolder;
             Halt("stopped", "服务器上那个文件夹里的同步记录被换掉或删了：先停止同步，再连一个新的空文件夹（每台电脑都换过去）");
         }
     }
@@ -352,9 +473,20 @@ internal sealed class Syncer
         return _password is null ? null : new WebDavAccount(folder, user, _password);
     }
 
-    /// <summary>连服务器这一轮没成：请求太多就退避，别的停在这一轮、下一轮再试。</summary>
+    /// <summary>连服务器这一轮没成：请求太多就退避；不认密码、不让读写就不再自动重试；别的停在这一轮、下一轮再试。</summary>
     private void Fail(WebDavFailure failure)
     {
+        if (failure.Error is WebDavError.Unauthorized or WebDavError.Forbidden)
+        {
+            _rejected = true;
+            var unauthorized = failure.Error == WebDavError.Unauthorized;
+            Status.NeedsPassword = unauthorized;
+            _problem = unauthorized ? SyncAttention.Unauthorized : SyncAttention.Forbidden;
+            Halt("stopped", failure.Message + "；先不再自动重试，" + (unauthorized ? "点「更新密码…」或「立即同步」" : "改好权限后点「立即同步」"));
+            Log.Info($"sync.server-rejected status={(unauthorized ? 401 : 403)}");
+            return;
+        }
+
         if (failure.Error != WebDavError.Busy)
         {
             Halt("stopped", failure.Message);
@@ -845,7 +977,7 @@ internal sealed class Syncer
 
         private static SyncService ToSync(TranslateServiceConfig service)
             => new(service.Id, service.Kind, service.Name, service.Enabled, service.Model, service.BaseUrl,
-                service.Protocol, service.Region, service.UsesDeepLX);
+                service.Protocol, service.Region, service.UsesDeepLX, service.ExplainsSentences, service.ExtraPrompt);
 
         private static TranslateServiceConfig FromSync(SyncService service) => new()
         {
@@ -859,6 +991,8 @@ internal sealed class Syncer
             Protocol = service.Protocol,
             Region = service.Region,
             UsesDeepLX = service.UsesDeepLX,
+            ExplainsSentences = service.ExplainsSentences,
+            ExtraPrompt = service.ExtraPrompt,
         };
     }
 }

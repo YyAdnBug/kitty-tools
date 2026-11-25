@@ -68,6 +68,9 @@ internal sealed class ClipEntry
 
     public string? GroupId { get; set; }
 
+    /// <summary>片段的关键词（mac 0.10.3；SnippetKeyword 的规矩，没有是 null）：搜得到、同步、导出；不再是片段时留着但不起作用。</summary>
+    public string? Keyword { get; set; }
+
     /// <summary>带格式（库里存着 HTML / RTF）：行上的「带格式」标记、替代粘贴和「复制为纯文本」只给它。</summary>
     public bool Rich { get; set; }
 
@@ -108,7 +111,7 @@ internal sealed class ClipEntry
             SourceExe,
         }.Where(s => !string.IsNullOrEmpty(s))),
         ClipKind.Files => string.Join('\n', new[] { FilePaths, Note, SourceName, SourceExe }.Where(s => !string.IsNullOrEmpty(s))),
-        _ => string.Join('\n', new[] { Text, Note, SourceName, SourceExe }.Where(s => !string.IsNullOrEmpty(s))),
+        _ => string.Join('\n', new[] { Text, Note, Keyword, SourceName, SourceExe }.Where(s => !string.IsNullOrEmpty(s))),
     };
 
     public RetentionItem ToRetentionItem()

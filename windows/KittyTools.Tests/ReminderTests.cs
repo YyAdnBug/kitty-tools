@@ -22,12 +22,12 @@ public sealed class ReminderTests
 
     private static readonly string[] Golden =
     {
-        "{\"alert\":\"light\",\"chime\":\"Glass\",\"fullSeconds\":0,\"id\":\"water\",\"isOn\":false,\"nagMinutes\":0,\"schedule\":{\"date\":-63114076800,\"day\":1,\"days\":[2,3,4,5,6],\"every\":60,\"kind\":\"interval\",\"time\":540,\"until\":1080},\"sound\":\"chime\",\"statusID\":\"\",\"symbol\":\"hot-beverage\",\"title\":\"喝水\"}",
-        "{\"alert\":\"full\",\"chime\":\"Glass\",\"detail\":\"看看 6 米外的地方，20 秒\",\"fullSeconds\":20,\"id\":\"eyes\",\"isOn\":false,\"nagMinutes\":0,\"schedule\":{\"date\":-63114076800,\"day\":1,\"days\":[1,2,3,4,5,6,7],\"every\":20,\"kind\":\"interval\",\"time\":0,\"until\":1440},\"sound\":\"chime\",\"statusID\":\"\",\"symbol\":\"sleeping-face\",\"title\":\"休息眼睛\"}",
-        "{\"alert\":\"glow\",\"chime\":\"Glass\",\"fullSeconds\":0,\"id\":\"walk\",\"isOn\":false,\"nagMinutes\":0,\"schedule\":{\"date\":-63114076800,\"day\":1,\"days\":[2,3,4,5,6],\"every\":45,\"kind\":\"interval\",\"time\":540,\"until\":1080},\"sound\":\"chime\",\"statusID\":\"\",\"symbol\":\"waving-hand\",\"title\":\"起来走走\"}",
-        "{\"alert\":\"status\",\"chime\":\"Ping\",\"detail\":\"第二行\\n带换行\",\"fullSeconds\":60,\"id\":\"A1B2\",\"isOn\":true,\"nagMinutes\":10,\"schedule\":{\"date\":815545273.628506,\"day\":1,\"days\":[1,2,3,4,5,6,7],\"every\":60,\"kind\":\"once\",\"time\":540,\"until\":1080},\"sound\":\"speak\",\"statusID\":\"busy\",\"symbol\":\"rocket\",\"title\":\"交周报 \\\"Q4\\\" / 汇总\"}",
-        "{\"alert\":\"light\",\"chime\":\"Glass\",\"fullSeconds\":0,\"id\":\"M1\",\"isOn\":true,\"nagMinutes\":0,\"schedule\":{\"date\":-63114076800,\"day\":31,\"days\":[1,2,3,4,5,6,7],\"every\":60,\"kind\":\"monthly\",\"time\":1050,\"until\":1080},\"sound\":\"chime\",\"statusID\":\"\",\"symbol\":\"\",\"title\":\"月报\"}",
-        "{\"alert\":\"light\",\"chime\":\"Glass\",\"fullSeconds\":0,\"id\":\"W1\",\"isOn\":true,\"nagMinutes\":0,\"schedule\":{\"date\":-63114076800,\"day\":1,\"days\":[2,4,6],\"every\":60,\"kind\":\"weekly\",\"time\":600,\"until\":1080},\"sound\":\"chime\",\"statusID\":\"\",\"symbol\":\"\",\"title\":\"周会\"}",
+        "{\"alert\":\"light\",\"chime\":\"Glass\",\"duringFocus\":false,\"fullSeconds\":0,\"id\":\"water\",\"isOn\":false,\"nagMinutes\":0,\"schedule\":{\"date\":-63114076800,\"day\":1,\"days\":[2,3,4,5,6],\"every\":60,\"kind\":\"interval\",\"time\":540,\"until\":1080},\"sound\":\"chime\",\"statusID\":\"\",\"symbol\":\"hot-beverage\",\"title\":\"喝水\"}",
+        "{\"alert\":\"full\",\"chime\":\"Glass\",\"detail\":\"看看 6 米外的地方，20 秒\",\"duringFocus\":false,\"fullSeconds\":20,\"id\":\"eyes\",\"isOn\":false,\"nagMinutes\":0,\"schedule\":{\"date\":-63114076800,\"day\":1,\"days\":[1,2,3,4,5,6,7],\"every\":20,\"kind\":\"interval\",\"time\":0,\"until\":1440},\"sound\":\"chime\",\"statusID\":\"\",\"symbol\":\"sleeping-face\",\"title\":\"休息眼睛\"}",
+        "{\"alert\":\"glow\",\"chime\":\"Glass\",\"duringFocus\":false,\"fullSeconds\":0,\"id\":\"walk\",\"isOn\":false,\"nagMinutes\":0,\"schedule\":{\"date\":-63114076800,\"day\":1,\"days\":[2,3,4,5,6],\"every\":45,\"kind\":\"interval\",\"time\":540,\"until\":1080},\"sound\":\"chime\",\"statusID\":\"\",\"symbol\":\"waving-hand\",\"title\":\"起来走走\"}",
+        "{\"alert\":\"status\",\"chime\":\"Ping\",\"detail\":\"第二行\\n带换行\",\"duringFocus\":false,\"fullSeconds\":60,\"id\":\"A1B2\",\"isOn\":true,\"nagMinutes\":10,\"schedule\":{\"date\":815545273.628506,\"day\":1,\"days\":[1,2,3,4,5,6,7],\"every\":60,\"kind\":\"once\",\"time\":540,\"until\":1080},\"sound\":\"speak\",\"statusID\":\"busy\",\"symbol\":\"rocket\",\"title\":\"交周报 \\\"Q4\\\" / 汇总\"}",
+        "{\"alert\":\"light\",\"chime\":\"Glass\",\"duringFocus\":false,\"fullSeconds\":0,\"id\":\"M1\",\"isOn\":true,\"nagMinutes\":0,\"schedule\":{\"date\":-63114076800,\"day\":31,\"days\":[1,2,3,4,5,6,7],\"every\":60,\"kind\":\"monthly\",\"time\":1050,\"until\":1080},\"sound\":\"chime\",\"statusID\":\"\",\"symbol\":\"\",\"title\":\"月报\"}",
+        "{\"alert\":\"light\",\"chime\":\"Glass\",\"duringFocus\":false,\"fullSeconds\":0,\"id\":\"W1\",\"isOn\":true,\"nagMinutes\":0,\"schedule\":{\"date\":-63114076800,\"day\":1,\"days\":[2,4,6],\"every\":60,\"kind\":\"weekly\",\"time\":600,\"until\":1080},\"sound\":\"chime\",\"statusID\":\"\",\"symbol\":\"\",\"title\":\"周会\"}",
     };
 
     private static List<Reminder> GoldenCases()
@@ -111,7 +111,10 @@ public sealed class ReminderTests
         Assert.AreEqual(0, reminder.NagMinutes);
         Assert.AreEqual(Reminders.DefaultChime, reminder.Chime);
         Assert.AreEqual(1439, reminder.Schedule.Time);
-        Assert.AreEqual(1440, reminder.Schedule.Until);
+        Assert.AreEqual(10, reminder.Schedule.Until, "间隔类的结束早于开始是跨过半夜，留着（mac 0.10.1 U10）");
+        var weekly = new ReminderSchedule { Kind = ReminderSchedule.Weekly, Time = 20 * 60, Until = 10 }.Sanitized();
+        Assert.AreEqual(1440, weekly.Until, "别的种类没有时段：结束早于开始照旧收拾成到半夜");
+        Assert.AreEqual(1440, new ReminderSchedule { Kind = ReminderSchedule.Interval, Time = 600, Until = 0 }.Sanitized().Until, "0 不算跨半夜");
         CollectionAssert.AreEqual(new[] { 3 }, reminder.Schedule.Days);
         Assert.AreEqual(31, reminder.Schedule.Day);
         Assert.AreEqual(5, reminder.Schedule.Every);

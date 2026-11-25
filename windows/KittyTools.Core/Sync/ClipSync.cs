@@ -13,6 +13,8 @@
 //     备注、收藏夹缺的补上。输的那条本机删掉（下一轮它的删除和留下那条的改动传出去，几台合到同一条）。
 // Windows 的差别：条目在库里有自己的行号，同步的编号是另存的 uid（mac 的条目编号）。新来的这条接过一条没有 uid 的普通条目时，
 // 直接用那一行（mac 是删掉再插一条，结果一样）；备注、正文原样存（不 Trim、不把空白改成 null：编回去要一字不差）。
+// 片段的关键词（mac 0.10.3，PLAN-v26 I3）：只有片段才发、没有不写（没设的编出来和以前一字不差）；来的不合 SnippetKeyword.IsValid
+// 当成读不懂、整类不落（不收拾掉它，免得这台把收拾过的当成自己改的发出去）。
 using System.Text;
 using System.Text.Json;
 
@@ -20,7 +22,8 @@ namespace KittyTools.Core.Sync;
 
 /// <summary>本机的一条文字条目（同步只看这些字段）。Row 是库里的行号；Uid 是同步的编号，没留着过的普通条目可以没有。</summary>
 public sealed record SyncClipRow(
-    long Row, string? Uid, string Text, bool Favorite, bool Snippet, string? Note, string? Group, long CopiedAt)
+    long Row, string? Uid, string Text, bool Favorite, bool Snippet, string? Note, string? Group, long CopiedAt,
+    string? Keyword = null)
 {
     public bool IsRetained => Retention.IsRetained(Favorite, Snippet, Group);
 }
@@ -31,7 +34,7 @@ public sealed record SyncClipGroup(string Id, string Name, long Created);
 /// <summary>要写的一条：Row 为 null 是新加的；TextChanged 时带格式的原始数据（HTML / RTF）要清掉。</summary>
 public sealed record SyncClipWrite(
     long? Row, string? Uid, string Text, bool Favorite, bool Snippet, string? Note, string? Group, long CopiedAt,
-    bool TextChanged);
+    bool TextChanged, string? Keyword = null);
 
 public sealed class ClipSyncPlan
 {
@@ -62,7 +65,7 @@ public static class ClipSync
                 continue;
             }
 
-            values[row.Uid] = Clip(row.Text, row.Favorite, row.Snippet, row.Note, row.Group);
+            values[row.Uid] = Clip(row.Text, row.Favorite, row.Snippet, row.Note, row.Group, row.Snippet ? row.Keyword : null);
         }
 
         var synced = groups.Where(group => !group.Name.Contains('\0')).ToList();
@@ -75,8 +78,8 @@ public static class ClipSync
         return values;
     }
 
-    /// <summary>mac SyncedClip：favorite / group? / note? / snippet / text；group 是收藏夹编号本身（不带 group: 前缀）。</summary>
-    public static string Clip(string text, bool favorite, bool snippet, string? note, string? group)
+    /// <summary>mac SyncedClip：favorite / group? / keyword? / note? / snippet / text；group 是收藏夹编号本身（不带 group: 前缀）。</summary>
+    public static string Clip(string text, bool favorite, bool snippet, string? note, string? group, string? keyword = null)
     {
         var builder = new StringBuilder("{");
         builder.Append("\"favorite\":").Append(favorite ? "true" : "false");
@@ -84,6 +87,12 @@ public static class ClipSync
         {
             builder.Append(",\"group\":");
             CanonicalJson.WriteString(group, builder);
+        }
+
+        if (keyword is not null)
+        {
+            builder.Append(",\"keyword\":");
+            CanonicalJson.WriteString(keyword, builder);
         }
 
         if (note is not null)
@@ -109,7 +118,7 @@ public static class ClipSync
                 ? "clip:" + text
                 : SyncValues.Text(root, "name") is { } name ? "group:" + name : null);
 
-    private sealed record SyncedClip(string Text, bool Favorite, bool Snippet, string? Note, string? Group);
+    private sealed record SyncedClip(string Text, bool Favorite, bool Snippet, string? Note, string? Group, string? Keyword);
 
     private sealed record SyncedGroup(string Name, long Created);
 
@@ -118,10 +127,11 @@ public static class ClipSync
         var clip = SyncValues.Read(value, root =>
             SyncValues.Text(root, "text") is { } text
                 ? new SyncedClip(text, SyncValues.Flag(root, "favorite"), SyncValues.Flag(root, "snippet"),
-                    SyncValues.Text(root, "note"), SyncValues.Text(root, "group"))
+                    SyncValues.Text(root, "note"), SyncValues.Text(root, "group"), SyncValues.Text(root, "keyword"))
                 : null);
-        // 解得开还不够：编回去要一字不差（mac decodeExact），多了不认识的字段、类型不对的都在这里挡住。
-        return clip is not null && Clip(clip.Text, clip.Favorite, clip.Snippet, clip.Note, clip.Group) == value
+        // 解得开还不够：编回去要一字不差（mac decodeExact），多了不认识的字段、类型不对的都在这里挡住；关键词还要合这一版的规矩。
+        return clip is not null && Clip(clip.Text, clip.Favorite, clip.Snippet, clip.Note, clip.Group, clip.Keyword) == value &&
+               (clip.Keyword is null || SnippetKeyword.IsValid(clip.Keyword))
             ? clip
             : null;
     }
@@ -154,6 +164,8 @@ public static class ClipSync
 
         public long CopiedAt { get; set; }
 
+        public string? Keyword { get; set; }
+
         public bool TextChanged { get; set; }
 
         public bool IsRetained => Retention.IsRetained(Favorite, Snippet, Group);
@@ -161,10 +173,10 @@ public static class ClipSync
         public static Item From(SyncClipRow row) => new()
         {
             Row = row.Row, Uid = row.Uid, Text = row.Text, Favorite = row.Favorite, Snippet = row.Snippet,
-            Note = row.Note, Group = row.Group, CopiedAt = row.CopiedAt,
+            Note = row.Note, Group = row.Group, CopiedAt = row.CopiedAt, Keyword = row.Keyword,
         };
 
-        public SyncClipWrite ToWrite() => new(Row, Uid, Text, Favorite, Snippet, Note, Group, CopiedAt, TextChanged);
+        public SyncClipWrite ToWrite() => new(Row, Uid, Text, Favorite, Snippet, Note, Group, CopiedAt, TextChanged, Keyword);
     }
 
     /// <summary>
@@ -367,6 +379,7 @@ public static class ClipSync
             item.Text = synced.Text;
             item.Snippet = synced.Snippet;
             item.Note = synced.Note;
+            item.Keyword = synced.Keyword;
             item.Group = Resolved(synced.Group);
             item.Favorite = synced.Favorite || item.Group is not null;
             if (items.FirstOrDefault(other => other.Text == synced.Text && other.Uid != id) is { } other)
@@ -381,6 +394,7 @@ public static class ClipSync
                 keeper.Favorite = keeper.Favorite || loser.Favorite;
                 keeper.Snippet = keeper.Snippet || loser.Snippet;
                 keeper.Note ??= loser.Note;
+                keeper.Keyword ??= loser.Keyword;
                 keeper.Group ??= loser.Group;
                 keeper.Favorite = keeper.Favorite || keeper.Group is not null;
                 keeper.CopiedAt = Math.Max(keeper.CopiedAt, loser.CopiedAt);
