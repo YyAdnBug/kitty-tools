@@ -8,6 +8,46 @@
 
 条目编号不复用。行号按条目里写的那个提交。
 
+## PLAN-v26（跟上 mac 0.10.0–0.10.3、收口挂着的分支、优化，2026-11-25）
+
+方案在 `PLAN-v26.md`（§0 先说的几件事、§1 清单、§2 分批、§4 拍板题）。用户：「给 windows 指令，同步和优化最近的需求开始实现」。
+**拍板题 D1–D5 还没回：照推荐做**；用户改了哪一条，审查方写在这一节下面，每批开始前看一眼。
+
+### 给 Windows agent 的开工指令
+
+这一版**你们自己写、自己编译、自己验**，照 `AGENTS.md`「每一批的流程」一批接一批做到第 12 批，中间不等审查。
+
+1. **开工**：在 `windows` 上 `git fetch origin && git rebase origin/windows`（或 `git pull --rebase`），读 `PLAN-v26.md` 全文、`AGENTS.md` 第 26 条、本节；
+   再读 `REVIEW.md` 里这三节的「要你们做」：「issue #38」R112（本文件里）、R113（在分支 `origin/claude/win-multiscreen-shot` 的 `REVIEW.md` 顶上）、
+   R114（在分支 `origin/claude/win-file-search-5d0d71` 的 `REVIEW.md` 顶上）。
+2. **第 0 批：先核验，再并**（PLAN-v26 H1–H3，D2 推荐 A），按这个顺序，一步过了再下一步：
+   1. **R112**（已在 `windows` 上，`b5996436`）：Debug x64 编译零警告、`dotnet test` 全过、x64 / ARM64 AOT 零警告；照 R112「要你们做」2–5 走（先拿 0.3.0 的包复现、三种屏幕摆法、新包 `--status-screen-probe` 每块屏 `fits=True`）。
+   2. **R113 + PLAN-v24 的 Core**：`git merge --no-ff origin/claude/win-multiscreen-shot`（本地，先不推）。冲突只会在 `AGENTS.md`（第 24 条）、`HANDTEST.md`、`REVIEW.md` 顶上的追加段：两边都留、按号排。
+      编译、单测（`ScreenSpanTests` 8 条）→ R113「要你们做」1–4。编不过、对不上直接在合并后的分支上修，提交里写清改了什么。
+   3. **R114 / PLAN-v25**：`git merge --no-ff origin/claude/win-file-search-5d0d71`，冲突同上（第 25 条）。**第一次跑之前先对 R114「先核对再跑」五条**（`searchapi.h` 的 vtable 序号最要紧，数错了会调到别的方法上、可能直接崩）；
+      再编译、单测、R114「要你们做」1–6（`--file-search` 三个词各 5 次的 P50、停服务那次、`--file-search-status`、测试机上的 `--everything-probe`）。**停服务、改索引、装 Everything 只在测试机上做或测完恢复。**
+   4. 三步都过了一起推。推之前 `origin/windows` 要是又动了，用 `git fetch origin && git rebase --rebase-merges origin/windows`
+      （普通的 rebase 会把合并拍平、把分支上已经推过的提交复制一份），**别强推**。
+      哪一步过不了：前面过了的照推，过不了的那条分支先不并，照实记在这一节「第 0 批」下面，接着做第 1 批。
+3. **第 1 批：和 mac 0.10.x 的同步互通**（I1–I5）：现在 mac 0.10.0 起的提醒、开了讲解 / 附加要求的翻译服务、设了关键词的片段一同步，Windows 那一类就整类停下（PLAN-v26 §0 第 1 条）。
+   修完先在测试档 + 临时同步文件夹里跑一轮，三类都不停才算过。D1 推荐 A：这批做完改版本号 0.3.1、写更新日志、跑 `build-release.ps1` 和 `--update-live=0.3.0`，**不发布、不打 tag**，产物路径和 sha256 写在本节，等用户。
+4. **之后**照 PLAN-v26 §2 第 2–12 批。第 2 批（跨屏框选）要两块屏，手头没有就和后面的换个顺序，报告里说。D3（英文界面）推荐不在这一版做：**别动手抽字**。
+5. **每批都要**（`AGENTS.md` 自查清单，这里只列这一版要特别跑的）：
+   - Debug x64 编译零警告；`dotnet test` 全过（新纯函数配单测，**不许删测试、改断言让它变绿**）；Release AOT x64 / ARM64 零 trim / AOT 警告、PRI 四个齐全。
+   - 内存探针 `KITTY_MEMORY_PROBE=1` 和上一批比，涨超过 5 MB 的解释；空闲 CPU（只有托盘、静置 60 s）为 0。
+   - 新界面 `--ui-snapshots` 浅色、深色、高对比度各一张；只有图标的按钮有读屏名字；`--a11y-audit` 照旧 0 / 0。
+   - 这一批碰到的自检都跑：截图 / 翻译盖回 `--overlay-translate-probe`、识别元素 `--element-probe`、状态屏 `--status-screen-probe`、文件搜索 `--file-search=` / `--file-search-status` / `--everything-probe`、
+     录制 `RecordingProbe` / `SyncProbe`、便签 `--notes-ui-probe`、轻提示 `--notice-anim-test`、联网翻译 `KITTY_LIVE_TRANSLATE=1`（第 3 批）。
+   - 截图推 `windows-shots` 的 `0.4.0-v26-batch-<N>/`（第 1 批 `0.3.1-v26-batch-1/`）：**只截我们自己的窗口**，推之前自己看一遍；`../kitty-shots` 先 `git fetch origin && git reset --hard origin/windows-shots`。
+   - 手测接 `HANDTEST.md` 末尾，用 PLAN-v26 §2 预留的编号；自己能走的走掉、写「Windows 11-xx」。
+   - 两边意思一样的新设置，键名照 mac `Prefs.swift`、加进 `SettingsSyncMap.Shared`；新的全局动作用 mac 的名字（`delayedScreenshot`、`recordPause`、`noteDeck`），加在 `App/HotKeyDefaults.cs` 那张表的**最后**、不设默认键。
+   - 改了界面顺手改 `MAC-DIFF.md`。
+6. **怎么回报**：每批一个或几个 `<type>(win): …` 提交（标题 70 字以内，正文就是报告：做了什么、怎么验的、量到的数、和方案不一样的地方「替用户定的」、没做成的、没测的），
+   在本节下面加一小节「第 N 批 → 已做（提交号）」写一句结论和要用户看的；`STATUS.md` 顶上那段跟着改。推之前 `git fetch origin && git rebase origin/windows`（第 0 批见上面第 2 步第 4 条）。
+7. **停下来问用户**的只有 `AGENTS.md` 那几种：要加不是微软的包、要发布 / 打 tag、要强推 / 删分支 / 动 `main` 或 `macos`、要用用户真实的账号 / 密钥 / 数据 / 同步文件夹。
+   表情包 `emoji-pack-1-win` 照旧不动（要用户点头）。
+8. 做到第 12 批：0.4.0 的包（版本号、更新日志、`build-release.ps1`、`--update-live`），**不发布**；给用户的真机清单（≤ 30 条）写在本节最后。
+
 ## issue #38：双屏时状态屏「清洁屏幕」副屏边上一道白边（审查方在 Mac 上写、没编译，2026-11-20）
 
 报告人 lixiao0618：Windows 11、两台显示器，进「清洁屏幕」后副屏右侧有一条白边。照片是两台横放的屏贴在一起那一段：
