@@ -88,6 +88,13 @@ internal sealed class ShellRuntime
                 _ = Syncer.Start(syncDevice, syncLedger, DispatcherQueue.GetForCurrentThread()!).RoundAsync();
                 // 图片的后台识字排队（第三版 §5）。
                 OcrQueue.Start(DispatcherQueue.GetForCurrentThread()!);
+                // 打关键词展开片段（PLAN-v26 C5）：片段的关键词一变就重看要不要听键盘
+                if (ClipboardService.Instance?.Store is { } snippetStore)
+                {
+                    snippetStore.Changed += SnippetTyping.Refresh;
+                }
+
+                SnippetTyping.Refresh();
             }
         }
         catch (Exception ex)
@@ -1592,6 +1599,7 @@ internal sealed class ShellRuntime
 
     private void OnSettingsChanged()
     {
+        SnippetTyping.Refresh();
         // 只在热键真的变了时才重注册：每次保存都清空重注册的话，别的设置一改热键也会短暂失效
         // （第二版 §2 第 1 条）。
         var signature = HotKeySignature(SettingsService.Current);

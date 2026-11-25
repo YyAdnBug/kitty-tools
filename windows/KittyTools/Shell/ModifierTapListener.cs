@@ -3,6 +3,8 @@
 // 自己 SendInput 发的键（粘贴的 Ctrl+V 之类）hDevice 是 0，滤掉，不然连粘两次就算连按 Ctrl。
 // 修饰键的按下 / 松开喂给 Core ModifierTaps；中间按了普通键就作废（避开「单按一下 Ctrl 紧接着 Ctrl+C」）。
 // ponytail: 只听键盘，不听鼠标（听鼠标要收每一下移动）；两下 Ctrl 中间点了一下鼠标也算连按，要细就加鼠标的 Raw Input 只看按键位。
+// PLAN-v26 C5：打关键词展开片段（SnippetTyping）也要听键盘，共用这一份注册（同一扇窗口对同一种设备只能登记一次）：
+// 两边谁要就登记、都不要了才撤；按键另外发给 RawKey（只有真键盘的，SendInput 的照样滤掉）。
 using System.Runtime.InteropServices;
 using KittyTools.Core;
 using KittyTools.Infrastructure;
@@ -24,13 +26,29 @@ internal static unsafe partial class ModifierTapListener
     private static Action<string>? _pressed;
     private static bool _win;
     private static bool _listening;
+    private static bool _keysWanted;
+
+    /// <summary>真键盘的每一下按下 / 松开（虚拟键码、是不是松开），UI 线程上发；SetKeysWanted(true) 之后才有。</summary>
+    public static event Action<uint, bool>? RawKey;
+
+    /// <summary>别的功能（打关键词展开片段）要不要听键盘。</summary>
+    public static void SetKeysWanted(bool wanted)
+    {
+        _keysWanted = wanted;
+        Update();
+    }
 
     /// <summary>设成连按两下的动作（键 → 动作 id）；空的就停掉 Raw Input。pressed 在界面线程上回调。</summary>
     public static void Set(IReadOnlyDictionary<TapKey, string> actions, Action<string> pressed)
     {
         _actions = new Dictionary<TapKey, string>(actions);
         _pressed = pressed;
-        var wanted = _actions.Count > 0;
+        Update();
+    }
+
+    private static void Update()
+    {
+        var wanted = _actions.Count > 0 || _keysWanted;
         if (wanted == _listening)
         {
             return;
@@ -62,7 +80,7 @@ internal static unsafe partial class ModifierTapListener
             HiddenWindow.Message -= OnMessage;
         }
 
-        Log.Info($"hotkey.double-tap listening={wanted} keys={_actions.Count}");
+        Log.Info($"hotkey.double-tap listening={wanted} keys={_actions.Count} typing={_keysWanted}");
     }
 
     private static void OnMessage(uint msg, WPARAM wParam, LPARAM lParam)
@@ -91,7 +109,11 @@ internal static unsafe partial class ModifierTapListener
         var flags = *(ushort*)(buffer + 26);
         var key = (uint)*(ushort*)(buffer + 30);
         var up = (flags & 1) != 0;
-        Feed(key, up, Environment.TickCount64);
+        RawKey?.Invoke(key, up);
+        if (_actions.Count > 0)
+        {
+            Feed(key, up, Environment.TickCount64);
+        }
     }
 
     private static void Feed(uint key, bool up, long now)

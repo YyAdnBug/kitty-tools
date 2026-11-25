@@ -47,6 +47,9 @@ internal sealed class Settings
     /// <summary>显示透镜：选中的条目原地展开预览；关掉就是纯列表（mac clipboardShowPreview，默认开）。</summary>
     public bool ClipboardShowLens { get; set; } = true;
 
+    /// <summary>打关键词展开片段（PLAN-v26 C5，mac clipboardSnippetExpand，默认开；没有片段设关键词时不听键盘）。</summary>
+    public bool ClipboardSnippetExpand { get; set; } = true;
+
     /// <summary>列表里直接显示图片（PLAN-v26 C2，mac clipboardImageRows，默认开）。</summary>
     public bool ClipboardImageRows { get; set; } = true;
 

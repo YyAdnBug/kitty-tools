@@ -2037,6 +2037,13 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Save();
                 RedrawSketch();
             });
+        AddToggle("打关键词展开片段", "在任何程序里打出片段的关键词，就换成那条片段；密码框、「不记录」的程序里不展开。片段的关键词在面板里 Ctrl+K「关键词…」设",
+            settings.ClipboardSnippetExpand,
+            isOn =>
+            {
+                settings.ClipboardSnippetExpand = isOn;
+                SettingsService.Save();
+            });
         AddToggle("列表里直接显示图片", "图片条目是一张小图（长截图、手机截图看得到顶上一截），选中时在下面放大；关掉就是一行文字加小图标",
             settings.ClipboardImageRows,
             isOn =>

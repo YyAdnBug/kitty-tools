@@ -189,6 +189,20 @@ internal static unsafe class Keyboard
         }
     }
 
+    /// <summary>打关键词展开片段（PLAN-v26 C5）：删掉刚打的关键词，一次发完（关键词最多 32 个字）。</summary>
+    public static void SendBackspaces(int count)
+    {
+        count = Math.Clamp(count, 0, Core.SnippetKeyword.MaxLength);
+        Span<INPUT> inputs = stackalloc INPUT[Core.SnippetKeyword.MaxLength * 2];
+        for (var index = 0; index < count; index++)
+        {
+            inputs[index * 2] = KeyInput((VIRTUAL_KEY)0x08, 0); // VK_BACK
+            inputs[index * 2 + 1] = KeyInput((VIRTUAL_KEY)0x08, KEYBD_EVENT_FLAGS.KEYEVENTF_KEYUP);
+        }
+
+        SendInputs(inputs[..(count * 2)]);
+    }
+
     public static bool SendCtrlC() => SendCtrlCombo((VIRTUAL_KEY)0x43);
 
     private static bool SendCtrlCombo(VIRTUAL_KEY key)

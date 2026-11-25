@@ -119,6 +119,8 @@ internal sealed unsafe class OverlayWindow : Window
     /// <summary>自检档的操作脚本用（LauncherProbe）。</summary>
     internal LauncherPanel? Launcher => _launcher;
 
+    internal ClipboardPanel? Clipboard => _clipboard;
+
     /// <summary>Ctrl+P / 底栏图钉：固定后点别处不收起（Esc 照样收）。</summary>
     public void TogglePin()
     {
@@ -710,6 +712,10 @@ internal static class OverlayHost
     }
 
     internal static string? PendingLauncherQuery;
+
+    /// <summary>开着的剪贴板面板（打关键词展开带 {input} 的片段时在它里面填空）；没开、开的是启动器时是 null。</summary>
+    internal static ClipboardPanel? VisibleClipboard
+        => _window is { IsVisible: true, Kind: OverlayKind.Clipboard } window ? window.Clipboard : null;
 
     /// <summary>开着的启动器面板（自检档的操作脚本用；没开、开的是剪贴板时是 null）。</summary>
     internal static LauncherPanel? VisibleLauncher

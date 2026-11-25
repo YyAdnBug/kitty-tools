@@ -667,6 +667,20 @@ public sealed partial class ClipboardPanel : UserControl
         }
     }
 
+    /// <summary>
+    /// 打关键词展开带 {input} 的片段（PLAN-v26 C5）：面板刚打开，清掉搜索、回到全部，选中这一条、弹填空（填好照常粘到面板记下的目标窗口）。
+    /// </summary>
+    internal void AskInputsFor(long id)
+    {
+        SearchBox.Text = string.Empty;
+        SetScope(ClipScope.All);
+        SelectWhere(entry => entry.Id == id);
+        if (SelectedEntry?.Id == id)
+        {
+            Paste(false);
+        }
+    }
+
     /// <summary>截图自检塞的那条片段的关键词（UiSnapshotProbe.SeedSampleExtras）。</summary>
     internal const string ProbeKeyword = ";meet";
 
