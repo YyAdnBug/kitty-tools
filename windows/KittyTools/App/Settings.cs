@@ -145,6 +145,9 @@ internal sealed class Settings
     /// <summary>译文字号倍数 0.8–1.6，一步 0.1（浮窗 Ctrl+= / Ctrl+- / Ctrl+0 和设置里的滑块同一个值）。</summary>
     public double TranslateFontScale { get; set; } = 1.0;
 
+    /// <summary>朗读速度（SpeechSpeed 的四档之一，mac translateSpeechSpeed）：所有喇叭的系统声音都按它读。</summary>
+    public double TranslateSpeechSpeed { get; set; } = 1.0;
+
     /// <summary>折起来的服务卡（服务 id），重启后还折着。</summary>
     public List<string>? TranslateCollapsedServices { get; set; }
 

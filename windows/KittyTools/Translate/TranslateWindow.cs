@@ -188,14 +188,21 @@ internal sealed partial class TranslateWindow : Window
         {
             if (!_quietSource)
             {
+                SourceRing(true);
                 _coordinator.SetSource(_source.Text);
             }
         };
         _source.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnSourceKeyDown), handledEventsToo: true);
-        _source.TextCompositionStarted += (_, _) => _composing = true;
+        _source.TextCompositionStarted += (_, _) =>
+        {
+            _composing = true;
+            SourceRing(true);
+        };
         _source.TextCompositionEnded += (_, _) => _composing = false;
-        _source.GotFocus += (_, _) => _sourceBox!.BorderBrush = new SolidColorBrush(Theme.AccentColor);
-        _source.LostFocus += (_, _) => _sourceBox!.BorderBrush = new SolidColorBrush(Colors.Transparent);
+        // 原文框平时是中性的细线（PLAN-v26 T5，同 mac 0.10.3 5a937500）：呼出后在框里点过、改过字、在组字才亮强调色焦点环
+        // （键盘焦点照旧在框里）；带进来的原文、按 Enter 翻、焦点离开都回到中性
+        _source.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler((_, _) => SourceRing(true)), handledEventsToo: true);
+        _source.LostFocus += (_, _) => SourceRing(false);
         _source.Loaded += (_, _) =>
         {
             if (_visible && !_noActivate)
@@ -280,7 +287,7 @@ internal sealed partial class TranslateWindow : Window
             Background = Theme.Brush("Kitty.Input", Theme.Argb(11, 0, 0, 0)),
             CornerRadius = Theme.Corner("Kitty.Corner.Card"),
             BorderThickness = new Thickness(1),
-            BorderBrush = new SolidColorBrush(Colors.Transparent),
+            BorderBrush = SourceRest(),
             Padding = new Thickness(0, 8, 0, 8),
             Child = sourceStack,
         };
@@ -760,6 +767,7 @@ internal sealed partial class TranslateWindow : Window
         }
         else if (_source.Text.Trim().Length > 0)
         {
+            SourceRing(false);
             _coordinator.Start();
         }
     }
@@ -958,8 +966,21 @@ internal sealed partial class TranslateWindow : Window
 
     // ---- 原文区
 
+    /// <summary>原文框平时那条线（中性）。</summary>
+    private static Brush SourceRest() => Theme.Brush("Kitty.Hairline", Theme.Argb(20, 128, 128, 128));
+
+    /// <summary>原文框的焦点环：on = 强调色，否则中性的细线。</summary>
+    private void SourceRing(bool on)
+    {
+        if (_sourceBox is not null)
+        {
+            _sourceBox.BorderBrush = on ? new SolidColorBrush(Theme.AccentColor) : SourceRest();
+        }
+    }
+
     private void SetSourceQuietly(string text)
     {
+        SourceRing(false);
         _quietSource = true;
         _source.Text = text;
         _source.SelectionStart = text.Length;
@@ -974,6 +995,9 @@ internal sealed partial class TranslateWindow : Window
         _note.Visibility = note is null ? Visibility.Collapsed : Visibility.Visible;
         var hasSource = _coordinator.SourceText.Length > 0;
         _speakSource.IsEnabled = _copySource.IsEnabled = _clearSource.IsEnabled = hasSource;
+        var voiced = Speech.HasVoice(_coordinator.SourceLanguage?.Code());
+        _speakSource.IsEnabled = hasSource && voiced;
+        ToolTipService.SetToolTip(_speakSource, voiced ? "朗读原文" : Speech.NoVoiceHint(_coordinator.SourceLanguage));
         var sourceKey = SpeechText.EnglishWord(_coordinator.SourceText, _coordinator.SourceLanguage) is { } sourceWord
             ? SpeechText.Key(sourceWord, Speech.PreferredAccent)
             : _coordinator.SourceText;
@@ -1212,8 +1236,9 @@ internal sealed partial class TranslateWindow : Window
                 // 单词卡：大模型的单词模式、词典类服务（有道词典）
                 var wordStyle = TranslateKinds.IsDictionary(card.Service.Kind) ||
                                 (_coordinator.IsWordLookup && TranslateCardView.IsStreamingKind(card.Service.Kind));
+                // 讲解卡同单词卡（喇叭只读第一行），但第一行是译文、不是读音
                 view.Update(card, index, SettingsService.Current.TranslateFontScale, collapsed.Contains(card.Service.Id),
-                    _coordinator.CopiedCard == card.Service.Id, _coordinator.Target, wordStyle,
+                    _coordinator.CopiedCard == card.Service.Id, _coordinator.Target, wordStyle || card.Explained,
                     wordStyle ? SpeechText.EnglishWord(_coordinator.TranslatedSource, _coordinator.SourceLanguage) : null);
             }
         }
@@ -1347,6 +1372,15 @@ internal sealed partial class TranslateWindow : Window
                     new TranslateCard { Service = zhipu, State = CardState.Done, Text = done },
                     new TranslateCard { Service = microsoft, State = CardState.Done, Text = done },
                     new TranslateCard { Service = google, State = CardState.Idle },
+                });
+                break;
+            case "translate-explain":
+                // PLAN-v26 T3：打开了讲解的智谱讲一句英文（示例那一条），同单词卡的样子
+                var (sentence, entry) = SentenceExplain.Example(Lang.ZhHans);
+                SetSourceQuietly(sentence);
+                _coordinator.ShowProbe(sentence, Lang.En, Lang.ZhHans, new[]
+                {
+                    new TranslateCard { Service = zhipu, State = CardState.Done, Text = entry, Explained = true },
                 });
                 break;
             case "translate-word":
@@ -1642,14 +1676,15 @@ internal sealed partial class TranslateWindow : Window
             {
                 Padding = new Thickness(4, 1, 4, 1),
                 CornerRadius = new CornerRadius(7),
-                Background = new SolidColorBrush(Theme.Argb(41, accent.R, accent.G, accent.B)),
+                // 「自动」灰字（PLAN-v26 T5，同 mac 0.10.3）：顶上不再同时亮三四处强调色
+                Background = Theme.Brush("Kitty.Hairline", Theme.Argb(20, 128, 128, 128)),
                 VerticalAlignment = VerticalAlignment.Center,
                 Child = new TextBlock
                 {
                     Text = "自动",
                     FontSize = 10,
                     FontWeight = FontWeights.SemiBold,
-                    Foreground = new SolidColorBrush(Theme.AccentTextColor),
+                    Foreground = Theme.SecondaryText(),
                 },
             });
         }

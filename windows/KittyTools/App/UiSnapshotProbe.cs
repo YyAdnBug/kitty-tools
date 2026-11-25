@@ -591,7 +591,7 @@ internal static class UiSnapshotProbe
             var handle = WinRT.Interop.WindowNative.GetWindowHandle(window);
             foreach (var state in new[]
                      {
-                         "translate-empty", "translate-running", "translate-done", "translate-truncated", "translate-word",
+                         "translate-empty", "translate-running", "translate-done", "translate-truncated", "translate-word", "translate-explain",
                          "translate-collapsed", "translate-history", "translate-history-menu",
                      })
             {

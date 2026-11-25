@@ -134,6 +134,8 @@ internal static class SettingsSyncFields
         Text("TranslateWordAccent", s => s.TranslateWordAccent, (s, v) => s.TranslateWordAccent = v ?? "us");
         fields["TranslateFontScale"] = new(s => SettingValue.Of(s.TranslateFontScale),
             (s, v) => s.TranslateFontScale = v?.Real ?? Defaults.TranslateFontScale);
+        fields["TranslateSpeechSpeed"] = new(s => SettingValue.Of(SpeechSpeed.Nearest(s.TranslateSpeechSpeed)),
+            (s, v) => s.TranslateSpeechSpeed = SpeechSpeed.Nearest(v?.Real ?? Defaults.TranslateSpeechSpeed));
         List("TranslateCollapsedServices", s => s.TranslateCollapsedServices ?? new List<string>(),
             (s, v) => s.TranslateCollapsedServices = v is { Count: > 0 } ? v : null);
         Flag("OcrJoinLines", s => s.OcrJoinLines, (s, v) => s.OcrJoinLines = v);

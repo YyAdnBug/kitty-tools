@@ -24,6 +24,12 @@ public static class WordLookup
             return false;
         }
 
+        // 泰文词之间不写空格（PLAN-v26 T1，同 mac 0.10.0）：一整句也会被当成「一个词」，泰文一律不算词
+        if (value.Any(ch => ch is >= '\u0E00' and <= '\u0E7F'))
+        {
+            return false;
+        }
+
         var cjk = value.Count(ch => IsCjk(ch));
         if (cjk > 0)
         {
@@ -74,12 +80,12 @@ public static class WordLookup
             ? ("run", "美 /rʌn/  英 /rʌn/\nv. 跑；奔跑；运转；经营\nn. 跑步；一段时间；连续\n例：I run every morning. 我每天早上跑步。")
             : ("苹果", "píngguǒ\nn. apple; apple tree\nExample: 我每天吃一个苹果。 I eat an apple every day.");
 
-    /// <summary>智谱的单词模式提示词（中文，mac Zhipu.stream）。</summary>
-    public static string ZhipuPrompt(string word, Lang target)
+    /// <summary>智谱的单词模式提示词（中文，mac Zhipu.stream）；extra：服务的附加要求，接在说明那一段后面（PLAN-v26 T3）。</summary>
+    public static string ZhipuPrompt(string word, Lang target, string? extra = null)
     {
         var (exampleWord, entry) = Example(target);
         return $"你是一部简明词典。把输入的词写成一条词条，释义用{target.Title()}，格式和示例完全一样：第一行读音，" +
-               "然后每个词性一行，最后一到两行例句。只输出词条本身，不要任何说明。\n\n" +
+               "然后每个词性一行，最后一到两行例句。只输出词条本身，不要任何说明。" + SentenceExplain.ZhipuAddition(extra) + "\n\n" +
                $"输入：{exampleWord}\n输出：\n{entry}\n\n输入：{word}\n输出：";
     }
 

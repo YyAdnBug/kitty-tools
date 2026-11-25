@@ -165,6 +165,9 @@ public static class SettingsSyncMap
         Choice("translateWordAccent", "TranslateWordAccent", "us", "uk");
         keys.Add(new(PrefPrefix + "translateFontScale", "TranslateFontScale", SettingType.Double, true, Same,
             value => value.Real is >= 0.5 and <= 3 ? SettingValue.Of(value.Real) : null));
+        // PLAN-v26 T4（mac 0.10.1）：读进来的夹到最近一档
+        keys.Add(new(PrefPrefix + "translateSpeechSpeed", "TranslateSpeechSpeed", SettingType.Double, true, Same,
+            value => double.IsFinite(value.Real) ? SettingValue.Of(SpeechSpeed.Nearest(value.Real)) : null));
         // 折起来的服务卡：mac 是换行隔开的一段文字，Windows 是一组服务 id
         keys.Add(new(PrefPrefix + "translateCollapsedServices", "TranslateCollapsedServices", SettingType.Texts, true,
             value => value.Texts.Any(id => id.Contains('\n')) ? null : SettingValue.Of(string.Join('\n', value.Texts)),

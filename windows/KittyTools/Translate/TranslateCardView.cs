@@ -477,6 +477,11 @@ internal sealed partial class TranslateCardView
             {
                 speak.Foreground = new SolidColorBrush(Theme.AccentColor);
             }
+            else if (!Speech.HasVoice(_language?.Code()))
+            {
+                speak.IsEnabled = false;
+                ToolTipService.SetToolTip(speak, Speech.NoVoiceHint(_language));
+            }
 
             _actions.Children.Add(speak);
             _actions.Children.Add(IconAction(copied ? Glyphs.Check : Glyphs.Copy,

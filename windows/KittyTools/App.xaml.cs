@@ -180,6 +180,13 @@ public partial class App : Application
                 return;
             }
 
+            if (TranslateLiveProbe.IsRequested(commandLine) && TranslateLiveProbe.DirectoryFrom(commandLine) is { } translateProbe)
+            {
+                // PLAN-v26 第 3 批：内置智谱真的翻 30 种语言、长文分段、讲解和附加要求（只在测试档），跑完就退。
+                _ = TranslateLiveProbe.RunAsync(translateProbe);
+                return;
+            }
+
             if (SyncServerProbe.IsRequested(commandLine) && SyncServerProbe.DirectoryFrom(commandLine) is { } syncProbe)
             {
                 // PLAN-v19 核验：连本机测试 WebDAV 服务器走几轮真的同步（只在测试档），跑完就退。

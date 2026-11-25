@@ -56,6 +56,7 @@ internal static class GoogleProvider
     {
         Lang.ZhHans => "zh-CN",
         Lang.ZhHant => "zh-TW",
+        Lang.Nb => "no",
         _ => lang.Code(),
     };
 }

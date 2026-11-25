@@ -29,6 +29,9 @@ internal sealed class TranslateCard
 
     /// <summary>折叠着、点开后才翻的：不当主结果（点开一张卡不该换掉剪贴板、再写一条历史，PLAN-v22 D5）。</summary>
     public bool Opened { get; set; }
+
+    /// <summary>这一张是讲解（PLAN-v26 T3）：同单词卡——不自动复制、没有替换原文、喇叭只读第一行。</summary>
+    public bool Explained { get; set; }
 }
 
 /// <summary>划词来的会话：取到的原文（不去首尾空白，替换时照它补回）、取词时的前台窗口和它的进程（粘之前核对）。</summary>
@@ -153,7 +156,7 @@ internal sealed class TranslateCoordinator
         => _request is { } request && TranslationHistory.Instance?.IsFavorite(request.Text, request.To.Code()) == true;
 
     /// <summary>替换原文这时能不能用：划词来的、主结果出来了、不是查词。</summary>
-    public bool CanReplace => Replace is not null && !IsWordLookup && Primary is not null;
+    public bool CanReplace => Replace is not null && !IsWordLookup && Primary is { Explained: false };
 
     public void SetSource(string text)
     {
@@ -522,6 +525,19 @@ internal sealed class TranslateCoordinator
             plan.FellBack ? chosenTarget : null);
     }
 
+    /// <summary>这个服务这次讲不讲解：大模型服务、打开了讲解、不是单词模式、一句外文译成第一语言（SentenceExplain.Applies）。</summary>
+    private bool Explains(TranslateServiceConfig service, TranslateRequest request)
+    {
+        if (service.ExplainsSentences != true || request.IsWord || !TranslateCardView.IsStreamingKind(service.Kind))
+        {
+            return false;
+        }
+
+        var settings = SettingsService.Current;
+        var (first, _) = Langs.Pair(settings.TranslateFirstLanguage, settings.TranslateSecondLanguage);
+        return SentenceExplain.Applies(request.Text, request.From ?? Detected, request.To, first);
+    }
+
     private async Task RunAsync(TranslateCard card)
     {
         if (_request is not { } request)
@@ -548,6 +564,9 @@ internal sealed class TranslateCoordinator
         card.State = CardState.Waiting;
         card.Text = string.Empty;
         card.Error = null;
+        // 浮窗里的请求：接上这个服务的附加要求；打开了讲解、这次是一句外文译成第一语言时换成讲解（PLAN-v26 T3）
+        request = request with { InPanel = true, Explains = Explains(card.Service, request) };
+        card.Explained = request.Explains;
         Changed?.Invoke();
 
         // 取消后流里缓冲的增量照样会交出来：每一段都先看还是不是自己的，不然标成「已中断」的卡被改回生成中。
@@ -639,8 +658,8 @@ internal sealed class TranslateCoordinator
                 settings.TranslateHistoryLimit);
         }
 
-        // 单词模式的结果是释义，不自动复制；复制即译带来、还没改过的原文也不复制。
-        if (TranslateSession.AutoCopies(settings.TranslateAutoCopy, request.IsWord, _copiedSource, TranslatedSource))
+        // 单词模式的结果是释义、讲解是一大段，不自动复制；复制即译带来、还没改过的原文也不复制。
+        if (TranslateSession.AutoCopies(settings.TranslateAutoCopy, request.IsWord || primary.Explained, _copiedSource, TranslatedSource))
         {
             CopyCard(primary.Service.Id, announces: false);
         }

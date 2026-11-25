@@ -64,11 +64,13 @@ public sealed class LangTests
     [TestMethod]
     public void LatinScriptAsksTheRecognizer()
     {
-        // PLAN-v11 C8：拉丁字母的那一段交给调用方给的识别（App 里是系统的 ELS），认不出、太短、不在 11 种里按英文。
+        // PLAN-v11 C8：拉丁字母的那一段交给调用方给的识别（App 里是系统的 ELS），认不出、太短、不在 30 种里按英文。
         Assert.AreEqual(Lang.Fr, Langs.Detect("Bonjour tout le monde", latin: _ => "fr"));
         Assert.AreEqual(Lang.De, Langs.Detect("Guten Morgen zusammen heute", latin: _ => "de-DE"));
         Assert.AreEqual(Lang.En, Langs.Detect("Bonjour", latin: _ => "fr"), "不到 3 个词不认");
-        Assert.AreEqual(Lang.En, Langs.Detect("Hallo daar hoe gaat het", latin: _ => "nl"), "不在 11 种里按英文");
+        // PLAN-v26 T1：荷兰语进了 30 种（原来不在 11 种里按英文）；不在 30 种里的照旧按英文
+        Assert.AreEqual(Lang.Nl, Langs.Detect("Hallo daar hoe gaat het", latin: _ => "nl"));
+        Assert.AreEqual(Lang.En, Langs.Detect("Habari ya leo rafiki", latin: _ => "sw"), "不在 30 种里按英文");
         Assert.AreEqual(Lang.En, Langs.Detect("Bonjour tout le monde", latin: _ => null));
         Assert.AreEqual(Lang.En, Langs.Detect("Bonjour tout le monde"));
         Assert.AreEqual(Lang.ZhHans, Langs.Detect("今天天气很好", latin: _ => "fr"), "不是拉丁字母的不问它");

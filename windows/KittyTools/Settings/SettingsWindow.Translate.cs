@@ -129,6 +129,12 @@ internal sealed partial class SettingsWindow
                 settings.TranslateWordAccent = accents[index];
                 SettingsService.Save();
             });
+        _content.Children.Add(SettingsUi.Card("朗读速度", "所有喇叭都按它读；英文单词的真人录音照原速", SettingsUi.Segmented(
+            SpeechSpeed.Titles, SpeechSpeed.IndexOf(settings.TranslateSpeechSpeed), index =>
+            {
+                settings.TranslateSpeechSpeed = SpeechSpeed.Choices[index];
+                SettingsService.Save();
+            }, "朗读速度")));
         _content.Children.Add(SettingsUi.Footnote("句子用系统声音：在 Windows 设置 › 时间和语言 › 语音 里添加语音，可以换更自然的声音。"));
 
         // ---- 行为
@@ -712,6 +718,47 @@ internal sealed partial class SettingsWindow
                 ? "系统翻译用的是 Mac 自带的翻译，这台电脑上用不了；留着是为了同步和导出时原样带回 Mac。"
                 : "这一版不认识这个服务（可能来自更新版本或 Mac），更新后可用；留着是为了同步和导出时原样带回去。"));
             return;
+        }
+
+        // ---- 浮窗里的回答（PLAN-v26 T3，mac 0.10.1 issue #35）：大模型服务才有；讲解关着存 null，附加要求空着存 null、截到上限
+        if (TranslateCardView.IsStreamingKind(service.Kind))
+        {
+            _content.Children.Add(SettingsUi.Section("浮窗里的回答"));
+            _content.Children.Add(SettingsUi.Card("讲解外文句子", "查一句外文时给出译文、三到五个重点词和句型；单个词照 查词 的设置",
+                SettingsUi.Toggle(service.ExplainsSentences == true, isOn =>
+                {
+                    service.ExplainsSentences = isOn ? true : null;
+                    Save();
+                }, "讲解外文句子")));
+            // 一段话：标题和说明在上、整行宽的输入框在下（右对齐的单行框放不下几句话）
+            var extra = new TextBox
+            {
+                Text = service.ExtraPrompt ?? string.Empty,
+                PlaceholderText = "如：术语保留英文；每个词多给一个例句",
+                AcceptsReturn = true,
+                TextWrapping = TextWrapping.Wrap,
+                MinHeight = 64,
+                MaxHeight = 150,
+            };
+            AutomationProperties.SetName(extra, "附加要求");
+            extra.TextChanged += (_, _) =>
+            {
+                service.ExtraPrompt = ExtraPrompt.Stored(extra.Text);
+                Save();
+            };
+            var extraPanel = new StackPanel { Spacing = 6 };
+            extraPanel.Children.Add(new TextBlock { Text = "附加要求", FontWeight = FontWeights.SemiBold });
+            extraPanel.Children.Add(new TextBlock
+            {
+                Text = "接在内置的提示词后面，翻译、查词、讲解都用",
+                FontSize = Theme.FontSize("Kitty.FontSize.Label"),
+                Foreground = Theme.SecondaryText(),
+                TextWrapping = TextWrapping.Wrap,
+            });
+            extraPanel.Children.Add(extra);
+            _content.Children.Add(new Border { Style = Theme.Style("Kitty.CardStyle"), Child = extraPanel });
+            _content.Children.Add(SettingsUi.Footnote(
+                "只在翻译浮窗里用；划词翻译并替换、截图翻译盖回截图照旧只要译文。讲解比译文长，用的额度也多。"));
         }
 
         // ---- 密钥：预先填好已存的（掩码显示），改了就存；清空就删掉。不用 key 的（有道词典）没有这一节

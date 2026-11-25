@@ -210,6 +210,8 @@ internal static class Speech
             _synthesizer ??= new SpeechSynthesizer();
             var voice = exact ? ExactVoice(languageCode) : VoiceFor(languageCode);
             _synthesizer.Voice = voice ?? SpeechSynthesizer.DefaultVoice;
+            // 朗读速度（PLAN-v26 T4）：合成时就按这个快慢（SpeakingRate 是相对默认语速的倍数，不变调）
+            _synthesizer.Options.SpeakingRate = SpeechSpeed.Nearest(SettingsService.Current.TranslateSpeechSpeed);
             Speaking = key;
             Changed?.Invoke();
             var stream = await _synthesizer.SynthesizeTextToStreamAsync(text);
@@ -301,6 +303,39 @@ internal static class Speech
             return null;
         }
     }
+
+    /// <summary>
+    /// 系统里有这种语言的声音吗（PLAN-v26 T1：30 种语言里很多 Windows 默认没装语音包）：没有时喇叭灰掉、提示一句，
+    /// 不再拿别的语言的声音去念。代码是 null（不知道哪种）、读不出声音列表时当作有。
+    /// ponytail: 装了哪些语言第一次问时记下（原文框每打一个字都会问），装了新的语音包要重开 App 才认。
+    /// </summary>
+    public static bool HasVoice(string? languageCode)
+    {
+        if (Base(languageCode) is not { } baseCode)
+        {
+            return true;
+        }
+
+        if (_voiceLanguages is null)
+        {
+            try
+            {
+                _voiceLanguages = SpeechSynthesizer.AllVoices.Select(voice => Base(voice.Language)).OfType<string>().ToHashSet();
+            }
+            catch
+            {
+                return true;
+            }
+        }
+
+        return _voiceLanguages.Contains(baseCode);
+    }
+
+    private static HashSet<string>? _voiceLanguages;
+
+    /// <summary>没装那种语言的语音时喇叭上的提示。</summary>
+    public static string NoVoiceHint(Lang? lang)
+        => $"这台电脑没装{lang?.Title() ?? "这种语言"}的语音，在 Windows 设置 › 时间和语言 › 语音 里添加";
 
     /// <summary>口音要对上的声音：en-GB → en-US → null（系统默认）。</summary>
     private static VoiceInformation? ExactVoice(string? languageCode)

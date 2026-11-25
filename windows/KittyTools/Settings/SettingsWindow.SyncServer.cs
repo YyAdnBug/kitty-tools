@@ -355,7 +355,7 @@ internal sealed partial class SettingsWindow
     {
         var dialog = new ContentDialog
         {
-            RequestedTheme = Theme.ElementTheme,
+            RequestedTheme = _shell.ActualTheme,
             Title = "停止和服务器同步？",
             Content = new TextBlock
             {
@@ -397,7 +397,7 @@ internal sealed partial class SettingsWindow
             form.Children.Add(note);
             var dialog = new ContentDialog
             {
-                RequestedTheme = Theme.ElementTheme,
+                RequestedTheme = _shell.ActualTheme,
                 Title = "更新服务器的密码",
                 Content = form,
                 PrimaryButtonText = "更新并同步",

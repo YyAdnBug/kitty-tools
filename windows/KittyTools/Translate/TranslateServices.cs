@@ -272,10 +272,83 @@ internal sealed class TranslateServiceStore
                                                                   || BuiltinZhipuKey is not null));
 
     /// <summary>
+    /// 翻译会话、静默替换、截图翻译和设置页「测试连接」都从这里发：大模型的原文太长时先按段切开、依次翻（PLAN-v26 T2，Core 的 LongText）；
+    /// 单词模式、讲解不切。
+    /// </summary>
+    public static IAsyncEnumerable<string> Translate(
+        TranslateServiceConfig service,
+        TranslateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!request.IsWord && !request.Explains && OutputTokens(service) is { } tokens)
+        {
+            var pieces = LongText.Split(request.Text, LongText.Budget(tokens));
+            if (pieces.Count > 1)
+            {
+                return Pieces(service, request, pieces, cancellationToken);
+            }
+        }
+
+        return Dispatch(service, request, cancellationToken);
+    }
+
+    /// <summary>
+    /// 一次最多出多少 token 的译文（大模型才有；传统接口按字数限、整段一次给）：智谱 1024，Anthropic 4096，OpenAI 兼容的同它发的
+    /// max_tokens，没传 max_tokens 的（OpenAI 官方、Azure）由模型自己定、不切。同 mac TranslateService.outputTokens。
+    /// </summary>
+    public static int? OutputTokens(TranslateServiceConfig service)
+    {
+        switch (service.Kind)
+        {
+            case TranslateKinds.Zhipu:
+                return ZhipuProvider.MaxTokens;
+            case TranslateKinds.Ai:
+                var protocol = AiEndpoint.ParseProtocol(service.Protocol);
+                if (protocol == AiProtocol.Anthropic)
+                {
+                    return 4096;
+                }
+
+                return AiEndpoint.Resolve(service.BaseUrl, protocol) is { } url ? AiEndpoint.MaxTokens(url, protocol) : null;
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>依次翻各段、接着给出整段译文（前面翻完的段 + 段间原来的空白 + 这一段到目前为止的）；某段截断或出错就停在那里抛出来。</summary>
+    private static async IAsyncEnumerable<string> Pieces(
+        TranslateServiceConfig service,
+        TranslateRequest request,
+        IReadOnlyList<LongText.Piece> pieces,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var done = string.Empty;
+        string? last = null;
+        foreach (var piece in pieces)
+        {
+            var latest = string.Empty;
+            await foreach (var text in Dispatch(service, request with { Text = piece.Text }, cancellationToken))
+            {
+                latest = text;
+                // 后面几段开头的「思考中」（空串）只是没新字，不再让卡片回到「思考中」
+                var whole = done + text;
+                if (whole != last)
+                {
+                    yield return whole;
+                    last = whole;
+                }
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            done += latest + piece.Separator;
+        }
+    }
+
+    /// <summary>
     /// 服务分发只有一个 switch（加服务 = 一个 Provider 文件 + 一个 case）。AI 服务明写（以前 _ 一律当 AI 服务跑）；
     /// 系统翻译和不认识的种类不该走到这里（不开卡），走到了就报配置错误。
     /// </summary>
-    public static IAsyncEnumerable<string> Translate(
+    private static IAsyncEnumerable<string> Dispatch(
         TranslateServiceConfig service,
         TranslateRequest request,
         CancellationToken cancellationToken) => service.Kind switch

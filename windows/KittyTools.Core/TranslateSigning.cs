@@ -40,6 +40,17 @@ public static class TranslateSigning
         "ko" => "kor",
         "fr" => "fra",
         "es" => "spa",
+        // PLAN-v26 T1（mac 0.10.0 X1）：百度用自己的三字母码
+        "vi" => "vie",
+        "ar" => "ara",
+        "ms" => "may",
+        "uk" => "ukr",
+        "sv" => "swe",
+        "da" => "dan",
+        "fi" => "fin",
+        "nb" => "nor",
+        "ro" => "rom",
+        "he" => "heb",
         _ => lang,
     };
 
@@ -60,6 +71,7 @@ public static class TranslateSigning
         null or "" => "auto",
         "zh-Hans" => "zh-CHS",
         "zh-Hant" => "zh-CHT",
+        "nb" => "no",
         _ => lang,
     };
 
@@ -73,6 +85,7 @@ public static class TranslateSigning
     {
         "zh-Hans" => "zh",
         "zh-Hant" => "zh-Hant",
+        "nb" => "no",
         null or "" => "auto",
         _ => lang,
     };
@@ -120,6 +133,7 @@ public static class TranslateSigning
     {
         "zh-Hans" => "zh",
         "zh-Hant" => "zh-TW",
+        "nb" => "no",
         null or "" => "auto",
         _ => lang,
     };
