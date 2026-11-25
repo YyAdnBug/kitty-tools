@@ -17732,12 +17732,12 @@
         }
       }
     },
-    "右键 zip、7z、tar.gz、gz 这类压缩包；带密码的 zip 会先问密码" : {
+    "右键 zip、7z、rar、tar.gz、xz、aar 这类压缩包；带密码的 zip 会先问密码" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Right-click archives such as zip, 7z, tar.gz, or gz; asks first for the password of a protected zip"
+            "value" : "Right-click archives such as zip, 7z, rar, tar.gz, xz, or aar; asks first for the password of a protected zip"
           }
         }
       }

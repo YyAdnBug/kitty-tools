@@ -28,7 +28,17 @@ import Testing
     #expect(Archives.isArchive(URL(filePath: "/a/资料.ZIP")))
     #expect(Archives.isArchive(URL(filePath: "/a/b.tar.gz")))
     #expect(Archives.isArchive(URL(filePath: "/a/b.gz")))  // 单文件的 .gz 也认
-    #expect(!Archives.isArchive(URL(filePath: "/a/b.xz")))
+    // 格式扩充第 1 批：单文件的 .xz / .Z / .lz / .lzma、.aar
+    #expect(Archives.isArchive(URL(filePath: "/a/b.xz")))
+    #expect(Archives.isArchive(URL(filePath: "/a/b.Z")))
+    #expect(Archives.isArchive(URL(filePath: "/a/b.aar")))
+    #expect(!Archives.isArchive(URL(filePath: "/a/b.zst")))  // 系统解不了的不认
+    #expect(!Archives.isArchive(URL(filePath: "/a/b.tar.lz4")))
+    #expect(Archives.stem(of: URL(filePath: "/a/旧.tar.Z")) == "旧")
+    #expect(Archives.stem(of: URL(filePath: "/a/c.tar.lzma")) == "c")
+    #expect(Archives.tool(for: URL(filePath: "/a/c.tar.lz")) == .tar)
+    #expect(Archives.tool(for: URL(filePath: "/a/c.lz")) == .stream("/usr/bin/gunzip"))
+    #expect(Archives.tool(for: URL(filePath: "/a/c.cpgz")) == .tar)
     #expect(!Archives.isArchive(URL(filePath: "/a/.zip")))
     #expect(!Archives.isArchive(URL(filePath: "/a/b.zipx")))
     #expect(Archives.stem(of: URL(filePath: "/a/项目 v1.2.tar.gz")) == "项目 v1.2")
@@ -553,8 +563,10 @@ import Testing
   @Test func singleFileCompressed() async throws {
     let root = try makeRoot()
     defer { try? FileManager.default.removeItem(at: root) }
-    #expect(Archives.decompressor(for: URL(filePath: "/a/b.txt.gz")) == "/usr/bin/gunzip")
-    #expect(Archives.decompressor(for: URL(filePath: "/a/b.tar.gz")) == nil)
+    #expect(Archives.tool(for: URL(filePath: "/a/b.txt.gz")) == .stream("/usr/bin/gunzip"))
+    #expect(Archives.tool(for: URL(filePath: "/a/b.tar.gz")) == .tar)
+    #expect(
+      Archives.singleFileCommand(URL(filePath: "/a/b.tar.gz"), to: URL(filePath: "/o")) == nil)
     #expect(Archives.isArchive(URL(filePath: "/a/b.bz2")))
     let source = root.appending(path: "源")
     try write("你好 $HOME `x`", to: source.appending(path: "说明 '1'.txt"))
@@ -591,6 +603,137 @@ import Testing
     #expect(
       try FileManager.default.contentsOfDirectory(atPath: root.path(percentEncoded: false))
         .allSatisfy { !$0.hasPrefix(".kitty-") })
+  }
+
+  /// 格式扩充第 1 批：只压了一个文件的 .xz、.Z、.lz（系统 gunzip）、.lzma（compression_tool）；样本用系统 tar 的 raw 格式、
+  /// compress 造
+  @Test func moreSingleFileStreams() async throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let text = String(repeating: "第一行 hello\n", count: 200)
+    try write(text, to: root.appending(path: "说明.txt"))
+    let folder = root.path(percentEncoded: false)
+    let path = { (name: String) in root.appending(path: name).path(percentEncoded: false) }
+    for (ext, option) in [("xz", "-J"), ("lz", "--lzip"), ("lzma", "--lzma")] {
+      let made = try await Subprocess.run(
+        "/usr/bin/tar",
+        ["--format", "raw", option, "-cf", path("说明.txt." + ext), "-C", folder, "说明.txt"])
+      try #require(made.status == 0)
+    }
+    let compressed = try await Subprocess.run(
+      "/bin/sh",
+      [
+        "-c", "exec /usr/bin/compress -c -- \"$0\" > \"$1\"", path("说明.txt"), path("说明.txt.Z"),
+      ])
+    try #require(compressed.status == 0)
+    for ext in ["xz", "lz", "lzma", "Z"] {
+      let outcome = await Archives.unpack(
+        root.appending(path: "说明.txt." + ext), password: nil, gbk: false)
+      let placed = try #require(outcome.url, "\(ext)：\(outcome)")
+      #expect(try String(contentsOf: placed, encoding: .utf8) == text, "\(ext)")
+      try FileManager.default.removeItem(at: placed)
+    }
+    // 坏的 .lzma：说原因、不留东西
+    let bad = root.appending(path: "坏.lzma")
+    try Data("not lzma".utf8).write(to: bad)
+    #expect(await Archives.unpack(bad, password: nil, gbk: false).url == nil)
+    #expect(try names(in: root).allSatisfy { !$0.hasPrefix(".kitty-") })
+  }
+
+  /// .aar（aa extract）：往返、不要 .DS_Store；坏的说原因
+  @Test func appleArchive() async throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let source = root.appending(path: "源")
+    try write("一", to: source.appending(path: "资料/一.txt"))
+    try write("二", to: source.appending(path: "资料/子/二.txt"))
+    try write("杂", to: source.appending(path: "资料/.DS_Store"))
+    let archive = root.appending(path: "资料.aar")
+    let made = try await Subprocess.run(
+      "/usr/bin/aa",
+      [
+        "archive", "-d", source.path(percentEncoded: false), "-subdir", "资料", "-o",
+        archive.path(percentEncoded: false),
+      ])
+    try #require(made.status == 0)
+    #expect(Archives.tool(for: archive) == .appleArchive)
+    let placed = try #require(await Archives.unpack(archive, password: nil, gbk: false).url)
+    #expect(placed.lastPathComponent == "资料")
+    #expect(try names(in: placed) == ["一.txt", "子"])
+    #expect(
+      try String(contentsOf: placed.appending(path: "子/二.txt"), encoding: .utf8) == "二")
+    let bad = root.appending(path: "坏.aar")
+    try Data("not aar".utf8).write(to: bad)
+    #expect(await Archives.unpack(bad, password: nil, gbk: false).url == nil)
+    #expect(try names(in: root).allSatisfy { !$0.hasPrefix(".kitty-") })
+    #expect(
+      Archives.outcome(ofFailure: "Failed to create decryption stream", password: false)
+        == .failed("这个包加了密码，这里只解得开 zip 的密码"))
+  }
+
+  /// Deflate64 的 zip：系统 tar 不支持，换系统 unzip（手搓的最小包：方法 9，数据是一个不压缩的 deflate 块，Deflate64 里同样合法）；
+  /// unzip 说密码不对时报成密码不对
+  @Test func deflate64FallsBackToUnzip() async throws {
+    let zip: [UInt8] = [
+      0x50, 0x4B, 0x03, 0x04, 0x15, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0xBC,
+      0x52, 0x1A, 0x15, 0x15, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00,
+      0x64, 0x36, 0x34, 0x2E, 0x74, 0x78, 0x74, 0x01, 0x10, 0x00, 0xEF, 0xFF, 0x68, 0x65, 0x6C,
+      0x6C, 0x6F, 0x20, 0x64, 0x65, 0x66, 0x6C, 0x61, 0x74, 0x65, 0x36, 0x34, 0x0A, 0x50, 0x4B,
+      0x01, 0x02, 0x15, 0x03, 0x15, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0xBC,
+      0x52, 0x1A, 0x15, 0x15, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xA4, 0x81, 0x00, 0x00, 0x00, 0x00, 0x64,
+      0x36, 0x34, 0x2E, 0x74, 0x78, 0x74, 0x50, 0x4B, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x01,
+      0x00, 0x01, 0x00, 0x35, 0x00, 0x00, 0x00, 0x3A, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ]
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let archive = root.appending(path: "大文件.zip")
+    try Data(zip).write(to: archive)
+    let placed = try #require(await Archives.unpack(archive, password: nil, gbk: false).url)
+    #expect(placed.lastPathComponent == "d64.txt")
+    #expect(try String(contentsOf: placed, encoding: .utf8) == "hello deflate64\n")
+    #expect(try names(in: root) == ["d64.txt", "大文件.zip"])
+    #expect(
+      Archives.needsUnzip(
+        "d64.txt: Unsupported ZIP compression method (9: deflation-64-bit): Inappropriate file type"
+      ))
+    #expect(!Archives.needsUnzip("x: Unsupported ZIP compression method (99: aes)"))
+    #expect(
+      Archives.outcome(ofFailure: "\nincorrect password", password: true) == .wrongPassword)
+    let arguments = Archives.unzipArguments(
+      archive, into: URL(filePath: "/w"), password: "-d")
+    // 密码和 -P 连写（「-」开头的不被当成选项）；没有也给一个（不然 unzip 说 unable to get password）
+    #expect(arguments.prefix(2) == ["-o", "-P-d"] && arguments.suffix(2) == ["-d", "/w"])
+    #expect(
+      Archives.unzipArguments(archive, into: URL(filePath: "/w"), password: nil)[1]
+        == "-Pkitty-no-password")
+    #expect(
+      Archives.outcome(
+        ofFailure: "skipping: incorrect password.txt  bad zipfile offset", password: true)
+        != .wrongPassword)
+    // 名字带通配符、同一个文件夹里还有能匹配上的包：解的还是右键的那个（unzip 拿到的是名字干净的符号链接）
+    let tricky = root.appending(path: "a[12].zip")
+    try Data(zip).write(to: tricky)
+    try write("别的包", to: root.appending(path: "别的/b.txt"))
+    let sibling = try await Subprocess.run(
+      "/usr/bin/tar",
+      [
+        "--format", "zip", "-cf", root.appending(path: "a1.zip").path(percentEncoded: false), "-C",
+        root.path(percentEncoded: false), "别的",
+      ])
+    try #require(sibling.status == 0)
+    try FileManager.default.removeItem(at: placed)
+    let again = try #require(await Archives.unpack(tricky, password: nil, gbk: false).url)
+    #expect(again.lastPathComponent == "d64.txt")
+    #expect(try String(contentsOf: again, encoding: .utf8) == "hello deflate64\n")
+    #expect(try names(in: root).allSatisfy { !$0.hasPrefix("别的 ") })  // 没解成 a1.zip
+  }
+
+  /// cpio、xar 在 tar -v 里列文件夹不带「/」：下面还有条目的算文件夹，只差大小写的两个文件夹不算撞名（评审）
+  @Test func clashFoldersWithoutSlash() {
+    #expect(Archives.caseClashes(["Src", "Src/a.txt", "src", "src/b.txt"]).isEmpty)
+    #expect(Archives.caseClashes(["Read", "read"]) == ["Read"])
+    #expect(Archives.caseClashes(["BUILD", "build", "build/x"]) == ["BUILD"])
   }
 
   /// 坏的包：说原因，不留临时文件夹

@@ -237,7 +237,8 @@ final class FinderMenu: FIFinderSync {
   /// 「解压到这里」认的扩展名（ponytail: 抄的 App 的 Archives.suffixes，FinderLinkTests 比对）
   private static let archiveSuffixes = [
     ".zip", ".7z", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz", ".tbz2", ".gz",
-    ".bz2", ".rar",
+    ".bz2", ".rar", ".tar.lzma", ".tlz", ".tar.lz", ".tar.z", ".taz", ".cpio", ".cpgz", ".xar",
+    ".xz", ".z", ".lz", ".lzma", ".aar",
   ]
 
   private static func isArchive(_ url: URL) -> Bool {

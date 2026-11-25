@@ -10,7 +10,13 @@
 //   keyword」。别的几种不加：.tar.xz 慢（38 MB 22 s，gz 1.7 s，只小两成）、.tar.zst 系统 tar 没带 zstd、要外面的程序（实测报错），
 //   .tar.bz2 / 不压缩的 .tar 用的人少，菜单不加长。
 // - 解压：zip、7z、rar、tar 一族（.tar、.tar.gz / .tgz、.tar.xz / .txz、.tar.bz2 / .tbz），和只压了一个文件的 .gz / .bz2
-//   （系统的 gunzip / bunzip2，解出来的叫包名去掉 .gz，带上包的隔离标记）。RAR（2026-11-12）：系统 tar 是 libarchive 3.7.4，
+//   （系统的 gunzip / bunzip2，解出来的叫包名去掉 .gz，带上包的隔离标记）。2026-11-25 拍板 F3（格式扩充第 1 批）又加了：
+//   tar 一族的 .tar.lzma / .tlz、.tar.lz、.tar.Z / .taz，cpio、ditto 的 .cpgz、xar（都交给系统 tar，它自己认压缩方法）；
+//   只压了一个文件的 .xz、.Z、.lz（系统的 gunzip：Apple gzip 487 认 xz、lzip、compress，man gzip 写明、实测）、.lzma
+//   （compression_tool，gunzip 不认）；Apple Archive 的 .aar（aa extract：它不顺着包里的符号链接往外写、不认「..」，实测）；
+//   Deflate64 的 zip（据报道 Windows 自带压缩打大文件时会用）系统 tar 说不支持，换系统的 unzip 再解一遍（它解得开，实测；
+//   也挡得住符号链接、去掉「../」；不认 GBK 名字，这种包的中文名会乱，用「修复乱码文件名」改）。unzip、aa 和 tar 一样会给
+//   解出来的东西带上包的隔离标记（实测），不另外做。.zst、.lz4、.wim、加了密的 7z、分卷不认：系统没有能解的工具。RAR（2026-11-12）：系统 tar 是 libarchive 3.7.4，
 //   RAR4、RAR5 都解得开（本机样本实测，字节数和清单一致）；带密码的解不开（libarchive 不解 RAR 的密码：头加了密的 tar 说
 //   「encryption」，只是数据加了密的它不认、当成坏数据报错，所以 RAR 解不开时的原因写「坏了，或者有密码」）；分卷的不解
 //   （RAR5 读到第一卷末尾当成包结束了，没被切开的那几样解出来、tar 照样退出 0，像是解完了）：先读主头的「分卷」标志，标着就不交给 tar。
@@ -83,7 +89,8 @@ import AppKit
   /// 「解压到这里」认的（扩展里抄了一份，FinderLinkTests 比对）
   nonisolated static let suffixes = [
     ".zip", ".7z", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz", ".tbz2", ".gz",
-    ".bz2", ".rar",
+    ".bz2", ".rar", ".tar.lzma", ".tlz", ".tar.lz", ".tar.z", ".taz", ".cpio", ".cpgz", ".xar",
+    ".xz", ".z", ".lz", ".lzma", ".aar",
   ]
 
   /// RAR 的主头标着「分卷」吗（head：包开头的几十个字节）。RAR4：7 字节的签名后是主头（类型 0x73），标志第 0 位；
@@ -113,14 +120,70 @@ import AppKit
     return (number() ?? 0) & 0x01 != 0
   }
 
-  /// 只压了一个文件的 .gz / .bz2（不是 tar 包）交给系统的 gunzip / bunzip2（tar 不认这种，实测）；别的是 nil。
-  /// 单文件的 .xz 不认（系统的 gunzip 据说也解得了，但本机造不出样本来验）
-  nonisolated static func decompressor(for archive: URL) -> String? {
+  /// 交给哪个系统工具解
+  nonisolated enum Tool: Equatable {
+    /// tar（zip、7z、rar、tar 一族、cpio、xar）
+    case tar
+    /// 只压了一个文件的流（不是 tar 包，tar 不认这种，实测）：gunzip / bunzip2 这类，「工具 -c 包 > 输出」
+    case stream(String)
+    /// 只压了一个文件的 .lzma：compression_tool（gunzip 不认）
+    case lzma
+    /// Apple Archive：aa extract
+    case appleArchive
+  }
+
+  nonisolated static func tool(for archive: URL) -> Tool {
     switch suffix(of: archive) {
-    case ".gz": "/usr/bin/gunzip"
-    case ".bz2": "/usr/bin/bunzip2"
-    default: nil
+    case ".bz2": .stream("/usr/bin/bunzip2")
+    // Apple gzip 487 除了 gzip 还认 xz、lzip、compress（man gzip，实测）
+    case ".gz", ".xz", ".z", ".lz": .stream("/usr/bin/gunzip")
+    case ".lzma": .lzma
+    case ".aar": .appleArchive
+    default: .tar
     }
+  }
+
+  /// 解单个文件的流：tool 是 .stream / .lzma 时给工具和参数（解到 output 这个文件）；别的是 nil。
+  /// 流的写法交给 sh、参数按位置传：名字里有什么都不会被当成命令
+  nonisolated static func singleFileCommand(_ archive: URL, to output: URL) -> (String, [String])? {
+    let input = archive.path(percentEncoded: false)
+    let target = output.path(percentEncoded: false)
+    switch tool(for: archive) {
+    case .stream(let tool):
+      return ("/bin/sh", ["-c", "exec \"$0\" -c -- \"$1\" > \"$2\"", tool, input, target])
+    case .lzma:
+      return ("/usr/bin/compression_tool", ["-decode", "-a", "lzma", "-i", input, "-o", target])
+    case .tar, .appleArchive: return nil
+    }
+  }
+
+  /// 解 Apple Archive 的参数：杂文件同 tar 那边不要（「._」开头的 aa 只能按正则排，它自己打包也不生成这种，不排）
+  nonisolated static func appleArchiveArguments(_ archive: URL, into folder: URL) -> [String] {
+    [
+      "extract", "-i", archive.path(percentEncoded: false), "-d",
+      folder.path(percentEncoded: false),
+      "-exclude-name", "__MACOSX", "-exclude-name", ".DS_Store",
+    ]
+  }
+
+  /// tar 说这个 zip 的压缩方法是 Deflate64、不支持（「Unsupported ZIP compression method (9: deflation-64-bit)」）
+  nonisolated static func needsUnzip(_ errors: String) -> Bool {
+    errors.contains("deflation-64-bit")
+  }
+
+  /// 系统 unzip 解进 folder 的参数（Deflate64 的退路）：-o 不问覆盖（解进的是空的临时文件夹）、杂文件同 tar 那边不要
+  /// （unzip 的 * 跨「/」）。不加 -q：密码不对时它在标准错误上说「skipping: x  incorrect password」，-q 连这句也不说（实测）。
+  /// 密码照 tar 那边放在命令行上、没有也给一个（不给的话它说「unable to get password」，认不出是要密码，评审实测），
+  /// 和 -P 连写（分开写时以「-」开头的密码被当成选项，评审实测）。archive：包的路径——unzip 把最后一段当通配符（* ? [ ]
+  /// 会去匹配同一个文件夹里别的包，评审实测），调用方交一个名字干净的符号链接过来
+  nonisolated static func unzipArguments(_ archive: URL, into folder: URL, password: String?)
+    -> [String]
+  {
+    [
+      "-o", "-P" + (password ?? "kitty-no-password"), archive.path(percentEncoded: false), "-x",
+      "__MACOSX/*", "*/__MACOSX/*", "*.DS_Store", "._*", "*/._*", "-d",
+      folder.path(percentEncoded: false),
+    ]
   }
 
   /// 认得的扩展名里最长的那个（.tar.gz 不当成 .gz）；光有扩展名、前面没名字的不算
@@ -314,9 +377,18 @@ import AppKit
   nonisolated static func caseClashes(_ entries: [String]) -> [String] {
     var occupant: [String: (name: String, folder: Bool)] = [:]
     var lost: [String] = []
+    // cpio、xar 列文件夹不带结尾的「/」（评审实测）：下面还有条目的也算文件夹（按写法比，分大小写）
+    var parents = Set<String>()
     for entry in entries {
-      let folder = entry.hasSuffix("/")
-      let name = folder ? String(entry.dropLast()) : entry
+      var path = entry.hasSuffix("/") ? String(entry.dropLast()) : entry
+      while let slash = path.lastIndex(of: "/") {
+        path = String(path[..<slash])
+        parents.insert(path)
+      }
+    }
+    for entry in entries {
+      let name = entry.hasSuffix("/") ? String(entry.dropLast()) : entry
+      let folder = entry.hasSuffix("/") || parents.contains(name)
       let key = name.precomposedStringWithCanonicalMapping.lowercased()
       if let current = occupant[key], current.name != name, !current.folder,
         !lost.contains(current.name)
@@ -445,7 +517,14 @@ import AppKit
     -> Outcome
   {
     if let problem = placeProblem(error) { return .failed(problem.text) }
-    if error.contains("Incorrect passphrase") { return password ? .wrongPassword : .needsPassword }
+    // tar 说「Incorrect passphrase」，Deflate64 退路的 unzip 说「skipping: 名字  incorrect password」（只认行尾：名字里带这几个字的不算）
+    if error.localizedCaseInsensitiveContains("Incorrect passphrase")
+      || error.split(whereSeparator: \.isNewline).contains(where: {
+        $0.trimmingCharacters(in: .whitespaces).hasSuffix("incorrect password")
+      })
+    {
+      return password ? .wrongPassword : .needsPassword
+    }
     if password,
       ["bad CRC", "decompression failed"].contains(where: error.localizedCaseInsensitiveContains)
     {
@@ -455,6 +534,8 @@ import AppKit
     let unknown = String(localized: "不是压缩包，或者是不支持的格式")
     let damaged = [
       ("ncrypt", String(localized: "这个包加了密码，这里只解得开 zip 的密码")),
+      // 加了密的 Apple Archive（aa 说「Failed to create decryption stream」）
+      ("decryption", String(localized: "这个包加了密码，这里只解得开 zip 的密码")),
       ("runcated", incomplete),
       ("nexpected end", incomplete),
       ("ends unexpectedly", incomplete),
@@ -599,21 +680,18 @@ import AppKit
       report(meter.fraction(value), meter.detail(value))
     }
     let parent = into ?? archive.deletingLastPathComponent()
-    let work = FileMoves.temporary(in: parent)
+    var work = FileMoves.temporary(in: parent)
     guard (try? manager.createDirectory(at: work, withIntermediateDirectories: false)) != nil else {
       FileMoves.release(work)
       return .failed(String(localized: "没有权限写这个位置"))
     }
     var result: Subprocess.Result?
     let output = work.appending(path: stem(of: archive))
-    if let tool = decompressor(for: archive) {
-      // 解到临时文件夹里一个和包同名（去掉 .gz）的文件；参数按位置传给 sh，名字里有什么都不会被当成命令
+    let kind = tool(for: archive)
+    if let (tool, arguments) = singleFileCommand(archive, to: output) {
+      // 解到临时文件夹里一个和包同名（去掉 .gz）的文件
       result = try? await Subprocess.run(
-        "/bin/sh",
-        [
-          "-c", "exec \"$0\" -c -- \"$1\" > \"$2\"", tool, archive.path(percentEncoded: false),
-          output.path(percentEncoded: false),
-        ], captures: true, quality: .userInitiated, stopsOnCancel: true, watch: watch)
+        tool, arguments, captures: true, quality: .userInitiated, stopsOnCancel: true, watch: watch)
       // 包末尾有补零 / 垃圾时 gunzip 解完整了、只说一句「trailing garbage ignored」、退出码 2（评审实测）：算成了
       if var finished = result, finished.status == 2,
         case let lines = finished.error.split(whereSeparator: \.isNewline), !lines.isEmpty,
@@ -622,7 +700,7 @@ import AppKit
         finished.status = 0
         result = finished
       }
-      // gunzip 不管「从网上下载」的隔离标记（tar 会）：照包上的给解出来的那个也带上
+      // gunzip、compression_tool 不管「从网上下载」的隔离标记（tar、unzip、aa 会）：照包上的给解出来的那个也带上
       if result?.status == 0,
         let quarantine = try? archive.resourceValues(forKeys: [.quarantinePropertiesKey])
           .quarantineProperties
@@ -632,20 +710,50 @@ import AppKit
         values.quarantineProperties = quarantine
         try? file.setResourceValues(values)
       }
+    } else if kind == .appleArchive {
+      result = try? await Subprocess.run(
+        "/usr/bin/aa", appleArchiveArguments(archive, into: work), captures: true,
+        quality: .userInitiated, stopsOnCancel: true, watch: watch)
     } else {
       result = try? await Subprocess.run(
         "/usr/bin/tar", extractArguments(archive, into: work, gbk: gbk, password: password),
         captures: true, environment: ByteMeter.utf8Environment, quality: .userInitiated,
         stopsOnCancel: true, watch: watch)
+      // Deflate64 的 zip：tar 解了一部分就停了，清空临时文件夹换系统的 unzip 整个再解（见文件头）
+      if let failed = result, failed.status != 0, !Task.isCancelled,
+        needsUnzip(extractErrors(failed.error))
+      {
+        await FileMoves.discard(work)
+        work = FileMoves.temporary(in: parent)
+        // 交给 unzip 的是临时文件夹里一个名字干净的符号链接（见 unzipArguments）；进度另起一份（tar 那一遍已经把进度推上去了）
+        let link = FileManager.default.temporaryDirectory.appending(
+          path: "kitty-unzip-\(UUID().uuidString).zip")
+        let again = ByteMeter(total: meter.total)
+        if (try? manager.createDirectory(at: work, withIntermediateDirectories: false)) == nil {
+          result = Subprocess.Result(status: 1, error: "Permission denied")
+        } else if (try? manager.createSymbolicLink(at: link, withDestinationURL: archive)) == nil {
+          result = nil
+        } else {
+          // 退出 1 也算没成：密码不对时它跳过那几个文件、退出 1，跳过「../」这类也是 1（实测）——和 tar 一样不收
+          result = try? await Subprocess.run(
+            "/usr/bin/unzip", unzipArguments(link, into: work, password: password),
+            captures: true, quality: .userInitiated, stopsOnCancel: true,
+            watch: { pid, _ in
+              let value = again.archiveValue(ByteMeter.reading(pid: pid, named: name))
+              report(again.fraction(value), again.detail(value))
+            })
+          try? manager.removeItem(at: link)
+        }
+      }
     }
     var renamed: [String] = []
     var unsaved = 0
     let caseSensitive =
       (try? work.resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey]))?
       .volumeSupportsCaseSensitiveNames == true
-    if let result, result.status == 0, !Task.isCancelled, decompressor(for: archive) == nil,
-      !caseSensitive
-    {
+    // 只差大小写的只认 tar 报出来的清单。ponytail：unzip 退路、aa 不报清单，碰上了盘上只留下一个、照样算解完（开着「解压后
+    // 移到废纸篓」时包也会被移走，废纸篓里还在）；真碰上再让它们也列清单
+    if let result, result.status == 0, !Task.isCancelled, kind == .tar, !caseSensitive {
       let lost = caseClashes(extractedEntries(result.error))
       if !lost.isEmpty {
         (renamed, unsaved) = await recover(

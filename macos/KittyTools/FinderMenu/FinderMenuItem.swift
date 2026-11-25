@@ -58,7 +58,7 @@ nonisolated enum FinderMenuItem: String, CaseIterable {
     case .cut: "剪切之后，到别的文件夹空白处（或者右键那个文件夹）「粘贴」，或者在访达里按 ⌥⌘V"
     case .deskAlias: "在桌面上放一个替身，原件挪了也照样打得开"
     case .compress: "右键文件、文件夹：打成 zip、7z 或 tar.gz 放在旁边"
-    case .extract: "右键 zip、7z、tar.gz、gz 这类压缩包；带密码的 zip 会先问密码"
+    case .extract: "右键 zip、7z、rar、tar.gz、xz、aar 这类压缩包；带密码的 zip 会先问密码"
     case .fixNames: "只在名字像「ÖÐÎÄ」「╓╨╬─」这种乱码时出现，改回中文"
     case .showHidden: "文件夹窗口的空白处右键：替你在访达里按 ⇧⌘.，要「辅助功能」授权"
     case .hide: "右键文件、文件夹：隐藏 / 取消隐藏它，隐藏 / 显示扩展名"
