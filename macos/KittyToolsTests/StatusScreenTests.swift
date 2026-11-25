@@ -306,6 +306,9 @@ struct StatusScreenTests {
     #expect(
       EmojiPack.remoteURL("dog", tag: "emoji-pack-1")?.absoluteString
         == "https://github.com/YyAdnBug/kitty-tools/releases/download/emoji-pack-1/dog.heics")
+    #expect(
+      EmojiPack.remoteURL("dog", tag: "emoji-pack-1", site: .gitcode)?.absoluteString
+        == "https://gitcode.com/yyandbug/kitty-tools/releases/download/emoji-pack-1/dog.heics")
     // 本机测试服务器：只认 http 的 127.0.0.1 / localhost，别的地址照旧走 release
     #expect(
       EmojiPack.remoteURL("dog", tag: "emoji-pack-1", testServer: "http://127.0.0.1:8765")?

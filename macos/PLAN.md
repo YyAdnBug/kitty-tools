@@ -2722,7 +2722,8 @@ P8、V8 以后。材料（追问稿、实测报告、sample、对标、图标样
 
 | 批 | 提交 | 内容 |
 |---|---|---|
-| 1 | — | A1 + D1：`publish-gitcode.sh`、build-dmg.sh 头部、mac-native §7 |
+| 1 | `8d19c396` | A1 + D1：`publish-gitcode.sh`、build-dmg.sh 头部、mac-native §7 |
+| 2 | — | B1 + E1：`Updater.Site`、`firstManifest`（两个站一起问；任务组的写法 Swift 6.2 的区域隔离检查器认不出，改成两个主线程任务 + AsyncStream）、`sources` / 下载换站、`Prefs.updateSite`；`EmojiPack` 先找 `Site.preferred`。HANDTEST「GitCode 国内分发」1–6 |
 
 ## 11½. Whisker 设计语言改造（2026-09-25 起）
 

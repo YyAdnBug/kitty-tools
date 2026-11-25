@@ -1972,3 +1972,14 @@ macOS 26 起才有这个菜单；要一个能往自己邮箱或手机发验证�
 - [ ] 20. 「find 报告」里勾几个：底栏是「在访达中显示 N 个 ↩」，↩ 在访达里一起选中、⌘↩ 一起打开。
 - [ ] 21. 勾着几个时接着打字把它们筛掉：勾跟着去掉、底栏计数变小，全筛掉时回到普通底栏；普通搜索（「saf」）里 ⇧↓ 照常在输入框里选字。
 - [ ] 22. 旁白打开：⇧↓ 时读出「已选 N 个」和选中的名字；勾中的行读出「已勾选」。
+
+## GitCode 国内分发（下一版；2026-11-25，PLAN §10「GitCode 国内分发」）
+
+前提：`macos/publish-gitcode.sh macos-v<这一版>` 已经把这一版和 macos-update 清单搬到 GitCode（脚本最后两行是 200）。
+
+- [ ] 1. （A1）浏览器（最好不开代理）打开 https://gitcode.com/yyandbug/kitty-tools/releases ：这一版在，附件和 GitHub 上一样多、一样大；点 DMG 不登录就能下，下下来的和 GitHub 上那个 shasum 一样。
+- [ ] 2. （A1）再跑一遍同一条 publish-gitcode.sh：每个附件都是「已在」、两个清单都是「没变」，退出码 0。
+- [ ] 3. （B1）装着上一版、**不开代理**（或在 /etc/hosts 里把 github.com 指到 127.0.0.1 模拟打不开）：设置 › 关于「检查更新」→ 几秒内查到新版本（不等十几秒），「更新并重新打开」能装上；`defaults read com.yy.kitty-tools.native updateSite` 是 gitcode。
+- [ ] 4. （B1）同上但 GitHub 能连：照常查到、从 GitHub 下（`updateSite` 是 github 或没有）；关于页「打开发布页」打开的是 GitHub 的发布页，第 3 条那台打开的是 GitCode 的。
+- [ ] 5. （B1）下载更新包时点「取消」再点「更新」：这次从另一个站下（看活动监视器 › 网络，或 `nettop -p <pid>` 里连的是 gitcode / github），照样装得上。
+- [ ] 6. （E1）`publish-gitcode.sh emoji-pack-1` 搬完后，在第 3 条那台删掉数据目录里的 `emoji-pack/`，设置 › 状态屏选一个没下过的动画表情 → 一两秒内变成动的（不等 20 秒）。

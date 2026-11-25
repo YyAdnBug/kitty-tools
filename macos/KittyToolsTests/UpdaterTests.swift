@@ -119,6 +119,62 @@ struct UpdaterTests {
     #expect(Updater.release(fromManifest: Data("<html>404</html>".utf8)) == nil)
     // Intel 上自己编的（PR #21）：清单里只有 arm64 的包，不认（退回 API）
     #expect(Updater.release(fromManifest: manifest(), suffix: "_x86_64.zip") == nil)
+    // 地址只认这个站上本仓库的 release（GitCode 国内分发）：别的仓库、别的主机、另一个站上的都不认
+    #expect(
+      Updater.release(
+        fromManifest: manifest(url: "https://github.com/x/y/releases/download/a/K_arm64.zip"))
+        == nil)
+    #expect(Updater.release(fromManifest: manifest(), site: .gitcode) == nil)
+    let gitcode = Data(
+      #"{"version":"0.8.1","url":"https://gitcode.com/yyandbug/kitty-tools/releases/download/macos-v0.8.1/Kitty.Tools_0.8.1_arm64.zip","sha256":"\#(String(repeating: "ab", count: 32))","page":"https://gitcode.com/yyandbug/kitty-tools/releases/macos-v0.8.1"}"#
+        .utf8)
+    #expect(Updater.release(fromManifest: gitcode, site: .gitcode)?.site == .gitcode)
+    #expect(Updater.release(fromManifest: gitcode) == nil)
+    let phishing = String(decoding: gitcode, as: UTF8.self).replacingOccurrences(
+      of: "https://gitcode.com/yyandbug/kitty-tools/releases/macos-v0.8.1",
+      with: "https://gitcode.com.example.com/yyandbug/kitty-tools/releases/x")
+    #expect(Updater.release(fromManifest: Data(phishing.utf8), site: .gitcode) == nil)
+  }
+
+  /// 两个站上同一个文件的地址只差 base：更新包先从清单先回来的那个站下、另一个站在后；取消过一次就反过来
+  @Test func mirrorsBetweenSites() throws {
+    let github = try #require(
+      URL(
+        string:
+          "https://github.com/YyAdnBug/kitty-tools/releases/download/macos-v0.11.0/Kitty.Tools_0.11.0_arm64.zip"
+      ))
+    let gitcode = try #require(
+      URL(
+        string:
+          "https://gitcode.com/yyandbug/kitty-tools/releases/download/macos-v0.11.0/Kitty.Tools_0.11.0_arm64.zip"
+      ))
+    #expect(Updater.Site.mirror(of: github) == gitcode)
+    #expect(Updater.Site.mirror(of: gitcode) == github)
+    #expect(
+      Updater.Site.mirror(of: try #require(URL(string: "https://example.com/a_arm64.zip"))) == nil)
+    let release = Updater.Release(
+      version: "0.11.0", archive: github, page: Updater.Site.github.releasesPage)
+    #expect(Updater.sources(of: release, flipped: false) == [github, gitcode])
+    #expect(Updater.sources(of: release, flipped: true) == [gitcode, github])
+    #expect(
+      Updater.Site.gitcode.manifest.absoluteString.hasSuffix(
+        "/releases/download/macos-update/macos-update.json"))
+    #expect(
+      Updater.Site.github.manifest.absoluteString.hasSuffix(
+        "/releases/latest/download/macos-update.json"))
+  }
+
+  /// 下载：前一个地址没下成就换下一个（这里用 file://：不存在的文件出错，换到存在的那个）
+  @Test func downloadFallsBackToNextSite() async throws {
+    let work = FileManager.default.temporaryDirectory.appending(path: "UpdaterTests-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: work) }
+    try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+    let present = work.appending(path: "present.zip")
+    try Data("zip".utf8).write(to: present)
+    let (file, _) = try await Updater.download(
+      [work.appending(path: "missing.zip"), present], progress: { _ in })
+    defer { try? FileManager.default.removeItem(at: file) }
+    #expect(try Data(contentsOf: file) == Data("zip".utf8))
   }
 
   /// 更新包按这份 App 的架构挑（PR #21）：Intel 上只认 _x86_64.zip，release 里只有 _arm64.zip 时没有更新（换上去打不开）
@@ -144,32 +200,34 @@ struct UpdaterTests {
   @MainActor @Test func latestReadsManifestThenFallsBackToAPI() async throws {
     let sha = String(repeating: "0", count: 64)
     let manifest = Data(
-      #"{"version":"0.9.0","url":"https://github.com/x/y/K_0.9.0_arm64.zip","sha256":"\#(sha)","page":"https://github.com/x/y"}"#
+      #"{"version":"0.9.0","url":"https://github.com/YyAdnBug/kitty-tools/releases/download/macos-v0.9.0/K_0.9.0_arm64.zip","sha256":"\#(sha)","page":"https://github.com/YyAdnBug/kitty-tools/releases/tag/macos-v0.9.0"}"#
         .utf8)
     let list = Data(
       "[\(Self.entry(tag: "macos-v0.8.5", assets: [("K_0.8.5_arm64.zip", "https://github.com/x/y/b.zip")]))]"
         .utf8)
     struct Offline: Error {}
     /// 清单那一头怎么答（nil = 连不上），API 那一头怎么答；记下问了哪几个
+    /// GitCode 的清单这里一律连不上（两个站一起问的那一段在下一个测试）
     func latest(manifest: (Data, Int)?, api: (Data, Int)) async throws -> (
-      Updater.Release?, [String]
+      Updater.Release?, Set<String>
     ) {
-      var asked: [String] = []
+      var asked: Set<String> = []
       let release = try await Updater.latest { url in
-        asked.append(url.host() ?? "")
+        asked.insert(url.host() ?? "")
         if url.host() == "api.github.com" { return api }
-        guard let manifest else { throw Offline() }
+        guard let manifest, url.host() == "github.com" else { throw Offline() }
         return manifest
       }
       return (release, asked)
     }
     let (fromManifest, asked) = try await latest(manifest: (manifest, 200), api: (list, 200))
     #expect(fromManifest?.version == "0.9.0" && fromManifest?.sha256 == sha)
-    #expect(asked == ["github.com"], "读到清单就不再问 API")
+    #expect(fromManifest?.site == .github)
+    #expect(!asked.contains("api.github.com"), "读到清单就不再问 API")
     for reply in [(Data("Not Found".utf8), 404), (Data("{}".utf8), 200), nil] as [(Data, Int)?] {
       let (fromAPI, asked) = try await latest(manifest: reply, api: (list, 200))
-      #expect(fromAPI?.version == "0.8.5" && fromAPI?.sha256 == nil)
-      #expect(asked == ["github.com", "api.github.com"])
+      #expect(fromAPI?.version == "0.8.5" && fromAPI?.sha256 == nil && fromAPI?.site == .github)
+      #expect(asked == ["github.com", "gitcode.com", "api.github.com"])
     }
     #expect(try await latest(manifest: nil, api: (Data(), 404)).0 == nil, "还没有 release")
     for status in [403, 429] {
@@ -180,6 +238,30 @@ struct UpdaterTests {
       #expect(words.contains("限流") && words.contains("发布页"), "\(words)")
     }
     #expect(Updater.apiFailure(500) == "GitHub 返回 500")
+  }
+
+  /// 两个站的清单一起问（GitCode 国内分发）：GitHub 卡着不回时用 GitCode 那份、不等 GitHub（卡着的那个被取消：它睡一小时，
+  /// 真等了就撞上时限）；先回来的认不出（GitHub 回 404 网页）就等另一个。不按秒数判断：全量并跑时主线程会被别的测试占着
+  @MainActor @Test(.timeLimit(.minutes(5))) func firstManifestWinsAcrossSites() async throws {
+    let sha = String(repeating: "0", count: 64)
+    let gitcode = Data(
+      #"{"version":"0.9.0","url":"https://gitcode.com/yyandbug/kitty-tools/releases/download/macos-v0.9.0/K_0.9.0_arm64.zip","sha256":"\#(sha)","page":"https://gitcode.com/yyandbug/kitty-tools/releases/macos-v0.9.0"}"#
+        .utf8)
+    let hanging = await Updater.firstManifest { url in
+      if url.host() == "github.com" {
+        try await Task.sleep(for: .seconds(3600))
+        return (Data(), 200)
+      }
+      return (gitcode, 200)
+    }
+    #expect(hanging?.site == .gitcode && hanging?.version == "0.9.0")
+    let notFound = await Updater.firstManifest { url in
+      if url.host() == "github.com" { return (Data("<html>".utf8), 404) }
+      try await Task.sleep(for: .milliseconds(50))
+      return (gitcode, 200)
+    }
+    #expect(notFound?.site == .gitcode)
+    #expect(await Updater.firstManifest { _ in (Data("<html>".utf8), 200) } == nil)
   }
 
   /// 清单给了校验值：下好的包对不上就在解包之前拒绝（包随后删掉）；对得上才往下走（这里是个假包，走到 ditto 解不开）

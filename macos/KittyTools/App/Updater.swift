@@ -23,6 +23,11 @@
 //   一个注定失败的「更新」。
 // - 装失败按原因分（failureKind）：网络（下载断了、服务器不是 200、校验值对不上）才给「重试」；磁盘满单独说、不给重试
 //   （腾出空间再点「更新」）；签名没过、解不开、包不对这类重试也不会好的给「打开发布页」。关于页把原因写全（多行）。
+// GitCode 国内分发（2026-11-25，PLAN §10）：国内打不开 GitHub，macos/publish-gitcode.sh 把每个 release 原样搬到 GitCode 的镜像
+// （附件名一样，地址只差 Site.base）。清单两个站一起问，先回来、认得出的那份为准（firstManifest）：海外 GitHub 一般先回，国内
+// 不用等 GitHub 超时；更新包先从那个站下，网络原因没成换另一个站（sources / download(_:progress:) 的数组版），下到一半取消了
+// 下次先试另一个。清单里的地址只认那个站上本仓库的 release（Site.owns），所以另一个站最多报一个装不上的假版本、或压着不报新版，
+// 装进来的仍只能是本团队签名、版本号对得上的包。记下先回的那个站（Site.preferred）：「打开发布页」、动画表情包先找它。
 // 只有正式版（bundle id com.yy.kitty-tools.native）更新：Debug 版的 bundle id 不同，装过去会把 Dev 换成正式版。
 
 import AppKit
@@ -38,6 +43,55 @@ import Synchronization
     let page: URL
     /// 更新包的 SHA-256（小写十六进制）：清单里有，下完先核一遍；API 那条路没有
     var sha256: String? = nil
+    /// 从哪个站的清单查到的（API 那条路是 GitHub）
+    var site: Site = .github
+  }
+
+  /// 发布在哪个站（GitCode 国内分发，见文件头）：publish-gitcode.sh 把 GitHub 上的 release 原样搬到 GitCode，附件名一样，
+  /// 本仓库 release 里的地址两边只差 base
+  nonisolated enum Site: String, CaseIterable, Sendable {
+    case github, gitcode
+
+    var base: String {
+      switch self {
+      case .github: "https://github.com/YyAdnBug/kitty-tools/"
+      case .gitcode: "https://gitcode.com/yyandbug/kitty-tools/"
+      }
+    }
+
+    var other: Site { self == .github ? .gitcode : .github }
+
+    /// 清单：GitHub 上是 latest 那个 release 的附件（302 到附件，不算 API 的次数）；GitCode 没有 releases/latest/download
+    /// （那个地址回的是网页），清单挂在固定标签 macos-update 的 release 上
+    var manifest: URL {
+      switch self {
+      case .github: URL(string: base + "releases/latest/download/\(Updater.manifestName)")!
+      case .gitcode: URL(string: base + "releases/download/macos-update/\(Updater.manifestName)")!
+      }
+    }
+
+    var releasesPage: URL { URL(string: base + "releases")! }
+
+    /// 是不是这个站上本仓库 release 里的地址（清单里的 url、page 只认这些：清单来自网上，别让它把「打开发布页」指到别处）
+    func owns(_ url: URL) -> Bool {
+      url.scheme == "https"
+        && url.standardized.absoluteString.lowercased().hasPrefix((base + "releases/").lowercased())
+    }
+
+    /// 同一个文件在另一个站上的地址；不是哪个站上本仓库 release 里的地址就 nil
+    static func mirror(of url: URL) -> URL? {
+      guard let site = allCases.first(where: { $0.owns(url) }) else { return nil }
+      return URL(string: site.other.base + url.absoluteString.dropFirst(site.base.count))
+    }
+
+    /// 上一次清单先回来的站（没查过是 GitHub）：「打开发布页」、动画表情包先找它
+    static var preferred: Site {
+      Site(rawValue: UserDefaults.standard.string(forKey: Prefs.updateSite) ?? "") ?? .github
+    }
+
+    static func remember(_ site: Site) {
+      if site != preferred { UserDefaults.standard.set(site.rawValue, forKey: Prefs.updateSite) }
+    }
   }
 
   enum State: Equatable {
@@ -125,17 +179,17 @@ import Synchronization
   @ObservationIgnored var island: Island?
   /// 正在下载的那个任务（「取消」掐它，E23）
   @ObservationIgnored private var downloadTask: Task<(URL, URLResponse), Error>?
+  /// 上次下到一半取消了：这次先从另一个站下（sources）
+  @ObservationIgnored private var flipped = false
   @ObservationIgnored private var schedule: Task<Void, Never>?
   /// 检查进行中时菜单里又点了「检查更新…」：这次的结果也用刘海说
   @ObservationIgnored private var menuWaiting = false
 
   static let bundleID = "com.yy.kitty-tools.native"
-  static let releasesPage = URL(string: "https://github.com/YyAdnBug/kitty-tools/releases")!
-  /// 更新清单的文件名（build-dmg.sh 写同一个名字，UpdaterTests 比对）
-  static let manifestName = "macos-update.json"
-  /// latest 那个 release 上的清单：github.com 的下载地址，302 到附件，不算 API 的次数
-  private static let manifest = URL(
-    string: "https://github.com/YyAdnBug/kitty-tools/releases/latest/download/\(manifestName)")!
+  /// 发布页：上一次清单先回来的那个站的（国内是 GitCode）
+  static var releasesPage: URL { Site.preferred.releasesPage }
+  /// 更新清单的文件名（build-dmg.sh、publish-gitcode.sh 写同一个名字，UpdaterTests 比对）
+  nonisolated static let manifestName = "macos-update.json"
   /// 最近 20 个 release（mac 和 Windows 混在一起，按发布时间倒序）：从里面挑 macos-v*
   private static let releases = URL(
     string: "https://api.github.com/repos/YyAdnBug/kitty-tools/releases?per_page=20")!
@@ -214,6 +268,7 @@ import Synchronization
     state = .checking
     do {
       let latest = try await Self.latest()
+      if let latest { Site.remember(latest.site) }
       let toMenu = trigger == .menu || menuWaiting
       menuWaiting = false
       // 检查还在路上时点了「更新到 x」（入口在复查期间留着）：已经在装了，这次的结果不要
@@ -309,7 +364,8 @@ import Synchronization
         let report: @Sendable (Double) -> Void = { [weak self] fraction in
           Task { @MainActor in self?.downloaded(fraction, of: release) }
         }
-        let task = Task { try await Self.download(release.archive, progress: report) }
+        let sources = Self.sources(of: release, flipped: flipped)
+        let task = Task { try await Self.download(sources, progress: report) }
         downloadTask = task
         isDownloading = true
         if trigger != .page { showInstalling(release) }
@@ -368,6 +424,8 @@ import Synchronization
   }
 
   private func downloadCancelled(_ release: Release) {
+    // 多半是下得慢：下次先试另一个站
+    flipped.toggle()
     state = .available(release)
     progress = nil
     island?.dismiss(ifShowing: Self.installingTitle(release.version))
@@ -443,7 +501,8 @@ import Synchronization
       (try? Self.checkReplaceable(Bundle.main.bundleURL)) != nil
     else { return }
     prepareTask = Task { [weak self] in
-      let result = try? await Self.download(release.archive, progress: { _ in })
+      let result = try? await Self.download(
+        Self.sources(of: release, flipped: false), progress: { _ in })
       // 掐掉了（stopPreparing 已经把 prepareTask 清了）、中途跳过了 / 关掉了 / 开始装了：下好的不要
       guard let self, !Task.isCancelled else {
         if let result { try? FileManager.default.removeItem(at: result.0) }
@@ -627,16 +686,12 @@ import Synchronization
     available?.version == skipped ? nil : available
   }
 
-  /// 最新的 mac 版（没有 = nil）：先读清单，没读到 200、解不出来就读 API 的 release 列表；API 不是 200 / 404 时抛出说给人听的原因。
-  /// fetch：取一个网址，给回正文和状态码（单测换成假的，不联网）
+  /// 最新的 mac 版（没有 = nil）：先读两个站的清单（firstManifest），都没读到再读 GitHub API 的 release 列表；API 不是 200 / 404
+  /// 时抛出说给人听的原因。fetch：取一个网址，给回正文和状态码（单测换成假的，不联网）
   static func latest(
-    fetch: (URL) async throws -> (data: Data, status: Int) = Updater.fetch
+    fetch: @escaping @MainActor (URL) async throws -> (data: Data, status: Int) = Updater.fetch
   ) async throws -> Release? {
-    if let reply = try? await fetch(manifest), reply.status == 200,
-      let release = Self.release(fromManifest: reply.data)
-    {
-      return release
-    }
+    if let release = await firstManifest(fetch: fetch) { return release }
     let reply = try await fetch(releases)
     // 仓库还没有 release 时列表是空的（200）；404 当成没有
     guard reply.status == 200 || reply.status == 404 else {
@@ -645,9 +700,36 @@ import Synchronization
     return reply.status == 200 ? try release(from: reply.data) : nil
   }
 
-  /// 不读缓存（一天才查一次；清单在同一个网址上换内容）；API 要带它的 Accept
+  /// 两个站的清单一起问，先回来、认得出的那份为准，另一个取消；先回来的认不出就等另一个，都不行是 nil。
+  /// ponytail: 先回的那个站要是还没传上最新一版（发版后、publish-gitcode.sh 跑完之前那几分钟），这次查到的是旧的，下次再查就对了；
+  /// 真碰上了再改成「先回的之后再等另一个一小会，取新的」
+  static func firstManifest(
+    fetch: @escaping @MainActor (URL) async throws -> (data: Data, status: Int)
+  ) async -> Release? {
+    // 不用任务组：Swift 6.2 的区域隔离检查器认不出任务组里调主线程闭包的写法（报「请提交 bug」）
+    let (answers, answer) = AsyncStream.makeStream(of: Release?.self)
+    let asking = Site.allCases.map { site in
+      Task { @MainActor in
+        let reply = try? await fetch(site.manifest)
+        answer.yield(
+          reply?.status == 200 ? reply.flatMap { release(fromManifest: $0.data, site: site) } : nil)
+      }
+    }
+    defer { for task in asking { task.cancel() } }
+    var answered = 0
+    for await release in answers {
+      if let release { return release }
+      answered += 1
+      if answered == asking.count { break }
+    }
+    return nil
+  }
+
+  /// 不读缓存（一天才查一次；清单在同一个网址上换内容）；API 要带它的 Accept。15 秒没回就算这个站不通（系统默认 60 秒：
+  /// 国内两个清单都问不到时，菜单里点「检查更新…」要等它）
   private static func fetch(_ url: URL) async throws -> (data: Data, status: Int) {
-    var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
+    var request = URLRequest(
+      url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
     request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
     let (data, response) = try await URLSession.shared.data(for: request)
     return (data, (response as? HTTPURLResponse)?.statusCode ?? 0)
@@ -661,10 +743,12 @@ import Synchronization
       : String(localized: "GitHub 返回 \(status)")
   }
 
-  /// 更新清单（build-dmg.sh 生成）→ 那一版。认 version（只有数字和点）、url 和 page（https）、sha256（64 位十六进制），
-  /// 缺一样、不对就 nil（退回 API）；别的键不管（size 现在没用上）。**格式发布后别改**（已装的老版本会读 latest 上的它）：
-  /// 只加新键；要改已有键的意思就换一个文件名，旧名字的照发
-  static func release(fromManifest data: Data, suffix: String = archiveSuffix) -> Release? {
+  /// 更新清单（build-dmg.sh 生成，GitCode 那份由 publish-gitcode.sh 改写地址）→ 那一版。认 version（只有数字和点）、
+  /// url 和 page（site 这个站上本仓库 release 里的 https 地址）、sha256（64 位十六进制），缺一样、不对就 nil；别的键不管
+  /// （size 现在没用上）。**格式发布后别改**（已装的老版本会读 latest 上的它）：只加新键；要改已有键的意思就换一个文件名，旧名字的照发
+  static func release(
+    fromManifest data: Data, suffix: String = archiveSuffix, site: Site = .github
+  ) -> Release? {
     struct Manifest: Decodable {
       let version: String
       let url: URL
@@ -674,12 +758,13 @@ import Synchronization
     guard let manifest = try? JSONDecoder().decode(Manifest.self, from: data) else { return nil }
     let sha256 = manifest.sha256.lowercased()
     guard manifest.version.wholeMatch(of: /[0-9]+(\.[0-9]+)*/) != nil,
-      manifest.url.scheme == "https", manifest.page.scheme == "https",
+      site.owns(manifest.url), site.owns(manifest.page),
       manifest.url.lastPathComponent.hasSuffix(suffix),
       sha256.wholeMatch(of: /[0-9a-f]{64}/) != nil
     else { return nil }
     return Release(
-      version: manifest.version, archive: manifest.url, page: manifest.page, sha256: sha256)
+      version: manifest.version, archive: manifest.url, page: manifest.page, sha256: sha256,
+      site: site)
   }
 
   /// GitHub release 列表的 JSON → 版本号最大的那个 mac 版（版本、更新包、发布页）。只认 macos-v* 的 tag、带 https 的
@@ -817,6 +902,29 @@ import Synchronization
     else { return false }
     return info["CFBundleIdentifier"] as? String == bundleID
       && info["CFBundleShortVersionString"] as? String == version
+  }
+
+  /// 这一版的更新包从哪几个地址下：清单先回来的那个站在前，另一个站上的同名文件在后（flipped：反过来）
+  static func sources(of release: Release, flipped: Bool) -> [URL] {
+    guard let mirror = Site.mirror(of: release.archive) else { return [release.archive] }
+    return flipped ? [mirror, release.archive] : [release.archive, mirror]
+  }
+
+  /// 依次从几个地址下：没下成（取消除外）、服务器回的不是 200 就换下一个；最后一个的结果原样交回（不是 200 由 replace 报）
+  static func download(_ urls: [URL], progress: @escaping @Sendable (Double) -> Void) async throws
+    -> (URL, URLResponse)
+  {
+    for url in urls.dropLast() {
+      do {
+        let result = try await download(url, progress: progress)
+        if (result.1 as? HTTPURLResponse)?.statusCode == 200 { return result }
+        try? FileManager.default.removeItem(at: result.0)
+      } catch {
+        if Task.isCancelled { throw error }
+      }
+      Log.storage.info("更新包没从这个站下成，换另一个站")
+    }
+    return try await download(urls[urls.count - 1], progress: progress)
   }
 
   /// 下载到临时文件（调用方删），一路报下了多少（0…1，见 DownloadWatcher）

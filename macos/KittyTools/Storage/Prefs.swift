@@ -555,6 +555,9 @@ enum Prefs {
   static let updateSkippedVersion = "updateSkippedVersion"
   /// 发现新版本就在后台下载好，退出时装上（X11，默认开）
   static let updateInstallOnQuit = "updateInstallOnQuit"
+  /// 上一次更新清单先回来的那个站（Updater.Site 的 rawValue，2026-11-25 GitCode 国内分发）：「打开发布页」、动画表情包先找它。
+  /// 跟着这台电脑的网络走：不注册默认值（不导出、不同步），没有 = GitHub
+  nonisolated static let updateSite = "updateSite"
   /// 设置窗上次看的页（SettingsPage.rawValue）
   static let settingsPage = "settingsPage"
   /// 设置侧栏收起了哪几组（SettingsPage.SidebarSection 的 rawValue，换行隔开；0.9.0 及以前存的是中文组标题，读时照样认；SettingsRoot）。这台电脑自己的界面状态：不注册默认值、不导出不同步
