@@ -128,6 +128,16 @@
         }
       }
     },
+    "%@ · 原件移到了废纸篓" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Originals moved to the Trash"
+          }
+        }
+      }
+    },
     "%@ · 已暂停" : {
       "localizations" : {
         "en" : {
@@ -1213,6 +1223,38 @@
         }
       }
     },
+    "%lld 个做好了（原件移到了废纸篓），%lld 个没成：%@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld 个做好了（原件移到了废纸篓），%2$lld 个没成：%3$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld done (originals moved to the Trash), %lld failed: %@"
+          }
+        }
+      }
+    },
+    "%lld 个做好了，%lld 个没成：%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld done, %lld failed: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld 个做好了，%2$lld 个没成：%3$@"
+          }
+        }
+      }
+    },
     "%lld 个关键词命令" : {
       "localizations" : {
         "en" : {
@@ -1285,6 +1327,42 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "%lld 个压缩包" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld archives"
+          }
+        }
+      }
+    },
+    "%lld 个压缩包 · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld archives · %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld 个压缩包 · %2$@"
+          }
+        }
+      }
+    },
+    "%lld 个压缩包 · 原件移到了废纸篓" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld archives · Originals moved to the Trash"
           }
         }
       }
@@ -2151,6 +2229,16 @@
         }
       }
     },
+    "%lld 样" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld items"
+          }
+        }
+      }
+    },
     "%lld 点" : {
       "localizations" : {
         "en" : {
@@ -2672,6 +2760,26 @@
         }
       }
     },
+    "AES-256 加密；在 Mac 上双击时问密码" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AES-256 encryption; asks for the password when double-clicked on a Mac"
+          }
+        }
+      }
+    },
+    "AES-256 加密；对方的电脑可能要另装解压软件才打得开，发给 Mac 用户用 DMG 更省事" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AES-256 encryption; the recipient may need to install an extraction app to open it. For Mac users, DMG is easier"
+          }
+        }
+      }
+    },
     "AI 服务" : {
       "localizations" : {
         "en" : {
@@ -2993,6 +3101,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kitty Tools Settings %@.json"
+          }
+        }
+      }
+    },
+    "Linux 和开发者常用" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Common on Linux and among developers"
           }
         }
       }
@@ -10962,6 +11080,16 @@
         }
       }
     },
+    "不压缩，只打成一个包；照片、视频这类已经压过的最快" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No compression; fastest for photos and videos that are already compressed"
+          }
+        }
+      }
+    },
     "不填就只导入服务，不导入密钥。" : {
       "localizations" : {
         "en" : {
@@ -11182,6 +11310,16 @@
         }
       }
     },
+    "不设就空着" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leave blank for none"
+          }
+        }
+      }
+    },
     "不进废纸篓、删了找不回来；一定先问一遍" : {
       "localizations" : {
         "en" : {
@@ -11333,6 +11471,16 @@
       }
     },
     "两次输入的密码不一样" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The passwords don’t match"
+          }
+        }
+      }
+    },
+    "两次输的密码不一样" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -12907,6 +13055,26 @@
         }
       }
     },
+    "做好了 %lld 个" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld done"
+          }
+        }
+      }
+    },
+    "做好了 %lld 个 · 做好的那几样原件移到了废纸篓" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld done · Their originals were moved to the Trash"
+          }
+        }
+      }
+    },
     "停一下就展开，不用点" : {
       "localizations" : {
         "en" : {
@@ -12943,6 +13111,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stopped"
+          }
+        }
+      }
+    },
+    "停了，原件没动" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stopped; originals were left in place"
           }
         }
       }
@@ -13364,6 +13542,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Confirm before running"
+          }
+        }
+      }
+    },
+    "光盘映像，给虚拟机、刻录用" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disc image for virtual machines and burning"
           }
         }
       }
@@ -14346,6 +14534,16 @@
         }
       }
     },
+    "再输一次密码" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter the password again"
+          }
+        }
+      }
+    },
     "再输一次，两次要一样" : {
       "localizations" : {
         "en" : {
@@ -14482,6 +14680,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Click Restore within a few seconds to bring it back"
+          }
+        }
+      }
+    },
+    "分别压缩每一项（%lld 个包）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compress each item separately (%lld archives)"
           }
         }
       }
@@ -16410,6 +16618,26 @@
         }
       }
     },
+    "压缩 %lld 项" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compress %lld Items"
+          }
+        }
+      }
+    },
+    "压缩「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compress “%@”"
+          }
+        }
+      }
+    },
     "压缩包不在了，或者不是能解的格式" : {
       "localizations" : {
         "en" : {
@@ -16450,12 +16678,42 @@
         }
       }
     },
+    "压缩包在要移走的文件夹里面，原件没动" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The archive is inside a folder that would be moved; originals were left in place"
+          }
+        }
+      }
+    },
+    "压缩包放在旁边，重名时名字加「 2」。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The archive goes next to the items; if the name is taken, “ 2” is added."
+          }
+        }
+      }
+    },
     "压缩包放在旁边，重名的自动加「 2」；zip 里的中文名到别的系统上解开也不乱码，也不夹带 Mac 的隐藏文件（.DS_Store、._*、__MACOSX）。解压时只有一样东西就直接放在包旁边，几样就放进和包同名的文件夹；按住 ⌥ 右键是「解压到…」，自己选放在哪；别的系统打的 zip，中文名也解得对。修复乱码文件名之后，刘海岛上能撤销。包里不带访达的标签、替身和自定义图标，要在 Mac 之间原样传，用访达自带的「压缩」。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Archives go next to the originals, and duplicate names get “ 2” added. Chinese names in a zip stay readable on other systems, and Mac hidden files (.DS_Store, ._*, __MACOSX) are left out. When extracting, a single item goes right next to the archive; several go into a folder named after it. Hold ⌥ while right-clicking for “Extract To…” to choose where. Chinese names in zips made on other systems also come out right. After fixing garbled filenames, you can undo from the Notch. Archives don’t keep Finder tags, aliases, or custom icons; to move files between Macs as they are, use Finder’s own “Compress”."
+          }
+        }
+      }
+    },
+    "压缩包没通过检查，原件没动" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The archive failed the check; originals were left in place"
           }
         }
       }
@@ -16470,12 +16728,32 @@
         }
       }
     },
+    "压缩完把原件移到废纸篓（先检查压缩包能完整解开）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move originals to the Trash afterward (after checking the archive)"
+          }
+        }
+      }
+    },
     "压缩时跳过" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Skip When Compressing"
+          }
+        }
+      }
+    },
+    "压缩级别：" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compression:"
           }
         }
       }
@@ -17462,6 +17740,16 @@
         }
       }
     },
+    "只有 ZIP 和 DMG 能设密码" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only ZIP and DMG can have a password"
+          }
+        }
+      }
+    },
     "只有色块" : {
       "localizations" : {
         "en" : {
@@ -17732,12 +18020,12 @@
         }
       }
     },
-    "右键 zip、7z、tar.gz、gz 这类压缩包；带密码的 zip 会先问密码" : {
+    "右键 zip、7z、rar、tar.gz、iso、dmg 这类压缩包；带密码的 zip、dmg 会先问密码" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Right-click archives such as zip, 7z, tar.gz, or gz; asks first for the password of a protected zip"
+            "value" : "Right-click archives such as zip, 7z, rar, tar.gz, iso, or dmg; asks first for the password of a protected zip or dmg"
           }
         }
       }
@@ -17762,12 +18050,12 @@
         }
       }
     },
-    "右键文件、文件夹：打成 zip、7z 或 tar.gz 放在旁边" : {
+    "右键文件、文件夹：一键打成 zip、7z、tar.gz；「其他格式和选项…」里还有 tar.xz、dmg、iso 和压缩级别" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Right-click files or folders to pack them into a zip, 7z, or tar.gz next to them"
+            "value" : "Right-click files or folders to make a zip, 7z, or tar.gz in one click; “Other Formats and Options…” adds tar.xz, dmg, iso, and compression levels"
           }
         }
       }
@@ -18752,6 +19040,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bilibili"
+          }
+        }
+      }
+    },
+    "哪儿都能直接打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opens anywhere without extra software"
           }
         }
       }
@@ -21352,6 +21650,16 @@
         }
       }
     },
+    "密码：" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Password:"
+          }
+        }
+      }
+    },
     "密钥" : {
       "localizations" : {
         "en" : {
@@ -22486,6 +22794,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Turned Off (%lld)"
+          }
+        }
+      }
+    },
+    "已分别压缩" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compressed separately"
           }
         }
       }
@@ -24046,6 +24364,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Archive put back"
+          }
+        }
+      }
+    },
+    "已放回原件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Originals put back"
           }
         }
       }
@@ -31065,6 +31393,16 @@
         }
       }
     },
+    "放回了 %lld 样；别的不在废纸篓里了，或者原来的文件夹写不了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Put back %lld items; the rest are no longer in the Trash, or their folders can’t be written to"
+          }
+        }
+      }
+    },
     "放回了 %lld 项" : {
       "localizations" : {
         "en" : {
@@ -31103,6 +31441,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Put Back Archive"
+          }
+        }
+      }
+    },
+    "放回原件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Put Back Originals"
           }
         }
       }
@@ -32355,6 +32703,36 @@
         }
       }
     },
+    "映像正打开着，先推出再解压" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The image is open; eject it first, then extract"
+          }
+        }
+      }
+    },
+    "映像里是空的" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The image is empty"
+          }
+        }
+      }
+    },
+    "映像里没有能挂上的卷" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The image has no volume that can be mounted"
+          }
+        }
+      }
+    },
     "映射交给系统做，不看你按了什么键；只在键盘连上、断开和电脑醒来时核对一遍" : {
       "localizations" : {
         "en" : {
@@ -32961,6 +33339,26 @@
         }
       }
     },
+    "更小" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Smaller"
+          }
+        }
+      }
+    },
+    "更快" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Faster"
+          }
+        }
+      }
+    },
     "更改…" : {
       "localizations" : {
         "en" : {
@@ -33553,6 +33951,16 @@
         }
       }
     },
+    "有 %lld 样没能移到废纸篓" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld items couldn’t be moved to the Trash"
+          }
+        }
+      }
+    },
     "有 %lld 段放不下，译文放在卡片里" : {
       "localizations" : {
         "en" : {
@@ -33701,6 +34109,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Numbered List"
+          }
+        }
+      }
+    },
+    "有按「压缩时跳过」没放进包里的，原件没动" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some items were skipped by “Skip When Compressing”; originals were left in place"
+          }
+        }
+      }
+    },
+    "有文件太大，这种格式放不下" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A file is too large for this format"
           }
         }
       }
@@ -34804,6 +35232,16 @@
         }
       }
     },
+    "格式：" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Format:"
+          }
+        }
+      }
+    },
     "桃" : {
       "comment" : "便签纸色的名字",
       "localizations" : {
@@ -35137,6 +35575,16 @@
         }
       }
     },
+    "正在分别压缩 %lld 项…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compressing %lld items separately…"
+          }
+        }
+      }
+    },
     "正在压缩…" : {
       "localizations" : {
         "en" : {
@@ -35393,6 +35841,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Looking up…"
+          }
+        }
+      }
+    },
+    "正在检查压缩包" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checking the archive"
           }
         }
       }
@@ -35911,6 +36369,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "At an Interval"
+          }
+        }
+      }
+    },
+    "比 TAR.GZ 小一点、慢一点" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A little smaller and slower than TAR.GZ"
+          }
+        }
+      }
+    },
+    "比 TAR.GZ 小得多，也慢得多" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Much smaller than TAR.GZ, and much slower"
+          }
+        }
+      }
+    },
+    "比 ZIP 小；Mac 和 Windows 11 自带的工具都能打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Smaller than ZIP; opens with the built-in tools on Mac and Windows 11"
           }
         }
       }
@@ -37328,6 +37816,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn’t back up the current settings and data first (%@), so nothing was imported"
+          }
+        }
+      }
+    },
+    "没能全部压缩" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t compress everything"
+          }
+        }
+      }
+    },
+    "没能全部放回" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t put everything back"
           }
         }
       }
@@ -40720,6 +41228,16 @@
         }
       }
     },
+    "磁盘映像，Mac 上双击就能打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disk image that opens with a double-click on a Mac"
+          }
+        }
+      }
+    },
     "磁盘空间不够了" : {
       "localizations" : {
         "en" : {
@@ -40730,12 +41248,12 @@
         }
       }
     },
-    "磁盘空间不够了（7z 还要先在启动盘上暂存一份）" : {
+    "磁盘空间不够了（7z、ISO 还要先在启动盘上暂存一份）" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Not enough disk space (7z also needs room for a temporary copy on the startup disk)"
+            "value" : "Not enough disk space (7z and ISO also need room for a temporary copy on the startup disk)"
           }
         }
       }
@@ -46510,12 +47028,12 @@
         }
       }
     },
-    "这个包加了密码，这里只解得开 zip 的密码" : {
+    "这个包加了密码，这里只解得开 zip 和 dmg 的密码" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This archive is password-protected; only zip passwords are supported here"
+            "value" : "This archive is password-protected; only zip and dmg passwords are supported here"
           }
         }
       }

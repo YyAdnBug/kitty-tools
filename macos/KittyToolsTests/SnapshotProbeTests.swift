@@ -6082,6 +6082,47 @@ struct SnapshotProbeTests {
           dark: dark, to: "\(out)/finder-skip-form-\(state)\(dark ? "-dark" : "").png")
       }
     }
+    // 「压缩为 ▸ 其他格式和选项…」的小面板（格式扩充第 2 批）：选了几样、上次是 ZIP；只选了一样、上次是 TAR（级别变灰）。系统画的确认框，
+    // 屏外照同样的搭法画
+    let samples: [(String, [URL], CompressOptions.Choice)] = [
+      (
+        "many", [URL(filePath: "/a/照片"), URL(filePath: "/a/文稿"), URL(filePath: "/a/说明.txt")],
+        .init(format: .zip, level: .normal, separately: false)
+      ),
+      (
+        "tar", [URL(filePath: "/a/2026 年项目资料")],
+        .init(format: .tar, level: .small, separately: false)
+      ),
+      // 打开时是 ZIP（一行小字），再换成 TAR（最长的那句）：框是按最长的量的，不裁字（第 2 批评审）
+      ("switch", [URL(filePath: "/a/资料")], .init(format: .zip, level: .normal, separately: false)),
+      // DMG、带密码、勾着移到废纸篓（危险色）
+      (
+        "dmg", [URL(filePath: "/a/照片"), URL(filePath: "/a/文稿")],
+        .init(
+          format: .dmg, level: .small, separately: false, password: "secret",
+          trashOriginals: true)
+      ),
+    ]
+    for (state, items, start) in samples {
+      for dark in [false, true] {
+        let path = "\(out)/finder-compress-\(state)\(dark ? "-dark" : "").png"
+        guard Self.wants(path) else { continue }
+        let panel = CompressOptions.panel(for: items, start: start)
+        if state == "switch", let popup = panel.focus as? NSPopUpButton {
+          popup.selectItem(at: CompressOptions.formats.firstIndex(of: .tar) ?? 0)
+          _ = popup.sendAction(popup.action, to: popup.target)
+        }
+        panel.alert.window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        panel.alert.layout()
+        let view = try #require(panel.alert.window.contentView)
+        view.layoutSubtreeIfNeeded()
+        let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        try #require(bitmap.representation(using: .png, properties: [:])).write(
+          to: URL(filePath: path))
+        withExtendedLifetime(panel.keep) {}
+      }
+    }
   }
 
   /// 设置里的悬停预览（设置改版 S10）：三个场景的关键几步，图以 settings-preview- 开头。截完图放哪三种（选区 / 落定），

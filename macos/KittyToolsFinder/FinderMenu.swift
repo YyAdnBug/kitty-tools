@@ -1,6 +1,7 @@
 // 访达扩展（第十一族「访达右键」，2026-11-08 拍板，PLAN §10「访达右键」）：在访达的右键菜单第一层加几项。
 // - 选中文件 / 文件夹右键：「拷贝路径」「拷贝名称」、「拷贝图中文字」（选中的都是图片时）、设置里选的每个 App 一项「在“X”中打开」（默认只有终端；叫法照访达
-//   自己的「在“照片”中打开」）、「移动到 ▸」「复制到 ▸」（常用文件夹 + 选择文件夹…）、「剪切」、「压缩为 ▸」（ZIP、7Z、TAR.GZ）、
+//   自己的「在“照片”中打开」）、「移动到 ▸」「复制到 ▸」（常用文件夹 + 选择文件夹…）、「剪切」、「压缩为 ▸」（ZIP、7Z、TAR.GZ、
+//   其他格式和选项…——App 弹面板）、
 //   「解压到这里」（选中的都是压缩包时）、「修复乱码文件名」（选中的有名字像乱码、还原得出来的时候）、「隐藏」/「取消隐藏」、
 //   「隐藏扩展名」/「显示扩展名」（看选中的现在是什么样；读不到就当没隐藏）、「拷贝哈希 ▸」（选中的都是文件时）、
 //   「发送替身到桌面」、「彻底删除…」（App 那边先问）。
@@ -237,7 +238,8 @@ final class FinderMenu: FIFinderSync {
   /// 「解压到这里」认的扩展名（ponytail: 抄的 App 的 Archives.suffixes，FinderLinkTests 比对）
   private static let archiveSuffixes = [
     ".zip", ".7z", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz", ".tbz2", ".gz",
-    ".bz2", ".rar",
+    ".bz2", ".rar", ".tar.lzma", ".tlz", ".tar.lz", ".tar.z", ".taz", ".cpio", ".cpgz", ".xar",
+    ".xz", ".z", ".lz", ".lzma", ".aar", ".iso", ".dmg", ".cdr",
   ]
 
   private static func isArchive(_ url: URL) -> Bool {
@@ -498,6 +500,10 @@ final class FinderMenu: FIFinderSync {
       formats.addItem(withTitle: "ZIP", action: #selector(compressZip(_:)), keyEquivalent: "")
       formats.addItem(withTitle: "7Z", action: #selector(compress7z(_:)), keyEquivalent: "")
       formats.addItem(withTitle: "TAR.GZ", action: #selector(compressTarGz(_:)), keyEquivalent: "")
+      // 少见的格式和选项收进 App 的面板（2026-11-25 格式扩充拍板 U1）；不加分隔线（macOS 26 上会画成空白行）
+      formats.addItem(
+        withTitle: String(localized: "其他格式和选项…"), action: #selector(compressMore(_:)),
+        keyEquivalent: "")
       // 「压缩为」：访达自己的「压缩“X”」在同一个菜单里，两项都叫压缩分不开
       Self.add("压缩为", nil, symbol: "doc.zipper", color: Tint.archive, to: menu).submenu = formats
     }
@@ -925,6 +931,11 @@ final class FinderMenu: FIFinderSync {
     hand("tgz", container: false)
   }
 
+  /// 面板由 App 弹：要激活 App，框才能直接用键盘（hand 的 activates）
+  @objc private func compressMore(_ sender: AnyObject?) {
+    hand("compressmore", container: false)
+  }
+
   @objc private func extract(_ sender: AnyObject?) {
     hand("extract", container: false)
   }
@@ -1030,7 +1041,8 @@ final class FinderMenu: FIFinderSync {
       + files.map { URLQueryItem(name: "file", value: $0.path) }
     guard let url = link.url else { return }
     let chooses = extra.contains { $0.name == "to" && $0.value == "choose" }
-    let activates = ["open", "suffix", "templates", "erase"].contains(action) || chooses
+    let activates =
+      ["open", "suffix", "templates", "erase", "compressmore"].contains(action) || chooses
     let configuration = NSWorkspace.OpenConfiguration()
     configuration.activates = activates
     // 沙盒里也能直接投给指定的 App，前提是它登记了这个 scheme（App 的 CFBundleURLTypes；没登记的系统回

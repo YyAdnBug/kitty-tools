@@ -2,6 +2,7 @@
 // 7z 往返，tar.gz 往返（不带扩展属性、文件标志，重名加在「.tar.gz」前面），GBK 名字的 zip（先用 ASCII 名字打、再把名字的字节换成 GBK），带密码的 zip 密码不对 / 对），解出来只有一样东西时
 // 放在包旁边、重名加「 2」。只动临时文件夹。
 
+import AppKit
 import Foundation
 import Testing
 
@@ -28,7 +29,17 @@ import Testing
     #expect(Archives.isArchive(URL(filePath: "/a/资料.ZIP")))
     #expect(Archives.isArchive(URL(filePath: "/a/b.tar.gz")))
     #expect(Archives.isArchive(URL(filePath: "/a/b.gz")))  // 单文件的 .gz 也认
-    #expect(!Archives.isArchive(URL(filePath: "/a/b.xz")))
+    // 格式扩充第 1 批：单文件的 .xz / .Z / .lz / .lzma、.aar
+    #expect(Archives.isArchive(URL(filePath: "/a/b.xz")))
+    #expect(Archives.isArchive(URL(filePath: "/a/b.Z")))
+    #expect(Archives.isArchive(URL(filePath: "/a/b.aar")))
+    #expect(!Archives.isArchive(URL(filePath: "/a/b.zst")))  // 系统解不了的不认
+    #expect(!Archives.isArchive(URL(filePath: "/a/b.tar.lz4")))
+    #expect(Archives.stem(of: URL(filePath: "/a/旧.tar.Z")) == "旧")
+    #expect(Archives.stem(of: URL(filePath: "/a/c.tar.lzma")) == "c")
+    #expect(Archives.tool(for: URL(filePath: "/a/c.tar.lz")) == .tar)
+    #expect(Archives.tool(for: URL(filePath: "/a/c.lz")) == .stream("/usr/bin/gunzip"))
+    #expect(Archives.tool(for: URL(filePath: "/a/c.cpgz")) == .tar)
     #expect(!Archives.isArchive(URL(filePath: "/a/.zip")))
     #expect(!Archives.isArchive(URL(filePath: "/a/b.zipx")))
     #expect(Archives.stem(of: URL(filePath: "/a/项目 v1.2.tar.gz")) == "项目 v1.2")
@@ -344,7 +355,7 @@ import Testing
       Archives.packFailure("tar: Failed to open '/x/.kitty-1'", format: .tarGz) == "没有权限读写这个位置")
     #expect(
       Archives.packFailure("tar: No space left on device", format: .sevenZip)
-        == "磁盘空间不够了（7z 还要先在启动盘上暂存一份）")
+        == "磁盘空间不够了（7z、ISO 还要先在启动盘上暂存一份）")
     #expect(Archives.packFailure("tar: 别的", format: .zip) == "有文件读不到（被移走、改名了，或者没有权限）")
   }
 
@@ -540,11 +551,16 @@ import Testing
     #expect(list == [FileMoves.plainPath(left)])
     ledger.set(list + [FileMoves.plainPath(mine)], forKey: Prefs.finderTemporaries)
     FileMoves.cleanLeftovers(after: .zero)
-    for _ in 0..<200 where ledger.stringArray(forKey: Prefs.finderTemporaries) != nil {
+    // 只看这两条：同时在跑的别的测试（做 DMG 要几秒）会往换上来的这本账里记它们自己的临时名
+    let gone = {
+      let now = ledger.stringArray(forKey: Prefs.finderTemporaries) ?? []
+      return !now.contains(FileMoves.plainPath(left)) && !now.contains(FileMoves.plainPath(mine))
+    }
+    for _ in 0..<200 where !gone() {
       try await Task.sleep(for: .milliseconds(20))
     }
     list = ledger.stringArray(forKey: Prefs.finderTemporaries) ?? []
-    #expect(list.isEmpty)
+    #expect(gone(), "\(list)")
     #expect(!FileMoves.occupied(left))
     #expect(FileMoves.occupied(mine.appending(path: "留着.txt")))
   }
@@ -553,8 +569,10 @@ import Testing
   @Test func singleFileCompressed() async throws {
     let root = try makeRoot()
     defer { try? FileManager.default.removeItem(at: root) }
-    #expect(Archives.decompressor(for: URL(filePath: "/a/b.txt.gz")) == "/usr/bin/gunzip")
-    #expect(Archives.decompressor(for: URL(filePath: "/a/b.tar.gz")) == nil)
+    #expect(Archives.tool(for: URL(filePath: "/a/b.txt.gz")) == .stream("/usr/bin/gunzip"))
+    #expect(Archives.tool(for: URL(filePath: "/a/b.tar.gz")) == .tar)
+    #expect(
+      Archives.singleFileCommand(URL(filePath: "/a/b.tar.gz"), to: URL(filePath: "/o")) == nil)
     #expect(Archives.isArchive(URL(filePath: "/a/b.bz2")))
     let source = root.appending(path: "源")
     try write("你好 $HOME `x`", to: source.appending(path: "说明 '1'.txt"))
@@ -591,6 +609,487 @@ import Testing
     #expect(
       try FileManager.default.contentsOfDirectory(atPath: root.path(percentEncoded: false))
         .allSatisfy { !$0.hasPrefix(".kitty-") })
+  }
+
+  /// 格式扩充第 1 批：只压了一个文件的 .xz、.Z、.lz（系统 gunzip）、.lzma（compression_tool）；样本用系统 tar 的 raw 格式、
+  /// compress 造
+  @Test func moreSingleFileStreams() async throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let text = String(repeating: "第一行 hello\n", count: 200)
+    try write(text, to: root.appending(path: "说明.txt"))
+    let folder = root.path(percentEncoded: false)
+    let path = { (name: String) in root.appending(path: name).path(percentEncoded: false) }
+    for (ext, option) in [("xz", "-J"), ("lz", "--lzip"), ("lzma", "--lzma")] {
+      let made = try await Subprocess.run(
+        "/usr/bin/tar",
+        ["--format", "raw", option, "-cf", path("说明.txt." + ext), "-C", folder, "说明.txt"])
+      try #require(made.status == 0)
+    }
+    let compressed = try await Subprocess.run(
+      "/bin/sh",
+      [
+        "-c", "exec /usr/bin/compress -c -- \"$0\" > \"$1\"", path("说明.txt"), path("说明.txt.Z"),
+      ])
+    try #require(compressed.status == 0)
+    for ext in ["xz", "lz", "lzma", "Z"] {
+      let outcome = await Archives.unpack(
+        root.appending(path: "说明.txt." + ext), password: nil, gbk: false)
+      let placed = try #require(outcome.url, "\(ext)：\(outcome)")
+      #expect(try String(contentsOf: placed, encoding: .utf8) == text, "\(ext)")
+      try FileManager.default.removeItem(at: placed)
+    }
+    // 坏的 .lzma：说原因、不留东西
+    let bad = root.appending(path: "坏.lzma")
+    try Data("not lzma".utf8).write(to: bad)
+    #expect(await Archives.unpack(bad, password: nil, gbk: false).url == nil)
+    #expect(try names(in: root).allSatisfy { !$0.hasPrefix(".kitty-") })
+  }
+
+  /// .aar（aa extract）：往返、不要 .DS_Store；坏的说原因
+  @Test func appleArchive() async throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let source = root.appending(path: "源")
+    try write("一", to: source.appending(path: "资料/一.txt"))
+    try write("二", to: source.appending(path: "资料/子/二.txt"))
+    try write("杂", to: source.appending(path: "资料/.DS_Store"))
+    let archive = root.appending(path: "资料.aar")
+    let made = try await Subprocess.run(
+      "/usr/bin/aa",
+      [
+        "archive", "-d", source.path(percentEncoded: false), "-subdir", "资料", "-o",
+        archive.path(percentEncoded: false),
+      ])
+    try #require(made.status == 0)
+    #expect(Archives.tool(for: archive) == .appleArchive)
+    let placed = try #require(await Archives.unpack(archive, password: nil, gbk: false).url)
+    #expect(placed.lastPathComponent == "资料")
+    #expect(try names(in: placed) == ["一.txt", "子"])
+    #expect(
+      try String(contentsOf: placed.appending(path: "子/二.txt"), encoding: .utf8) == "二")
+    let bad = root.appending(path: "坏.aar")
+    try Data("not aar".utf8).write(to: bad)
+    #expect(await Archives.unpack(bad, password: nil, gbk: false).url == nil)
+    #expect(try names(in: root).allSatisfy { !$0.hasPrefix(".kitty-") })
+    #expect(
+      Archives.outcome(ofFailure: "Failed to create decryption stream", password: false)
+        == .failed("这个包加了密码，这里只解得开 zip 和 dmg 的密码"))
+  }
+
+  /// Deflate64 的 zip：系统 tar 不支持，换系统 unzip（手搓的最小包：方法 9，数据是一个不压缩的 deflate 块，Deflate64 里同样合法）；
+  /// unzip 说密码不对时报成密码不对
+  @Test func deflate64FallsBackToUnzip() async throws {
+    let zip: [UInt8] = [
+      0x50, 0x4B, 0x03, 0x04, 0x15, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0xBC,
+      0x52, 0x1A, 0x15, 0x15, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00,
+      0x64, 0x36, 0x34, 0x2E, 0x74, 0x78, 0x74, 0x01, 0x10, 0x00, 0xEF, 0xFF, 0x68, 0x65, 0x6C,
+      0x6C, 0x6F, 0x20, 0x64, 0x65, 0x66, 0x6C, 0x61, 0x74, 0x65, 0x36, 0x34, 0x0A, 0x50, 0x4B,
+      0x01, 0x02, 0x15, 0x03, 0x15, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0xBC,
+      0x52, 0x1A, 0x15, 0x15, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xA4, 0x81, 0x00, 0x00, 0x00, 0x00, 0x64,
+      0x36, 0x34, 0x2E, 0x74, 0x78, 0x74, 0x50, 0x4B, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x01,
+      0x00, 0x01, 0x00, 0x35, 0x00, 0x00, 0x00, 0x3A, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ]
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let archive = root.appending(path: "大文件.zip")
+    try Data(zip).write(to: archive)
+    let placed = try #require(await Archives.unpack(archive, password: nil, gbk: false).url)
+    #expect(placed.lastPathComponent == "d64.txt")
+    #expect(try String(contentsOf: placed, encoding: .utf8) == "hello deflate64\n")
+    #expect(try names(in: root) == ["d64.txt", "大文件.zip"])
+    #expect(
+      Archives.needsUnzip(
+        "d64.txt: Unsupported ZIP compression method (9: deflation-64-bit): Inappropriate file type"
+      ))
+    #expect(!Archives.needsUnzip("x: Unsupported ZIP compression method (99: aes)"))
+    #expect(
+      Archives.outcome(ofFailure: "\nincorrect password", password: true) == .wrongPassword)
+    let arguments = Archives.unzipArguments(
+      archive, into: URL(filePath: "/w"), password: "-d")
+    // 密码和 -P 连写（「-」开头的不被当成选项）；没有也给一个（不然 unzip 说 unable to get password）
+    #expect(arguments.prefix(2) == ["-o", "-P-d"] && arguments.suffix(2) == ["-d", "/w"])
+    #expect(
+      Archives.unzipArguments(archive, into: URL(filePath: "/w"), password: nil)[1]
+        == "-Pkitty-no-password")
+    #expect(
+      Archives.outcome(
+        ofFailure: "skipping: incorrect password.txt  bad zipfile offset", password: true)
+        != .wrongPassword)
+    // 名字带通配符、同一个文件夹里还有能匹配上的包：解的还是右键的那个（unzip 拿到的是名字干净的符号链接）
+    let tricky = root.appending(path: "a[12].zip")
+    try Data(zip).write(to: tricky)
+    try write("别的包", to: root.appending(path: "别的/b.txt"))
+    let sibling = try await Subprocess.run(
+      "/usr/bin/tar",
+      [
+        "--format", "zip", "-cf", root.appending(path: "a1.zip").path(percentEncoded: false), "-C",
+        root.path(percentEncoded: false), "别的",
+      ])
+    try #require(sibling.status == 0)
+    try FileManager.default.removeItem(at: placed)
+    let again = try #require(await Archives.unpack(tricky, password: nil, gbk: false).url)
+    #expect(again.lastPathComponent == "d64.txt")
+    #expect(try String(contentsOf: again, encoding: .utf8) == "hello deflate64\n")
+    #expect(try names(in: root).allSatisfy { !$0.hasPrefix("别的 ") })  // 没解成 a1.zip
+  }
+
+  /// cpio、xar 在 tar -v 里列文件夹不带「/」：下面还有条目的算文件夹，只差大小写的两个文件夹不算撞名（评审）
+  @Test func clashFoldersWithoutSlash() {
+    #expect(Archives.caseClashes(["Src", "Src/a.txt", "src", "src/b.txt"]).isEmpty)
+    #expect(Archives.caseClashes(["Read", "read"]) == ["Read"])
+    #expect(Archives.caseClashes(["BUILD", "build", "build/x"]) == ["BUILD"])
+  }
+
+  /// 格式扩充第 2 批：各格式、各级别交给 tar / hdiutil 的参数，ISO 的卷名，两段扩展名的重名
+  @Test func formatsAndLevels() {
+    let items = [URL(filePath: "/p/资料")]
+    let out = URL(filePath: "/p/.tmp")
+    let options = { (format: Archives.Format, level: Archives.Level) -> String? in
+      let arguments = Archives.compressArguments(
+        items, format: format, to: out, level: level, volume: "资料")
+      return arguments.firstIndex(of: "--options").map { arguments[$0 + 1] }
+    }
+    // 标准 = 和原来一样（不写级别）
+    #expect(options(.zip, .normal) == "zip:hdrcharset=UTF-8")
+    #expect(options(.zip, .fast) == "zip:hdrcharset=UTF-8,zip:compression-level=1")
+    #expect(options(.sevenZip, .small) == "7zip:compression=lzma2,7zip:compression-level=9")
+    #expect(options(.tarGz, .normal) == nil)
+    #expect(options(.tarBz2, .fast) == "bzip2:compression-level=1")
+    // 这种格式没有的级别照标准：bzip2 默认就是 9，「更小」不给
+    #expect(options(.tarBz2, .small) == nil)
+    #expect(Archives.Format.tarBz2.levels == [.fast, .normal])
+    #expect(Archives.Format.dmg.levels == [.normal, .small])
+    #expect(options(.tarXz, .small) == "xz:compression-level=9")
+    // iso-level 3：单个文件可以超过 4 GB（2 级时 tar 跳过大文件还退出 0，评审实测）
+    #expect(options(.iso, .small) == "iso9660:volume-id=资料,iso9660:iso-level=3")
+    for (format, flag) in [(Archives.Format.tarGz, "-z"), (.tarBz2, "-j"), (.tarXz, "-J")] {
+      let arguments = Archives.compressArguments(items, format: format, to: out)
+      #expect(arguments.contains(flag) && arguments.contains("--no-xattrs"), "\(format)")
+    }
+    let tar = Archives.compressArguments(items, format: .tar, to: out)
+    #expect(
+      !tar.contains("-z") && !tar.contains("-j") && !tar.contains("-J") && !tar.contains("--format")
+    )
+    #expect(tar.contains("--no-xattrs"))
+    #expect(!Archives.Format.tar.hasLevels && !Archives.Format.iso.hasLevels)
+    #expect(Archives.Format.dmg.hasLevels && Archives.Format.tarXz.title == "TAR.XZ")
+    // 面板里列全了，每种都有一句说明
+    #expect(Set(CompressOptions.formats) == Set(Archives.Format.allCases))
+    #expect(Archives.Format.allCases.allSatisfy { !CompressOptions.hint(for: $0).isEmpty })
+
+    // ISO 的卷名：32 个字节以内、不带逗号（tar 的限制）；DMG 原样
+    let long = String(repeating: "长", count: 40) + ".iso"
+    let volume = Archives.volumeName(of: long, format: .iso)
+    #expect(volume.utf8.count <= 32 && volume.hasPrefix("长长"))
+    #expect(Archives.volumeName(of: "a,b.iso", format: .iso) == "ab")
+    #expect(Archives.volumeName(of: ",.iso", format: .iso) == "ISO")
+    #expect(Archives.volumeName(of: "归档 2.dmg", format: .dmg) == "归档 2")
+
+    // DMG：级别对应映像格式，每一样一个 -srcfolder
+    let image = Archives.imageArguments(
+      [URL(filePath: "/p/a"), URL(filePath: "/q/b.txt")], to: URL(filePath: "/p/.t/x.dmg"),
+      volume: "x", level: .small)
+    #expect(image.prefix(5) == ["create", "-fs", "APFS", "-volname", "x"])
+    #expect(image.contains("ULMO") && image.suffix(2) == ["-o", "/p/.t/x.dmg"])
+    #expect(image.filter { $0 == "-srcfolder" }.count == 2)
+    let fast = Archives.imageArguments(
+      [URL(filePath: "/p/a")], to: URL(filePath: "/x.dmg"), volume: "x", level: .fast)
+    #expect(fast.contains("ULFO") && !fast.contains("UDZO"))  // DMG 没有「更快」，照标准
+  }
+
+  /// TAR.BZ2、TAR.XZ、TAR、ISO 真压、真解（ISO 用 tar 列出来看）；两段扩展名的重名加在整个扩展名前面
+  @Test func moreFormatsRoundTrip() async throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let folder = root.appending(path: "资料")
+    try write("中文内容", to: folder.appending(path: "子/说明.txt"))
+    try write("x", to: folder.appending(path: ".DS_Store"))
+    for format in [Archives.Format.tarBz2, .tarXz, .tar] {
+      for level in Archives.Level.allCases where format.hasLevels || level == .normal {
+        let name = Archives.archiveName(for: [folder], format: format)
+        let target = root.appending(path: Archives.freeName(name, format: format, in: root))
+        let archive = try #require(
+          await Archives.pack([folder], format: format, to: target, level: level).url,
+          "\(format) \(level)")
+        let placed = try #require(await Archives.unpack(archive, password: nil, gbk: false).url)
+        #expect(
+          try String(contentsOf: placed.appending(path: "子/说明.txt"), encoding: .utf8) == "中文内容")
+        #expect(!FileManager.default.fileExists(atPath: placed.appending(path: ".DS_Store").path))
+        try FileManager.default.removeItem(at: placed)
+      }
+    }
+    // 三种级别各打了一个：「资料.tar.xz」「资料 2.tar.xz」「资料 3.tar.xz」（「 2」在整个扩展名前面），再解压时还认得出是 tar 包
+    #expect(try Set(["资料.tar.xz", "资料 2.tar.xz", "资料 3.tar.xz"]).isSubset(of: names(in: root)))
+    let next = Archives.freeName("资料.tar.xz", format: .tarXz, in: root)
+    #expect(next == "资料 4.tar.xz")
+    #expect(Archives.tool(for: root.appending(path: next)) == .tar)
+
+    let iso = try #require(
+      await Archives.pack(
+        [folder], format: .iso, to: root.appending(path: "资料.iso")
+      ).url)
+    let listing = try await Subprocess.run(
+      "/usr/bin/tar", ["-tf", iso.path(percentEncoded: false)], captures: true,
+      environment: ByteMeter.utf8Environment)
+    #expect(listing.status == 0 && listing.output.contains("资料/子/说明.txt"))
+    #expect(!listing.output.contains(".DS_Store"))
+  }
+
+  /// 分别压缩每一项：一样一个包、各放在旁边，排成一批（等它们出现）
+  @Test func compressEachMakesOnePerItem() async throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    try write("甲", to: root.appending(path: "甲/a.txt"))
+    try write("乙", to: root.appending(path: "乙.txt"))
+    Archives.compressEach(
+      [root.appending(path: "甲"), root.appending(path: "乙.txt")], format: .tarXz, level: .fast,
+      island: nil)
+    let wanted = ["甲.tar.xz", "乙.txt.tar.xz"]
+    for _ in 0..<500 where !(try Set(wanted).isSubset(of: names(in: root))) {
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(try names(in: root) == ["乙.txt", "乙.txt.tar.xz", "甲", "甲.tar.xz"])
+  }
+
+  /// DMG：hdiutil 做映像、校验得过；临时文件夹不留
+  @Test func diskImage() async throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let one = root.appending(path: "甲")
+    try write("一", to: one.appending(path: "一.txt"))
+    try write("二", to: root.appending(path: "二.txt"))
+    let archive = try #require(
+      await Archives.pack(
+        [one, root.appending(path: "二.txt")], format: .dmg, to: root.appending(path: "归档.dmg"),
+        level: .fast
+      ).url)
+    #expect(archive.lastPathComponent == "归档.dmg")
+    let verify = try await Subprocess.run(
+      "/usr/bin/hdiutil", ["verify", "-quiet", archive.path(percentEncoded: false)])
+    #expect(verify.status == 0)
+    #expect(try names(in: root) == ["二.txt", "归档.dmg", "甲"])
+    // 没做完时找自己挂着的临时映像：只认路径里带着这次临时文件夹名字的，给整块的那个设备
+    let info: [String: Any] = [
+      "images": [
+        [
+          "image-path": "/Users/a/.kitty-ABC/归档.dmg",
+          "system-entities": [["dev-entry": "/dev/disk4s1"], ["dev-entry": "/dev/disk4"]],
+        ],
+        ["image-path": "/Users/a/别的.dmg", "system-entities": [["dev-entry": "/dev/disk6"]]],
+      ]
+    ]
+    let data = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+    #expect(Archives.attachedDevices(data, containing: "/.kitty-ABC/") == ["/dev/disk4"])
+    #expect(Archives.attachedDevices(Data("不是 plist".utf8), containing: "/.kitty-ABC/").isEmpty)
+  }
+
+  /// 格式扩充第 3 批：ZIP 的 AES-256 密码（7Z 不给密码，系统 tar 会悄悄不加密）；对的密码解得开，没给是要密码、给错是密码不对
+  @Test func encryptedZipRoundTrip() async throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let folder = root.appending(path: "机密")
+    try write("内容", to: folder.appending(path: "a.txt"))
+    let arguments = Archives.compressArguments(
+      [folder], format: .zip, to: root.appending(path: ".t"), password: "-pw 1")
+    #expect(arguments.contains("zip:hdrcharset=UTF-8,zip:encryption=aes256"))
+    #expect(arguments.contains("--passphrase") && arguments.contains("-pw 1"))
+    #expect(Archives.Format.zip.allowsPassword && Archives.Format.dmg.allowsPassword)
+    #expect(!Archives.Format.sevenZip.allowsPassword && !Archives.Format.tarGz.allowsPassword)
+    let archive = try #require(
+      await Archives.pack(
+        [folder], format: .zip, to: root.appending(path: "机密.zip"), password: "-pw 1"
+      )
+      .url)
+    // 文件夹那几条没有数据、不标加密；有数据的都标了
+    #expect(ZipNames.entries(of: archive)?.contains(where: \.encrypted) == true)
+    #expect(await Archives.verify(archive, format: .zip, password: "-pw 1"))
+    #expect(!(await Archives.verify(archive, format: .zip, password: "wrong")))
+    #expect(await Archives.unpack(archive, password: nil, gbk: false) == .needsPassword)
+    #expect(await Archives.unpack(archive, password: "wrong", gbk: false) == .wrongPassword)
+    let placed = try #require(await Archives.unpack(archive, password: "-pw 1", gbk: false).url)
+    #expect(try String(contentsOf: placed.appending(path: "a.txt"), encoding: .utf8) == "内容")
+  }
+
+  /// ISO、DMG：挂上、把最上层的拷出来、卸掉（系统放的 .background 这类、指向 /Applications 的绝对替身不要；用户的隐藏文件、相对替身要）；
+  /// 带密码的 DMG（AES-256，密码走标准输入）
+  /// 没给是要密码、给错是密码不对、给对拷得出来；做完没有挂着的映像
+  @Test func diskImagesExtract() async throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let source = root.appending(path: "源")
+    try write("一", to: source.appending(path: "工具.app/Contents/Info.plist"))
+    try write("说明", to: source.appending(path: "说明.txt"))
+    try write("x", to: source.appending(path: ".background/bg.png"))
+    try FileManager.default.createSymbolicLink(
+      atPath: source.appending(path: "Applications").path(percentEncoded: false),
+      withDestinationPath: "/Applications")
+    // 用户自己的隐藏文件、卷里的相对替身照拷（评审：一律跳过会丢 .git、.env）
+    try write("KEY=1", to: source.appending(path: ".env"))
+    try FileManager.default.createSymbolicLink(
+      atPath: source.appending(path: "readme").path(percentEncoded: false),
+      withDestinationPath: "说明.txt")
+    #expect(Archives.tool(for: URL(filePath: "/a/b.DMG")) == .diskImage)
+    #expect(Archives.isArchive(URL(filePath: "/a/b.iso")))
+    let wanted = [".env", "readme", "工具.app", "说明.txt"]
+    #expect(Archives.itemsToCopy(in: source).map(\.lastPathComponent) == wanted)
+
+    let image = try #require(
+      await Archives.pack([source], format: .dmg, to: root.appending(path: "安装.dmg")).url)
+    let placed = try #require(await Archives.unpack(image, password: nil, gbk: false).url)
+    #expect(placed.lastPathComponent == "安装")
+    #expect(try names(in: placed) == wanted)
+    #expect(
+      try FileManager.default.destinationOfSymbolicLink(
+        atPath: placed.appending(path: "readme").path(percentEncoded: false)) == "说明.txt")
+    #expect(
+      try String(contentsOf: placed.appending(path: "工具.app/Contents/Info.plist"), encoding: .utf8)
+        == "一")
+
+    let iso = try #require(
+      await Archives.pack([source], format: .iso, to: root.appending(path: "光盘.iso")).url)
+    let fromISO = try #require(await Archives.unpack(iso, password: nil, gbk: false).url)
+    // tar 写的 ISO 里多一层「源」；旁边已经有「源」，放下来叫「源 2」
+    #expect(
+      fromISO.lastPathComponent == "源 2",
+      "\(fromISO.lastPathComponent) \((try? names(in: fromISO)) ?? []) \((try? names(in: root)) ?? [])"
+    )
+    #expect(try names(in: fromISO).contains("说明.txt"))
+    // 拷出来的不是只读的（ISO 里是）
+    #expect(
+      FileManager.default.isWritableFile(
+        atPath: fromISO.appending(path: "说明.txt").path(percentEncoded: false)))
+
+    let locked = try #require(
+      await Archives.pack(
+        [source.appending(path: "说明.txt")], format: .dmg, to: root.appending(path: "加密.dmg"),
+        password: "pw 123"
+      ).url)
+    let info = try await Subprocess.run(
+      "/usr/bin/hdiutil", ["isencrypted", locked.path(percentEncoded: false)], captures: true)
+    #expect(info.output.contains("encrypted: YES"))
+    #expect(await Archives.verify(locked, format: .dmg, password: "pw 123"))
+    #expect(await Archives.unpack(locked, password: nil, gbk: false) == .needsPassword)
+    #expect(await Archives.unpack(locked, password: "wrong", gbk: false) == .wrongPassword)
+    let opened = try #require(await Archives.unpack(locked, password: "pw 123", gbk: false).url)
+    #expect(try String(contentsOf: opened, encoding: .utf8) == "说明")
+
+    let attached = try await Subprocess.run("/usr/bin/hdiutil", ["info"], captures: true)
+    #expect(!attached.output.contains(root.lastPathComponent))
+    #expect(try names(in: root).allSatisfy { !$0.hasPrefix(".kitty-") })
+    #expect(
+      Archives.mounted(Data("不是 plist".utf8), under: "x").isEmpty
+        && Archives.imageErrors("hdiutil: WARNING: x is deprecated.\nhdiutil: attach failed")
+          == "hdiutil: attach failed"
+    )
+  }
+
+  /// 压完把原件移到废纸篓：先检查包、过了才移，能放回。放在测试自己建的一块可写映像上（移进的是那块卷自己的废纸篓，不碰用户的）
+  @Test func trashOriginalsAfterCheck() async throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let disk = root.appending(path: "盘.dmg")
+    let made = try await Subprocess.run(
+      "/usr/bin/hdiutil",
+      [
+        "create", "-quiet", "-size", "20m", "-fs", "HFS+", "-volname", "KT",
+        disk.path(percentEncoded: false),
+      ])
+    try #require(made.status == 0)
+    let mount = root.appending(path: "挂载")
+    try FileManager.default.createDirectory(at: mount, withIntermediateDirectories: true)
+    let attached = try await Subprocess.run(
+      "/usr/bin/hdiutil",
+      [
+        "attach", "-quiet", "-nobrowse", "-noautoopen", "-mountpoint",
+        mount.path(percentEncoded: false), disk.path(percentEncoded: false),
+      ])
+    try #require(attached.status == 0)
+    // 等它卸完再让外面那个 defer 删临时文件夹（不然会递归删进还挂着的测试卷）
+    defer {
+      let detach = Process()
+      detach.executableURL = URL(filePath: "/usr/bin/hdiutil")
+      detach.arguments = ["detach", "-quiet", "-force", mount.path(percentEncoded: false)]
+      detach.standardError = FileHandle.nullDevice
+      if (try? detach.run()) != nil { detach.waitUntilExit() }
+    }
+    let original = mount.appending(path: "报告")
+    try write("正文", to: original.appending(path: "a.txt"))
+    let packed = await Archives.packChecked(
+      [original], format: .zip, to: mount.appending(path: "报告.zip"), skip: [], level: .normal,
+      password: nil, trash: true, report: { _, _ in })
+    let archive = try #require(packed.outcome.url)
+    #expect(packed.kept == nil)
+    #expect(!FileManager.default.fileExists(atPath: original.path(percentEncoded: false)))
+    let (trashed, from) = try #require(packed.trashed.first)
+    #expect(from == original && trashed.path(percentEncoded: false).contains(".Trashes"))
+    // 放回：挪回原处
+    #expect(FileMoves.land(trashed, at: from) != nil)
+    #expect(try String(contentsOf: original.appending(path: "a.txt"), encoding: .utf8) == "正文")
+    // 包落在要移走的文件夹里面（同时选了文件夹和它里面的东西）：不移（评审）
+    try write("里面", to: original.appending(path: "子/b.txt"))
+    let inside = await Archives.packChecked(
+      [original.appending(path: "子/b.txt"), original], format: .zip,
+      to: original.appending(path: "子/归档.zip"), skip: [], level: .normal, password: nil,
+      trash: true, report: { _, _ in })
+    #expect(inside.outcome.url != nil && inside.trashed.isEmpty)
+    #expect(inside.kept == "压缩包在要移走的文件夹里面，原件没动")
+    #expect(FileManager.default.fileExists(atPath: original.path(percentEncoded: false)))
+    #expect(Archives.tangled([URL(filePath: "/a/b")], archive: URL(filePath: "/a/b/c.zip")))
+    #expect(
+      !Archives.tangled(
+        [URL(filePath: "/a/b"), URL(filePath: "/a/bc")], archive: URL(filePath: "/a/x.zip")))
+    // 「压缩时跳过」真跳过了东西：不移
+    try write("依赖", to: original.appending(path: "node_modules/x.js"))
+    let skipped = await Archives.packChecked(
+      [original], format: .zip, to: mount.appending(path: "跳过.zip"), skip: ["node_modules"],
+      level: .normal, password: nil, trash: true, report: { _, _ in })
+    #expect(skipped.trashed.isEmpty && skipped.kept == "有按「压缩时跳过」没放进包里的，原件没动")
+    // 包坏了：检查不过，原件不动
+    try Data("坏了".utf8).write(to: archive)
+    #expect(!(await Archives.verify(archive, format: .zip, password: nil)))
+    let detached = try await Subprocess.run(
+      "/usr/bin/hdiutil", ["detach", "-quiet", mount.path(percentEncoded: false)])
+    #expect(detached.status == 0)
+  }
+
+  /// 面板的密码：两次一样才算，只有 ZIP、DMG 收密码；移到废纸篓读得回来
+  @Test func compressPanelPasswords() throws {
+    let items = [URL(filePath: "/a/甲"), URL(filePath: "/a/乙")]
+    let panel = CompressOptions.panel(
+      for: items, start: .init(format: .dmg, level: .small, separately: true))
+    let fields = try #require(panel.alert.accessoryView).subviews.compactMap {
+      $0 as? NSSecureTextField
+    }
+    try #require(fields.count == 2)
+    let typed = {
+      (panel.keep as? NSTextFieldDelegate)?.controlTextDidChange?(
+        Notification(name: NSControl.textDidChangeNotification))
+    }
+    fields[0].stringValue = "秘密"
+    typed()
+    // 只填了一个：「压缩」是灰的
+    #expect(panel.read().mismatched && !panel.alert.buttons[0].isEnabled)
+    fields[1].stringValue = "秘"
+    typed()
+    #expect(panel.read().mismatched && !panel.alert.buttons[0].isEnabled)
+    fields[1].stringValue = "秘密"
+    typed()
+    #expect(panel.alert.buttons[0].isEnabled)
+    let read = panel.read()
+    #expect(!read.mismatched)
+    #expect(read.choice.password == "秘密" && read.choice.format == .dmg)
+    #expect(read.choice.separately && !read.choice.trashOriginals)
+    // 换成 7Z：不收密码（填了也不算），两个框不一样也不拦
+    let popup = try #require(panel.focus as? NSPopUpButton)
+    popup.selectItem(at: CompressOptions.formats.firstIndex(of: .sevenZip) ?? 0)
+    _ = popup.sendAction(popup.action, to: popup.target)
+    fields[1].stringValue = "别的"
+    typed()
+    #expect(!fields[0].isEnabled && panel.alert.buttons[0].isEnabled)
+    #expect(panel.read().choice.password == nil && !panel.read().mismatched)
+    withExtendedLifetime(panel.keep) {}
   }
 
   /// 坏的包：说原因，不留临时文件夹
@@ -650,7 +1149,7 @@ import Testing
         == .failed("压缩包可能坏了，或者加了密码（RAR 的密码这里解不开）"))
     #expect(
       Archives.outcome(ofFailure: "Encryption is not supported", password: false, rar: true)
-        == .failed("这个包加了密码，这里只解得开 zip 的密码"))
+        == .failed("这个包加了密码，这里只解得开 zip 和 dmg 的密码"))
   }
 }
 

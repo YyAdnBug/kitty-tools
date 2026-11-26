@@ -116,7 +116,7 @@
 | `Launcher/` | `LauncherItem.swift`（结果项与内置动作）、`AppCatalog.swift`（App 目录 + 中文名 + 拼音 + bundle id）、`PathBrowser.swift`（路径模式：以 / 或 ~/ 开头时列文件夹里的东西，纯函数 + 主线程外读目录，2026-11-18 §10「启动器浏览文件夹」）、`AppAliases.swift`（应用别名：稳定身份、存储、搜索词扩充，2026-11-09）、`LauncherMatch.swift`（匹配与排序纯函数）、`LauncherUsage.swift`（使用记录表 + 收藏表 launcher_favorites，体检 D13）、`LauncherModel.swift`（状态和存储属性；第五轮体检 H1 拆出同目录的 `LauncherModel+CommandHotKeys.swift`、`+Search.swift`、`+Execute.swift`、`+Scripts.swift`、`+Favorites.swift`、`+QuickLook.swift`、`+Keyboard.swift`、`+ActionMenu.swift`，按原来的 MARK 分；2026-11-24 多一个 `+MultiSelect.swift`：文件行多选、一起打开）、`LauncherPanelView.swift`、`FileSearch.swift`（文件搜索：open / find / 空格开头，NSMetadataQuery 查询、排除、排序、最近的文件、授权提示，M13）、`SystemCommands.swift`（系统命令目录、quit / hide / forcequit / eject / kill / port 解析与只读列举，D2）、`SystemControl.swift`（系统命令的执行：锁屏、pmset、osascript、退出 App、推出、给进程发信号）、`Processes.swift`（kill 列的后台进程：ps / lsof 输出解析与排序，体检 D12；port 的端口行也在这里，2026-10-08）、`IPAddresses.swift`（「ip」：本机网卡地址、两家外网地址查询、拼行，2026-10-28）、`ExchangeRates.swift`（计算器的汇率换算：「100 usd」解析、按表换算、取汇率表和存进偏好，2026-11-04）、`SiteIcons.swift`（网址行的网站图标：读本机 Chromium 系浏览器的 Favicons 库 + 链接预览，按主机缓存，体检 D6）、`BrowserHistory.swift`（各家浏览历史 + Firefox 书签：克隆后 sqlite3 导出、解析、行，体检 D8、第 12 批）、`Bookmarks.swift`（浏览器书签：Chromium 系 JSON、Safari plist，Firefox 取 BrowserHistory 读好的）、`Browsers.swift`（第 12 批：浏览器表、装没装、数据目录与多配置、偏好里开着的、克隆别人的库、读失败分「没授权 / 没有文件」）、`DirectItems.swift`（网址 / 路径直达，纯函数）、`WebSearch.swift`（网页搜索与快捷链接列表）；`AppCatalog.swift` 顺带扫系统设置面板（体检 D9），`Calculator.swift` 含单位换算表和进制（体检 D11）、`WebSearchSync.swift`（网页搜索与快捷链接接进全局同步；2026-10-24）；脚本命令（2026-11-07，§10「脚本命令」）：`ScriptCommand.swift`（一个脚本 = 一条命令：开头注释的两种写法、参数切分、列表输出解析、输出收拾、给脚本的环境，纯函数）、`ScriptLibrary.swift`（从哪读：默认文件夹 / 另加的 / 包里的自带脚本，主线程外读、看下载标记；设置页用的新建 / 导入 / 复制自带的）、`ScriptIcons.swift`（图片 / https 网址图标：主线程外读、下载一次存进缓存，出错原因；启动器和设置的表共用的 `ScriptIconView`，2026-11-07 第二轮 B1 B2）、`ScriptAIGuide.swift`（给 AI 的脚本写法说明，第二轮 A1）、`ScriptRunner.swift`（怎么跑：按 #! 调解释器、登录 shell 的 PATH、超时和停止、去下载标记）、`ScriptTerminal.swift`（全文输出那一页认终端颜色：SGR → AttributedString，纯函数；2026-11-08 第三轮 A2）、`LauncherCommands.swift`（「命令」表：内置关键词命令 / 系统命令 / 脚本的别名和开关、别名换回原关键词）、`SystemShortcuts.swift`（「快捷指令」：系统的 shortcuts 命令在进程外列出、运行，缓存 60 秒，第四轮体检 X10）、`MenuSearch.swift`（搜前台 App 的菜单项：读到的菜单变成行、按标题和路径配，归 App 快捷键插件；第五轮体检 N3，2026-11-19） |
 | `Launchpad/` | （启动台，第八族，0.6.0，2026-10-18 第 1 批起；拍板和做法在 §10「启动台」，规矩在 `mac-launchpad`）`LaunchpadLayout.swift`（模型和全部纯函数：页 / 格子 / 文件夹、合并本机 App、默认排法、挪格子、建 / 加 / 拖出 / 解散文件夹、按行列数重新分页、存偏好；不变式由 `LaunchpadFuzzTests` 锁住）、`LaunchpadCatalog.swift`（App 目录：复用 `AppCatalog.scan()`，只留 .app、不要访达和系统设置面板；bundle id、分类、App Store 收据；`LaunchpadIcons` 后台画、常驻的图标位图）、`LaunchpadWallpaper.swift`（背景：那块屏的壁纸在后台裁好、模糊，缓存一张）、`LaunchpadModel.swift`（一块屏的状态：当前页、搜索、选中、拖动 / 落点 / 停留合成 / 跨页让位、文件夹页、Esc 取消、抖动、滚轮）、`LaunchpadMetrics.swift`（按屏幕大小和行列数算的网格尺寸，界面和拖动判定共用）、`LaunchpadPager.swift`（翻页的纯状态机）、`LaunchpadDrag.swift`（拖动的时长、正在拖的那一格、滑进落点的那一份，落点 / 第几格的纯函数）、`LaunchpadPanel.swift`（全屏面板 `LaunchpadPanel`，第七个自建窗口例外；深色外观、滚轮 / 两指滑、⌘← / ⌘→ / ⌘W、方向键入口、失去 key 的判断、窗口簿记）、`LaunchpadView.swift`（模糊的壁纸、照 macOS 15 比例的 7 × 5 网格、居中占位的搜索框、页点、各层的层次和文件夹开关的时机、按下 / 选中、VoiceOver）、`LaunchpadFolderView.swift`（打开的文件夹：后面糊掉的那层、从方块长出来 / 缩回去的纸、名字 / 图标 / 页点、改名）、`LaunchpadIconView.swift`（图层抖动的 App 图标、文件夹面板里的图标、文件夹方块）、`Launchpad.swift`（总控：开关、后台 App 目录、布局读写 / 读不出来时保护、打开 App、回收、导入 / 恢复 / 撤销、捏合和触发角的起停、收起后放掉）、`LaunchpadRecycle.swift`（抖动模式删 App 的确认，`NSWorkspace.recycle` 可注入）、`LaunchpadImport.swift`（系统旧库只读拷贝 + `mode=ro` 读 WAL）、`PinchRecognizer.swift`（纯状态机：开始 / 每帧进度 / 松手（进度 + 速度）/ 取消，松手走完还是退回）、`TouchpadWatcher.swift`（96 字节触点、Mutex 桥（每帧的进度也在里面）、唤醒重注册）、`LaunchpadMissionControl.swift`（打开前认调度中心、开着就让它退：只认 macOS 27 的 WindowManager 整屏 19 层窗口）、`LaunchpadZoom.swift`（开 / 收那一个数：窗口透明度 + 上面那层的缩放，跟手时屏幕刷新回调每帧取进度，松手和按键入口走同一条临界阻尼弹簧）、`LaunchpadCorner.swift`（每屏一个状态栏层级的透明 `NSPanel`、重新武装、系统触发角只读） |
 | `DockPreview/` | （程序坞预览，第九族，0.7.0，2026-10-22 第 1 批起；拍板和做法在 §10「程序坞预览」）`WindowServer.swift`（窗口服务器的私有接口：窗口编号、截窗口、在哪个桌面、按编号切过去；运行时取，取不到退回公开做法）、`DockWatcher.swift`、`SwitcherWatcher.swift`（⌘Tab 时读系统切换器的选中，2026-11-06）（听程序坞：图标列表的选中变化 → 停在哪个 App 图标上；辅助功能坐标换算；读属性的小函数）、`DockWindows.swift`（一个 App 的窗口：辅助功能表 + 别的桌面上的，并表的纯函数 `merge` / `resolveIDs`；切过去、关掉）、`WindowShots.swift`（缩略图：当场截、主线程外缩小、最多留 20 张）、`DockPreview.swift`（控制器：什么时候弹、换、收，点了切过去 / 关掉；面板是普通 NSPanel + `PreviewHost`）、`DockPreviewView.swift`（面板内容和 `DockPreviewModel`）、`DockPreviewLayout.swift`（纯函数：缩略图多大、一排放不下就缩再换行、面板摆哪、选哪块屏、鼠标还算不算在附近 `keepsOpen`、离开后的倒计时 `Linger`） |
-| `FinderMenu/` | （访达右键，第十一族，2026-11-08；拍板和做法在 §10「访达右键」）`FinderLink.swift`（扩展交过来的网址：解析和凭证、拷贝的字、交给 App 打开哪些都是纯函数，`perform` 做那一步）、`NewFile.swift`（新建文件：自带五种模板在 `Resources/new-file/`、数据目录「新建文件模板」文件夹、重名让开、自定义后缀的框）、`FinderMenuItem.swift`（每一项的开关和默认值）、`FinderKeys.swift`（访达里的 ⌘X 剪切、⌘V 移动：第四处事件拦截，issue #33）、`FileMoves.swift`（移动到 / 复制到、剪切 / 粘贴、替身、彻底删除；动文件的一条队 `enqueue`、不覆盖的改名 `land`、记账的临时名 `temporary`）、`Archives.swift`（压缩、解压到这里，系统 tar / ditto）、`ZipNames.swift`（读 zip 的中央目录：名字的编码、加没加密）、`NameRepair.swift`（修复乱码文件名，扩展里有一份逐字一样的）、`FileFlags.swift`（显示 / 隐藏 隐藏文件、隐藏所选项、扩展名）、`FileHash.swift`（拷贝哈希） |
+| `FinderMenu/` | （访达右键，第十一族，2026-11-08；拍板和做法在 §10「访达右键」）`FinderLink.swift`（扩展交过来的网址：解析和凭证、拷贝的字、交给 App 打开哪些都是纯函数，`perform` 做那一步）、`NewFile.swift`（新建文件：自带五种模板在 `Resources/new-file/`、数据目录「新建文件模板」文件夹、重名让开、自定义后缀的框）、`FinderMenuItem.swift`（每一项的开关和默认值）、`FinderKeys.swift`（访达里的 ⌘X 剪切、⌘V 移动：第四处事件拦截，issue #33）、`FileMoves.swift`（移动到 / 复制到、剪切 / 粘贴、替身、彻底删除；动文件的一条队 `enqueue`、不覆盖的改名 `land`、记账的临时名 `temporary`）、`Archives.swift`（压缩、解压到这里，系统 tar / ditto / gunzip / compression_tool / aa / unzip / hdiutil）、`CompressOptions.swift`（「其他格式和选项…」的小面板：格式、级别、分别压缩）、`ZipNames.swift`（读 zip 的中央目录：名字的编码、加没加密）、`NameRepair.swift`（修复乱码文件名，扩展里有一份逐字一样的）、`FileFlags.swift`（显示 / 隐藏 隐藏文件、隐藏所选项、扩展名）、`FileHash.swift`（拷贝哈希） |
 | `BluetoothSnooze/` | （睡眠关蓝牙，插件，2026-11-17；做法在 §10「睡眠关蓝牙」）`BluetoothSnooze.swift`（睡前关、醒来只打开自己关掉的、授权；私有接口 `Bluetooth`、盖子和外接屏 `Machine`；什么时候关的纯函数 `shouldTurnOff`）。设置页是 `Settings/BluetoothSnoozeTab.swift` |
 | `SmoothScroll/` | （平滑滚动插件，2026-11-17，issue #14；拍板和做法在 §10「平滑滚动」，规矩在 mac-overlay-panel §11 第三处）`ScrollSmoothing.swift`（纯函数：哪些滚轮归它管、修饰键和反向、滚多远、指数逼近的 `Motion`、去抖 `Bounce`、停用的 App 和游戏、别的改滚轮的工具）、`ScrollTap.swift`（滚动线程：事件拦截、按屏幕刷新出帧、合成事件的记号；`ScrollShared` 是主线程和它之间唯一的共享）、`SmoothScroll.swift`（主线程：跟着插件和授权起停、设置和前台 App 写给滚动线程、醒来和回到前台时重建） |
 
@@ -1946,6 +1946,67 @@ https://claude.ai/artifact/NQLWKFVipMqoqDabJ2ZQTf 当时没回，11-18 拍板页
     仍是我们自己的 `FileMoves.paste`），之后忘掉剪切；拦截线程只看 `FinderKeys.armed`（剪切 / 忘掉时设），主线程按剪贴板再核，
     作废了原样补发 ⌘V。只要辅助功能，不用自动化授权。没验的：访达里的真按键（改名框、搜索框、前往文件夹、显示简介、桌面、分栏
     视图、Quick Look 开着时），HANDTEST「访达 ⌘X / ⌘V 手测」。
+  - **格式扩充**（2026-11-25，用户转来「打包和解压的格式太少，能不能参考 GitHub 开源项目」，拿一张十几种格式的下拉菜单作参考）。
+    拍板页 https://claude.ai/artifact/XR3uDu7zwSdjc5DWfF49QG（源文件、实测全表、对标调研、脚本在 `kitty-tools-windows` 检出的
+    `macos/build/research/archive-formats-2026-11-25/`），14 项用户「全部按推荐」。结论：开源项目的格式表、选项、交互可以参考，
+    程序和代码不进 App（零依赖；7-Zip / unRAR / XADMaster / wimlib / lrzip 的许可；Keka 1.0 起闭源），自己写压缩算法不值得；
+    用系统自带的工具。实测（macOS 27.0.1，别重测）：系统 tar 是 bsdtar 3.5.3 / libarchive 3.7.4（15.0–15.3 是 3.5.3，15.4 起 3.7.4，
+    都没编 zstd / lz4），**写 7z 时 `--passphrase` 退出 0 却不加密**（不能给 7z 做密码），能写 AES-256 的 zip；读不了加了密的 7z、
+    分卷、WIM、Deflate64 的 zip（系统 unzip 能）、tar.zst / lz4；**纯 UDF 的 ISO 系统 tar 退出 0 却少文件**（ISO 走 hdiutil 挂载）；
+    Apple gzip 487 认 gz / bz2 / Z / xz / lz；compression_tool 认 .xz / .lzma；Compression 框架能编解 brotli（2 级）、它的 LZ4 是苹果
+    自己的封装；hdiutil 的 `-puppetstrings` 对 `-srcfolder` 一直给 -1（没进度）；aa 短密码报 Invalid password。27 的「归档实用工具」
+    登记了 7z、tar.xz、aar，没有 RAR、ISO。截图里的 ZSTD、LZ4、LRZIP、SNAPPY、WIM 要第三方，RAR 压缩是专有的，都不做。分三批（`archive-wip`，
+    检出 `kitty-tools-macos-archive`，从 origin/macos de6c3bff）：
+    - 第 1 批（F3 解压扩充）：tar 一族的 .tar.lzma / .tlz、.tar.lz、.tar.Z / .taz，.cpio、.cpgz、.xar 交给 tar；只压了一个文件的
+      .xz、.Z、.lz 交给 gunzip，.lzma 交给 compression_tool（`Archives.tool(for:)` / `singleFileCommand`）；.aar 交给 `aa extract`；
+      Deflate64 的 zip（tar 报「deflation-64-bit」）清掉临时文件夹换 `/usr/bin/unzip` 再解（不加 -q：密码不对时它在标准错误上说
+      「skipping: x  incorrect password」、退出 1，-q 连这句也不说；退出 1 也算没成；密码和 -P 连写、没有也给一个假的；包名的最后一段
+      它当通配符认、会去解同一个文件夹里别的包，所以交给它的是临时目录里一个名字干净的符号链接——这三条是独立评审实测出来的）。
+      cpio、xar 在 tar -v 里列文件夹不带「/」：撞名检查把下面还有条目的也算文件夹（评审）。unzip、aa 和 tar 一样会给解出来的带上包的隔离标记，
+      也都挡得住包里的符号链接往外写、「..」（实测）。只差大小写的另存只认 tar 的清单（unzip 退路、aa 没有，ponytail）。
+      扩展里那份后缀表跟着改。单测 `ArchivesTests.moreSingleFileStreams` / `appleArchive` / `deflate64FallsBackToUnzip`
+      （手搓的 Deflate64 包：方法 9、数据是一个不压缩的 deflate 块）。
+    - 第 2 批（U1 U2 U4 U7、F1 的格式）：「压缩为 ▸」里 ZIP / 7Z / TAR.GZ 照旧一键（级别标准），后面加「其他格式和选项…」
+      （扩展 `compressmore`，激活 App），弹 `FinderMenu/CompressOptions.swift` 的小面板（系统确认框 + 格式下拉、一句说明、压缩级别、
+      「分别压缩每一项」，经 `FinderLink.ask` 弹；上次选的记在 `Prefs.finderCompressFormat` / `finderCompressLevel` /
+      `finderCompressSeparately`，这台电脑自己的界面状态、不注册默认值）。新格式：TAR.BZ2、TAR.XZ、不压缩的 TAR（同 tar.gz 不带扩展属性）、
+      ISO（tar 的 iso9660，卷名 = 包名，tar 只收 32 字节以内、逗号会被当成选项的分隔，`volumeName` 截短去逗号）、DMG（`hdiutil create
+      -fs APFS -srcfolder …`，一个文件夹时它的内容是卷的根、几样各占一层；级别：标准 ULFO、更小 ULMO）。级别
+      `Archives.Level`：更快 1、标准不写（工具默认）、更小 9；几个 tar 选项只能写成一个 `--options`、逗号隔开（实测）；每种格式能选的
+      `Format.levels`：TAR、ISO 没有，TAR.BZ2 没有「更小」（bzip2 默认就是 9），DMG 没有「更快」（zlib 一级不比 lzfse 快、包还大 6%，
+      评审 200 MB 实测），面板里那几项变灰；只压一个 App 走 ditto 时级别给 `--zlibCompressionLevel`。ISO 加 `iso-level=3`（2 级单个文件
+      最多 4 GB，大的 tar 只说「Ignore over … bytes file」就跳过、照样退出 0，评审实测；兜底认这句当失败）；ISO 和 7z 一样先在启动盘
+      暂存一份。分别压缩每一项排成一批（`compressEach`：一个「停止」停下后面所有的，有放不下的位置整批先说、换地方整批重做——一样
+      一批时停不住、只重做得了最后一样，评审）。面板的高度按最长那句小字量（换格式时框不跟着变高，评审）。两段扩展名重名时
+      「 2」加在整个扩展名前面（`freeName`，原来只管 tar.gz）。DMG：hdiutil 会给输出补「.dmg」，临时名做成文件夹、映像写在里面；不用
+      「压缩时跳过」名单、不去 .DS_Store（ponytail）；没有进度（-puppetstrings 对 -srcfolder 一直 -1）。**停止 / 出错时**：hdiutil
+      收到 SIGTERM 约 1.5 秒退出、自己卸掉挂着的临时映像，被 SIGKILL 时 diskimages-helper 也会卸；但卸完之前删了临时文件夹，映像会一直
+      挂着、`hdiutil detach` 报「Bad file descriptor」（实测，要 `diskutil eject` 整块）——所以删之前先 `hdiutil info -plist` 找路径里
+      带着这次临时文件夹名字的映像、`detach -force`（`attachedDevices` / `detachImages`；取名字最短的整块设备，第一个实体有时是
+      分区）；启动时清上次没收尾的临时文件夹前也先卸一遍。27 上 hdiutil 每次都说一句「过时了，用 diskutil image」（15 上没有那个命令），
+      出错原因里滤掉。单测 `formatsAndLevels`、
+      `moreFormatsRoundTrip`、`diskImage`、`compressEachMakesOnePerItem`。
+    - 第 3 批（U3 U5 U6、F3 的 ISO / DMG）：**密码**只给 ZIP（tar 的 `zip:encryption=aes256`，密码照解压那边放在命令行上）和 DMG
+      （`-encryption AES-256 -stdinpass`；`Subprocess.run` 加了 `input`：起来后写进标准输入、写完就关，DMG 的密码不上命令行）；面板里
+      两个密码框，不一样就带着别的选择再问一遍；ZIP 下面说明对方可能要另装解压软件。7Z 不给（系统 tar 收了密码却悄悄不加密）。有密码的
+      只压一个 App 也走 tar（ditto 不会加密）。**压完把原件移到废纸篓**（面板里勾，危险色，不记住）：`packChecked` 先 `verify`（tar
+      解到 /dev/null，DMG 用 `hdiutil verify`），过了才一样一样 `trashItem`，刘海岛「放回原件」；没过、移不了的照实说、原件不动。单测在
+      测试自己建的可写映像上做（移进的是那块卷自己的 .Trashes，不碰用户的废纸篓）。**ISO / DMG / CDR 解压**：不交给 tar，
+      `copyOutOfImage`：`hdiutil attach -readonly -nobrowse -noautoopen -noverify -plist -stdinpass -mountrandom <临时>`，把第一个卷最上层
+      看得见的（不是隐藏的、不是替身——装 App 的映像里指向「应用程序」的替身不要）一样一样 `ditto -V` 拷进临时文件夹、`chmod -R u+w`
+      （ISO 里全是只读的，只读的文件夹落不到包旁边：改名要写它自己的「..」，实测），卸掉（卸不掉再 -force），挂载点只 rmdir。带密码的
+      DMG 没给、给错 hdiutil 都说 Authentication error → 走 zip 那套问密码。拷出来的自动带隔离标记（挂上的卷标着 quarantine）。
+      ponytail：带许可协议的映像挂不上（没样本）。单测 `encryptedZipRoundTrip`、`diskImagesExtract`、
+      `trashOriginalsAfterCheck`、`compressPanelPasswords`。
+      第 3 批独立评审后改了：映像里**除了系统放的杂东西**（.background、.DS_Store、.VolumeIcon.icns、.fseventsd、.Trashes、
+      .Spotlight-V100 这类，`volumeJunk`）**和指到卷外面的绝对替身**，隐藏的、相对的替身都照拷（原来一律跳过隐藏的，会丢 .git、.env）；
+      几个卷各拷进一个用卷名命名的文件夹；什么都没有是失败（空映像）；只认挂在自己临时文件夹下面的挂载点（映像早被用户挂着时
+      27 上说 Resource busy → 「映像正打开着，先推出再解压」，不碰那份）；卸的时候按挂载点里这次的名字在 `hdiutil info` 里找
+      （`detachMounts`：被停时 hdiutil 被杀、挂载在后台才做完、结果读不出来的都找得到），名字带 bundle id，启动时扫一遍上次没卸的
+      （跳过这次正在用的 `activeMounts`）。移原件前另外拦两种：包落在要移走的文件夹里面、原件之间互相包含（`tangled`；列表视图里同时选了
+      文件夹和它里面的东西时 tar 照样退出 0），「压缩时跳过」真跳过了东西；检查中途停了说「停了，原件没动」。两次密码不一样时就在这一个
+      框里拦（「压缩」变灰），不关了再弹——关了前台先还给访达，第二个框不一定拿得到键盘。`Subprocess` 写标准输入前给那一端设
+      `F_SETNOSIGPIPE`（子进程先退出时不 SIGPIPE 把 App 带走）。
 
 ### 截图识别元素（下一版，2026-11-08）
 

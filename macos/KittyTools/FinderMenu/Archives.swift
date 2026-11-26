@@ -1,16 +1,37 @@
-// 访达右键「压缩为 ▸ ZIP、7Z、TAR.GZ」「解压到这里」（2026-11-08 右键扩充第 2 批，拍板 D1 D2；TAR.GZ 2026-11-17）。都交给系统自带的
-// tar（bsdtar；另起进程，不卡主线程、停得住），不带第三方：
+// 访达右键「压缩为 ▸ ZIP、7Z、TAR.GZ、其他格式和选项…」「解压到这里」（2026-11-08 右键扩充第 2 批，拍板 D1 D2；TAR.GZ 2026-11-17；
+// 2026-11-25 格式扩充，拍板页 XR3uDu7zwSdjc5DWfF49QG）。都交给系统自带的 tar（bsdtar；另起进程，不卡主线程、停得住）这类工具，不带第三方：
+// - 「其他格式和选项…」（格式扩充第 2 批，CompressOptions 的小面板）：另有 TAR.BZ2、TAR.XZ、不压缩的 TAR（同 tar.gz 那样不带扩展属性）、
+//   DMG（hdiutil create -srcfolder，APFS；一个文件夹时它的内容就是卷的根、几样时各占一层，卷名 = 包名，实测）、ISO（tar 的
+//   iso9660，带 Joliet 和 Rock Ridge，Mac 挂得上、中文名对，实测）；压缩级别三档（Level：更快 1、标准 = 工具默认、更小 9），
+//   分别压缩每一项（一样一个包，排进同一条队）。DMG 不用「压缩时跳过」的名单、也不去掉 .DS_Store（hdiutil 整个拷；
+//   ponytail：要跳得先克隆一份到临时文件夹再做映像，有人要再加），hdiutil 不报进度（-puppetstrings 对 -srcfolder 一直是 -1，
+//   实测），刘海岛上只有「准备中」。
+// - 密码（格式扩充第 3 批，拍板 U3）：只有 ZIP（tar 的 zip:encryption=aes256，AES-256；密码照解压那边放在 tar 的命令行上）和 DMG
+//   （hdiutil -encryption AES-256 -stdinpass，密码走标准输入）。7Z 不给：系统 tar 收了密码、退出 0，打出来的包却没加密（实测）。
+//   有密码的只压一个 App 也走 tar（ditto 不会加密）。
+// - 压完把原件移到废纸篓（拍板 U5 U6，面板里勾，不记住）：先检查包能完整解开（packChecked / verify：tar 解到 /dev/null，DMG 用
+//   hdiutil verify；坏包两样都退出 1，实测），过了才一样一样移，刘海岛上带「放回原件」；没过、移不了的照实说、原件不动。
+//   ponytail：「压缩时跳过」名单里的东西不在包里，原件移进废纸篓时它们也跟着进去了（还在废纸篓里、能放回）。
 // - 压缩：一样东西叫「名字.zip」，几样叫「归档.zip」（同访达；跟当时的界面语言，英文界面「Archive.zip」），放在第一样所在的
 //   文件夹、重名加「 2」。zip 里的名字标上 UTF-8（zip:hdrcharset=UTF-8；访达和 ditto 打的不标，别的系统解开中文名会乱码，
 //   2026-11-08 实测），不带 __MACOSX、._*、.DS_Store（--no-mac-metadata 加排除）；7z 用 LZMA2。只选了一个包（App 这类）时 zip 改用 ditto（同访达的压缩：带着扩展属性，
-//   签名不坏）。不同文件夹里的同名东西包里只放得下一个，不打。不做带密码的压缩（拍板）。
+//   签名不坏）。不同文件夹里的同名东西包里只放得下一个，不打。一键压缩不带密码（密码在「其他格式和选项…」里，见下）。
 //   tar.gz（2026-11-17）：gzip 是 tar 自带的 zlib，不靠外面的程序；名字按 pax 存成 UTF-8。另加 --no-xattrs --no-acls --no-fflags：
 //   --no-mac-metadata 只管 ._ 那份，扩展属性（每个文件都有的 com.apple.provenance、下载来的隔离标记）、上锁 / 隐藏标志照样写进
 //   pax 头（LIBARCHIVE.xattr.*、SCHILY.fflags，实测），Linux 的 GNU tar 解的时候每个文件报一句「Ignoring unknown extended header
 //   keyword」。别的几种不加：.tar.xz 慢（38 MB 22 s，gz 1.7 s，只小两成）、.tar.zst 系统 tar 没带 zstd、要外面的程序（实测报错），
 //   .tar.bz2 / 不压缩的 .tar 用的人少，菜单不加长。
 // - 解压：zip、7z、rar、tar 一族（.tar、.tar.gz / .tgz、.tar.xz / .txz、.tar.bz2 / .tbz），和只压了一个文件的 .gz / .bz2
-//   （系统的 gunzip / bunzip2，解出来的叫包名去掉 .gz，带上包的隔离标记）。RAR（2026-11-12）：系统 tar 是 libarchive 3.7.4，
+//   （系统的 gunzip / bunzip2，解出来的叫包名去掉 .gz，带上包的隔离标记）。2026-11-25 拍板 F3（格式扩充第 1 批）又加了：
+//   tar 一族的 .tar.lzma / .tlz、.tar.lz、.tar.Z / .taz，cpio、ditto 的 .cpgz、xar（都交给系统 tar，它自己认压缩方法）；
+//   只压了一个文件的 .xz、.Z、.lz（系统的 gunzip：Apple gzip 487 认 xz、lzip、compress，man gzip 写明、实测）、.lzma
+//   （compression_tool，gunzip 不认）；Apple Archive 的 .aar（aa extract：它不顺着包里的符号链接往外写、不认「..」，实测）；
+//   Deflate64 的 zip（据报道 Windows 自带压缩打大文件时会用）系统 tar 说不支持，换系统的 unzip 再解一遍（它解得开，实测；
+//   也挡得住符号链接、去掉「../」；不认 GBK 名字，这种包的中文名会乱，用「修复乱码文件名」改）。unzip、aa 和 tar 一样会给
+//   解出来的东西带上包的隔离标记（实测），不另外做。.zst、.lz4、.wim、加了密的 7z、分卷不认：系统没有能解的工具。
+//   ISO、DMG、CDR（格式扩充第 3 批）：不交给 tar（它读纯 UDF 的 ISO 退出 0 却少文件，实测），走 hdiutil 只读挂上、把第一个卷
+//   最上层看得见的东西拷出来、卸掉（copyOutOfImage）；带密码的 DMG 同 zip 那样问（没给、给错 hdiutil 都说 Authentication error）。
+//   RAR（2026-11-12）：系统 tar 是 libarchive 3.7.4，
 //   RAR4、RAR5 都解得开（本机样本实测，字节数和清单一致）；带密码的解不开（libarchive 不解 RAR 的密码：头加了密的 tar 说
 //   「encryption」，只是数据加了密的它不认、当成坏数据报错，所以 RAR 解不开时的原因写「坏了，或者有密码」）；分卷的不解
 //   （RAR5 读到第一卷末尾当成包结束了，没被切开的那几样解出来、tar 照样退出 0，像是解完了）：先读主头的「分卷」标志，标着就不交给 tar。
@@ -50,16 +71,65 @@
 //   在 Mac 之间原样传用访达自带的「压缩」）。叫「._*」「__MACOSX」的普通文件也会被当成杂文件跳过。
 // ponytail: 解压后在主线程上拆一遍 tar -v 的输出找撞名（caseClashes）：几千条无感，二十万条的包估计要停顿一秒左右（没量过）；
 //   碰到再挪出主线程（mac-native §3 的 @concurrent 白名单里没有这一类，要先拍板）。
-// ponytail: 7z 是先把整份压缩数据暂存在启动盘的临时目录里再写到目标（bsdtar 的做法），空间不够说的是启动盘。
+// ponytail: 7z、ISO 是先把整份数据暂存在启动盘的临时目录里再写到目标（bsdtar 的做法，ISO 评审实测），空间不够说的是启动盘。
 // ponytail: zip 的密码放在 tar 的命令行上（--passphrase，本机同一个用户的进程用 ps 看得到）：tar 只认它和终端输入。
 
 import AppKit
 
 @MainActor enum Archives {
-  nonisolated enum Format: String {
+  /// 打成什么（rawValue 是扩展名，也记在「其他格式和选项…」的偏好里，不能改）
+  nonisolated enum Format: String, CaseIterable {
     case zip
     case sevenZip = "7z"
     case tarGz = "tar.gz"
+    case tarBz2 = "tar.bz2"
+    case tarXz = "tar.xz"
+    case tar
+    case dmg
+    case iso
+
+    /// 菜单、面板里的叫法（格式名，不翻）
+    var title: String { rawValue.uppercased() }
+
+    /// 这种格式能选的级别：TAR、ISO 不压缩，没有；bzip2 默认就是 9，「更小」和「标准」一样，不给；DMG 的「更快」（zlib 一级）
+    /// 不比「标准」（lzfse）快、包还大 6%（时间都花在拷贝上，评审 200 MB 实测），不给
+    var levels: [Level] {
+      switch self {
+      case .tar, .iso: []
+      case .tarBz2: [.fast, .normal]
+      case .dmg: [.normal, .small]
+      default: Level.allCases
+      }
+    }
+
+    var hasLevels: Bool { !levels.isEmpty }
+
+    /// 能设密码的：ZIP（AES-256）、DMG（AES-256）。7Z 系统做不了（见文件头）
+    var allowsPassword: Bool { self == .zip || self == .dmg }
+  }
+
+  /// 压缩级别（「其他格式和选项…」里选；子菜单的一键压缩是标准）。rawValue 记在偏好里，不能改
+  nonisolated enum Level: String, CaseIterable {
+    case fast, normal, small
+
+    var title: String {
+      switch self {
+      case .fast: String(localized: "更快")
+      case .normal: String(localized: "标准")
+      case .small: String(localized: "更小")
+      }
+    }
+
+    /// 交给 tar 的级别：标准 = 工具自己的默认（zip 6、7z 6、gzip 6、bzip2 9、xz 6），不写。
+    /// 36 MB 的样本（源码 + 一个 App）实测：7z 一级 1.8 s / 48%、默认 8.4 s / 44%、九级 9.9 s / 36%；xz 一级 3.3 s / 48%、
+    /// 九级 9.8 s / 37%（字典大，压大东西时要几百 MB 内存）；zip、gzip 一级快一半、九级只小 1–5%
+    var number: Int? {
+      switch self {
+      case .fast: 1
+      case .normal: nil
+      case .small: 9
+      }
+    }
   }
 
   /// 压缩还是解压（刘海岛上说哪一个）
@@ -83,7 +153,8 @@ import AppKit
   /// 「解压到这里」认的（扩展里抄了一份，FinderLinkTests 比对）
   nonisolated static let suffixes = [
     ".zip", ".7z", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz", ".tbz2", ".gz",
-    ".bz2", ".rar",
+    ".bz2", ".rar", ".tar.lzma", ".tlz", ".tar.lz", ".tar.z", ".taz", ".cpio", ".cpgz", ".xar",
+    ".xz", ".z", ".lz", ".lzma", ".aar", ".iso", ".dmg", ".cdr",
   ]
 
   /// RAR 的主头标着「分卷」吗（head：包开头的几十个字节）。RAR4：7 字节的签名后是主头（类型 0x73），标志第 0 位；
@@ -113,14 +184,73 @@ import AppKit
     return (number() ?? 0) & 0x01 != 0
   }
 
-  /// 只压了一个文件的 .gz / .bz2（不是 tar 包）交给系统的 gunzip / bunzip2（tar 不认这种，实测）；别的是 nil。
-  /// 单文件的 .xz 不认（系统的 gunzip 据说也解得了，但本机造不出样本来验）
-  nonisolated static func decompressor(for archive: URL) -> String? {
+  /// 交给哪个系统工具解
+  nonisolated enum Tool: Equatable {
+    /// tar（zip、7z、rar、tar 一族、cpio、xar）
+    case tar
+    /// 只压了一个文件的流（不是 tar 包，tar 不认这种，实测）：gunzip / bunzip2 这类，「工具 -c 包 > 输出」
+    case stream(String)
+    /// 只压了一个文件的 .lzma：compression_tool（gunzip 不认）
+    case lzma
+    /// Apple Archive：aa extract
+    case appleArchive
+    /// ISO、DMG：hdiutil 挂上、拷出来（copyOutOfImage）
+    case diskImage
+  }
+
+  nonisolated static func tool(for archive: URL) -> Tool {
     switch suffix(of: archive) {
-    case ".gz": "/usr/bin/gunzip"
-    case ".bz2": "/usr/bin/bunzip2"
-    default: nil
+    case ".bz2": .stream("/usr/bin/bunzip2")
+    // Apple gzip 487 除了 gzip 还认 xz、lzip、compress（man gzip，实测）
+    case ".gz", ".xz", ".z", ".lz": .stream("/usr/bin/gunzip")
+    case ".lzma": .lzma
+    case ".aar": .appleArchive
+    case ".iso", ".dmg", ".cdr": .diskImage
+    default: .tar
     }
+  }
+
+  /// 解单个文件的流：tool 是 .stream / .lzma 时给工具和参数（解到 output 这个文件）；别的是 nil。
+  /// 流的写法交给 sh、参数按位置传：名字里有什么都不会被当成命令
+  nonisolated static func singleFileCommand(_ archive: URL, to output: URL) -> (String, [String])? {
+    let input = archive.path(percentEncoded: false)
+    let target = output.path(percentEncoded: false)
+    switch tool(for: archive) {
+    case .stream(let tool):
+      return ("/bin/sh", ["-c", "exec \"$0\" -c -- \"$1\" > \"$2\"", tool, input, target])
+    case .lzma:
+      return ("/usr/bin/compression_tool", ["-decode", "-a", "lzma", "-i", input, "-o", target])
+    case .tar, .appleArchive, .diskImage: return nil
+    }
+  }
+
+  /// 解 Apple Archive 的参数：杂文件同 tar 那边不要（「._」开头的 aa 只能按正则排，它自己打包也不生成这种，不排）
+  nonisolated static func appleArchiveArguments(_ archive: URL, into folder: URL) -> [String] {
+    [
+      "extract", "-i", archive.path(percentEncoded: false), "-d",
+      folder.path(percentEncoded: false),
+      "-exclude-name", "__MACOSX", "-exclude-name", ".DS_Store",
+    ]
+  }
+
+  /// tar 说这个 zip 的压缩方法是 Deflate64、不支持（「Unsupported ZIP compression method (9: deflation-64-bit)」）
+  nonisolated static func needsUnzip(_ errors: String) -> Bool {
+    errors.contains("deflation-64-bit")
+  }
+
+  /// 系统 unzip 解进 folder 的参数（Deflate64 的退路）：-o 不问覆盖（解进的是空的临时文件夹）、杂文件同 tar 那边不要
+  /// （unzip 的 * 跨「/」）。不加 -q：密码不对时它在标准错误上说「skipping: x  incorrect password」，-q 连这句也不说（实测）。
+  /// 密码照 tar 那边放在命令行上、没有也给一个（不给的话它说「unable to get password」，认不出是要密码，评审实测），
+  /// 和 -P 连写（分开写时以「-」开头的密码被当成选项，评审实测）。archive：包的路径——unzip 把最后一段当通配符（* ? [ ]
+  /// 会去匹配同一个文件夹里别的包，评审实测），调用方交一个名字干净的符号链接过来
+  nonisolated static func unzipArguments(_ archive: URL, into folder: URL, password: String?)
+    -> [String]
+  {
+    [
+      "-o", "-P" + (password ?? "kitty-no-password"), archive.path(percentEncoded: false), "-x",
+      "__MACOSX/*", "*/__MACOSX/*", "*.DS_Store", "._*", "*/._*", "-d",
+      folder.path(percentEncoded: false),
+    ]
   }
 
   /// 认得的扩展名里最长的那个（.tar.gz 不当成 .gz）；光有扩展名、前面没名字的不算
@@ -152,15 +282,27 @@ import AppKit
     return base + "." + format.rawValue
   }
 
-  /// 包落在 folder 里叫什么：重名加「 2」。tar.gz 的「 2」加在整个扩展名前面（「资料 2.tar.gz」）：FileMoves.freeName 只认最后一段
-  /// 扩展名（同访达拷贝时），会让成「资料.tar 2.gz」，再「解压到这里」就被当成只压了一个文件的 .gz
+  /// 包落在 folder 里叫什么：重名加「 2」。tar.gz、tar.xz 这类两段的扩展名，「 2」加在整个扩展名前面（「资料 2.tar.gz」）：
+  /// FileMoves.freeName 只认最后一段扩展名（同访达拷贝时），会让成「资料.tar 2.gz」，再「解压到这里」就被当成只压了一个文件的 .gz
   nonisolated static func freeName(_ name: String, format: Format, in folder: URL) -> String {
-    guard format == .tarGz, name.hasSuffix(".tar.gz") else {
+    let parts = format.rawValue.split(separator: ".")
+    guard parts.count == 2, name.hasSuffix("." + format.rawValue) else {
       return FileMoves.freeName(name, in: folder, used: [])
     }
-    return NewFile.freeName(String(name.dropLast(3))) {
-      FileMoves.occupied(folder.appending(path: $0 + ".gz"))
-    } + ".gz"
+    let last = "." + parts[1]
+    return NewFile.freeName(String(name.dropLast(last.count))) {
+      FileMoves.occupied(folder.appending(path: $0 + last))
+    } + last
+  }
+
+  /// 映像的卷名：包名去掉扩展名。ISO 的卷名 tar 只收 32 个字节以内（多了报错、逗号会被当成选项的分隔，实测），截短、去掉逗号；
+  /// 截完是空的叫「ISO」
+  nonisolated static func volumeName(of archiveName: String, format: Format) -> String {
+    var name = String(archiveName.dropLast(format.rawValue.count + 1))
+    guard format == .iso else { return name }
+    name = name.replacing(",", with: "").trimmingCharacters(in: .whitespaces)
+    while name.utf8.count > 32 { name.removeLast() }
+    return name.isEmpty ? "ISO" : name
   }
 
   /// 同名的（不分大小写、统一合成形式：解到 Mac 上会撞）第一个：包里只放得下一个
@@ -261,17 +403,49 @@ import AppKit
 
   /// 压缩用 tar 的参数：按所在的文件夹分组，每组先「-C 文件夹」，再跟「./名字」（./ 开头的名字不会被当成选项，-s 再把它去掉；
   /// S：符号链接指向哪里不改）
-  /// excludes：要跳的确切路径写成的文件（tar -X，见 skipped）
+  /// excludes：要跳的确切路径写成的文件（tar -X，见 skipped）；volume：ISO 的卷名（volumeName）。DMG 不走 tar（imageArguments）
   nonisolated static func compressArguments(
-    _ items: [URL], format: Format, to archive: URL, excludes: URL? = nil
+    _ items: [URL], format: Format, to archive: URL, excludes: URL? = nil, level: Level = .normal,
+    volume: String = "ISO", password: String? = nil
   ) -> [String] {
     var arguments = ["-c", "-v", "-f", archive.path(percentEncoded: false)]
-    switch format {
-    case .zip: arguments += ["--format", "zip", "--options", "zip:hdrcharset=UTF-8"]
-    case .sevenZip: arguments += ["--format", "7zip", "--options", "7zip:compression=lzma2"]
-    // 格式用 tar 默认的（用得着才写 pax 头的 ustar）；扩展属性、ACL、文件标志不带（见文件头）
-    case .tarGz: arguments += ["-z", "--no-xattrs", "--no-acls", "--no-fflags"]
+    let level = format.levels.contains(level) ? level : .normal
+    // tar 一族：格式用 tar 默认的（用得着才写 pax 头的 ustar）；扩展属性、ACL、文件标志不带（见文件头）
+    let bare = ["--no-xattrs", "--no-acls", "--no-fflags"]
+    var options: [String] = []
+    let levelOption = { (name: String) in
+      level.number.map { ["\(name):compression-level=\($0)"] } ?? []
     }
+    switch format {
+    case .zip:
+      arguments += ["--format", "zip"]
+      options = ["zip:hdrcharset=UTF-8"] + levelOption("zip")
+      if let password {
+        options.append("zip:encryption=aes256")
+        arguments += ["--passphrase", password]
+      }
+    case .sevenZip:
+      arguments += ["--format", "7zip"]
+      options = ["7zip:compression=lzma2"] + levelOption("7zip")
+    case .tarGz:
+      arguments += ["-z"] + bare
+      options = levelOption("gzip")
+    case .tarBz2:
+      arguments += ["-j"] + bare
+      options = levelOption("bzip2")
+    case .tarXz:
+      arguments += ["-J"] + bare
+      options = levelOption("xz")
+    case .tar: arguments += bare
+    // 带 Joliet 和 Rock Ridge（tar 的默认）：中文名、长名字、权限都在，Mac 和 Windows 都挂得上（实测 Mac）。iso-level 3：
+    // 默认的 2 级单个文件最多 4 GB，大的 tar 只说一句「Ignore over … bytes file」就跳过、照样退出 0（评审实测）
+    case .iso:
+      arguments += ["--format", "iso9660"]
+      options = ["iso9660:volume-id=" + volume, "iso9660:iso-level=3"]
+    case .dmg: break
+    }
+    // 几个选项只能写成一个 --options、逗号隔开（实测）
+    if !options.isEmpty { arguments += ["--options", options.joined(separator: ",")] }
     arguments += ["--no-mac-metadata", "-s", "|^\\./||S"]
     arguments += junk.flatMap { ["--exclude", $0] }
     if let excludes { arguments += ["-X", excludes.path(percentEncoded: false)] }
@@ -314,9 +488,18 @@ import AppKit
   nonisolated static func caseClashes(_ entries: [String]) -> [String] {
     var occupant: [String: (name: String, folder: Bool)] = [:]
     var lost: [String] = []
+    // cpio、xar 列文件夹不带结尾的「/」（评审实测）：下面还有条目的也算文件夹（按写法比，分大小写）
+    var parents = Set<String>()
     for entry in entries {
-      let folder = entry.hasSuffix("/")
-      let name = folder ? String(entry.dropLast()) : entry
+      var path = entry.hasSuffix("/") ? String(entry.dropLast()) : entry
+      while let slash = path.lastIndex(of: "/") {
+        path = String(path[..<slash])
+        parents.insert(path)
+      }
+    }
+    for entry in entries {
+      let name = entry.hasSuffix("/") ? String(entry.dropLast()) : entry
+      let folder = entry.hasSuffix("/") || parents.contains(name)
       let key = name.precomposedStringWithCanonicalMapping.lowercased()
       if let current = occupant[key], current.name != name, !current.folder,
         !lost.contains(current.name)
@@ -389,8 +572,8 @@ import AppKit
   nonisolated static func packFailure(_ errors: String, format: Format) -> String {
     let problem = placeProblem(errors)
     if problem == .noSpace {
-      return format == .sevenZip
-        ? String(localized: "磁盘空间不够了（7z 还要先在启动盘上暂存一份）") : PlaceProblem.noSpace.text
+      return format == .sevenZip || format == .iso
+        ? String(localized: "磁盘空间不够了（7z、ISO 还要先在启动盘上暂存一份）") : PlaceProblem.noSpace.text
     }
     if let item = unreadable(errors) {
       if item.missing { return String(localized: "「\(item.name)」不见了（压缩时被移走或改了名）") }
@@ -445,7 +628,16 @@ import AppKit
     -> Outcome
   {
     if let problem = placeProblem(error) { return .failed(problem.text) }
-    if error.contains("Incorrect passphrase") { return password ? .wrongPassword : .needsPassword }
+    // tar 说「Incorrect passphrase」，Deflate64 退路的 unzip 说「skipping: 名字  incorrect password」（只认行尾：名字里带这几个字的不算）
+    if error.localizedCaseInsensitiveContains("Incorrect passphrase")
+      || error.split(whereSeparator: \.isNewline).contains(where: {
+        $0.trimmingCharacters(in: .whitespaces).hasSuffix("incorrect password")
+      })
+    {
+      return password ? .wrongPassword : .needsPassword
+    }
+    // 带密码的映像：没给、给错了 hdiutil 都说「attach failed - Authentication error」（实测）
+    if error.contains("Authentication error") { return password ? .wrongPassword : .needsPassword }
     if password,
       ["bad CRC", "decompression failed"].contains(where: error.localizedCaseInsensitiveContains)
     {
@@ -454,13 +646,21 @@ import AppKit
     let incomplete = String(localized: "压缩包不完整，可能没下载完")
     let unknown = String(localized: "不是压缩包，或者是不支持的格式")
     let damaged = [
-      ("ncrypt", String(localized: "这个包加了密码，这里只解得开 zip 的密码")),
+      ("ncrypt", String(localized: "这个包加了密码，这里只解得开 zip 和 dmg 的密码")),
+      // 加了密的 Apple Archive（aa 说「Failed to create decryption stream」）
+      ("decryption", String(localized: "这个包加了密码，这里只解得开 zip 和 dmg 的密码")),
       ("runcated", incomplete),
       ("nexpected end", incomplete),
       ("ends unexpectedly", incomplete),
       ("Unrecognized archive format", unknown),
       ("not in gzip format", unknown),
       ("is not a bzip2 file", unknown),
+      ("image not recognized", unknown),
+      // 映像已经被挂着（双击打开过）：27 上 attach 说 Resource busy / temporarily unavailable（评审实测）
+      ("Resource busy", String(localized: "映像正打开着，先推出再解压")),
+      ("temporarily unavailable", String(localized: "映像正打开着，先推出再解压")),
+      ("empty image", String(localized: "映像里是空的")),
+      ("no mountable file systems", String(localized: "映像里没有能挂上的卷")),
     ]
     return .failed(
       damaged.first { error.localizedCaseInsensitiveContains($0.0) }?.1
@@ -471,19 +671,75 @@ import AppKit
 
   // MARK: 压缩
 
+  /// DMG 用 hdiutil 的参数：级别对应 ULFO（lzfse）/ ULMO（lzma）；APFS（15 起都认）。27 上它在标准错误里说一句「hdiutil create
+  /// 过时了，用 diskutil image create」（15 上没有 diskutil image，ByteMeter.errors 滤掉这句）：以后系统真去掉了再换。
+  /// 每一样一个 -srcfolder（文件也行，实测）
+  nonisolated static func imageArguments(
+    _ items: [URL], to image: URL, volume: String, level: Level, encrypted: Bool = false
+  ) -> [String] {
+    let format: [String] =
+      switch level {
+      // 「更快」DMG 不给（Format.levels），万一传进来照标准
+      case .fast, .normal: ["-format", "ULFO"]
+      case .small: ["-format", "ULMO"]
+      }
+    return ["create", "-fs", "APFS", "-volname", volume] + format
+      + (encrypted ? ["-encryption", "AES-256", "-stdinpass"] : [])
+      + items.flatMap { ["-srcfolder", FileMoves.plainPath($0)] }
+      + ["-o", image.path(percentEncoded: false)]
+  }
+
+  /// `hdiutil info -plist` 里映像文件的路径带着 marker（临时文件夹的「/.kitty-<UUID>/」，独一份）的那几个映像：每个给整块的那个设备
+  /// （卸它就整个卸掉；实体的顺序不定，第一个有时是分区，取名字最短的那个，实测）
+  nonisolated static func attachedDevices(_ info: Data, containing marker: String) -> [String] {
+    guard
+      let plist = try? PropertyListSerialization.propertyList(from: info, format: nil)
+        as? [String: Any],
+      let images = plist["images"] as? [[String: Any]]
+    else { return [] }
+    return images.compactMap { image in
+      guard (image["image-path"] as? String)?.contains(marker) == true,
+        let entities = image["system-entities"] as? [[String: Any]]
+      else { return nil }
+      return entities.compactMap { $0["dev-entry"] as? String }.min { $0.count < $1.count }
+    }
+  }
+
+  /// 做 DMG 没做完（停了、出错）：hdiutil 自己会卸掉它挂着的临时映像（SIGTERM 后约 1.5 秒退出，被 SIGKILL 时 diskimages-helper
+  /// 也会卸，实测），但卸完之前把临时文件夹删了，映像会一直挂着、卸不掉（实测）。删之前看一遍，还挂着的强制卸掉
+  static func detachImages(containing marker: String) async {
+    guard
+      let info = try? await Subprocess.run("/usr/bin/hdiutil", ["info", "-plist"], captures: true)
+    else { return }
+    for device in attachedDevices(Data(info.output.utf8), containing: marker) {
+      _ = try? await Subprocess.run("/usr/bin/hdiutil", ["detach", "-force", device])
+    }
+  }
+
   /// 打一个包：先写到 archive 旁边的隐藏临时名，打完落到 archive（重名换「 2」）
-  /// skip：另外跳过的名字（skipNames 收拾过的）；只压一个包走 ditto 时不用
+  /// skip：另外跳过的名字（skipNames 收拾过的）；只压一个包走 ditto、做 DMG 时不用
   static func pack(
-    _ items: [URL], format: Format, to archive: URL, skip: [String] = [],
-    report: @escaping FileMoves.Report = { _, _ in }
+    _ items: [URL], format: Format, to archive: URL, skip: [String] = [], level: Level = .normal,
+    password: String? = nil, report: @escaping FileMoves.Report = { _, _ in }
   ) async -> Outcome {
     let temporary = FileMoves.temporary(in: archive.deletingLastPathComponent())
+    // DMG：hdiutil 会给输出补上「.dmg」，临时名的账只认「.kitty-<UUID>」，所以临时名是个文件夹、映像写在它里面
+    let image = format == .dmg
+    let output = image ? temporary.appending(path: archive.lastPathComponent) : temporary
+    if image,
+      (try? FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: false))
+        == nil
+    {
+      FileMoves.release(temporary)
+      return .failed(PlaceProblem.noPermission.text)
+    }
+    // 有密码的不走 ditto（它不会加密）
     let package =
-      format == .zip && items.count == 1
+      format == .zip && items.count == 1 && password == nil
       && (try? items[0].resourceValues(forKeys: [.isPackageKey]))?.isPackage == true
     // 进度（ByteMeter）：一共多大先数好；tar -v 每开始一个文件报「a 名字」，名字按它所在的文件夹拼回去看多大；
     // ditto -V 每打完一个报「N bytes for 名字」
-    let excluded = package ? [] : await skipped(items, names: skip)
+    let excluded = package || image ? [] : await skipped(items, names: skip)
     let excludes =
       excluded.isEmpty
       ? nil
@@ -509,19 +765,33 @@ import AppKit
       let value = meter.value(current: ByteMeter.reading(pid: pid))
       report(meter.fraction(value), meter.detail(value))
     }
-    let result =
-      package
-      ? try? await Subprocess.run(
-        "/usr/bin/ditto",
-        [
-          "-c", "-k", "-V", "--sequesterRsrc", "--keepParent", items[0].path(percentEncoded: false),
-          temporary.path(percentEncoded: false),
-        ], captures: true, quality: .userInitiated, stopsOnCancel: true, watch: watch)
-      : try? await Subprocess.run(
-        "/usr/bin/tar", compressArguments(items, format: format, to: temporary, excludes: excludes),
-        captures: true,
-        environment: ByteMeter.utf8Environment, quality: .userInitiated, stopsOnCancel: true,
-        watch: watch)
+    let volume = volumeName(of: archive.lastPathComponent, format: format)
+    let result: Subprocess.Result? =
+      if package {
+        try? await Subprocess.run(
+          "/usr/bin/ditto",
+          [
+            "-c", "-k", "-V", "--sequesterRsrc", "--keepParent",
+          ] + (level.number.map { ["--zlibCompressionLevel", "\($0)"] } ?? []) + [
+            items[0].path(percentEncoded: false), temporary.path(percentEncoded: false),
+          ], captures: true, quality: .userInitiated, stopsOnCancel: true, watch: watch)
+      } else if image {
+        try? await Subprocess.run(
+          "/usr/bin/hdiutil",
+          imageArguments(
+            items, to: output, volume: volume, level: level, encrypted: password != nil),
+          captures: true, quality: .userInitiated, stopsOnCancel: true, watch: watch,
+          input: password.map { Data($0.utf8) })
+      } else {
+        try? await Subprocess.run(
+          "/usr/bin/tar",
+          compressArguments(
+            items, format: format, to: temporary, excludes: excludes, level: level, volume: volume,
+            password: password),
+          captures: true,
+          environment: ByteMeter.utf8Environment, quality: .userInitiated, stopsOnCancel: true,
+          watch: watch)
+      }
     let failure: Outcome
     if Task.isCancelled {
       failure = .stopped
@@ -529,23 +799,227 @@ import AppKit
       failure = .failed(packFailure(ByteMeter.errors(result.error), format: format))
     } else if result == nil {
       failure = .failed(String(localized: "系统的工具没能运行"))
-    } else if let placed = FileMoves.land(temporary, at: archive) {
-      FileMoves.release(temporary)
+    } else if result?.error.contains("Ignore over") == true {
+      // tar 跳过了放不下的大文件却照样退出 0（iso-level 3 之后不该再有，兜底）
+      failure = .failed(String(localized: "有文件太大，这种格式放不下"))
+    } else if let placed = FileMoves.land(output, at: archive) {
+      if image { await FileMoves.discard(temporary) } else { FileMoves.release(temporary) }
       return .done(placed)
     } else {
       failure = .failed(String(localized: "没能放到旁边"))
     }
+    if image { await detachImages(containing: "/" + temporary.lastPathComponent + "/") }
     await FileMoves.discard(temporary)
     return failure
   }
 
-  /// into：放到哪个文件夹（nil = 第一样所在的文件夹；放不下时刘海岛上换的地方）
-  static func compress(_ files: [URL], format: Format, island: Island?, into: URL? = nil) {
+  /// 打好包、要的话把原件移到废纸篓之后的结果：trashed 是（废纸篓里的位置，原来的位置），kept 是原件没（全）动的原因
+  struct Packed {
+    var outcome: Outcome
+    var trashed: [(URL, URL)] = []
+    var kept: String?
+  }
+
+  /// 检查包能完整解开：解到 /dev/null（zip 的 CRC、7z 的解压出错都认得出来，坏包退出 1，实测）；DMG 用 hdiutil verify
+  static func verify(_ archive: URL, format: Format, password: String?) async -> Bool {
+    let path = archive.path(percentEncoded: false)
+    let result =
+      format == .dmg
+      ? try? await Subprocess.run(
+        "/usr/bin/hdiutil",
+        ["verify", "-quiet"] + (password == nil ? [] : ["-stdinpass"]) + [path],
+        quality: .userInitiated, stopsOnCancel: true, input: password.map { Data($0.utf8) })
+      : try? await Subprocess.run(
+        "/usr/bin/tar", ["-x", "-O", "-f", path] + (password.map { ["--passphrase", $0] } ?? []),
+        quality: .userInitiated, stopsOnCancel: true)
+    return result?.status == 0 && !Task.isCancelled
+  }
+
+  /// 打一个包；trash：打好、检查过了再把原件一样一样移到废纸篓（拍板 U5 U6）
+  static func packChecked(
+    _ items: [URL], format: Format, to archive: URL, skip: [String], level: Level,
+    password: String?, trash: Bool, report: @escaping FileMoves.Report
+  ) async -> Packed {
+    let outcome = await pack(
+      items, format: format, to: archive, skip: skip, level: level, password: password,
+      report: report)
+    guard trash, case .done(let url, _, _) = outcome else { return Packed(outcome: outcome) }
+    let stopped = String(localized: "停了，原件没动")
+    if Task.isCancelled { return Packed(outcome: outcome, kept: stopped) }
+    // 包落在了要移走的原件里面、原件之间一个在另一个里面（列表视图里同时选了文件夹和它里面的东西）：移原件会把包一起带走（评审实测）
+    if tangled(items, archive: url) {
+      return Packed(outcome: outcome, kept: String(localized: "压缩包在要移走的文件夹里面，原件没动"))
+    }
+    // 「压缩时跳过」名单里的东西不在包里：原件一起进废纸篓，清空后就没了
+    if !skip.isEmpty, !(await skipped(items, names: skip)).isEmpty {
+      return Packed(outcome: outcome, kept: String(localized: "有按「压缩时跳过」没放进包里的，原件没动"))
+    }
+    report(nil, String(localized: "正在检查压缩包"))
+    guard await verify(url, format: format, password: password) else {
+      return Packed(
+        outcome: outcome,
+        kept: Task.isCancelled ? stopped : String(localized: "压缩包没通过检查，原件没动"))
+    }
+    var trashed: [(URL, URL)] = []
+    for item in items {
+      var landed: NSURL?
+      if (try? FileManager.default.trashItem(at: item, resultingItemURL: &landed)) != nil,
+        let landed
+      {
+        trashed.append((landed as URL, item))
+      }
+    }
+    let left = items.count - trashed.count
+    return Packed(
+      outcome: outcome, trashed: trashed,
+      kept: left > 0 ? String(localized: "有 \(left) 样没能移到废纸篓") : nil)
+  }
+
+  /// 包落在了某一样原件里面，或者原件之间一个在另一个里面
+  nonisolated static func tangled(_ items: [URL], archive: URL) -> Bool {
+    let paths = items.map { FileMoves.plainPath($0) }
+    let target = FileMoves.plainPath(archive)
+    return paths.contains { target.hasPrefix($0 + "/") }
+      || paths.contains { outer in paths.contains { $0 != outer && $0.hasPrefix(outer + "/") } }
+  }
+
+  /// 「放回原件」：从废纸篓挪回原处（不覆盖：原处又有了同名的就加「 2」，同「放回压缩包」）
+  private static func putBackOriginals(_ moved: [(URL, URL)], island: Island?) -> Island.Action {
+    Island.Action("放回原件") {
+      let back = moved.filter { trash, original in
+        FileMoves.occupied(trash) && FileMoves.land(trash, at: original) != nil
+      }.count
+      if back == moved.count {
+        island?.show("已放回原件", detail: "\(back) 样", tone: .info)
+      } else {
+        island?.show(
+          "没能全部放回", detail: "放回了 \(back) 样；别的不在废纸篓里了，或者原来的文件夹写不了", tone: .warning)
+      }
+    }
+  }
+
+  /// 「其他格式和选项…」：先问（CompressOptions），再照选的压
+  static func compressWithOptions(_ files: [URL], island: Island?) {
+    guard let choice = CompressOptions.ask(for: files) else { return }
+    if choice.separately, files.count > 1 {
+      compressEach(
+        files, format: choice.format, level: choice.level, password: choice.password,
+        trash: choice.trashOriginals, island: island)
+    } else {
+      compress(
+        files, format: choice.format, level: choice.level, password: choice.password,
+        trash: choice.trashOriginals, island: island)
+    }
+  }
+
+  /// 选中的、还在的（同一样只算一次）
+  private static func present(_ files: [URL]) -> [URL] {
     var items: [URL] = []
     for file in files where FileMoves.occupied(file) {
       let path = FileMoves.plainPath(file)
       if !items.contains(where: { FileMoves.plainPath($0) == path }) { items.append(file) }
     }
+    return items
+  }
+
+  /// 所在的文件夹
+  private static func parent(of item: URL) -> URL {
+    URL(
+      filePath: (FileMoves.plainPath(item) as NSString).deletingLastPathComponent,
+      directoryHint: .isDirectory)
+  }
+
+  /// 分别压缩每一项（「其他格式和选项…」里勾了）：一样一个包、放在它旁边（into：都放到这个文件夹），排成一批——一个「停止」
+  /// 停下后面所有的；有放不下的位置就整批先说一声，换了地方整批重做（评审：一样一批时停不住、只重做得了最后一样）
+  static func compressEach(
+    _ files: [URL], format: Format, level: Level, password: String? = nil, trash: Bool = false,
+    island: Island?, into: URL? = nil
+  ) {
+    let items = present(files)
+    guard !items.isEmpty else {
+      island?.show("没有压缩", detail: "选中的东西不在了", tone: .warning)
+      return
+    }
+    let folders = items.map { into ?? parent(of: $0) }
+    if let blocked = folders.first(where: { unwritable($0) != nil }),
+      let reason = unwritable(blocked)
+    {
+      island?.show(
+        "没有压缩", detail: "\(reason)", tone: .warning,
+        actions: elsewhere(than: blocked, verb: .compress) { place in
+          compressEach(
+            items, format: format, level: level, password: password, trash: trash, island: island,
+            into: place)
+        })
+      return
+    }
+    let skip = skipNames(UserDefaults.standard.string(forKey: Prefs.finderCompressSkip) ?? "")
+    FileMoves.enqueue(
+      "正在分别压缩 \(items.count) 项…", detail: ByteMeter.preparing, island: island
+    ) { report in
+      var packs: [Packed] = []
+      for (index, item) in items.enumerated() where !Task.isCancelled {
+        let folder = folders[index]
+        let name = archiveName(for: [item], format: format)
+        packs.append(
+          await packChecked(
+            [item], format: format,
+            to: folder.appending(path: freeName(name, format: format, in: folder)),
+            skip: skip, level: level, password: password, trash: trash
+          ) { fraction, detail in
+            report(fraction, "\(index + 1)/\(items.count) · \(detail)")
+          })
+      }
+      return packs
+    } finish: { packs in
+      reportEach(packs, total: items.count, island: island)
+    }
+  }
+
+  /// 分别压缩完说一声：都好了、停了（做好了几个）、有没成的（第一个的原因）、原件移到了废纸篓（能放回）
+  private static func reportEach(_ packs: [Packed], total: Int, island: Island?) {
+    let outcomes = packs.map(\.outcome)
+    let made = outcomes.compactMap { outcome -> URL? in
+      if case .done(let url, _, _) = outcome { url } else { nil }
+    }
+    let reveal = Island.Action("在访达中显示", opens: true) {
+      NSWorkspace.shared.activateFileViewerSelecting(made)
+    }
+    let originals = packs.flatMap(\.trashed)
+    let kept = packs.compactMap(\.kept).first
+    let actions =
+      (made.isEmpty ? [] : [reveal])
+      + (originals.isEmpty ? [] : [putBackOriginals(originals, island: island)])
+    let reason = outcomes.lazy.compactMap { outcome -> String? in
+      if case .failed(let reason) = outcome { reason } else { nil }
+    }.first
+    if outcomes.contains(.stopped) || outcomes.count < total {
+      // 可选参数里的三目只抽得到第一个分支：先放进不是可选的 let
+      let detail: LocalizedStringResource =
+        originals.isEmpty ? "做好了 \(made.count) 个" : "做好了 \(made.count) 个 · 做好的那几样原件移到了废纸篓"
+      island?.show("已停止压缩", detail: detail, tone: .info, actions: actions)
+    } else if let reason {
+      let detail: LocalizedStringResource =
+        originals.isEmpty
+        ? "\(made.count) 个做好了，\(total - made.count) 个没成：\(reason)"
+        : "\(made.count) 个做好了（原件移到了废纸篓），\(total - made.count) 个没成：\(reason)"
+      island?.show("没能全部压缩", detail: detail, tone: .warning, actions: actions)
+    } else if let kept {
+      island?.show(
+        "已分别压缩", detail: "\(made.count) 个压缩包 · \(kept)", tone: .warning, actions: actions)
+    } else if !originals.isEmpty {
+      island?.show("已分别压缩", detail: "\(made.count) 个压缩包 · 原件移到了废纸篓", actions: actions)
+    } else {
+      island?.show("已分别压缩", detail: "\(made.count) 个压缩包", actions: actions)
+    }
+  }
+
+  /// into：放到哪个文件夹（nil = 第一样所在的文件夹；放不下时刘海岛上换的地方）
+  static func compress(
+    _ files: [URL], format: Format, level: Level = .normal, password: String? = nil,
+    trash: Bool = false, island: Island?, into: URL? = nil
+  ) {
+    let items = present(files)
     guard let first = items.first else {
       island?.show("没有压缩", detail: "选中的东西不在了", tone: .warning)
       return
@@ -565,7 +1039,9 @@ import AppKit
       island?.show(
         "没有压缩", detail: "\(reason)", tone: .warning,
         actions: elsewhere(than: folder, verb: .compress) { place in
-          compress(chosen, format: format, island: island, into: place)
+          compress(
+            chosen, format: format, level: level, password: password, trash: trash,
+            island: island, into: place)
         })
       return
     }
@@ -573,12 +1049,14 @@ import AppKit
     let skip = skipNames(UserDefaults.standard.string(forKey: Prefs.finderCompressSkip) ?? "")
     FileMoves.enqueue("正在压缩成「\(name)」…", detail: ByteMeter.preparing, island: island) {
       report in
-      await pack(
+      await packChecked(
         items, format: format,
         to: folder.appending(path: freeName(name, format: format, in: folder)), skip: skip,
-        report: report)
-    } finish: { outcome in
-      report(outcome, verb: .compress, island: island)
+        level: level, password: password, trash: trash, report: report)
+    } finish: { packed in
+      report(
+        packed.outcome, verb: .compress, island: island, originals: packed.trashed,
+        kept: packed.kept)
     }
   }
 
@@ -599,21 +1077,18 @@ import AppKit
       report(meter.fraction(value), meter.detail(value))
     }
     let parent = into ?? archive.deletingLastPathComponent()
-    let work = FileMoves.temporary(in: parent)
+    var work = FileMoves.temporary(in: parent)
     guard (try? manager.createDirectory(at: work, withIntermediateDirectories: false)) != nil else {
       FileMoves.release(work)
       return .failed(String(localized: "没有权限写这个位置"))
     }
     var result: Subprocess.Result?
     let output = work.appending(path: stem(of: archive))
-    if let tool = decompressor(for: archive) {
-      // 解到临时文件夹里一个和包同名（去掉 .gz）的文件；参数按位置传给 sh，名字里有什么都不会被当成命令
+    let kind = tool(for: archive)
+    if let (tool, arguments) = singleFileCommand(archive, to: output) {
+      // 解到临时文件夹里一个和包同名（去掉 .gz）的文件
       result = try? await Subprocess.run(
-        "/bin/sh",
-        [
-          "-c", "exec \"$0\" -c -- \"$1\" > \"$2\"", tool, archive.path(percentEncoded: false),
-          output.path(percentEncoded: false),
-        ], captures: true, quality: .userInitiated, stopsOnCancel: true, watch: watch)
+        tool, arguments, captures: true, quality: .userInitiated, stopsOnCancel: true, watch: watch)
       // 包末尾有补零 / 垃圾时 gunzip 解完整了、只说一句「trailing garbage ignored」、退出码 2（评审实测）：算成了
       if var finished = result, finished.status == 2,
         case let lines = finished.error.split(whereSeparator: \.isNewline), !lines.isEmpty,
@@ -622,7 +1097,7 @@ import AppKit
         finished.status = 0
         result = finished
       }
-      // gunzip 不管「从网上下载」的隔离标记（tar 会）：照包上的给解出来的那个也带上
+      // gunzip、compression_tool 不管「从网上下载」的隔离标记（tar、unzip、aa 会）：照包上的给解出来的那个也带上
       if result?.status == 0,
         let quarantine = try? archive.resourceValues(forKeys: [.quarantinePropertiesKey])
           .quarantineProperties
@@ -632,20 +1107,52 @@ import AppKit
         values.quarantineProperties = quarantine
         try? file.setResourceValues(values)
       }
+    } else if kind == .appleArchive {
+      result = try? await Subprocess.run(
+        "/usr/bin/aa", appleArchiveArguments(archive, into: work), captures: true,
+        quality: .userInitiated, stopsOnCancel: true, watch: watch)
+    } else if kind == .diskImage {
+      result = await copyOutOfImage(archive, into: work, password: password, report: report)
     } else {
       result = try? await Subprocess.run(
         "/usr/bin/tar", extractArguments(archive, into: work, gbk: gbk, password: password),
         captures: true, environment: ByteMeter.utf8Environment, quality: .userInitiated,
         stopsOnCancel: true, watch: watch)
+      // Deflate64 的 zip：tar 解了一部分就停了，清空临时文件夹换系统的 unzip 整个再解（见文件头）
+      if let failed = result, failed.status != 0, !Task.isCancelled,
+        needsUnzip(extractErrors(failed.error))
+      {
+        await FileMoves.discard(work)
+        work = FileMoves.temporary(in: parent)
+        // 交给 unzip 的是临时文件夹里一个名字干净的符号链接（见 unzipArguments）；进度另起一份（tar 那一遍已经把进度推上去了）
+        let link = FileManager.default.temporaryDirectory.appending(
+          path: "kitty-unzip-\(UUID().uuidString).zip")
+        let again = ByteMeter(total: meter.total)
+        if (try? manager.createDirectory(at: work, withIntermediateDirectories: false)) == nil {
+          result = Subprocess.Result(status: 1, error: "Permission denied")
+        } else if (try? manager.createSymbolicLink(at: link, withDestinationURL: archive)) == nil {
+          result = nil
+        } else {
+          // 退出 1 也算没成：密码不对时它跳过那几个文件、退出 1，跳过「../」这类也是 1（实测）——和 tar 一样不收
+          result = try? await Subprocess.run(
+            "/usr/bin/unzip", unzipArguments(link, into: work, password: password),
+            captures: true, quality: .userInitiated, stopsOnCancel: true,
+            watch: { pid, _ in
+              let value = again.archiveValue(ByteMeter.reading(pid: pid, named: name))
+              report(again.fraction(value), again.detail(value))
+            })
+          try? manager.removeItem(at: link)
+        }
+      }
     }
     var renamed: [String] = []
     var unsaved = 0
     let caseSensitive =
       (try? work.resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey]))?
       .volumeSupportsCaseSensitiveNames == true
-    if let result, result.status == 0, !Task.isCancelled, decompressor(for: archive) == nil,
-      !caseSensitive
-    {
+    // 只差大小写的只认 tar 报出来的清单。ponytail：unzip 退路、aa 不报清单，碰上了盘上只留下一个、照样算解完（开着「解压后
+    // 移到废纸篓」时包也会被移走，废纸篓里还在）；真碰上再让它们也列清单
+    if let result, result.status == 0, !Task.isCancelled, kind == .tar, !caseSensitive {
       let lost = caseClashes(extractedEntries(result.error))
       if !lost.isEmpty {
         (renamed, unsaved) = await recover(
@@ -669,6 +1176,182 @@ import AppKit
     }
     await FileMoves.discard(work)
     return failure
+  }
+
+  // MARK: 映像（ISO、DMG）
+
+  /// hdiutil 挂、卸映像时说的话里不算原因的：27 上每次都说一句「过时了，用 diskutil image attach」（15 上还没有那个命令）
+  nonisolated static func imageErrors(_ stderr: String) -> String {
+    stderr.split(whereSeparator: \.isNewline).filter { !$0.contains("deprecated") }
+      .joined(separator: "\n")
+  }
+
+  /// `hdiutil attach -plist` / `hdiutil info -plist` 里挂载点带着 marker（这次挂载用的临时文件夹名，独一份）的映像：每个给整块的
+  /// 设备（卸它整个卸掉；实体的顺序不定，取名字最短的那个，实测第一个有时是分区）和挂在了哪几处。只认挂在自己临时文件夹下面的：
+  /// 映像早已被用户挂着时，别处那份不拷、更不卸（评审）
+  nonisolated static func mounted(_ plist: Data, under marker: String) -> [(
+    device: String, points: [String]
+  )] {
+    guard
+      let info = try? PropertyListSerialization.propertyList(from: plist, format: nil)
+        as? [String: Any]
+    else { return [] }
+    // attach 给的是一个映像的 system-entities，info 给的是 images 里每个映像各一份
+    let groups =
+      (info["images"] as? [[String: Any]])?.compactMap { $0["system-entities"] as? [[String: Any]] }
+      ?? [(info["system-entities"] as? [[String: Any]]) ?? []]
+    return groups.compactMap { entities in
+      let points = entities.compactMap { $0["mount-point"] as? String }.filter {
+        $0.contains(marker)
+      }
+      guard !points.isEmpty,
+        let device = entities.compactMap({ $0["dev-entry"] as? String }).min(by: {
+          $0.count < $1.count
+        })
+      else { return nil }
+      return (device, points)
+    }
+  }
+
+  /// 这次运行里正在用的挂载（临时文件夹名）：启动时扫上次的残留，别把正在拷的卸了
+  static var activeMounts = Set<String>()
+
+  /// 卸掉挂在 marker 这个临时文件夹下面的映像（卸不掉——访达、聚焦正好在读——再强制）；activeMounts 里的跳过
+  static func detachMounts(under marker: String) async {
+    guard
+      let info = try? await Subprocess.run("/usr/bin/hdiutil", ["info", "-plist"], captures: true)
+    else { return }
+    for image in mounted(Data(info.output.utf8), under: marker)
+    where !image.points.contains(where: { point in activeMounts.contains { point.contains($0) } }) {
+      let detached = try? await Subprocess.run(
+        "/usr/bin/hdiutil", ["detach", "-quiet", image.device])
+      if detached?.status != 0 {
+        _ = try? await Subprocess.run(
+          "/usr/bin/hdiutil", ["detach", "-quiet", "-force", image.device])
+      }
+    }
+  }
+
+  /// 挂载用的临时文件夹名的开头（带 bundle id：Dev 版、正式版同时开着时各认各的；启动时按它扫一遍上次没卸掉的）
+  nonisolated static var mountPrefix: String {
+    "kitty-mount-\(Bundle.main.bundleIdentifier ?? "kitty")-"
+  }
+
+  /// 系统在卷的根上放的杂东西（不拷）：装 App 的映像的背景图和卷图标，聚焦、访达、文件系统自己的记录
+  nonisolated static let volumeJunk: Set<String> = [
+    ".background", ".DS_Store", ".VolumeIcon.icns", ".fseventsd", ".Trashes", ".Spotlight-V100",
+    ".TemporaryItems", ".apdisk", ".HFS+ Private Directory Data\r", ".journal",
+    ".journal_info_block", ".DocumentRevisions-V100", ".disk_label", ".disk_label_2x",
+  ]
+
+  /// 卷最上层要拷出来的：除了系统放的杂东西（volumeJunk）和指到卷外面的替身（装 App 的映像里指向 /Applications 的那个，写的是
+  /// 绝对路径），别的都拷——隐藏的、相对的替身都是用户的东西（评审：一律跳过隐藏的会丢 .git、.env）
+  nonisolated static func itemsToCopy(in volume: URL) -> [URL] {
+    let manager = FileManager.default
+    let names = (try? manager.contentsOfDirectory(atPath: volume.path(percentEncoded: false))) ?? []
+    return names.sorted().filter { name in
+      guard !volumeJunk.contains(name) else { return false }
+      let target = try? manager.destinationOfSymbolicLink(
+        atPath: volume.appending(path: name).path(percentEncoded: false))
+      return target?.hasPrefix("/") != true
+    }.map { volume.appending(path: $0) }
+  }
+
+  /// ISO、DMG：只读挂上（不进访达侧边栏、不开窗口、不先校验），把挂上的卷最上层要拷的（itemsToCopy）一样一样拷进 work
+  /// （几个卷时各拷进一个用卷名命名的文件夹），拷出来的给自己加上写权限（ISO 里全是只读的），最后卸掉。密码走标准输入
+  /// （-stdinpass：没加密的映像不管它，实测）。拷出来的自动带着包的隔离标记（挂上的卷标着 quarantine，ditto 拷出来就带上，实测）。
+  /// 卸的时候按挂载点里这次的名字在系统挂着的映像里找（detachMounts）：被停时 hdiutil 被杀了、挂载由系统在后台做完的、hdiutil 给的
+  /// 结果读不出来的也找得到（评审）；那一刻还没挂好的，下次启动时扫掉（FileMoves.cleanLeftovers）。给回像 tar 那样的结果。
+  /// ponytail: 分大小写的映像里只差大小写的两个名字拷到 Mac 的盘上会合成一个（同访达拷）；带许可协议的映像要在终端里答 Y，
+  /// 这里挂不上（没样本），双击打开它就行
+  static func copyOutOfImage(
+    _ image: URL, into work: URL, password: String?, report: @escaping FileMoves.Report
+  ) async -> Subprocess.Result? {
+    let manager = FileManager.default
+    let marker = mountPrefix + UUID().uuidString
+    let mounts = manager.temporaryDirectory.appending(path: marker)
+    guard (try? manager.createDirectory(at: mounts, withIntermediateDirectories: false)) != nil
+    else { return nil }
+    activeMounts.insert(marker)
+    var result: Subprocess.Result?
+    if var attached = try? await Subprocess.run(
+      "/usr/bin/hdiutil",
+      [
+        "attach", "-readonly", "-nobrowse", "-noautoopen", "-noverify", "-plist", "-stdinpass",
+        "-mountrandom", mounts.path(percentEncoded: false), image.path(percentEncoded: false),
+      ], captures: true, quality: .userInitiated, stopsOnCancel: true,
+      input: Data((password ?? "").utf8))
+    {
+      attached.error = imageErrors(attached.error)
+      let volumes = mounted(Data(attached.output.utf8), under: marker).flatMap(\.points)
+      if attached.status != 0 {
+        result = attached
+      } else if volumes.isEmpty {
+        result = Subprocess.Result(status: 1, error: "no mountable file systems")
+      } else {
+        result = await copyVolumes(volumes, into: work, report: report)
+      }
+    }
+    activeMounts.remove(marker)
+    await detachMounts(under: marker)
+    // 只删空文件夹（rmdir）：万一还挂着，绝不递归删到卷里去。卸掉时 hdiutil 自己删它建的那个随机名的子文件夹（实测）
+    rmdir(mounts.path(percentEncoded: false))
+    return result
+  }
+
+  /// 把挂上的卷拷进 work：一个卷时它最上层的东西直接进 work，几个卷时各进一个用卷名命名的文件夹。一样都没有是失败（空映像）
+  private static func copyVolumes(
+    _ volumes: [String], into work: URL, report: @escaping FileMoves.Report
+  ) async -> Subprocess.Result? {
+    let manager = FileManager.default
+    var plan: [(item: URL, into: URL)] = []
+    for point in volumes {
+      let volume = URL(filePath: point, directoryHint: .isDirectory)
+      var target = work
+      if volumes.count > 1 {
+        let name =
+          (try? volume.resourceValues(forKeys: [.volumeNameKey]))?.volumeName
+          ?? volume.lastPathComponent
+        target = work.appending(path: FileMoves.freeName(name, in: work, used: []))
+        try? manager.createDirectory(at: target, withIntermediateDirectories: false)
+      }
+      plan += itemsToCopy(in: volume).map { ($0, target) }
+    }
+    guard !plan.isEmpty else { return Subprocess.Result(status: 1, error: "empty image") }
+    let sizes = await ByteMeter.sizes(of: plan.map(\.item))
+    let meter = ByteMeter(total: sizes.reduce(0, +))
+    var result: Subprocess.Result?
+    for (index, step) in plan.enumerated() where !Task.isCancelled {
+      let item = step.item
+      let copy = step.into.appending(path: item.lastPathComponent)
+      // 最上层的替身：ditto 会顺着它拷成普通文件（实测），同 FileMoves 的拷贝那样拷替身本身
+      if (try? item.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true {
+        let copied = (try? manager.copyItem(at: item, to: copy)) != nil
+        result = Subprocess.Result(
+          status: copied ? 0 : 1, error: copied ? "" : "ditto: copy failed")
+        guard copied else { break }
+        continue
+      }
+      let folder = (try? item.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+      // -V：每拷完一个文件报「N bytes for 名字」，进度条用（同 FileMoves 的拷贝）
+      result = try? await Subprocess.run(
+        "/usr/bin/ditto",
+        ["-V", "--noacl", item.path(percentEncoded: false), copy.path(percentEncoded: false)],
+        captures: true, quality: .userInitiated, stopsOnCancel: true,
+        watch: { pid, lines in
+          meter.feed(lines) { name in
+            ByteMeter.fileSize(item.path(percentEncoded: false) + (folder ? "/" + name : ""))
+          }
+          let value = meter.value(current: ByteMeter.reading(pid: pid))
+          report(meter.fraction(value), meter.detail(value))
+        })
+      guard result?.status == 0 else { break }
+      // ISO 里的东西全是只读的（r-x，光盘的权限），原样拷出来改不了、删不掉，只读的文件夹也挪不进别的文件夹（落到包旁边时
+      // 改名要写它自己的「..」，实测落不下）：给自己加上写权限（chmod -R 不顺着替身走）
+      _ = try? await Subprocess.run("/bin/chmod", ["-R", "u+w", copy.path(percentEncoded: false)])
+      meter.finishItem(sizes[index])
+    }
+    return result
   }
 
   /// 被顶掉的那几个（caseClashes）：每一轮（rounds）一次把它们都解到旁边的临时文件夹（tar 按写法认、分大小写，只解这几个；
@@ -902,7 +1585,7 @@ import AppKit
     }
   }
 
-  /// 问 zip 的密码；取消、空着、已经开着一个框是 nil
+  /// 问 zip、dmg 的密码；取消、空着、已经开着一个框是 nil
   private static func askPassword(for archive: URL, wrong: Bool) -> String? {
     let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 22))
     let alert = NSAlert()
@@ -925,15 +1608,28 @@ import AppKit
 
   /// trashed：解压后压缩包移进了废纸篓（废纸篓里的位置，原来的位置）；trashFailed：设置里开着、却没能移进去
   /// （只读的盘、没有废纸篓的盘）
+  /// originals：压缩完移进废纸篓的原件（废纸篓里的位置，原来的位置）；kept：原件没（全）移的原因
   private static func report(
     _ outcome: Outcome, verb: Verb, island: Island?, trashed: (URL, URL)? = nil,
-    trashFailed: Bool = false
+    trashFailed: Bool = false, originals: [(URL, URL)] = [], kept: String? = nil
   ) {
     let compress = verb == .compress
     switch outcome {
     case .done(let url, let renamed, let unsaved):
       let reveal = Island.Action("在访达中显示", opens: true) {
         NSWorkspace.shared.activateFileViewerSelecting([url])
+      }
+      if compress, !originals.isEmpty || kept != nil {
+        let actions =
+          [reveal] + (originals.isEmpty ? [] : [putBackOriginals(originals, island: island)])
+        if let kept {
+          island?.show(
+            "已压缩", detail: "\(url.lastPathComponent) · \(kept)", tone: .warning, actions: actions)
+        } else {
+          island?.show(
+            "已压缩", detail: "\(url.lastPathComponent) · 原件移到了废纸篓", actions: actions)
+        }
+        return
       }
       // 从废纸篓挪回原处（不覆盖：原处又有了同名的就加「 2」）
       let putBack = trashed.map { trash, original in

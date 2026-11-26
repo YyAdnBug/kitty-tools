@@ -61,6 +61,16 @@
         }
       }
     },
+    "其他格式和选项…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other Formats and Options…"
+          }
+        }
+      }
+    },
     "切换隐藏文件" : {
       "localizations" : {
         "en" : {
