@@ -329,6 +329,29 @@ internal sealed class NoteStore : IDisposable
 
     public void Delete(string id) => Commit(Book.Delete(id, Now));
 
+    /// <summary>
+    /// 整批改（PLAN-v26 N3，同 mac updateAll）：每条照 change 改，一次落盘、一次通知；返回改了几条。
+    /// </summary>
+    public int Batch(IEnumerable<string> ids, Func<NoteBook, string, long, bool> change)
+    {
+        var now = Now;
+        var count = ids.ToList().Count(id => change(Book, id, now));
+        Commit(count > 0);
+        return count;
+    }
+
+    /// <summary>整批永久删除（N3）：一次落盘。</summary>
+    public void Erase(IReadOnlyCollection<string> ids)
+    {
+        if (ids.Count == 0)
+        {
+            return;
+        }
+
+        Book.Erase(ids);
+        Commit(true);
+    }
+
     public void Restore(string id) => Commit(Book.Restore(id, Now));
 
     public void Erase(string id)

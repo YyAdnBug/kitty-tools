@@ -6,6 +6,8 @@
 // - 最近删除里只读（令牌换成「[图片]」），工具栏是「放回」「永久删除…」「清空最近删除…」。
 // - 右键菜单：颜色 ›、固定、归档、浮在屏幕上、删除（最近删除里是放回、永久删除）。删除 / 归档后提示里能撤销。
 // - 按键：Ctrl+N 新建、Ctrl+F 搜索（焦点在正文里时是便签内查找）、Delete（列表拿着焦点时）删除、Esc 收回编辑卡。
+// - 多选（PLAN-v26 N3，同 mac X6）：列表用系统多选（Ctrl / Shift 点），墙上 Ctrl / Shift 点卡片，Ctrl+A 全选；勾了两条以上时工具栏换成
+//   整批的：删除、归档 / 取消归档、固定、换色（最近删除里是放回、永久删除…），一次 Ctrl+Z / 提示上的「撤销」整批放回。只算还看得见的。
 // 落盘：打字走仓库（停手再落）；换一条、收回编辑卡、窗口失去激活、关窗口时 Flush。
 // 便签墙的键盘（PLAN-v20 N3，mac NotesWallView）：墙拿着焦点时方向键在卡片之间挑（Core NoteWall.Neighbor：同一列上下、左右去最近的一列），
 // 挑中的那张描一圈强调色、滚进视野；Enter / 空格放大成编辑卡，Esc 收回后焦点回到墙上、还是那张。
@@ -54,7 +56,16 @@ internal sealed class NotesWindow : Window
     private bool _wallMode;
 
     // 这次打开以来删进「最近删除」的（Ctrl+Z 一条条放回，同 mac）。
-    private readonly List<string> _deleted = new();
+    /// <summary>刚删的（Ctrl+Z 放回）：一次删的一批算一项（N3 整批删的一次放回）。</summary>
+    private readonly List<IReadOnlyList<string>> _deleted = new();
+
+    /// <summary>多选勾上的（N3）：两条以上才算在多选。</summary>
+    private readonly HashSet<string> _marked = new(StringComparer.Ordinal);
+
+    private bool Marking => _marked.Count > 1;
+
+    /// <summary>勾上的、而且还看得见的（别处删了、搜索筛掉的不算），按现在的顺序。</summary>
+    private List<string> MarkedIds => Notes.Select(note => note.Id).Where(_marked.Contains).ToList();
     private bool _populating;
 
     private NotesWindow()
@@ -104,20 +115,46 @@ internal sealed class NotesWindow : Window
         _list.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         _rows = new ListView
         {
-            SelectionMode = ListViewSelectionMode.Single,
+            SelectionMode = ListViewSelectionMode.Extended,
             Padding = new Thickness(8, 0, 8, 8),
         };
         _rows.SelectionChanged += (_, _) =>
         {
-            if (!_populating && _rows.SelectedItem is FrameworkElement { Tag: string id })
+            if (_populating)
             {
-                Select(id);
+                return;
+            }
+
+            // 系统多选（N3）：两条以上换成整批的工具栏，一条照旧打开它
+            var ids = _rows.SelectedItems.OfType<FrameworkElement>().Select(item => item.Tag).OfType<string>().ToList();
+            var was = Marking;
+            _marked.Clear();
+            if (ids.Count > 1)
+            {
+                _marked.UnionWith(ids);
+                BuildActions();
+                return;
+            }
+
+            if (ids.Count == 1)
+            {
+                Select(ids[0]);
+            }
+
+            if (was)
+            {
+                BuildActions();
             }
         };
         _rows.DragItemsCompleted += OnRowsReordered;
         _rows.KeyDown += (_, e) =>
         {
-            if (e.Key == VirtualKey.Delete && _selection is { } id)
+            if (e.Key == VirtualKey.Delete && Marking)
+            {
+                DeleteMarked();
+                e.Handled = true;
+            }
+            else if (e.Key == VirtualKey.Delete && _selection is { } id)
             {
                 RemoveSelected(id);
                 e.Handled = true;
@@ -339,6 +376,12 @@ internal sealed class NotesWindow : Window
     private void BuildActions()
     {
         _actions.Children.Clear();
+        if (Marking && MarkedIds is { Count: > 1 } marked)
+        {
+            BuildBatchActions(marked);
+            return;
+        }
+
         var note = SelectedNote;
         if (_scope == NotesScope.Trash)
         {
@@ -718,6 +761,21 @@ internal sealed class NotesWindow : Window
 
     internal void ProbeToggleLayout() => ToggleLayout();
 
+    /// <summary>自检（N3）：勾上这几条（墙上），工具栏换成整批的；null 清掉。</summary>
+    internal void ProbeMark(IReadOnlyList<string>? ids)
+    {
+        if (ids is null)
+        {
+            ClearMarks();
+            return;
+        }
+
+        _marked.Clear();
+        _marked.UnionWith(ids);
+        MarkWallFocus(bringIntoView: false);
+        BuildActions();
+    }
+
     internal void ProbeExpand(string id) => ExpandCard(id);
 
     internal void ProbeCollapse() => CollapseCard();
@@ -760,6 +818,196 @@ internal sealed class NotesWindow : Window
         }
     }
 
+    // ---- 多选（N3）----
+
+    /// <summary>勾了两条以上时的工具栏：「已选 N 条」+ 整批的几样 + 取消。</summary>
+    private void BuildBatchActions(List<string> ids)
+    {
+        _actions.Children.Add(new TextBlock
+        {
+            Text = $"已选 {ids.Count} 条",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(4, 0, 8, 0),
+            Foreground = Theme.SecondaryText(),
+        });
+        if (_scope == NotesScope.Trash)
+        {
+            AddAction(Glyphs.Undo, $"放回这 {ids.Count} 条", () => RunBatch(ids, (book, id, now) => book.Restore(id, now), $"已放回 {ids.Count} 条"), true);
+            AddAction(Glyphs.Delete, $"永久删除这 {ids.Count} 条…", () => _ = EraseMarkedAsync(ids), true);
+        }
+        else
+        {
+            var notes = ids.Select(id => NoteStore.Instance?.Book.Find(id)).OfType<Note>().ToList();
+            if (_scope == NotesScope.All)
+            {
+                var allPinned = notes.All(note => note.IsPinned);
+                AddAction(allPinned ? Glyphs.Unpin : Glyphs.Pin, allPinned ? "取消固定" : "固定",
+                    () => RunBatch(ids, (book, id, now) => book.SetPinned(id, !allPinned, now), null), true);
+            }
+
+            var archiving = _scope != NotesScope.Archive;
+            AddAction("", archiving ? $"归档这 {ids.Count} 条" : $"取消归档这 {ids.Count} 条",
+                () => RunBatch(ids, (book, id, now) => book.SetArchived(id, archiving, now), archiving ? $"已归档 {ids.Count} 条" : $"已取消归档 {ids.Count} 条",
+                    () => NoteStore.Instance?.Batch(ids, (book, id, now) => book.SetArchived(id, !archiving, now, toFront: false))), true);
+            Button? palette = null;
+            palette = AddAction(Glyphs.Palette, "换颜色", () =>
+            {
+                var menu = new MenuFlyout { Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.Bottom };
+                var dark = Theme.EffectiveTheme == ElementTheme.Dark;
+                foreach (var choice in NotePaper.ColorChoices(notes.Count > 0 ? notes[0].Color : 0, NotePaper.RecentColors(SettingsService.Current.NotesRecentColors), other: false))
+                {
+                    if (choice.Color is not { } color)
+                    {
+                        continue;
+                    }
+
+                    var item = new MenuFlyoutItem
+                    {
+                        Text = choice.Title,
+                        Icon = new PathIcon
+                        {
+                            Data = new EllipseGeometry { Center = new Windows.Foundation.Point(8, 8), RadiusX = 6, RadiusY = 6 },
+                            Foreground = new SolidColorBrush(NoteSheetView.Rgb(NotePaper.Of(color).Tone(dark).Paper)),
+                        },
+                    };
+                    item.Click += (_, _) => RunBatch(ids, (book, id, now) => book.SetColor(id, color, now), null);
+                    menu.Items.Add(item);
+                }
+
+                menu.ShowAt(palette!);
+            }, true);
+            AddAction(Glyphs.Delete, $"删除这 {ids.Count} 条（Delete）", DeleteMarked, true);
+        }
+
+        AddAction(Glyphs.Close, "取消选择（Esc）", ClearMarks, true);
+    }
+
+    /// <summary>对勾上的那几条整批做一件事：一次落盘；做完清掉勾选，要的话底部说一句（带「撤销」）。</summary>
+    private void RunBatch(IReadOnlyList<string> ids, Func<NoteBook, string, long, bool> change, string? said, Action? undo = null)
+    {
+        if (NoteStore.Instance is not { } store)
+        {
+            return;
+        }
+
+        var count = store.Batch(ids, change);
+        ClearMarks();
+        Log.Info($"notes.batch count={count}");
+        if (said is not null && count > 0)
+        {
+            if (undo is not null)
+            {
+                NoticeHost.Show(said, string.Empty, NoticeTone.Normal, new NoticeAction("撤销", undo));
+            }
+            else
+            {
+                NoticeHost.Show(said, string.Empty, NoticeTone.Normal);
+            }
+        }
+    }
+
+    /// <summary>整批删除（进最近删除）：一次 Ctrl+Z / 提示上的「撤销」整批放回。</summary>
+    private void DeleteMarked()
+    {
+        var ids = MarkedIds;
+        if (ids.Count == 0 || NoteStore.Instance is not { } store)
+        {
+            return;
+        }
+
+        CollapseCard();
+        store.Batch(ids, (book, id, now) => book.Delete(id, now));
+        _deleted.Add(ids);
+        ClearMarks();
+        NoticeHost.Show($"已删除 {ids.Count} 条", $"在最近删除里留 {NoteBook.TrashDays} 天", NoticeTone.Normal,
+            new NoticeAction("撤销", () =>
+            {
+                _deleted.Remove(ids);
+                NoteStore.Instance?.Batch(ids, (book, id, now) => book.Restore(id, now));
+            }));
+    }
+
+    private async Task EraseMarkedAsync(List<string> ids)
+    {
+        if (await ConfirmAsync($"永久删除这 {ids.Count} 条便签？", "它们会被永久删除，不能撤销。", "永久删除"))
+        {
+            // 确认框开着时别处放回了的不删
+            var still = ids.Where(id => NoteStore.Instance?.Book.Find(id) is { DeletedAt: not null }).ToList();
+            NoteStore.Instance?.Erase(still);
+            ClearMarks();
+        }
+    }
+
+    private void ClearMarks()
+    {
+        if (_marked.Count == 0)
+        {
+            return;
+        }
+
+        _marked.Clear();
+        _populating = true;
+        try
+        {
+            if (_rows.SelectedItems.Count > 1)
+            {
+                _rows.SelectedItems.Clear();
+            }
+        }
+        finally
+        {
+            _populating = false;
+        }
+
+        if (_wallMode)
+        {
+            MarkWallFocus(bringIntoView: false);
+        }
+
+        BuildActions();
+    }
+
+    /// <summary>Ctrl+A（N3）：看得见的全勾上。</summary>
+    private void MarkAll()
+    {
+        if (_wallMode)
+        {
+            _marked.Clear();
+            _marked.UnionWith(_wallIds);
+            MarkWallFocus(bringIntoView: false);
+            BuildActions();
+        }
+        else
+        {
+            _rows.SelectAll();
+        }
+    }
+
+    /// <summary>墙上 Ctrl 点 / Shift 点一张（N3）：Ctrl 勾上 / 去掉，Shift 从选中的那张勾到这张（屏上的顺序）。</summary>
+    private void MarkWallCard(string id, bool range)
+    {
+        if (range && _wallIds.IndexOf(_wallFocus ?? _selection ?? id) is var from and >= 0 && _wallIds.IndexOf(id) is var to and >= 0)
+        {
+            _marked.Clear();
+            _marked.UnionWith(_wallIds.GetRange(Math.Min(from, to), Math.Abs(to - from) + 1));
+        }
+        else
+        {
+            if (_marked.Count == 0 && (_wallFocus ?? _selection) is { } current && current != id)
+            {
+                _marked.Add(current);
+            }
+
+            if (!_marked.Remove(id))
+            {
+                _marked.Add(id);
+            }
+        }
+
+        MarkWallFocus(bringIntoView: false);
+        BuildActions();
+    }
+
     private void RemoveSelected(string id)
     {
         if (NoteStore.Instance is not { } store || store.Book.Find(id) is not { } note)
@@ -775,7 +1023,7 @@ internal sealed class NotesWindow : Window
         }
 
         store.Delete(id);
-        _deleted.Add(id);
+        _deleted.Add(new[] { id });
         _selection = next;
         CollapseCard();
         NoteNotices.ShowDeleted(id, undoKey: true);
@@ -1399,9 +1647,16 @@ internal sealed class NotesWindow : Window
         e.Handled = true;
         if (drag is null)
         {
-            // 没挪开：点了一下 = 打开编辑卡（双击的第二下落在编辑卡后面那层暗上，不再开一次）
+            // 没挪开：Ctrl / Shift 点是多选（N3）；平常点一下 = 清掉勾选、打开编辑卡（双击的第二下落在编辑卡后面那层暗上，不再开一次）
             if (moved < NoteWall.DragSlop && _editCard.Visibility != Visibility.Visible)
             {
+                if (Down(VirtualKey.Control) || Down(VirtualKey.Shift))
+                {
+                    MarkWallCard(id, range: Down(VirtualKey.Shift));
+                    return;
+                }
+
+                ClearMarks();
                 ExpandCard(id);
             }
 
@@ -1503,8 +1758,10 @@ internal sealed class NotesWindow : Window
         foreach (var (id, view) in _wallViews)
         {
             var focused = id == _wallFocus;
-            view.Card.BorderBrush = focused ? new SolidColorBrush(Theme.AccentColor) : null;
-            view.Card.BorderThickness = new Thickness(focused ? 2 : 0);
+            // 勾上的（N3）也描一圈，粗一点
+            var marked = Marking && _marked.Contains(id);
+            view.Card.BorderBrush = focused || marked ? new SolidColorBrush(Theme.AccentColor) : null;
+            view.Card.BorderThickness = new Thickness(marked ? 3 : focused ? 2 : 0);
             // 挑中的立正、挑走的斜回去（同 mac 选中的那张；R108 审查）
             if (focused != view.Selected)
             {
@@ -1840,10 +2097,21 @@ internal sealed class NotesWindow : Window
         else if (control && e.Key == VirtualKey.Z && !Down(VirtualKey.Shift) && FocusManager.GetFocusedElement(Content.XamlRoot) is not TextBox
                  && !(_sheet.Editor.HasFocus || _cardSheet.Editor.HasFocus) && _deleted.Count > 0)
         {
-            // 焦点不在输入框里：放回刚删的那条（连着删了几条就一条条放回）。
-            var id = _deleted[^1];
+            // 焦点不在输入框里：放回刚删的那条（连着删了几条就一条条放回；整批删的一次放回，N3）。
+            var ids = _deleted[^1];
             _deleted.RemoveAt(_deleted.Count - 1);
-            NoteStore.Instance?.Restore(id);
+            NoteStore.Instance?.Batch(ids, (book, id, now) => book.Restore(id, now));
+            e.Handled = true;
+        }
+        else if (control && e.Key == VirtualKey.A && FocusManager.GetFocusedElement(Content.XamlRoot) is not TextBox
+                 && !(_sheet.Editor.HasFocus || _cardSheet.Editor.HasFocus) && _editCard.Visibility != Visibility.Visible)
+        {
+            MarkAll();
+            e.Handled = true;
+        }
+        else if (e.Key == VirtualKey.Escape && _marked.Count > 0 && _editCard.Visibility != Visibility.Visible)
+        {
+            ClearMarks();
             e.Handled = true;
         }
         else if (e.Key == VirtualKey.Escape && _editCard.Visibility == Visibility.Visible)

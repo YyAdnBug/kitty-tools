@@ -402,7 +402,7 @@ internal sealed class NoteSheetView
             : NoteStore.Instance?.SaveProblem is not null ? NotesWindowRules.SaveRetryText + " · " + _footnoteText
             : _footnoteText;
 
-    private static Color Rgb(int rgb) => Color.FromArgb(255, (byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb);
+    internal static Color Rgb(int rgb) => Color.FromArgb(255, (byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb);
 
     private static Color Shade(NoteShade shade, int paper) => Rgb(NotePaper.Mix(shade.Rgb, paper, shade.Opacity));
 

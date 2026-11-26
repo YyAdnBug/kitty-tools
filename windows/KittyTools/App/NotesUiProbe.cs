@@ -81,6 +81,11 @@ internal static class NotesUiProbe
                 await Shoot(notes, directory, $"notes-wall-focus-{theme}", report);
                 string Title(string? id) => id is not null && NoteStore.Instance?.Book.Find(id) is { } found ? found.Title : "（没有）";
                 report.Append($"- 便签墙方向键：起点「{Title(ids[2])}」，右移 →「{Title(after)}」，再下移 →「{Title(below)}」").Append('\n');
+                // PLAN-v26 N3：墙上勾三张，工具栏换成整批的
+                notes.ProbeMark(new[] { ids[0], ids[1], ids[3] });
+                await Task.Delay(600);
+                await Shoot(notes, directory, $"notes-wall-marked-{theme}", report);
+                notes.ProbeMark(null);
                 notes.ProbeToggleLayout();
                 NotesWindow.ShowNote(ids[2]);
                 await Task.Delay(1200);

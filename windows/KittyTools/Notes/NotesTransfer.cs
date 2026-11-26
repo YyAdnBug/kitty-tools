@@ -344,7 +344,10 @@ internal static class NotesTransfer
             var result = await Task.Run(() => ImportFilesAsync(sources, images, now));
             // 读出来的都是没删的：和设置导出文件同一个换法（自定义纸色拆成预设 + 色值）；在别处改过的那几条只取内容
             var entries = result.Notes.Select(NoteEntry.From).OfType<NoteEntry>().ToList();
+            var before = entries.Where(entry => store.Book.Find(entry.Id) is not null).Select(entry => entry.Id).ToHashSet(StringComparer.Ordinal);
             var (added, updated, saved) = entries.Count == 0 ? (0, 0, true) : store.Adopt(entries, result.EditedElsewhere);
+            // 新加进来的那几条（PLAN-v26 N3，同 mac「撤回导入」）：提示上一键整批放进最近删除
+            var fresh = entries.Select(entry => entry.Id).Where(id => !before.Contains(id) && store.Book.Find(id) is { DeletedAt: null }).Distinct().ToList();
             var (title, detail, warning) = NoteMarkdownFiles.ImportMessage(sources.Count, result, added, updated);
             if (!saved)
             {
@@ -352,7 +355,20 @@ internal static class NotesTransfer
             }
             else
             {
-                NoticeHost.Show(title, detail ?? string.Empty, warning ? NoticeTone.Warning : NoticeTone.Normal);
+                if (fresh.Count > 0)
+                {
+                    NoticeHost.Show(title, detail ?? string.Empty, warning ? NoticeTone.Warning : NoticeTone.Normal,
+                        new NoticeAction("撤回导入", () =>
+                        {
+                            // 已经永久删了的不算；放进最近删除，30 天里还能放回
+                            var count = NoteStore.Instance?.Batch(fresh, (book, id, at) => book.Delete(id, at)) ?? 0;
+                            NoticeHost.Show($"已撤回导入的 {count} 条", "在最近删除里", NoticeTone.Normal);
+                        }));
+                }
+                else
+                {
+                    NoticeHost.Show(title, detail ?? string.Empty, warning ? NoticeTone.Warning : NoticeTone.Normal);
+                }
             }
 
             Log.Info($"notes.imported files={sources.Count} added={added} updated={updated} skipped={result.Skipped}");
