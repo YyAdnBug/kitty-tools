@@ -275,6 +275,12 @@ internal sealed class ShellRuntime
                 // R24：第 20–40 秒停掉提示音，看静音 20 秒之后音画还对不对得上（要 --record-test ≥ 45）。
                 var silenceTest = Environment.GetCommandLineArgs()
                     .Contains("--sync-silence", StringComparer.OrdinalIgnoreCase) && testSeconds >= 45;
+                // PLAN-v26 V4：--record-pause=<第几秒>,<停几秒>，中途暂停一段再继续，看暂停前后音画差是不是一样、文件时长不含暂停
+                var pauseArg = Environment.GetCommandLineArgs()
+                    .FirstOrDefault(arg => arg.StartsWith("--record-pause=", StringComparison.OrdinalIgnoreCase))?["--record-pause=".Length..].Split(',');
+                var pauseAt = pauseArg is { Length: 2 } && int.TryParse(pauseArg[0], out var at) ? at * 1000L : -1;
+                var pauseFor = pauseArg is { Length: 2 } && int.TryParse(pauseArg[1], out var span) ? span * 1000L : 0;
+                var pausedOnce = false;
                 var startedAt = Environment.TickCount64;
                 var shrunk = false;
                 var restored = false;
@@ -319,7 +325,21 @@ internal sealed class ShellRuntime
                         }
                     }
 
-                    await Task.Delay(500);
+                    if (pauseAt >= 0)
+                    {
+                        var elapsed = Environment.TickCount64 - startedAt;
+                        if (!pausedOnce && !RecordingHost.IsPaused && elapsed > pauseAt)
+                        {
+                            pausedOnce = true;
+                            RecordingHost.TogglePause();
+                        }
+                        else if (RecordingHost.IsPaused && elapsed > pauseAt + pauseFor)
+                        {
+                            RecordingHost.TogglePause();
+                        }
+                    }
+
+                    await Task.Delay(pauseAt >= 0 ? 100 : 500);
                 }
 
                 RecordingHost.Stop();
@@ -1563,6 +1583,9 @@ internal sealed class ShellRuntime
                 break;
             case HotKeyActions.Audio:
                 AudioHost.Toggle();
+                break;
+            case HotKeyActions.RecordPause:
+                RecordingHost.TogglePauseAny();
                 break;
             case HotKeyActions.PinClipboard:
                 _ = PinHost.PinClipboardAsync();

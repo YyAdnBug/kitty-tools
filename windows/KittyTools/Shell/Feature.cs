@@ -131,7 +131,7 @@ internal static class Features
         HotKeyActions.Launcher => Feature.Launcher,
         HotKeyActions.SelectionTranslate or HotKeyActions.InputTranslate or HotKeyActions.ScreenshotTranslate
             or HotKeyActions.TranslateReplace => Feature.Translate,
-        HotKeyActions.Record or HotKeyActions.Audio => Feature.Recording,
+        HotKeyActions.Record or HotKeyActions.Audio or HotKeyActions.RecordPause => Feature.Recording,
         HotKeyActions.StatusScreen => Feature.StatusScreen,
         HotKeyActions.ReminderNew => Feature.Reminders,
         HotKeyActions.NoteCapture or HotKeyActions.NoteNew or HotKeyActions.NoteAll => Feature.Notes,

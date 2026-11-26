@@ -130,6 +130,14 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
 
     public long ElapsedMs { get; private set; }
 
+    private volatile bool _paused;
+
+    public bool Paused
+    {
+        get => _paused;
+        set => _paused = value;
+    }
+
     public string TemporaryPath => _temporary;
 
     public string OutputPath => _final;
@@ -416,9 +424,56 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
             var interval = 10_000_000L / _fps;
             var nextWrite = 0L;
             ID3D11Texture2D* lastTexture = null;
+            // 暂停（PLAN-v26 V1）：暂停时不写画面、不写声音、声音设备停掉；继续后时间轴减掉暂停了多久，接着暂停那一刻往下写
+            var paused = false;
+            var pausedAt = 0L;
+            var pausedTotal = 0L;
             while (!_stop.IsSet)
             {
-                var now = AudioRules.Now100Ns() - _start100;
+                if (_paused != paused)
+                {
+                    var at = AudioRules.Now100Ns();
+                    if (_paused)
+                    {
+                        pausedAt = at;
+                        if (_hasAudio)
+                        {
+                            _audio?.Pause();
+                        }
+                    }
+                    else
+                    {
+                        pausedTotal += at - pausedAt;
+                        if (_hasAudio)
+                        {
+                            _audio?.Resume(_start100 + pausedTotal);
+                        }
+                    }
+
+                    paused = _paused;
+                    Log.Info($"wgc.paused {paused} at={(at - _start100 - pausedTotal) / 10_000}ms");
+                }
+
+                if (paused)
+                {
+                    // 暂停时到的帧直接放掉（继续后从新到的那一帧接着写；屏幕不动时补的是暂停前最后一帧）
+                    PendingFrame? stale;
+                    lock (_gate)
+                    {
+                        stale = _latest;
+                        _latest = null;
+                    }
+
+                    if (stale is not null)
+                    {
+                        ReleasePending(stale);
+                    }
+
+                    _frameReady.WaitOne(20);
+                    continue;
+                }
+
+                var now = AudioRules.Now100Ns() - _start100 - pausedTotal;
                 _audio?.Poll();
                 PendingFrame? latest = null;
                 lock (_gate)
@@ -443,7 +498,7 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
                         }
 
                         // R24：帧自己的抓取时间（SystemRelativeTime，QPC）对齐到格子，不再一格一格往后排。
-                        var time = RecordingPipeline.FrameTime(latest.Time - _start100, nextWrite, interval);
+                        var time = RecordingPipeline.FrameTime(latest.Time - _start100 - pausedTotal, nextWrite, interval);
                         var writeStart = Stopwatch.GetTimestamp();
                         ApplyEffects(ring);
                         var written = WriteFrame(writer, ring, time, interval);

@@ -18,6 +18,12 @@ internal static class RecordingHost
 
     public static bool IsRecording => _recorder is not null;
 
+    /// <summary>录屏暂停着（PLAN-v26 V1）。</summary>
+    public static bool IsPaused => _recorder?.Paused == true;
+
+    private static long _pausedAt;
+    private static long _pausedTotal;
+
     /// <summary>这段录屏藏起的桌面图标（PLAN-v11 F6），停下时显示回来。</summary>
     private static IDisposable? _desktopIcons;
 
@@ -49,8 +55,85 @@ internal static class RecordingHost
         }
     }
 
-    public static string Elapsed => RecorderRules.Duration(
-        IsRecording ? Environment.TickCount64 - _startedAt : 0);
+    public static string Elapsed => RecorderRules.Duration(ElapsedMs);
+
+    /// <summary>已录的毫秒数，不算暂停的时间（同 AudioHost）。</summary>
+    public static long ElapsedMs
+    {
+        get
+        {
+            if (!IsRecording)
+            {
+                return 0;
+            }
+
+            var elapsed = Environment.TickCount64 - _startedAt - _pausedTotal;
+            if (IsPaused)
+            {
+                elapsed -= Environment.TickCount64 - _pausedAt;
+            }
+
+            return Math.Max(0, elapsed);
+        }
+    }
+
+    /// <summary>
+    /// 暂停 / 继续录屏（PLAN-v26 V1，同 mac 0.10.3）：暂停时不录画面和声音、不占麦克风、放开「别睡眠」；计时不算暂停的时间。
+    /// </summary>
+    public static void TogglePause()
+    {
+        if (_recorder is not { } recorder)
+        {
+            return;
+        }
+
+        if (recorder.Paused)
+        {
+            recorder.Paused = false;
+            _pausedTotal += Environment.TickCount64 - _pausedAt;
+            SetThreadExecutionState(EsContinuous | EsSystemRequired | EsDisplayRequired);
+            Log.Info("record.resumed");
+        }
+        else
+        {
+            _pausedAt = Environment.TickCount64;
+            recorder.Paused = true;
+            SetThreadExecutionState(EsContinuous);
+            Log.Info("record.paused");
+        }
+
+        RecordingHud.RefreshPause();
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// 全局动作「暂停 / 继续录制」（recordPause，PLAN-v26 V2）：在录屏就暂停 / 继续录屏，在录音就暂停 / 继续录音（待录时不算在录）；
+    /// 都没在录时提示一句。
+    /// </summary>
+    public static void TogglePauseAny()
+    {
+        if (IsRecording)
+        {
+            TogglePause();
+        }
+        else if (AudioHost.IsRecording && !AudioHost.IsArmed)
+        {
+            if (AudioHost.IsPaused)
+            {
+                AudioHost.Resume();
+            }
+            else
+            {
+                AudioHost.Pause();
+            }
+
+            AudioHud.RefreshPause();
+        }
+        else
+        {
+            NoticeHost.Show("没有在录制", "录屏或录音时按它暂停、再按继续", NoticeTone.Normal);
+        }
+    }
 
     public static void Toggle()
     {
@@ -146,6 +229,7 @@ internal static class RecordingHost
 
         _recorder = recorder;
         _startedAt = Environment.TickCount64;
+        _pausedTotal = 0;
         SettingsService.Current.RecordingTempPath = recorder.TemporaryPath;
         SettingsService.Save();
         SetThreadExecutionState(EsContinuous | EsSystemRequired | EsDisplayRequired);

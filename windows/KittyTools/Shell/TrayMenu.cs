@@ -221,6 +221,7 @@ internal static partial class TrayMenu
             {
                 Add(menu, "停止录屏 " + RecordingHost.Elapsed, HotKeyActions.Record,
                     RecordingHost.Stop);
+                Add(menu, RecordingHost.IsPaused ? "继续录屏" : "暂停录屏", HotKeyActions.RecordPause, RecordingHost.TogglePause);
             }
             else
             {
@@ -231,6 +232,10 @@ internal static partial class TrayMenu
             if (AudioHost.IsRecording)
             {
                 Add(menu, "停止录音 " + AudioHost.Elapsed, HotKeyActions.Audio, AudioHost.Stop);
+                if (!AudioHost.IsArmed && !RecordingHost.IsRecording)
+                {
+                    Add(menu, AudioHost.IsPaused ? "继续录音" : "暂停录音", HotKeyActions.RecordPause, RecordingHost.TogglePauseAny);
+                }
             }
             else
             {

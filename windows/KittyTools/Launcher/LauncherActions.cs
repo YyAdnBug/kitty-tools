@@ -29,6 +29,7 @@ internal static class LauncherActions
     public const string PinsClose = "action:pins-close";
     public const string Record = "action:record";
     public const string Audio = "action:audio";
+    public const string RecordPause = "action:record-pause";
     public const string NoteCapture = "action:note-capture";
     public const string NoteNew = "action:note-new";
     public const string NoteAll = "action:note-all";
@@ -96,6 +97,13 @@ internal static class LauncherActions
                 "capture", HotKeyActions.Record)));
             items.Add(Item(new(Audio, AudioHost.IsRecording ? "停止录音" : "录音", "Audio Recording Record Voice Microphone",
                 FeatureIcons.RecordAudio, "capture", HotKeyActions.Audio)));
+            // 暂停 / 继续录制（PLAN-v26 V2）：在录屏或录音时才列
+            var paused = RecordingHost.IsRecording ? RecordingHost.IsPaused : AudioHost.IsPaused;
+            if (RecordingHost.IsRecording || (AudioHost.IsRecording && !AudioHost.IsArmed))
+            {
+                items.Add(Item(new(RecordPause, paused ? "继续录制" : "暂停录制", "Pause Resume Recording", FeatureIcons.Record,
+                    "capture", HotKeyActions.RecordPause)));
+            }
         }
 
         if (screenshot)
@@ -283,6 +291,9 @@ internal static class LauncherActions
                 break;
             case Audio:
                 AudioHost.Toggle();
+                break;
+            case RecordPause:
+                RecordingHost.TogglePauseAny();
                 break;
             case Home:
                 HomePanel.ShowAtCursor();

@@ -3038,8 +3038,28 @@ internal sealed partial class SettingsWindow : Window
         _content.Children.Add(SettingsUi.Card("录哪个麦克风", "选的设备录的时候没连着，就用系统默认的，录制条上会提示", combo));
         _ = FillAsync();
 
+        // 插拔麦克风时列表马上跟上（PLAN-v26 V3，同 mac 0.10.3）：这一行在的时候看着录音设备，离开这一页（行被卸下）就退订。
+        // 事件在后台线程来、插一个设备会连来几下：回界面线程、攒 300 ms 再重列一次。
+        var queue = DispatcherQueue;
+        var refill = queue.CreateTimer();
+        refill.Interval = TimeSpan.FromMilliseconds(300);
+        refill.IsRepeating = false;
+        refill.Tick += (_, _) => _ = FillAsync();
+        var watcher = AudioDevices.Watch(() => queue.TryEnqueue(() =>
+        {
+            refill.Stop();
+            refill.Start();
+        }));
+        combo.Unloaded += (_, _) =>
+        {
+            refill.Stop();
+            AudioDevices.StopWatching(watcher);
+        };
+
         async Task FillAsync()
         {
+            filling = true;
+            saved = SettingsService.Current.RecordMicrophoneDevice;
             var devices = await AudioDevices.MicrophonesAsync();
             ids.RemoveRange(1, ids.Count - 1);
             names.RemoveRange(1, names.Count - 1);
@@ -3644,7 +3664,7 @@ internal sealed partial class SettingsWindow : Window
             ("截图与录制", new List<string>
             {
                 HotKeyActions.Screenshot, HotKeyActions.ScreenshotLast, HotKeyActions.DelayedScreenshot, HotKeyActions.Ocr, HotKeyActions.Record,
-                HotKeyActions.Audio, HotKeyActions.PinClipboard, HotKeyActions.ShotHistory,
+                HotKeyActions.Audio, HotKeyActions.RecordPause, HotKeyActions.PinClipboard, HotKeyActions.ShotHistory,
             }),
             // 便签（PLAN-v13）：三项同名同序（同 mac 那一节、托盘、速查表）。
             ("便签", new List<string> { HotKeyActions.NoteCapture, HotKeyActions.NoteNew, HotKeyActions.NoteAll }),
@@ -4820,6 +4840,7 @@ internal sealed partial class SettingsWindow : Window
             HotKeyActions.ShotHistory => FeatureIcons.ScreenshotHistory,
             HotKeyActions.TranslateReplace => FeatureIcons.TranslateReplace,
             HotKeyActions.Audio => FeatureIcons.RecordAudio,
+            HotKeyActions.RecordPause => FeatureIcons.Record,
             HotKeyActions.PinClipboard => FeatureIcons.Pin,
             HotKeyActions.Home => FeatureIcons.Home,
             HotKeyActions.StatusScreen => FeatureIcons.StatusScreen,

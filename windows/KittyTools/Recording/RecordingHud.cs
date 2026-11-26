@@ -26,7 +26,7 @@ internal sealed partial class RecordingHud
     private static extern bool SetWindowDisplayAffinity(IntPtr hwnd, uint affinity);
 
     /// <summary>录制条的宽（DIP）：比 HudPlacement 默认的 268 宽一点，放得下两个声音图标。</summary>
-    private const double WidthDip = 300;
+    private const double WidthDip = 350;
 
     private static RecordingHud? _instance;
 
@@ -44,8 +44,9 @@ internal sealed partial class RecordingHud
     private readonly FontIcon _microphoneIcon;
     private readonly TextBlock _note;
     private readonly Button _abandon;
+    private readonly Button _pause;
+    private readonly Ellipse _dot;
     private DispatcherQueueTimer? _tick;
-    private int _seconds;
     private bool _armed;
     private long _armedAt;
     private PointInt32 _dragOffset;
@@ -98,7 +99,7 @@ internal sealed partial class RecordingHud
         _countdownPanel.Children.Add(cancel);
 
         // ---- 录制态
-        var dot = new Ellipse
+        var dot = _dot = new Ellipse
         {
             Width = 10,
             Height = 10,
@@ -138,6 +139,18 @@ internal sealed partial class RecordingHud
             BorderThickness = new Thickness(0),
         };
         _abandon.Click += (_, _) => Abandon();
+        // 暂停 / 继续（PLAN-v26 V1，同 mac 录制条）：文字同录音的控制条
+        _pause = new Button
+        {
+            Content = "暂停",
+            FontSize = 12,
+            Padding = new Thickness(8, 3, 8, 3),
+            Background = new SolidColorBrush(Colors.Transparent),
+            Foreground = white,
+            BorderThickness = new Thickness(0),
+        };
+        AutomationProperties.SetName(_pause, "暂停录屏");
+        _pause.Click += (_, _) => RecordingHost.TogglePause();
         var stop = new Button
         {
             Content = "■ 停止",
@@ -160,6 +173,7 @@ internal sealed partial class RecordingHud
         _recordingPanel.Children.Add(sources);
         _recordingPanel.Children.Add(_note);
         _recordingPanel.Children.Add(Separator());
+        _recordingPanel.Children.Add(_pause);
         _recordingPanel.Children.Add(_abandon);
         _recordingPanel.Children.Add(stop);
 
@@ -273,11 +287,26 @@ internal sealed partial class RecordingHud
         _tick.Interval = TimeSpan.FromSeconds(1);
         _tick.Tick += (_, _) =>
         {
-            _seconds++;
-            _timer.Text = RecorderRules.Duration(_seconds * 1000);
+            // 计时跟录屏走（暂停的时间不算，PLAN-v26 V1）
+            _timer.Text = RecordingHost.Elapsed;
             Refresh();
         };
         _tick.Start();
+    }
+
+    /// <summary>暂停 / 继续了：按钮的字、读屏名字、红点（暂停时灰）跟上。</summary>
+    public static void RefreshPause()
+    {
+        if (_instance is not { } hud)
+        {
+            return;
+        }
+
+        var paused = RecordingHost.IsPaused;
+        hud._pause.Content = paused ? "继续" : "暂停";
+        AutomationProperties.SetName(hud._pause, paused ? "继续录屏" : "暂停录屏");
+        hud._dot.Fill = new SolidColorBrush(paused ? Colors.Gray : Colors.OrangeRed);
+        hud._timer.Text = RecordingHost.Elapsed;
     }
 
     /// <summary>橙字备注和两个声音图标（R7）：录不录跟着开录时的设置，备注里说哪一路断了就把那个图标染橙。</summary>

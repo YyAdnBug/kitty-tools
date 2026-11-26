@@ -229,6 +229,9 @@ internal sealed partial class AudioHud
     }
 
     /// <summary>控制条上的 ● 被点了：从“待录”切成计时。</summary>
+    /// <summary>快捷键暂停 / 继续了（PLAN-v26 V2）：控制条上的按钮跟上。</summary>
+    public static void RefreshPause() => _instance?.UpdatePause();
+
     public static void MarkStarted()
     {
         if (_instance is not { } hud)

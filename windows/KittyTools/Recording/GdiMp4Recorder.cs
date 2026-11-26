@@ -73,6 +73,15 @@ internal sealed unsafe class GdiMp4Recorder : IVideoRecorder
 
     public long ElapsedMs { get; private set; }
 
+    private volatile bool _paused;
+
+    /// <summary>暂停（PLAN-v26 V1）：同 WgcRecorder，录制线程照它停写、停声音设备，继续后时间戳减掉暂停了多久。</summary>
+    public bool Paused
+    {
+        get => _paused;
+        set => _paused = value;
+    }
+
     public string TemporaryPath => _temporary;
 
     public string OutputPath => _final;
@@ -289,8 +298,50 @@ internal sealed unsafe class GdiMp4Recorder : IVideoRecorder
             var last = new byte[frameBytes];
             var hasFrame = false;
             write = (delegate* unmanaged[Stdcall]<IntPtr, uint, IntPtr, int>)(*(void***)writer)[6];
+            var paused = false;
+            var pausedAt = 0L;
+            var pausedTotal = 0L;
             while (!_stop.IsSet)
             {
+                if (_paused != paused)
+                {
+                    var at = AudioRules.Now100Ns();
+                    if (_paused)
+                    {
+                        pausedAt = at;
+                        if (hasAudio)
+                        {
+                            audio?.Pause();
+                        }
+                    }
+                    else
+                    {
+                        var span = at - pausedAt;
+                        pausedTotal += span;
+                        started += span / 10_000;
+                        start100 += span;
+                        if (hasAudio)
+                        {
+                            audio?.Resume(start100);
+                        }
+
+                        next = Environment.TickCount64 - started;
+                    }
+
+                    paused = _paused;
+                    Log.Info($"mp4.paused {paused}");
+                }
+
+                if (paused)
+                {
+                    if (_stop.Wait(20))
+                    {
+                        break;
+                    }
+
+                    continue;
+                }
+
                 var elapsed = Environment.TickCount64 - started;
                 var wait = (int)(next - elapsed);
                 if (wait > 0)

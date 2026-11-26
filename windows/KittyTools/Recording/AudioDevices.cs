@@ -28,4 +28,53 @@ internal static class AudioDevices
 
         return result;
     }
+
+    /// <summary>
+    /// 看着录音设备的插拔（PLAN-v26 V3）：列完一遍之后有加、删、启用 / 停用就调 changed（在后台线程）。看不了返回 null（列表就不自动变）。
+    /// </summary>
+    public static DeviceWatcher? Watch(Action changed)
+    {
+        try
+        {
+            var watcher = DeviceInformation.CreateWatcher(DeviceClass.AudioCapture);
+            var ready = false;
+            watcher.EnumerationCompleted += (_, _) => ready = true;
+            watcher.Added += (_, _) =>
+            {
+                if (ready)
+                {
+                    changed();
+                }
+            };
+            watcher.Removed += (_, _) => changed();
+            watcher.Updated += (_, _) => changed();
+            watcher.Start();
+            return watcher;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"audio.devices-watch-failed 0x{ex.HResult:X8}");
+            return null;
+        }
+    }
+
+    public static void StopWatching(DeviceWatcher? watcher)
+    {
+        if (watcher is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (watcher.Status is DeviceWatcherStatus.Started or DeviceWatcherStatus.EnumerationCompleted)
+            {
+                watcher.Stop();
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"audio.devices-unwatch-failed 0x{ex.HResult:X8}");
+        }
+    }
 }

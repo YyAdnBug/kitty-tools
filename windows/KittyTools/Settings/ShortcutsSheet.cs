@@ -537,7 +537,7 @@ internal static class ShortcutsSheet
             new(new[] { "Esc", "Ctrl+W", "双击" }, "关闭"),
         }),
         // 录屏、录音分两组（同 mac 速查表，REVIEW R97）
-        new("record", "录屏", "capture", FeatureIcons.Record, new[] { HotKeyActions.Record }, new ShortcutEntry[]
+        new("record", "录屏", "capture", FeatureIcons.Record, new[] { HotKeyActions.Record, HotKeyActions.RecordPause }, new ShortcutEntry[]
         {
             new("Enter", "双击选区", "框好以后开始（有倒数时倒数完开始）"),
             new("Esc", "框选和倒数的时候取消"),

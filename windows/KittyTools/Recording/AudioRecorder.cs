@@ -23,7 +23,7 @@ internal sealed class AudioRecorder : IDisposable
     private bool _microphoneDenied;
     private long _start100;
     private long _paused100;
-    private long _pauseStarted;
+    /// <summary>界面要的暂停状态；录制线程照它停 / 开设备、记暂停了多久（PLAN-v26 V1：以前暂停时设备照采、缓冲照攒，继续后会把暂停那段录进去）。</summary>
     private volatile bool _paused;
     private long _writtenFrames;
 
@@ -100,27 +100,9 @@ internal sealed class AudioRecorder : IDisposable
         return File.Exists(_final) ? _final : null;
     }
 
-    public void Pause()
-    {
-        if (_paused)
-        {
-            return;
-        }
+    public void Pause() => _paused = true;
 
-        _pauseStarted = AudioRules.Now100Ns();
-        _paused = true;
-    }
-
-    public void Resume()
-    {
-        if (!_paused)
-        {
-            return;
-        }
-
-        _paused100 += AudioRules.Now100Ns() - _pauseStarted;
-        _paused = false;
-    }
+    public void Resume() => _paused = false;
 
     public void Dispose()
     {
@@ -153,11 +135,30 @@ internal sealed class AudioRecorder : IDisposable
             _ready.Set();
 
             var pcm = new byte[AudioRules.ChunkFrames * AudioRules.PcmBlockAlign];
+            var paused = false;
+            var pausedAt = 0L;
             while (!_stop.IsSet)
             {
-                var now = AudioRules.Now100Ns() - _start100 - _paused100;
+                if (_paused != paused)
+                {
+                    var at = AudioRules.Now100Ns();
+                    if (_paused)
+                    {
+                        pausedAt = at;
+                        _audio.Pause();
+                    }
+                    else
+                    {
+                        _paused100 += at - pausedAt;
+                        _audio.Resume(_start100 + _paused100);
+                    }
+
+                    paused = _paused;
+                }
+
+                var now = (paused ? pausedAt : AudioRules.Now100Ns()) - _start100 - _paused100;
                 _audio.Poll();
-                if (!_paused)
+                if (!paused)
                 {
                     var until = AudioRules.FramesAt(now - 1_500_000, 0);
                     while (true)
@@ -185,7 +186,7 @@ internal sealed class AudioRecorder : IDisposable
             _audio.Stop();
             _audio.Poll();
             var end = AudioRules.FramesAt(
-                AudioRules.Now100Ns() - _start100 - _paused100, 0);
+                (paused ? pausedAt : AudioRules.Now100Ns()) - _start100 - _paused100, 0);
             while (true)
             {
                 var frames = _audio.Bus.DrainPcm16(end, pcm, AudioRules.ChunkFrames);

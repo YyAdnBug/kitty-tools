@@ -129,6 +129,34 @@ internal sealed class AudioCaptureSet : IDisposable
         }
     }
 
+    /// <summary>
+    /// 暂停（PLAN-v26 V1）：停掉各路设备（不占麦克风），把停之前采到的包收进混音缓冲。在录制线程上调。
+    /// </summary>
+    public void Pause()
+    {
+        Stop();
+        Poll();
+    }
+
+    /// <summary>继续：各路从新的起点接着采（start100Ns = 开录时刻 + 暂停过的总长），时间轴接着暂停那一刻往下排。</summary>
+    public void Resume(long start100Ns)
+    {
+        for (var index = _sources.Count - 1; index >= 0; index--)
+        {
+            try
+            {
+                _sources[index].Start(start100Ns);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"audio.resume-failed loopback={_sources[index].Loopback} hr=0x{ex.HResult:X8}");
+                _notes.Add(_sources[index].Loopback ? "系统声音断了" : "麦克风断开了");
+                _sources[index].Dispose();
+                _sources.RemoveAt(index);
+            }
+        }
+    }
+
     public void Stop()
     {
         // 只停设备，不关 Poll：停止后还要再收一次缓冲里剩下的包。
