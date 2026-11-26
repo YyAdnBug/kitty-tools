@@ -10,6 +10,7 @@ public static class StartMenuFilter
     private static readonly string[] NameKeywords =
     {
         "卸载", "uninstall", "网址", "website", "官网", "新建快捷方式",
+        "检查更新", "check for updates", // 更新器的入口（Java 的「检查更新」指向 javacpl.exe -tab update）：同一个 exe 不再合成一条后冒出来的
     };
 
     /// <summary>名字里带这些词的像说明文档；目标是程序（不是下面那几个看文档的）时照收。</summary>

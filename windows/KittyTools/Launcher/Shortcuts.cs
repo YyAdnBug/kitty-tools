@@ -58,9 +58,17 @@ internal static unsafe class Shortcuts
             var args = string.Empty;
             if (arguments)
             {
-                // INFOTIPSIZE（1024）是 GetArguments 文档给的上限；取不到当没有参数
+                // INFOTIPSIZE（1024）是 GetArguments 文档给的上限；取不到当没有参数（CsWin32 生成的这个是 void、失败时抛）
                 buffer[0] = '\0';
-                args = link->GetArguments(buffer, capacity).Failed ? string.Empty : Text(buffer, capacity) ?? string.Empty;
+                try
+                {
+                    link->GetArguments(buffer, capacity);
+                    args = Text(buffer, capacity) ?? string.Empty;
+                }
+                catch (System.Runtime.InteropServices.COMException)
+                {
+                    args = string.Empty;
+                }
             }
 
             return (target, args.Trim());

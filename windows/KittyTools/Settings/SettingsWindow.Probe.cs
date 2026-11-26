@@ -25,6 +25,15 @@ internal sealed partial class SettingsWindow
 
     internal bool GoBackForProbe() => GoBack();
 
+    /// <summary>启动器 › 应用：在「按应用名或别名找」里打了这些字（截图只留那几行，不拍这台电脑上装的别的应用）。</summary>
+    internal void FilterAppsForProbe(string text)
+    {
+        if (_appsFilterForProbe is { } box)
+        {
+            box.Text = text;
+        }
+    }
+
     /// <summary>点了标题栏的 ×：同 AppWindow.Closing 里那一套（记下位置、隐藏）。</summary>
     internal void CloseForProbe() => HideInsteadOfClosing();
 

@@ -14,6 +14,7 @@ public static class AppNames
     {
         "rundll32", "javaw", "java", "wscript", "cscript", "mshta", "msiexec", "dllhost", "conhost",
         "chrome_proxy", "msedge_proxy", "pwahelper",
+        "explorer", // 「打开某个文件夹」的快捷方式（Windows SDK 那种）；文件资源管理器自己的快捷方式文件名里就有 Explorer
     };
 
     /// <summary>能当「程序名」的扩展名（.msc / .cpl 是系统管理工具：services.msc、ncpa.cpl）。</summary>

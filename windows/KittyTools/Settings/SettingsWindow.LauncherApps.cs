@@ -14,6 +14,9 @@ namespace KittyTools;
 
 internal sealed partial class SettingsWindow
 {
+    /// <summary>应用别名那一块的筛选框（截图自检用，FilterAppsForProbe）。</summary>
+    private TextBox? _appsFilterForProbe;
+
     /// <summary>启动器页「应用」那一行的小字。</summary>
     private static string AppsSummary(Settings settings)
     {
@@ -66,6 +69,7 @@ internal sealed partial class SettingsWindow
         var missing = installed.Count == 0 ? new List<string>() : aliases.Keys.Where(key => installed.All(app => app.AliasKey != key)).ToList();
         var filter = new TextBox { PlaceholderText = "按应用名或别名找" };
         AutomationProperties.SetName(filter, "搜索应用");
+        _appsFilterForProbe = filter;
         _content.Children.Add(filter);
         _content.Children.Add(SettingsUi.Footnote("多个别名用逗号隔开，例如 wx, 聊天。原来的名字照样能搜，清空就是去掉别名。"));
         var list = new StackPanel { Spacing = 2 };
@@ -103,7 +107,8 @@ internal sealed partial class SettingsWindow
             }
 
             names.Children.Add(title);
-            var place = key.StartsWith("aumid:", StringComparison.Ordinal) ? "商店应用" : key[4..];
+            // 同一个 exe、参数不同的那几个，键是「exe:路径|参数」：显示成命令行的样子（路径 空格 参数）
+            var place = key.StartsWith("aumid:", StringComparison.Ordinal) ? "商店应用" : key[4..].Replace('|', ' ');
             names.Children.Add(new TextBlock { Text = place, FontSize = 11, Foreground = Theme.SecondaryText(), TextTrimming = TextTrimming.CharacterEllipsis });
             ToolTipService.SetToolTip(names, app?.Target ?? key);
             row.Children.Add(names);
@@ -130,6 +135,8 @@ internal sealed partial class SettingsWindow
             .Concat(installed.Select(app => ((LauncherItem?)app, app.AliasKey!)))
             .ToList();
         var next = 0;
+        // 第一批 40 行建好、全部补完各用了多久（R115 第 5 步：几百个应用时第一屏超过 300 ms 就把每批改小）
+        var built = System.Diagnostics.Stopwatch.StartNew();
         void More()
         {
             // 换了页（行所在的卡片不在页上了）就不补了
@@ -144,6 +151,11 @@ internal sealed partial class SettingsWindow
                 var row = Row(app, key);
                 rows.Add((app, key, row));
                 list.Children.Add(row);
+            }
+
+            if (next <= 40 || next == pending.Count)
+            {
+                Log.Info($"settings.apps-rows {(next == pending.Count ? "all" : "first")}={built.ElapsedMilliseconds}ms rows={next}/{pending.Count}");
             }
 
             if (next < pending.Count)

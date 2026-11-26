@@ -85,10 +85,13 @@ public static class PortableApps
 
     /// <summary>
     /// UserAssist 里这一条收不收：绝对路径、.exe、不在 Windows 目录和本 App 的目录下（文件在不在、过滤名单由调用方再看）。
+    /// 商店应用包里的 exe（路径里有一段 WindowsApps：Program Files 下的包目录、执行别名那个文件夹）也不收：那个应用已经按商店应用列出来了，
+    /// 再收一条就重复，标题还是 exe 的说明（「Windows Terminal Launcher Shim」排在「终端」前面）。
     /// </summary>
     public static bool IsCandidate(string path, string windowsDirectory, string ownDirectory)
     {
-        if (!System.IO.Path.IsPathFullyQualified(path) || !path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        if (!System.IO.Path.IsPathFullyQualified(path) || !path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
+            path.Contains(@"\WindowsApps\", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }

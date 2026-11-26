@@ -60,6 +60,9 @@ public sealed class PortableAppsTests
         Assert.IsFalse(PortableApps.IsCandidate(@"D:\Tools\readme.txt", @"C:\Windows", string.Empty));
         Assert.IsFalse(PortableApps.IsCandidate(@"Microsoft.Windows.Explorer", @"C:\Windows", string.Empty));
         Assert.IsTrue(PortableApps.IsCandidate(@"C:\WindowsApps2\x.exe", @"C:\Windows", string.Empty), "只看整段目录");
+        Assert.IsFalse(PortableApps.IsCandidate(
+            @"C:\Program Files\WindowsApps\Microsoft.WindowsTerminal_1.23.13503.0_x64__8wekyb3d8bbwe\wt.exe", @"C:\Windows", string.Empty), "商店应用包里的");
+        Assert.IsFalse(PortableApps.IsCandidate(@"C:\Users\a\AppData\Local\Microsoft\WindowsApps\wt.exe", @"C:\Windows", string.Empty), "执行别名");
     }
 
     [TestMethod]

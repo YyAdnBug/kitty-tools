@@ -365,6 +365,7 @@ public sealed class StartMenuFilterTests
         // 卸载、网址：目标是程序也拦
         Assert.IsTrue(StartMenuFilter.ShouldSkip("卸载 Foo", @"C:\Windows\System32\msiexec.exe"));
         Assert.IsTrue(StartMenuFilter.ShouldSkip("Foo 官网", @"C:\Program Files\Google\Chrome\Application\chrome.exe"));
+        Assert.IsTrue(StartMenuFilter.ShouldSkip("检查更新", @"C:\Program Files\Java\jre1.8.0_491\bin\javacpl.exe"), "更新器的入口");
         Assert.IsFalse(StartMenuFilter.ShouldSkip("命令提示符", @"%windir%\system32\cmd.exe"));
     }
 }

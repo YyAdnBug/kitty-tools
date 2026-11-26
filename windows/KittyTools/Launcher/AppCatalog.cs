@@ -181,6 +181,9 @@ internal sealed class AppCatalog
         // 别名的键：同一个 exe 的第一个快捷方式照旧是「exe:路径」（以前去重留下的就是它，已经起的别名不变）；
         // 后面参数不一样的那几个（以前被当成重复丢了）键后面带上参数，各起各的别名
         var aliasKeys = new HashSet<string>(StringComparer.Ordinal);
+        // 同一个 exe、同一个名字的只留一条：桌面上的「Google Chrome」「WPS Office」带个只做标记的参数（--source-shortcut-location=desktop 这类），
+        // 参数不同却是同一个应用，按参数去重会出两行一模一样的
+        var seenTitles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var scale = Displays.SystemScale;
         foreach (var (folder, isDesktop) in folders)
         {
@@ -250,7 +253,7 @@ internal sealed class AppCatalog
                 var expanded = target is null ? null : Environment.ExpandEnvironmentVariables(target);
                 // 同一个程序在「所有用户」「当前用户」下各一个快捷方式：目标和参数都一样，合成一条；参数不一样的是不同的应用（PLAN-v27 B3）
                 var key = expanded is null ? file : arguments.Length == 0 ? expanded : expanded + "\n" + arguments;
-                if (!seenTargets.Add(key))
+                if (!seenTargets.Add(key) || (expanded is not null && !seenTitles.Add(expanded + "\n" + title)))
                 {
                     stats.Duplicates++;
                     continue;

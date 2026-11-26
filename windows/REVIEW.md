@@ -35,6 +35,52 @@
 8. **收尾**：`Directory.Build.props` 0.5.0、`changelog.json`（feat：支持 Windows 10 2004 起；ui：提示能放到屏幕顶部（灵动岛样式）；fix：R115 那两条要是没进 0.4.0）、
    `build-release.ps1`、`--update-live=<已经发出去的上一版>`，**不发布**；Win10 虚拟机里装 0.5.0 的安装包走一遍 HANDTEST 开头的「Win10 冒烟」W1–W10。
 
+### 核验第一轮 → 已并进 `windows`、能在这台上做的做了（Claude 在 Windows 上，2026-11-26）；**Win10 虚拟机没做（开 Hyper-V 要先问用户）**
+
+**结论**：`--no-ff` 并进来没冲突。编译错一处（R115「先核对」第 1 条：CsWin32 的 `GetArguments` 是 void、失败时抛），改成 try / catch。
+R115 跑探针找出三处不对、都修了（下面「改了什么」）；R116 的透明胶囊照「先核对」第 1 条 ② 加了 `DwmExtendFrameIntoClientArea(-1)` 才真透明，`Capsule` 留 true。
+Debug x64 0 警告、`dotnet test` 1220 全过、x64 / ARM64 AOT 0 警告（PRI 四个齐）。R116「先核对」第 2 条（条件表达式推类型）、第 4 条（降到 19041 以后没有新的平台警告）编译就过了。
+
+**改了什么**（合并之后的提交里）：
+- `Launcher/Shortcuts.cs`：`GetArguments` 包 try / catch（`COMException` 当没有参数）。
+- `Core/PortableApps.IsCandidate`：路径里有一段 `WindowsApps` 的不收（商店应用包里的 exe、执行别名）。「运行过的程序」那一路收进来的 `…\WindowsApps\…\wt.exe`（标题「Windows Terminal Launcher Shim」）、`…\Notepad.exe`
+  排在「终端」「记事本」前面，`wt` / `terminal` / `notepad` 第一条都错了。extra 18 → 7。单测两条。
+- `Core/AppNames.Hosts` 加 `explorer`：Windows SDK 那个「打开文件夹」的快捷方式（目标 explorer.exe）在 `explorer` 下排第一。单测一条。
+- `Launcher/AppCatalog.cs`：同一个 exe、**同一个名字**的只留一条。按「目标 + 参数」去重以后，桌面上的「Google Chrome」「Microsoft Edge」「WPS Office」「MuMu模拟器」
+  （带 `--source-shortcut-location=desktop` 这类只做标记的参数）和开始菜单里那条各出一行、一模一样。
+- `Core/StartMenuFilter` 名单加「检查更新」「check for updates」：Java 的「检查更新」（`javacpl.exe -tab update`）以前跟着同一个 exe 被合掉，现在冒出来了。单测一条。
+- 设置 › 启动器 › 应用：带参数的那几行副标题以前直接显示别名的键（`…vpncmd_x64.exe|/debug`），改成「路径 参数」；加一行日志 `settings.apps-rows first= / all=`（第 5 步）。
+- `Shell/Notice.cs`：胶囊窗口 `DwmExtendFrameIntoClientArea(-1 四边)`。
+- 自检：`--ui-snapshots` 的 `settings-sub-apps` 等应用扫完、筛到「计算器」再拍（以前拍到的是「正在读取应用…」，扫完以后又会把这台电脑装的应用全拍进去）；
+  `island-top-progress` 拍之前先收掉展开的那条（展开记成了「鼠标在上面」，进度提示按 H13 排着，拍出来和 expanded 一样）。
+
+**R115**：
+- `--launcher-apps-probe`（中文 Windows 11）：`cmd` → 命令提示符、`regedit` → 注册表编辑器、`taskmgr` → 任务管理器、`msconfig` → 系统配置、`services` → 服务、`wt` / `terminal` → 终端、
+  `explorer` → 文件资源管理器、`notepad` → 记事本、`paint` → 画图、`powershell` → Windows PowerShell；`calc` 第一条是 **LibreOffice Calc**、计算器第二（这台装了 LibreOffice，
+  标题里真有 Calc 这个词，替用户定的：不改）；`pwsh` 0 条（没装 PowerShell 7）。
+- 总数：改前（0.4.0 的包）156 个（desktop 117、重复 60、extra 19）→ 现在 160（desktop 133、重复 43、extra 7）。多出来的是同一个 exe 带不同参数的：VS 的五个开发者命令提示符、
+  Developer PowerShell、微信输入法的「隔空传送」「AI 录音笔」、Java 的「关于 / 配置」、SoftEther 的几个工具、Python / MySQL 的两个入口、LibreOffice 故障排查模式——都该有；
+  卸载、帮助、更新器没有混进来（「检查更新」补了名单）。
+- 设置页截图（`settings-sub-apps`，筛到计算器）：别名一栏是列表、计算器那一行是 jsq，浅 / 深。高对比度没截。
+- 第 5 步：139 行（这台），第一批 40 行 10–12 ms、全部补完约 290 ms。
+- 第 4 步手测 2030–2045 要按键：**没走**，留给用户（英文系统那一遍同样）。
+
+**R116 / I-1 透明胶囊**（这台：Windows 11 26200、2560 × 1440、100 %、浅色外观）：
+- 原样跑 `KITTY_NOTICE_TOP=1 --notice-anim-test`：日志 `transparent-backdrop.connected`，胶囊外面却是**黑的**（`windows-shots` `0.5.0-v27-verify/notice-top-before-dwm-extend.png`）——第 1 条 ②。
+- 加 `DwmExtendFrameIntoClientArea(-1)` 以后：外面是棋盘格（透明），量出来的胶囊宽 / 左边缘跟着胶囊走了（以前一直是整扇窗口宽）。
+- **还有一处不对，没修**：每条提示「长出来」的前 ~140 ms（逐帧报告 2723–2850 ms），只有窗口右头一个黑半圆、胶囊本身还没出来，之后一下子变成整颗（`notice-top-grow-halfdisc.png`）。
+  加那一句之前也有（当时整块黑的，右头同样一个半圆），不是这次改出来的。像是显形那一刻右边露出了上一条胶囊的旧画面；要在屏幕上看真的有没有这一下，审查方看帧再定。
+- 150 / 200 % 没测（要改系统的缩放）；深色外观没单独跑（顶部样式本来就固定黑底）。
+- 底部样式（默认）照旧：`--notice-anim-test` 不设 `KITTY_NOTICE_TOP` 跑了一遍，和以前一样。
+
+**I-2 顶部样式**：`island-top` / `island-top-expanded` / `island-top-progress` 三张对了（`WindowShot` 不带透明，两头的白角是存图铺的底）。手测 2080–2095 要鼠标悬停、按钮：**没走**。
+
+**W-1 / W-3 Windows 10**：**没做**。开 Hyper-V 要管理员和重启、还要下 Win10 镜像装虚拟机，这些改这台电脑的系统设置，等用户点头再做。
+图标表 `glyphs-light / dark` Win11 这边出了（101 个码点都画出来），Win10 那张要等虚拟机。
+
+**没做的**：第 8 步收尾（0.5.0 版本号、更新日志、打包）先不做——0.4.0 还没发，`claude/gitcode-win` 也要进 0.5.0、Win10 也没测，等这些齐了一起收；README / 官网的系统要求（第 7 步）在 `main`，没动。
+截图在 `windows-shots` `9381340a` 的 `0.5.0-v27-verify/`。
+
 ### R116（P2）支持 Windows 10、灵动岛样式的提示 → 待核验（审查方写的、没编译）
 
 PLAN-v27 §2 §3，用户「全部按推荐」后「我们来实现」。行号按这条分支。

@@ -317,6 +317,12 @@ internal sealed unsafe partial class NoticeHost
         SetWindowLong((IntPtr)_hwnd.Value, GwlExStyle, style | WsExNoActivate | WsExToolWindow);
         var round = _capsule ? 1 : 2; // DWMWCP_DONOTROUND（形状自己画）/ DWMWCP_ROUND：8 圆角（Win10 上这一句不起作用，窗口是直角）
         DwmSetWindowAttribute((IntPtr)_hwnd.Value, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, ref round, sizeof(int));
+        if (_capsule)
+        {
+            // R116 先核对第 1 条 ②：透明画刷接上了、胶囊外面还是黑的——DWM 还在窗口后面垫着重定向表面；把「玻璃框」扩到整个客户区，透明处才透出下面
+            var margins = new Margins { Left = -1, Right = -1, Top = -1, Bottom = -1 };
+            DwmExtendFrameIntoClientArea((IntPtr)_hwnd.Value, ref margins);
+        }
 
         _hideTimer = _window.DispatcherQueue.CreateTimer();
         _hideTimer.IsRepeating = false;
@@ -870,6 +876,18 @@ internal sealed unsafe partial class NoticeHost
 
     [LibraryImport("dwmapi.dll", EntryPoint = "DwmSetWindowAttribute")]
     private static partial int DwmSetWindowAttribute(IntPtr hWnd, int attribute, ref int value, int size);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Margins
+    {
+        public int Left;
+        public int Right;
+        public int Top;
+        public int Bottom;
+    }
+
+    [LibraryImport("dwmapi.dll", EntryPoint = "DwmExtendFrameIntoClientArea")]
+    private static partial int DwmExtendFrameIntoClientArea(IntPtr hWnd, ref Margins margins);
 
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

@@ -40,6 +40,7 @@ public sealed class AppNamesTests
         Assert.IsNull(AppNames.ExeStem(@"C:\Program Files\Google\Chrome\Application\chrome_proxy.exe"), "网页应用");
         Assert.IsNull(AppNames.ExeStem(@"C:\Program Files\Java\bin\javaw.exe"));
         Assert.IsNull(AppNames.ExeStem(@"C:\Windows\System32\rundll32.exe"));
+        Assert.IsNull(AppNames.ExeStem(@"C:\Windows\explorer.exe"), "打开文件夹的快捷方式（Windows SDK 那种）");
         Assert.IsNull(AppNames.ExeStem(@"C:\x\readme.txt"));
         Assert.IsNull(AppNames.ExeStem(null));
         Assert.IsNull(AppNames.ExeStem(@"C:\Program Files\Foo"));

@@ -227,6 +227,9 @@ internal static class UiSnapshotProbe
             NoticeHost.ExpandForProbe();
             await Task.Delay(700);
             await WindowShot.SaveAsync(NoticeHost.HandleForProbe, Path.Combine(directory, "island-top-expanded.png"));
+            // 展开那一下记成了「鼠标在上面」，新来的提示会排着（H13）：先收掉再出进度
+            NoticeHost.HideNow();
+            await Task.Delay(300);
             NoticeHost.ShowProgress("正在转成 GIF", "42%", 0.42);
             await Task.Delay(900);
             await WindowShot.SaveAsync(NoticeHost.HandleForProbe, Path.Combine(directory, "island-top-progress.png"));
@@ -926,8 +929,22 @@ internal static class UiSnapshotProbe
                          })
                 {
                     settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 760));
+                    if (sub == "apps")
+                    {
+                        // 应用扫完再开（没扫完是「正在读取应用…」）；只留计算器那一行（别名 jsq），不拍这台电脑上装的别的应用
+                        for (var wait = 0; wait < 100 && AppCatalog.Instance is { HasScanned: false }; wait++)
+                        {
+                            await Task.Delay(100);
+                        }
+                    }
+
                     settings.OpenSubpageForProbe(page, sub);
                     await Task.Delay(500);
+                    if (sub == "apps")
+                    {
+                        settings.FilterAppsForProbe("计算器");
+                        await Task.Delay(1500);
+                    }
                     if (page == "launcher" && sub is null)
                     {
                         settings.ScrollToSectionForProbe("脚本命令");
