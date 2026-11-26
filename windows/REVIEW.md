@@ -532,6 +532,24 @@ WebDAV 一次 401 之后自动的轮不再发请求。**要用户看**：D1 照�
   用户在任务管理器里看不到回落（清单第 30 条就是看这个）。要不要改成不提内存的说法，你们定；改的话又要重打。
 - 自检的小毛病（不挡发布）：`--ui-snapshots` 的 `settings-launcher-end` 拍出来是通用页，不是启动器页滚到底。
 
+### 两条分支的核验（Claude 在 Windows 上，2026-11-26）→ 都并进 `windows` 了，进 0.5.0
+
+- **`claude/win-v26-df962e`**（PLAN-v27：R115、R116）：并进来、核验、修了几处，报告在本文件顶上「PLAN-v27 › 核验第一轮」。Win10 虚拟机没做（开 Hyper-V 要先问用户）。
+- **`claude/gitcode-win`**（`5e6a8be0`，PLAN-gitcode）：`--no-ff` 并在上一条后面，**没冲突**（分支底子是 `c9fdf2d4`，PLAN-v26 改过的更新流程两边拼起来是通的，看过合并后的
+  `UpdateService` / `AutoUpdater` / `UpdateHttp`）。照 `PLAN-gitcode.md`「核验指令」：
+  1. 提交在（`5e6a8be0`）。
+  2. Debug x64 0 警告；`dotnet test --filter Update` 38 条全过，**`VerifySignature_OnlyTheSignedBytes` 过了**（.NET 的 `ECDsa` 认 Mac 上 CryptoKit 写的签名和公钥格式），
+     `Parse_GitCodeManifest`、`GitCodeMirror`、`ManifestSha256IsTheOnlyHashChecked` 也过。
+  3. x64 / ARM64 AOT 0 警告（`ECDsa` 没报 trim / AOT 警告）。`SigningKey` 空着，运行时不会走到验签，AOT 下真验一次签名要等公钥填了以后（第 6 步）。
+  4. 全量 `dotnet test` 1224 全过。
+  5. 合并后的 Release 包：`--update-live=0.3.0` 退出码 0（下载 50 007 019 字节、sha256 对得上）；真起一次，自动检查读 GitHub 上的清单 `update.check newer=False version=0.3.0 source=manifest gitcode=False`
+     （新的 `FirstManifestAsync` / `GetBytesAsync` 那条路）。GitCode 的真地址**没验**：要等你在 Mac 上 `sign-manifest.swift new-key`、`publish-gitcode.sh windows-v0.3.0` 之后。
+  6. 改 hosts 模拟打不开 GitHub、改坏 `.sig`：**没做**（等公钥；改 `C:\Windows\System32\drivers\etc\hosts` 要管理员，到时先问你）。
+  - 和 `PLAN-gitcode.md` 说法不完全一样的一处（不用改，记一笔）：`SigningKey` 空着时清单只问 GitHub，但 zip 从 GitHub 下失败时 `DownloadWithMirrorAsync` 照样会去 GitCode 拿同名文件——
+    核的还是 GitHub 给的 sha256（清单里的或 GitHub 的 `.sha256`），GitCode 给的东西对不上就不装，所以安全上没问题，只是「空着 = 只走 GitHub」不完全对。
+  - `SigningKey` 照指令留空。
+- **两条都并进来以后的内存**（x64 Release 探针档，`KITTY_MEMORY_PROBE_SETTINGS=1`，和上面 0.4.0 新包同一台、同一种量法）：托盘 50.0 MB（0.4.0 是 50.6）、设置窗各页 97.8（99.8）、关掉两分钟后 96.0（98.4）。不涨。
+
 ## 多屏截图：只能在光标那块屏上框选、扩展屏过不去（审查方在 Mac 上写、没编译，2026-11-22）
 
 用户反馈：Windows 版截图只能在光标所在的那块屏上框选，框不到扩展屏上，也不能一个选区跨两块屏。
