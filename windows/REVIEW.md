@@ -65,7 +65,8 @@
 
 **风险 / 退路**：
 
-- 和 PLAN-v26 第 9 批（启动器 L1–L6）都改 `LauncherModel.cs`：先并这一条再做第 9 批，冲突只在 `AppsWithAliases` 那两行附近。
+- 分支已 rebase 在 `5b2a58f2`（PLAN-v26 第 10 批）上，第 9 批的启动器改动在底下，没冲突（只有 `HANDTEST.md` 末尾两边各加一节，都留了）。
+  第 9 批 L5 的撞名橙框（`Settings/SettingsWindow.LauncherCommands.cs` `MarkAliasConflicts`）改成按应用别名的每个词比（一个应用能起几个别名了），`LauncherCommandTableTests` 加了一条。
 - 目标 exe 名当名字后，指向同一个 exe 的快捷方式打 exe 名会一起出（`cmd` 出命令提示符和 VS 的开发者命令提示符）：同分时标题短的在前、用过的在前，可以接受；
   哪个 exe 名被一堆不相干的快捷方式共用（像 `Update.exe`），加进 `AppNames.Hosts`。
 - 别名的键带 `|参数` 的那几个，键跟着「哪个快捷方式先扫到」走（所有用户的先、当前用户的后，同一个文件夹按名字）：快捷方式增删之后，后面那几个的别名可能换到别的快捷方式上。
