@@ -744,7 +744,7 @@ internal static class UiSnapshotProbe
 
     private static async Task SafeRenderSettingsAsync(bool dark, string directory)
     {
-        if (!Wanted("settings") && !Wanted("settings-sync") && !Wanted("settings-sync-settings") && !Wanted("settings-hotkeys-block") && !Wanted("settings-hotkeys-shot") && !Wanted("settings-sub") && !Wanted("settings-translate-add") && !Wanted("settings-shortcuts-sheet"))
+        if (!Wanted("settings") && !Wanted("settings-sync") && !Wanted("settings-sync-settings") && !Wanted("settings-hotkeys-block") && !Wanted("settings-hotkeys-shot") && !Wanted("settings-sub") && !Wanted("settings-translate-add") && !Wanted("settings-shortcuts-sheet") && !Wanted("settings-launcher-files") && !Wanted("settings-about-full"))
         {
             return;
         }
@@ -961,6 +961,18 @@ internal static class UiSnapshotProbe
 
                 SettingsService.Current.ScreenshotKeys = saved;
             }
+
+            // PLAN-v25：设置 › 启动器「文件搜索」那一节（索引的状态、找没找到 Everything，两行都是线程池里读完再填）
+            if (Wanted("settings-launcher-files"))
+            {
+                settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 760));
+                settings.ShowPage(welcome: false, "launcher");
+                await Task.Delay(400);
+                settings.ScrollToSectionForProbe("文件搜索");
+                await Task.Delay(1500);
+                await ShootSettingsWindowAsync(settings, "settings-launcher-files", dark, directory);
+            }
+
             // PLAN-v12 第 3、5 批 / PLAN-v13 第 5 批：设置 › 状态屏、提醒、便签整页（真窗口的样子各拍一张上面一屏）。
             foreach (var page in new[] { "statusScreen", "reminders", "notes" })
             {
@@ -1166,6 +1178,13 @@ internal static class UiSnapshotProbe
             // PLAN-v16 G1：更新日志只展开当前版本，滚到底看折叠成一行的那几版。
             settings.ScrollToEndForProbe();
             await RenderWindowAsync(settings, "settings-about-end", dark, directory);
+            // 当前版本那一条整条展开的样子（几十项，一屏放不下；看占位符、路径里的 { } \ 显示对不对）
+            if (Wanted("settings-about-full"))
+            {
+                settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 3200));
+                settings.ShowPage(welcome: false, "about");
+                await RenderWindowAsync(settings, "settings-about-full", dark, directory);
+            }
         }
         catch (Exception ex)
         {

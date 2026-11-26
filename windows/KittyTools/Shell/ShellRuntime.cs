@@ -747,8 +747,13 @@ internal sealed class ShellRuntime
             });
         }
 
-        if (Environment.GetCommandLineArgs().Contains("--everything-probe", StringComparer.OrdinalIgnoreCase))
+        // `--everything-probe=<词>` 换掉默认的 jpg；folders= 是回包里带文件夹 / 盘标志的条数（核对 EverythingIpc.ItemFolder / ItemDrive）
+        var everythingArg = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.Equals("--everything-probe", StringComparison.OrdinalIgnoreCase) ||
+                                   arg.StartsWith("--everything-probe=", StringComparison.OrdinalIgnoreCase));
+        if (everythingArg is not null)
         {
+            var word = everythingArg.Length > "--everything-probe=".Length ? everythingArg["--everything-probe=".Length..] : "jpg";
             _ = Task.Run(async () =>
             {
                 var version = EverythingSearch.RunningVersion();
@@ -756,8 +761,9 @@ internal sealed class ShellRuntime
                 if (version is not null)
                 {
                     var watch = System.Diagnostics.Stopwatch.StartNew();
-                    var hits = await EverythingSearch.SearchAsync(new[] { "jpg" }, CancellationToken.None);
-                    Log.Info($"everything.probe query={(hits is null ? "failed" : "ok")} hits={hits?.Count ?? 0} ms={watch.ElapsedMilliseconds}");
+                    var hits = await EverythingSearch.SearchAsync(new[] { word }, CancellationToken.None);
+                    Log.Info($"everything.probe query={(hits is null ? "failed" : "ok")} hits={hits?.Count ?? 0} " +
+                             $"folders={hits?.Count(hit => hit.IsFolder) ?? 0} ms={watch.ElapsedMilliseconds}");
                 }
             });
         }
