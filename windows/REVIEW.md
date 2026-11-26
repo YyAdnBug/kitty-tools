@@ -11,7 +11,33 @@
 ## PLAN-v27：启动器搜不到 cmd、应用别名不列出装的应用；Windows 10；灵动岛样式的提示（用户转来的反馈，审查方在 Mac 上查的，2026-11-26）
 
 用户转来三条反馈（原话在 `PLAN-v27.md` 开头）。§1 是 bug：审查方在 Mac 上直接修了（R115，**没编译**）；§2（支持 Windows 10）、§3（灵动岛样式的提示）
-是拍板题（`PLAN-v27.md` §4，拍板页 https://claude.ai/artifact/UJFPpUyvKnhNQAf3us9PgU），**用户回之前别动 §2 §3**。手测 2030–2045（`HANDTEST.md` 末尾），2050 起留给 §2 §3。
+是拍板题（`PLAN-v27.md` §4，拍板页 https://claude.ai/artifact/UJFPpUyvKnhNQAf3us9PgU）。**2026-11-26 用户「全部按推荐」**：W1–W4、I1–I5 全部 A。
+手测 2030–2045（`HANDTEST.md` 末尾），2050–2079 给 Win10、2080–2099 给灵动岛。
+
+### 给 Windows agent 的开工指令
+
+这一版 §2 §3 **你们自己写、自己编译、自己验**，照 `AGENTS.md`「每一批的流程」和自查清单一批接一批做，中间不等审查；每批的报告写在本节「第 N 批」下面。版本 0.5.0。
+
+1. **开工**：`git fetch origin`，读 `PLAN-v27.md` 全文、`AGENTS.md` 第 27 条、本节。
+2. **R115 先做**（§1 的 bug，审查方写的、没编译）：在本地 `windows` 上 `git merge --no-ff origin/claude/win-v26-df962e`（已经合过 PLAN-v26 做完的 `windows`，应该没冲突），
+   照下面 R115「先核对再跑」三条、「要你们做」1–6 走完再推。0.4.0 还没发：用户要发 0.4.0 之前核完的话，R115 进 0.4.0（更新日志补那两条），不然进 0.5.0。
+3. **W-1 摸底**（W1 = A、W4 = A，用户点了头）：Windows 测试机上开 Hyper-V（要的话先在「启用或关闭 Windows 功能」里打开），从微软官网下 **Win10 22H2** 的镜像装一个虚拟机
+   （不激活也行；不用用户的账号，本地账户）。装当时最新的包（0.4.0 / 合了 R115 的构建）：起不起得来、托盘、各功能开一遍、`--ui-snapshots`、`--launcher-apps-probe`，哪里坏写在本节「W-1」下面。
+   **下镜像、开 Hyper-V 只做这一次，虚拟机留着以后每版冒烟用**；别动这台机器上别的虚拟机和设置。
+4. **I-1 透明窗口小样**（I2 = A）：一扇自己写透明背景（`SystemBackdrop` 子类，`OnTargetConnected` 里给 `ICompositionSupportsSystemBackdrop.SystemBackdrop`
+   塞一个全透明的 `CompositionColorBrush`）的窗口，里面一颗黑胶囊（圆角 = 高的一半）、白字；入口 `--island-shape-probe`。在**这台机器**（0.1.0 透明层发白的就是它）上浅色 / 深色、
+   100 / 150 / 200 % 各截一张：胶囊外面没有白边、黑边、灰边才算成。不成：写下试过什么，I-2 用 DWM 8 圆角的黑条。窗口不抢焦点、不进截图（同轻提示）。
+5. **W-2**：`TargetPlatformMinVersion` 改 `10.0.19041.0`（`TargetFramework` 留 22621）；安装包 `MinVersion=10.0.19041`、zip 版启动时查一次，太老的系统说「需要 Windows 10 2004 或更新」；
+   PLAN.md §2、README（Windows 那一段）、发布说明模板的系统要求改成「Windows 10 2004 起（推荐 Windows 11）」——README 和官网在 `main` 分支，**你们只改 `windows/` 里的**，要改 `main` 的写进报告、审查方去改。
+   图标：写一个自检把全部 108 个码点排成一张图（`--glyph-sheet`），Win10 虚拟机和 Win11 各截一张；MDL2 里没有的（Win10 上空白）换成两套字体都有的近似字形，意思照 mac 图标表。
+6. **W-3**：照 HANDTEST 2060–2079（写这一批时自己编）在 Win10 虚拟机里逐个功能走、坏的修；设置 › 录制写一句「Windows 10 上录屏时屏幕外面会有一圈黄框，录出来的视频里没有」；
+   `MAC-DIFF.md`（Win10 上直角、纯色底、MDL2 图标）、`STATUS.md`（支持的系统、Win10 没测的几样：真显卡、多屏、高分屏）；HANDTEST 开头「真机回归清单」后面加「Win10 冒烟」10 条，以后每版发版前在虚拟机里走。
+7. **I-2**：照 PLAN-v27 §3.3 和 §5：`Core/MonitorLayout.Notice` 加顶部的算法配单测（工作区顶部居中、离上沿 8、任务栏在上时让到它下面）；`Shell/Notice.cs` 按设置摆位置、展开往下长、
+   顶部时黑底白字（深浅色都黑，语气色圆底符号照旧）；设置 › 通用「提示显示在」：屏幕底部（默认）/ 屏幕顶部（灵动岛样式），**不进设置同步**、跟导出导入走；
+   全屏不另做（I4 = A），系统通知不碰（I5 = A）。`--notice-anim-test` 顶部、底部各跑一遍，`--ui-snapshots` 顶部的收着 / 展开 / 挂着 / 进度各一张。
+8. **收尾**：`Directory.Build.props` 0.5.0、`changelog.json`（feat：支持 Windows 10 2004 起、提示能放到屏幕顶部；fix：R115 那两条要是没进 0.4.0）、`build-release.ps1`、`--update-live=<已经发出去的上一版>`，
+   **不发布**；Win10 虚拟机里装 0.5.0 的安装包走一遍「Win10 冒烟」。
+
 
 ### R115（P1）启动器打 cmd 搜不到「命令提示符」、应用别名那一栏不列出装的应用 → 待核验（审查方写的、没编译）
 
