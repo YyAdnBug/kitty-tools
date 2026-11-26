@@ -59,4 +59,15 @@ public sealed class SettingsSearchTests
         var pages = new[] { new SettingsSearchPage("launcher", "启动器", new[] { "Chrome" }) };
         CollectionAssert.AreEqual(new[] { "launcher" }, SettingsSearch.Matching(pages, "  chrome ", None));
     }
+
+    /// <summary>PLAN-v26 G1：搜「朗读」落到「朗读速度」那一行；标题没有就看说明；只是页的关键词对上的停在页顶。</summary>
+    [TestMethod]
+    public void RowForPrefersTitles()
+    {
+        var rows = new[] { ("翻译服务", "朗读用系统的声音"), ("朗读速度", "慢一点、快一点"), ("自动复制", string.Empty) };
+        Assert.AreEqual(1, SettingsSearch.RowFor(rows, "朗读"));
+        Assert.AreEqual(0, SettingsSearch.RowFor(rows, "系统的声音"));
+        Assert.IsNull(SettingsSearch.RowFor(rows, "Chrome"));
+        Assert.IsNull(SettingsSearch.RowFor(rows, "  "));
+    }
 }

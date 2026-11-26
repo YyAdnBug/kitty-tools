@@ -26,6 +26,32 @@ public static class SettingsSearch
             .ToList();
     }
 
+    /// <summary>
+    /// 搜了 query 之后在那一页上落到哪一行（PLAN-v26 G1，同 mac 0.10.1 f0668a2a）：标题里有这个字的第一行，没有就说明里有的第一行；
+    /// 都没有（只是页的关键词对上了）是 null，停在页顶。
+    /// </summary>
+    public static int? RowFor(IReadOnlyList<(string Title, string Detail)> rows, string query)
+    {
+        var text = query.Trim();
+        if (text.Length == 0)
+        {
+            return null;
+        }
+
+        for (var pass = 0; pass < 2; pass++)
+        {
+            for (var index = 0; index < rows.Count; index++)
+            {
+                if ((pass == 0 ? rows[index].Title : rows[index].Detail).Contains(text, StringComparison.CurrentCultureIgnoreCase))
+                {
+                    return index;
+                }
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>搜了 query 之后停在哪一页。</summary>
     public static string PageFor(IReadOnlyList<SettingsSearchPage> pages, string query, string current, IReadOnlySet<string> hidden)
     {

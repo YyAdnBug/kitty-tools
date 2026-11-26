@@ -95,9 +95,8 @@ internal static class AutoUpdater
         if (installDir is null || !UpdateInstaller.CanWriteInstallDirectory(installDir))
         {
             Log.Warn("update.install-dir-readonly");
-            NoticeHost.Show(
-                "装在没有写权限的目录", "自动更新改不了这里的文件，正在打开发布页", NoticeTone.Warning);
-            UpdateService.OpenAvailable();
+            // 直接给「到发布页下载」和原因（PLAN-v26 G3，mac 92a057af），不替用户开浏览器
+            ShowFailure(UpdateFailure.Kind.Permission);
             return;
         }
 
@@ -175,9 +174,14 @@ internal static class AutoUpdater
         catch (Exception ex)
         {
             Log.Error("update.failed", ex);
-            // 取消 / 断网 / 写盘失败：半成品已经由 UpdateHttp 删掉，这里只提示。
-            NoticeHost.Show("更新失败", "旧版本还能正常用，详情看日志", NoticeTone.Error,
-                new NoticeAction("重试", () => _ = StartAsync()));
+            // 断网 / 写盘失败：半成品已经由 UpdateHttp 删掉，这里只提示；只有网络问题给「重试」（G3）
+            var inner = ex;
+            while (inner.InnerException is { } nested)
+            {
+                inner = nested;
+            }
+
+            ShowFailure(UpdateFailure.Classify(inner.GetType().Name, inner.HResult));
         }
         finally
         {
@@ -451,8 +455,27 @@ internal static class AutoUpdater
                 break;
             default:
                 Log.Error($"update.{result.Step.ToString().ToLowerInvariant()} failed {result.Error}");
-                NoticeHost.Show("更新失败", "旧版本还能正常用，详情看日志", NoticeTone.Error,
-                new NoticeAction("重试", () => _ = StartAsync()));
+                ShowFailure(result.Step == UpdateStep.Download ? UpdateFailure.Kind.Network : UpdateFailure.Kind.Other);
+                break;
+        }
+    }
+
+    /// <summary>更新没成（G3）：网络问题给「重试」，别的给「到发布页下载」（磁盘满只说腾空间）。</summary>
+    private static void ShowFailure(UpdateFailure.Kind kind)
+    {
+        var (title, detail) = UpdateFailure.Message(kind);
+        Log.Warn($"update.failure kind={kind}");
+        switch (kind)
+        {
+            case UpdateFailure.Kind.Network:
+                NoticeHost.Show(title, detail, NoticeTone.Error, new NoticeAction("重试", () => _ = StartAsync()));
+                break;
+            case UpdateFailure.Kind.DiskFull:
+                NoticeHost.Show(title, detail, NoticeTone.Error);
+                break;
+            default:
+                NoticeHost.Show(title, detail, NoticeTone.Warning,
+                    new NoticeAction("到发布页下载", UpdateService.OpenAvailable, Opens: true));
                 break;
         }
     }

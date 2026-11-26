@@ -40,6 +40,28 @@ internal static class MemoryProbe
             await Task.Delay(IdleSeconds * 1000);
             Report("tray-only");
 
+            // PLAN-v26 G2：KITTY_MEMORY_PROBE_SETTINGS=1 只量设置窗——各页都看一遍、关掉，过了空闲回收（两分钟）再量，跑完就停
+            if (Environment.GetEnvironmentVariable("KITTY_MEMORY_PROBE_SETTINGS") == "1")
+            {
+                ShellRuntime.Instance?.ShowSettings(welcome: false);
+                await Task.Delay(1500);
+                Report("settings-open");
+                foreach (var page in new[] { "general", "hotkeys", "clipboard", "translate", "launcher", "screenshot", "record", "notes", "reminders", "statusScreen", "about" })
+                {
+                    ShellRuntime.Instance?.ShowSettings(welcome: false, page);
+                    await Task.Delay(800);
+                }
+
+                Report("settings-all-pages");
+                ShellRuntime.Instance?.CloseSettings();
+                await Task.Delay(IdleSeconds * 1000);
+                Report("settings-closed");
+                await Task.Delay((SettleSeconds + 15) * 1000);
+                Report("settings-closed-settled");
+                Log.Info("memprobe.end");
+                return;
+            }
+
             ProbeClipboardData();
             await Task.Delay(500);
             Report("clipboard-5000-data");

@@ -32,6 +32,7 @@ internal sealed class ShellRuntime
     {
         var runtime = new ShellRuntime();
         Instance = runtime;
+        IdleReclaimer.Register(runtime.ReleaseSettingsIfHidden);
         runtime.Initialize();
         return runtime;
     }
@@ -1075,6 +1076,17 @@ internal sealed class ShellRuntime
         _settingsWindow.ShowPage(welcome, page, service);
     }
 
+    /// <summary>空闲回收（G2）：设置窗藏着就真的关掉、丢掉引用；再开时重建。</summary>
+    private void ReleaseSettingsIfHidden()
+    {
+        if (_settingsWindow is { IsClosed: false } window && !window.AppWindow.IsVisible)
+        {
+            _settingsWindow = null;
+            window.Release();
+            Log.Info("settings.released");
+        }
+    }
+
     /// <summary>启动器 Ctrl+K「改别名…」（PLAN-v20 L2）：打开 设置 › 启动器 › 命令和别名，滚到那一行。</summary>
     public void FocusCommand(string id)
     {
@@ -1115,10 +1127,11 @@ internal sealed class ShellRuntime
     {
         try
         {
-            // R34：移到屏幕外而不是 Close / Hide：反复关开会重建 XAML 树和 DWM 合成，每次约 +3–5 MB。
+            // 同用户点 ×：藏起来，空闲两分钟后真的放掉（PLAN-v26 G2；以前 R34 移到屏幕外一直留着，关掉两分钟后还多约 10 MB）
             if (_settingsWindow is { } window)
             {
-                window.AppWindow.Move(new Windows.Graphics.PointInt32(-20000, -20000));
+                window.AppWindow.Hide();
+                IdleReclaimer.Schedule();
             }
         }
         catch
