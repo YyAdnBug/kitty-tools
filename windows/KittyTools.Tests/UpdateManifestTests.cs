@@ -64,6 +64,45 @@ public sealed class UpdateManifestTests
         StringAssert.EndsWith(UpdateManifest.Url, "/releases/download/windows-update/windows-update.json");
     }
 
+    // GitCode 那份清单的签名（PLAN-gitcode）：mac 的 sign-manifest.swift selftest 用一把临时钥匙（CryptoKit P-256）签的测试向量，
+    // 在 Mac 上已经用 openssl 交叉核对过；这里核 .NET 的 ECDsa 认 CryptoKit 写的 DER 签名和 SPKI 公钥。
+    private const string TestKey = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE/CcmSn5GJI/lt+unzy63/pJvmpUULU0ZoVAzBmsQmm1VgClG193+88npTEb28CapygSKBo0Dp6NHu+G1t0jpXw==";
+    private const string TestSample = "eyJ2ZXJzaW9uIjoiMC4zLjAiLCJwYWdlIjoiaHR0cHM6Ly9naXRjb2RlLmNvbS95eWFuZGJ1Zy9raXR0eS10b29scy9yZWxlYXNlcy93aW5kb3dzLXYwLjMuMCJ9";
+    private const string TestSignature = "MEQCIBiMjQtYTEcsd0wNf60arM7MSP/pkDt3AxmM/5aZ1nzQAiBYDxIdNNixFz9dTzo9kM7p2L/YkTVDAKK6ZqaoWprV+w==";
+
+    [TestMethod]
+    public void VerifySignature_OnlyTheSignedBytes()
+    {
+        var sample = Convert.FromBase64String(TestSample);
+        Assert.IsTrue(UpdateManifest.VerifySignature(sample, TestSignature, TestKey));
+        Assert.IsTrue(UpdateManifest.VerifySignature(sample, TestSignature + "\n", TestKey), "sig 文件末尾的换行不算");
+        var tampered = (byte[])sample.Clone();
+        tampered[^2] ^= 1;
+        Assert.IsFalse(UpdateManifest.VerifySignature(tampered, TestSignature, TestKey), "改了一个字节");
+        Assert.IsFalse(UpdateManifest.VerifySignature(sample, null, TestKey));
+        Assert.IsFalse(UpdateManifest.VerifySignature(sample, "不是 base64", TestKey));
+        Assert.IsFalse(UpdateManifest.VerifySignature(sample, Convert.ToBase64String(new byte[70]), TestKey));
+        Assert.IsFalse(UpdateManifest.VerifySignature(sample, TestSignature, ""), "没填公钥 = 一律不认");
+        using var other = System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
+        Assert.IsFalse(
+            UpdateManifest.VerifySignature(sample, TestSignature, Convert.ToBase64String(other.ExportSubjectPublicKeyInfo())),
+            "别的钥匙");
+    }
+
+    [TestMethod]
+    public void Parse_GitCodeManifest()
+    {
+        // publish-gitcode.sh 改写过地址的那份：zip 在 GitCode 上，白名单认
+        const string gitcode = "https://gitcode.com/yyandbug/kitty-tools/releases";
+        var json = Manifest(x64Url: $"{gitcode}/download/windows-v0.2.0/KittyTools-0.2.0-windows-x64.zip", page: gitcode + "/windows-v0.2.0");
+        var offer = UpdateManifest.Parse(json, "x64", UpdateTrust.IsAllowedDownloadUrl);
+        Assert.IsNotNull(offer);
+        Assert.AreEqual(Hash, offer.Sha256);
+        Assert.IsTrue(UpdateTrust.IsAllowedDownloadUrl(UpdateManifest.GitCodeUrl));
+        Assert.IsTrue(UpdateTrust.IsAllowedDownloadUrl(UpdateManifest.GitCodeUrl + UpdateManifest.SignatureSuffix));
+        Assert.AreEqual(UpdateManifest.GitCodeUrl, UpdateTrust.Mirror(UpdateManifest.Url));
+    }
+
     [TestMethod]
     public void RateLimitStatuses()
     {

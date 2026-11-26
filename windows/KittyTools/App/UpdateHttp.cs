@@ -55,6 +55,41 @@ internal static class UpdateHttp
         return await response.Content.ReadAsStringAsync(cancellationToken);
     }
 
+    /// <summary>读原始字节（GitCode 那份清单要按字节验签名，PLAN-gitcode）；和 zip 一样只认白名单里的地址。</summary>
+    public static async Task<byte[]> GetBytesAsync(string url, CancellationToken cancellationToken = default)
+    {
+        EnsureTrusted(url, isFeed: false);
+        if (IsLocalSource(url))
+        {
+            return await File.ReadAllBytesAsync(LocalPath(url), cancellationToken);
+        }
+
+        using var client = NewClient(FeedTimeout);
+        using var response = await SendAsync(client, url, cancellationToken);
+        return await response.Content.ReadAsByteArrayAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// 先从 <paramref name="url"/> 下，没下成（取消除外）再从另一个站上的同名文件下（GitHub ↔ GitCode，UpdateTrust.Mirror，
+    /// PLAN-gitcode）。只给 zip 用：zip 核的是清单里的 sha256，从哪个站下都一样；.sha256 不换站。
+    /// </summary>
+    public static async Task DownloadWithMirrorAsync(
+        string url,
+        string path,
+        Action<long, long?>? progress,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await DownloadAsync(url, path, progress, cancellationToken);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && UpdateTrust.Mirror(url) is not null)
+        {
+            Log.Info($"update.download-mirror {ex.GetType().Name}");
+            await DownloadAsync(UpdateTrust.Mirror(url)!, path, progress, cancellationToken);
+        }
+    }
+
     /// <summary>
     /// 流式下载到 <paramref name="path"/>：先写 path + ".partial"，成功才改名。
     /// <paramref name="progress"/> 收到「已下载字节 / 总字节（可能不知道）」。

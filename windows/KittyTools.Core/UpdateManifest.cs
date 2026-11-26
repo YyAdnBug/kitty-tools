@@ -7,7 +7,14 @@
 //     "x64":   { "url": "https://github.com/.../releases/download/windows-v0.2.0/KittyTools-0.2.0-windows-x64.zip", "sha256": "…", "size": 123 },
 //     "arm64": { … } }
 // 解析（Parse）：缺字段、版本号不是数字和点、地址不是 https、这个架构的 zip 名字对不上、sha256 不是 64 位十六进制、过不了白名单，
-// 都当「读不到」（null，调用方退回 API）。下载照旧另核 zip 旁边的 .sha256（AutoUpdater）。
+// 都当「读不到」（null，调用方退回 API）。下载核清单里的 sha256（UpdatePlan.Sha256，PLAN-gitcode）；API 那条路照旧核 zip 旁边的 .sha256。
+//
+// GitCode 国内分发（PLAN-gitcode.md，mac 2026-11-25 拍板 W1）：国内打不开 GitHub，mac 的 publish-gitcode.sh 把每个 release 原样搬到
+// GitCode（附件名一样、地址只差前缀，UpdateTrust.Mirror），GitCode 上的清单（GitCodeUrl）把地址换成 GitCode 的。Windows 包没有
+// 代码签名，所以 GitCode 那份必须带签名（GitCodeUrl + ".sig"：ECDSA P-256 / SHA-256，DER 签名的 base64，mac 的 sign-manifest.swift
+// 用只在用户钥匙串里的私钥签）且对得上写死的公钥（SigningKey）才认——签名覆盖整个文件，sha256 跟着可信，从哪个站下 zip 都一样安全。
+// SigningKey 是空的时候 GitCode 那份一律不认（只走 GitHub，同以前）。
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -25,6 +32,21 @@ public static partial class UpdateManifest
 
     public const string Url = "https://github.com/YyAdnBug/kitty-tools/releases/download/" + ReleaseTag + "/" + FileName;
 
+    /// <summary>GitCode 上同一个清单（publish-gitcode.sh 改写了地址、签了名）。GitCode 没有 releases/latest/download，同样挂在固定标签上。</summary>
+    public const string GitCodeUrl = "https://gitcode.com/yyandbug/kitty-tools/releases/download/" + ReleaseTag + "/" + FileName;
+
+    /// <summary>签名文件 = 清单地址 + 这个后缀。</summary>
+    public const string SignatureSuffix = ".sig";
+
+    /// <summary>
+    /// 验 GitCode 那份清单的公钥（SubjectPublicKeyInfo DER 的 base64，P-256）：用户在 Mac 上跑
+    /// <c>swift macos/sign-manifest.swift new-key</c> 生成、私钥只在他的钥匙串里，公钥打印出来填在这里。空 = 不认 GitCode 的清单。
+    /// </summary>
+    public const string SigningKey = "";
+
+    /// <summary>GitCode 的发布页（上一次清单从 GitCode 来时「打开发布页」去这里）。</summary>
+    public const string GitCodeReleasesPage = "https://gitcode.com/yyandbug/kitty-tools/releases";
+
     /// <summary>发布页（限流时指过去）。</summary>
     public const string ReleasesPage = "https://github.com/YyAdnBug/kitty-tools/releases";
 
@@ -36,6 +58,31 @@ public static partial class UpdateManifest
 
     [GeneratedRegex(@"^[0-9a-f]{64}$")]
     private static partial Regex HashPattern();
+
+    /// <summary>
+    /// 清单的签名对不对得上公钥（publicKey 默认是 SigningKey；单测传测试向量）。签名是 sign-manifest.swift 写的：DER 编码的 ECDSA
+    /// 签名再 base64，前后的空白不算。公钥空、签名不是 base64、对不上一律 false。
+    /// </summary>
+    public static bool VerifySignature(byte[] manifest, string? signature, string publicKey = SigningKey)
+    {
+        if (string.IsNullOrEmpty(publicKey) || string.IsNullOrWhiteSpace(signature))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var key = ECDsa.Create();
+            key.ImportSubjectPublicKeyInfo(Convert.FromBase64String(publicKey), out _);
+            return key.VerifyData(
+                manifest, Convert.FromBase64String(signature.Trim()), HashAlgorithmName.SHA256,
+                DSASignatureFormat.Rfc3279DerSequence);
+        }
+        catch (Exception ex) when (ex is FormatException or CryptographicException)
+        {
+            return false;
+        }
+    }
 
     /// <summary>403 / 429：没登录的 API 每个 IP 每小时 60 次用完了。</summary>
     public static bool IsRateLimited(int status) => status is 403 or 429;

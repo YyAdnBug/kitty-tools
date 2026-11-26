@@ -141,7 +141,7 @@ internal static class AutoUpdater
             _queue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
             _cancel = new CancellationTokenSource();
             NoticeHost.ShowProgress("正在下载更新", $"Kitty Tools {version}", 0, CancelAction);
-            var plan = new UpdatePlan(version, zipUrl, hashUrl, assetName);
+            var plan = new UpdatePlan(version, zipUrl, hashUrl, assetName, UpdateService.AvailableSha256);
             UpdateFlowResult result;
             try
             {
@@ -150,7 +150,7 @@ internal static class AutoUpdater
                     downloadDir,
                     staging,
                     installDir,
-                    UpdateHttp.DownloadAsync,
+                    UpdateHttp.DownloadWithMirrorAsync,
                     UpdateHttp.GetTextAsync,
                     UpdateFlow.ReadVersion,
                     OnProgress,
@@ -244,10 +244,10 @@ internal static class AutoUpdater
             var assetName = UpdateService.AvailableAssetName ?? $"KittyTools-{version}-{ArchitectureLabel()}.zip";
             Log.Info($"update.prepare version={version}");
             var result = await UpdateFlow.PrepareAsync(
-                new UpdatePlan(version, zipUrl, UpdateService.AvailableHashUrl, assetName),
+                new UpdatePlan(version, zipUrl, UpdateService.AvailableHashUrl, assetName, UpdateService.AvailableSha256),
                 Paths.UpdatesDirectory,
                 staging,
-                UpdateHttp.DownloadAsync,
+                UpdateHttp.DownloadWithMirrorAsync,
                 UpdateHttp.GetTextAsync,
                 UpdateFlow.ReadVersion,
                 OnProgress,

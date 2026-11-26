@@ -5,6 +5,10 @@
 //   zip / .sha256 https://github.com/YyAdnBug/kitty-tools/releases/download/...
 //                 https://objects.githubusercontent.com/...
 //                 https://release-assets.githubusercontent.com/...
+//                 https://gitcode.com/yyandbug/kitty-tools/releases/download/...（GitCode 镜像，PLAN-gitcode；atomgit.com 是它的新域名）
+//                 https://file-cdn.gitcode.com/...（GitCode 下载 302 过去的带签名地址）
+// GitCode 上的 zip 能下，不等于 GitCode 说什么都信：GitCode 那份清单要签名对得上才认（UpdateManifest.VerifySignature），
+// zip 核的是签过名的清单里的 sha256。
 // 不认：http://、file://、本地路径、带账号密码的、非 443 端口的、主机只是长得像的
 // （比如 github.com.evil.com）、路径指向别的仓库的。跳转要自己逐跳走，每一跳都过这里。
 //
@@ -22,13 +26,21 @@ public static class UpdateTrust
 
     private const string FeedPath = "/repos/YyAdnBug/kitty-tools/releases";
     private const string DownloadPrefix = "/YyAdnBug/kitty-tools/releases/download/";
+    private const string GitCodeDownloadPrefix = "/yyandbug/kitty-tools/releases/download/";
+
+    private const string GitHubBase = "https://github.com" + DownloadPrefix;
+    private const string GitCodeBase = "https://gitcode.com" + GitCodeDownloadPrefix;
 
     private static readonly string[] AssetHosts =
     {
         "github.com",
         "objects.githubusercontent.com",
         "release-assets.githubusercontent.com",
+        "file-cdn.gitcode.com",
     };
+
+    /// <summary>GitCode 的主页主机（下载地址要在本仓库的 releases/download 下）。</summary>
+    private static readonly string[] GitCodeHosts = { "gitcode.com", "atomgit.com" };
 
     /// <summary>发布列表只认 GitHub API 上这个仓库的 releases。</summary>
     public static bool IsAllowedFeedUrl(string? url)
@@ -55,7 +67,31 @@ public static class UpdateTrust
             return uri.AbsolutePath.StartsWith(DownloadPrefix, StringComparison.OrdinalIgnoreCase);
         }
 
+        if (GitCodeHosts.Any(host => IsHost(uri, host)))
+        {
+            return uri.AbsolutePath.StartsWith(GitCodeDownloadPrefix, StringComparison.OrdinalIgnoreCase);
+        }
+
         return AssetHosts.Any(host => host != "github.com" && IsHost(uri, host));
+    }
+
+    /// <summary>
+    /// 同一个附件在另一个站上的地址（GitHub ↔ GitCode，两边附件名一样，PLAN-gitcode）；不是两个站上本仓库 release 的下载地址就 null。
+    /// 下载失败时换站用；.sha256 不换站（它没签名，换了就等于信了 GitCode）。
+    /// </summary>
+    public static string? Mirror(string? url)
+    {
+        if (url is null)
+        {
+            return null;
+        }
+
+        if (url.StartsWith(GitHubBase, StringComparison.OrdinalIgnoreCase))
+        {
+            return GitCodeBase + url[GitHubBase.Length..];
+        }
+
+        return url.StartsWith(GitCodeBase, StringComparison.OrdinalIgnoreCase) ? GitHubBase + url[GitCodeBase.Length..] : null;
     }
 
     /// <summary>

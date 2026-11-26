@@ -14,6 +14,9 @@
 #   传完核一遍（两条都要 200）：
 #     curl -fsSL https://github.com/YyAdnBug/kitty-tools/releases/download/windows-update/windows-update.json
 #     curl -fsIL https://github.com/YyAdnBug/kitty-tools/releases/download/windows-v<版本>/KittyTools-<版本>-windows-x64.zip
+#   核过之后在 Mac 上跑 macos 分支的 macos/publish-gitcode.sh windows-v<版本>（PLAN-gitcode.md）：把这个 release 原样搬到 GitCode 镜像
+#   （国内打不开 GitHub），换上 GitCode 的清单（地址换成 GitCode 的，并用 sign-manifest.swift 签名 → windows-update.json.sig）。
+#   上传 GitHub 时文件名别改：两边的下载地址只差前缀，App 换站（UpdateTrust.Mirror）靠这一点。
 [CmdletBinding()]
 param(
     [string]$Configuration = 'Release'

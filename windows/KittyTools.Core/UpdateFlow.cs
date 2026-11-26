@@ -12,7 +12,11 @@ using System.IO.Compression;
 
 namespace KittyTools.Core;
 
-public sealed record UpdatePlan(string Version, string ZipUrl, string? HashUrl, string AssetName);
+/// <summary>
+/// Sha256：清单里写的（PLAN-gitcode）。有它就只核它、不取 .sha256——GitCode 那份清单签过名、sha256 跟着可信，GitCode 上的 .sha256 没签名；
+/// 没有（API 那条路）才取 HashUrl。
+/// </summary>
+public sealed record UpdatePlan(string Version, string ZipUrl, string? HashUrl, string AssetName, string? Sha256 = null);
 
 public enum UpdateStep
 {
@@ -86,13 +90,22 @@ public static class UpdateFlow
             await downloadAsync(plan.ZipUrl, zip, progress, cancellationToken);
 
             step = UpdateStep.Hash;
-            if (string.IsNullOrWhiteSpace(plan.HashUrl))
+            string? expected;
+            if (UpdateHash.IsHex(plan.Sha256))
             {
-                return UpdateFlowResult.Failed(UpdateStep.Hash, "这个版本没有附 .sha256");
+                expected = plan.Sha256;
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(plan.HashUrl))
+                {
+                    return UpdateFlowResult.Failed(UpdateStep.Hash, "这个版本没有附 .sha256");
+                }
+
+                var hashText = await getTextAsync(plan.HashUrl, cancellationToken);
+                expected = UpdateHash.ExpectedFor(hashText, Path.GetFileName(zip));
             }
 
-            var hashText = await getTextAsync(plan.HashUrl, cancellationToken);
-            var expected = UpdateHash.ExpectedFor(hashText, Path.GetFileName(zip));
             if (expected is null || !UpdateHash.FileMatches(zip, expected))
             {
                 return UpdateFlowResult.Failed(UpdateStep.Hash, "下载的更新包校验对不上");

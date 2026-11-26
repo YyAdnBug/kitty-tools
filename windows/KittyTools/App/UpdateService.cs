@@ -5,6 +5,9 @@
 // 每日检查跑在线程池上，所以检查的后半段（改设置、通知、改托盘）一律回 UI 线程（第二版 §2 第 1 条）。
 // PLAN-v18 L12（mac c006ea04，issue #12）：先读固定预发布 release 上的更新清单 windows-update.json（Core UpdateManifest，不走 API、
 // 不占次数），读不到（还没传、网络问题、解不出来）再读 API 的发布列表；API 回 403 / 429 时说「GitHub 限流了」、指到发布页。
+// GitCode 国内分发（PLAN-gitcode.md）：国内打不开 GitHub。GitHub 和 GitCode 的清单一起问，先回来、认得出的那份为准（FirstManifestAsync）；
+// GitCode 那份要签名对得上 UpdateManifest.SigningKey 才认（Windows 包没有代码签名，不能凭 GitCode 说了算）。下载核清单里的 sha256，
+// zip 没下成换另一个站（UpdateHttp.DownloadWithMirrorAsync）；「打开发布页」跟着上一次先回来的那个站。
 // 调试开关：KITTY_UPDATE_FEED 指向一个本地 JSON 文件或 URL，用它代替 GitHub 的发布列表；KITTY_UPDATE_MANIFEST 同样代替清单
 // （设了 KITTY_UPDATE_FEED 而没设它时不读清单，测试不碰真地址）。
 // 这个开关、以及 http:// / file:// / 本地路径只在 Debug 或 --update-test 下认（REVIEW R1）；
@@ -54,6 +57,12 @@ internal static class UpdateService
 
     /// <summary>zip 的资产名（按它去 .sha256 里找哈希）。</summary>
     public static string? AvailableAssetName { get; private set; }
+
+    /// <summary>清单里写的 zip 的 sha256（PLAN-gitcode：有它就只核它）；API 那条路没有。</summary>
+    public static string? AvailableSha256 { get; private set; }
+
+    /// <summary>上一次清单是 GitCode 那份先回来的（「打开发布页」去 GitCode）。</summary>
+    private static bool _fromGitCode;
 
     public static event Action? Changed;
 
@@ -120,15 +129,20 @@ internal static class UpdateService
             var manifestUrl = UpdateHttp.TestMode && Environment.GetEnvironmentVariable("KITTY_UPDATE_MANIFEST") is { Length: > 0 } testManifest
                 ? testManifest
                 : UsingLocalFeed ? null : UpdateManifest.Url;
-            if (manifestUrl is not null && await ReadManifestAsync(manifestUrl) is { } offer && Version.TryParse(offer.Version, out var offered))
+            var found = manifestUrl == UpdateManifest.Url
+                ? await FirstManifestAsync()
+                : manifestUrl is null ? null : await ReadManifestAsync(manifestUrl, signed: false, CancellationToken.None);
+            if (found is { } offer && Version.TryParse(offer.Version, out var offered))
             {
                 var fresh = offered > current;
-                Log.Info($"update.check newer={fresh} version={offer.Version} source=manifest");
+                Log.Info($"update.check newer={fresh} version={offer.Version} source=manifest gitcode={_fromGitCode}");
                 LastCheckFailed = false;
                 LastCheckRateLimited = false;
-                ApplyResult(fresh, offer.Version, offer.Page, offer.ZipUrl, offer.HashUrl, offer.AssetName, current, userInitiated);
+                ApplyResult(fresh, offer.Version, offer.Page, offer.ZipUrl, offer.HashUrl, offer.AssetName, current, userInitiated, offer.Sha256);
                 return;
             }
+
+            _fromGitCode = false;
 
             var json = string.IsNullOrWhiteSpace(feed)
                 ? await UpdateHttp.GetFeedAsync(DefaultFeed)
@@ -202,12 +216,55 @@ internal static class UpdateService
         }
     }
 
-    /// <summary>读更新清单：读不到、解不出来、这个架构没有都是 null（退回 API）。</summary>
-    private static async Task<UpdateOffer?> ReadManifestAsync(string url)
+    /// <summary>
+    /// GitHub 和 GitCode 的清单一起问，先回来、认得出的那份为准，另一个取消；先回来的认不出就等另一个（PLAN-gitcode）。
+    /// SigningKey 还没填时只问 GitHub。ponytail: 先回的那个站要是还没传上最新一版（发版后几分钟），这次查到的是旧的，明天再查就对了。
+    /// </summary>
+    private static async Task<UpdateOffer?> FirstManifestAsync()
+    {
+        using var cancel = new CancellationTokenSource();
+        var github = ReadManifestAsync(UpdateManifest.Url, signed: false, cancel.Token);
+        var asking = new List<Task<UpdateOffer?>> { github };
+        if (UpdateManifest.SigningKey.Length > 0)
+        {
+            asking.Add(ReadManifestAsync(UpdateManifest.GitCodeUrl, signed: true, cancel.Token));
+        }
+
+        while (asking.Count > 0)
+        {
+            var done = await Task.WhenAny(asking);
+            asking.Remove(done);
+            if (await done is { } offer)
+            {
+                cancel.Cancel();
+                _fromGitCode = done != github;
+                return offer;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 读更新清单：读不到、解不出来、这个架构没有都是 null（退回 API）。signed：要带对得上 SigningKey 的签名（GitCode 那份），
+    /// 签名按下载下来的原始字节验。
+    /// </summary>
+    private static async Task<UpdateOffer?> ReadManifestAsync(string url, bool signed, CancellationToken cancellationToken)
     {
         try
         {
-            var json = await UpdateHttp.GetTextAsync(url);
+            var bytes = await UpdateHttp.GetBytesAsync(url, cancellationToken);
+            if (signed)
+            {
+                var signature = await UpdateHttp.GetTextAsync(url + UpdateManifest.SignatureSuffix, cancellationToken);
+                if (!UpdateManifest.VerifySignature(bytes, signature))
+                {
+                    Log.Warn("update.manifest-bad-signature");
+                    return null;
+                }
+            }
+
+            var json = System.Text.Encoding.UTF8.GetString(bytes).TrimStart('\uFEFF');
             var offer = UpdateManifest.Parse(json, Architecture, address => UpdateHttp.TestMode || UpdateTrust.IsAllowedDownloadUrl(address));
             if (offer is null)
             {
@@ -223,12 +280,13 @@ internal static class UpdateService
         }
     }
 
-    /// <summary>GitHub 上 Kitty Tools 的发布页（限流时去那里下载）。</summary>
+    /// <summary>Kitty Tools 的发布页（限流时去那里下载）：上一次清单从 GitCode 先回来就去 GitCode 的。</summary>
     public static void OpenReleasesPage()
     {
         try
         {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(UpdateManifest.ReleasesPage) { UseShellExecute = true });
+            var page = _fromGitCode ? UpdateManifest.GitCodeReleasesPage : UpdateManifest.ReleasesPage;
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(page) { UseShellExecute = true });
         }
         catch (Exception ex)
         {
@@ -248,12 +306,13 @@ internal static class UpdateService
         string? bestHash,
         string? bestAsset,
         Version current,
-        bool userInitiated)
+        bool userInitiated,
+        string? bestSha256 = null)
     {
         if (_dispatcher is { } dispatcher && !dispatcher.HasThreadAccess)
         {
             dispatcher.TryEnqueue(
-                () => ApplyResult(newer, bestVersion, bestUrl, bestZip, bestHash, bestAsset, current, userInitiated));
+                () => ApplyResult(newer, bestVersion, bestUrl, bestZip, bestHash, bestAsset, current, userInitiated, bestSha256));
             return;
         }
 
@@ -262,6 +321,7 @@ internal static class UpdateService
         AvailableZipUrl = newer ? bestZip : null;
         AvailableHashUrl = newer ? bestHash : null;
         AvailableAssetName = newer ? bestAsset : null;
+        AvailableSha256 = newer ? bestSha256 : null;
         Notify();
         var skipped = newer && bestVersion == SettingsService.Current.UpdateSkippedVersion;
         if (newer && !skipped && bestVersion is not null &&
