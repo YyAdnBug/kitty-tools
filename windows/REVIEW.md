@@ -185,7 +185,7 @@ WebDAV 一次 401 之后自动的轮不再发请求。**要用户看**：D1 照�
 没调排版阈值、没改断言）；O2 认码满屏文字没码 553 → 263 ms；O3 数字重量了（STATUS §2）；O4 清单在下面；O5 STATUS 重写 §1–§3、MAC-DIFF 记了先不跟的；O6 版本 0.4.0、更新日志 23 条。
 **要用户看**：0.3.1 和 0.4.0 两个包都没发，发哪个、什么时候发等你说（0.4.0 包含 0.3.1 的全部）；第 2 批跨屏框选没做（这台一块屏）；G1 的后一半没做。
 
-- **0.4.0 的包**（`../kitty-rel-031` 打的，`68aba84e`；`build-release.ps1` 0 警告；`--update-live=0.3.0` 退出码 0、下载 50 007 019 字节、sha256 对得上）：
+- **0.4.0 的包**（**作废**：更新日志改过、2026-11-26 重打了，新的见下面「0.4.0 发版前复查 › 重打结果」。`../kitty-rel-031` 打的，`68aba84e`；`build-release.ps1` 0 警告；`--update-live=0.3.0` 退出码 0、下载 50 007 019 字节、sha256 对得上）：
 
   | 文件 | sha256 |
   |---|---|
@@ -290,6 +290,65 @@ WebDAV 一次 401 之后自动的轮不再发请求。**要用户看**：D1 照�
   照那条分支上 `REVIEW.md` 顶上「PLAN-v27 › 给 Windows agent 的开工指令」做（`--no-ff` 并进 `windows`、先核对再跑、R115「要你们做」2–6、R116 的透明胶囊和 Win10 虚拟机）。
 - 分支 `origin/claude/gitcode-win`（`5e6a8be0`）：更新清单验签后接 GitCode 镜像（国内能更新），审查方在 Mac 上写的、没编译。照那条分支上的 `windows/PLAN-gitcode.md` 核验：编译、单测（签名测试向量、白名单、Mirror）、AOT；
   `SigningKey` 还是空的（= 只认 GitHub，和以前一样），**公钥等用户在 Mac 上跑 `sign-manifest.swift new-key` 之后才填**，填之前别去 GitCode 上验真地址。并进 `windows` 时排在上一条后面，冲突在 `AGENTS.md` / `REVIEW.md` 的追加段，两边都留。
+
+### 重打结果（Claude 在 Windows 上，2026-11-26）→ 0.4.0 重打好了，**没发布、没打 tag**
+
+**结论**：「要你们做」1–8 都走了。Everything 1.4.1 和 1.5 beta 对着真程序都能用，第 3、4 条的常量和发送方检查不用改，产品代码一行没动（只加了自检，`0649f54b`）；
+新包 0 警告、`--smoke` 过、`--update-live=0.3.0` 过，从 GitHub 上的 0.3.0 真升级一次，默认快捷键按设计换了、改过的没动。
+
+1. **同步**：`windows` rebase 到 `19558cc2`；`../kitty-rel-031` 切到 `0649f54b`（= `19558cc2` + 下面那个只动自检的提交）。
+2. **编译、单测**：Debug x64 0 警告；`dotnet test` 1209 全过（含 `ChangelogRulesTests`）。
+3. **关于页**（`--ui-snapshots`，新加一张整条展开的 `settings-about-full`）：0.4.0 展开、32 项，下面直接是 0.3.0、没有 0.3.1；
+   `{date+3d}` 字是对的（窄的时候在「{date」后面折行）；`C:\、~\` 显示对。图在 `windows-shots` 的 `0.4.0-everything/settings-about-0.4.0-full.png`。
+4. **占位符的示例**：新建 / 编辑片段的提示（`Clipboard/ClipDialogs.cs` `PlaceholderHelp`）写的是 `{date+1d}`、`{date-1w:yyyy/MM/dd}`；设置页里没有占位符的说明；
+   截图自检的样例片段 `{date+1d:M月d日}` 也对。没有冒号版的，不用改。
+5. **Everything 真机验证**：
+   - **装在哪**：这台没有 Windows 沙盒（`WindowsSandbox.exe` 不在，开它要管理员和重启），本来也没装 Everything → 照退路装在这台上，但用的是官网的**便携版 zip**
+     （`Everything-1.4.1.1032.x64.zip` sha256 `698df475…`、`Everything-1.5.0.1424b.x64.zip` `f8e5d907…`，两个 exe 都是 voidtools PTY LTD 的有效签名），
+     先写好 `Everything.ini`：`run_as_admin=0`、不收整盘、只按文件夹索引 `D:\kitty-test`（不要管理员、不装服务、不写注册表、不弹 UAC）。
+     测完两个都 `-exit`、整个目录删掉；`%APPDATA%`、`%LOCALAPPDATA%`、`ProgramData`、`HKCU\Software\voidtools`、服务、开机启动都查过没留东西；测试文件删了。
+   - **`--everything-probe`**（Debug 测试档）：`version=1.4.1.1032 query=ok hits=3 ms=8`（几次 5–8 ms）。
+     `--file-search=jpg` → `source=everything ms=10 hits=3`；只在 D: 上（不在 Windows 索引里）的 `kittyevonly` → `source=everything hits=1`。
+   - **第 3 条（项标志）**：探针加了 `--everything-probe=<词>` 和 `folders=`：搜文件夹名 `hits=1 folders=1`，`ItemFolder = 0x1` 对。启动器（`--launcher-script`）结果行写「文件夹」、
+     文件夹图标，Enter 在资源管理器里打开了那个文件夹（只关了那一扇）。另：结果行的「文件夹」其实是 `Directory.Exists` 判断的，`EverythingHit.IsFolder` 产品代码里没用到；
+     `ItemDrive` 没验到（只索引了一个文件夹，没有盘根）。
+   - **第 4 条（回包的发送方）**：1.4、1.5 跑下来的日志里都**没有** `everything.reply-sender`，不用放宽。
+   - **HANDTEST 1815–1822**（Windows 11-26，便携版 + 测试档，按键都用 `--launcher-script` / 日志，没在桌面上发合成按键）：
+     - 1815 过：`D:\kitty-test` 里的「季度报告」两条 `source=everything`。「没有 AppData、回收站、Windows」那半没测到（只索引了测试文件夹，排除规则有单测管着）。
+     - 1816 过：`-exit` 后 `version=none`，`--file-search=季度报告` → `source=oledb ms=48`，不报错。
+     - 1817 过：`-load-delay 40000` 启动，载完之前搜 → `everything.not-loaded` → `source=oledb`；载完后自己又用上。
+     - 1818 过：测试档里关掉 `launcherUseEverything` → `source=oledb`（Everything 开着）。设置页那行状态跟开关变不变没看（那行写的是找没找到正在运行的 Everything）。
+     - 1819：**1.5 能用**：`1.5.0.1424b` 便携版 `version=1.5.0.1424 query=ok hits=3`、文件夹 `folders=1`、启动器 `source=everything`（1.5 beta 的窗口类名和 1.4 一样）。
+     - 1820 **没测**：要以管理员身份运行 Everything，得在你桌面上点 UAC，留给你（清单第 23 条）。
+     - 1821 过：用着 Everything 时 `hint=none`；关掉开关走索引时 `hint=file-hint:settings`（「D: 不在索引里」）。设置页「建了索引的位置」照旧橙字写 D: 不在索引里（那是索引的状态，1814）。
+     - 1822 过：`季度报告 (终版)&v2_[1]'s.txt` Everything 一条路（全名、中间一截、`50%`）、Windows 搜索一条路（放在「文档」里的那份，`files.oledb hits=1`）都搜得到；打开只测了文件夹那一行。
+   - **内存**（新包 x64，Release 探针档，`KITTY_MEMORY_PROBE_SETTINGS=1`）：托盘 50.7 MB（Everything 开着）/ 50.6（没开），设置窗各页 101.8 / 99.8，关掉两分钟后 99.9 / 98.4。不涨。
+   - **设置 › 启动器**：「找到了 Everything 1.4.1.1032」（新加的截图 `settings-launcher-files`，浅 / 深）。截图推在 `windows-shots` `4734e04b` 的 `0.4.0-everything/`（5 张，只有自己的窗口）。
+6. **重打 0.4.0**（`../kitty-rel-031`，`0649f54b`，产物 `D:\yy\Codes\Tauri\kitty-rel-031\windows\build\release\0.4.0\`；上一次的挪到旁边 `0.4.0-superseded-1355\`，**别传**）：
+   `build-release.ps1` 0 警告、x64 / ARM64 `--smoke` 过、PRI 四个齐；`--update-live=0.3.0` 退出码 0（下载 50 007 019 字节、sha256 对得上）；内置智谱 key 在 exe 里；
+   `release-notes.md` 46 行，有默认快捷键（截图 Alt+A、截取上次区域 Alt+X、划词 Alt+D）、同步四条、文件搜索 / Everything，没有 0.3.1。发布目录 x64 106.4 MB / ARM64 112 MB，各 159 个文件（不含 pdb）。
+
+   | 文件 | 字节 | sha256 |
+   |---|---|---|
+   | KittyTools-0.4.0-windows-x64.zip | 50 411 082 | `f85e135e200e1ecf973a183041e6dd1a7320457db64629930c74b3b5baae0e76` |
+   | KittyTools-0.4.0-windows-x64-setup.exe | 40 000 070 | `0b9415aaf60e3a4aaddcc12254bc825fb2bbff6844b3d51ba240e7bb29e3a778` |
+   | KittyTools-0.4.0-windows-arm64.zip | 49 292 504 | `f5f186c8bf977234dab80d6a02a1ceaccee7b39facae3dd85645f02bdce2b514` |
+   | KittyTools-0.4.0-windows-arm64-setup.exe | 39 651 444 | `53f47ccb5ed0270ccc77812740c8e0178b2a1bd5e5850fdd5c96c5642354fca6` |
+
+7. **从 0.3.0 真升级**：GitHub 上 `windows-v0.3.0` 的 x64 zip（sha256 `2247d999…` 和 .sha256 对得上）解到 scratchpad，Release 探针档 `up040`，TEMP 指到 scratchpad。
+   先起一次生成设置：截图 Alt+X、截取上次区域 Ctrl+Alt+Z 留默认，划词从 Alt+E 改成 Ctrl+Alt+E。0.4.0 还没发布，清单读不到它，所以用 0.3.0 自带的
+   `--update-test` + `KITTY_UPDATE_FEED`（本地发布列表，zip 和 .sha256 用 file:// 指到新包）——下载、校验、替换、重启走的是同一条路，只是不过网（过网那半是上面的 `--update-live`）。
+   日志：`update.check newer=True version=0.4.0` → `update.ready`（后台下好）→ 再起一次同档 exe 开出主界面，底栏「更新到 0.4.0」UIA Invoke →
+   `update.installed files=159` → `app.exit`（2 秒后 `exit-forced`）→ 新进程 `settings.hotkey-default-moved screenshot`、`… screenshotLast` → `shell.ready` →
+   `update.relaunched version=0.4.0 removed-old=136`，新进程 `ProductVersion 0.4.0+0649f54b`。之后 `settings.json` `version: 3`：截图 Alt+A、截取上次区域 Alt+X、
+   **划词还是 Ctrl+Alt+E**。只结束了自己起的 PID（13816）；探针档、解压目录都删了；你装的那份（`D:\Apps\Kitty Tools`，PID 23388）没碰。
+8. 不发布、不打 tag。
+
+**要用户 / 审查方看**：
+
+- 更新日志 0.4.0 的 perf 那条「设置窗关掉两分钟后整个放掉，不再一直占着内存」：放掉是真的（G2），但进程的专用工作集只回来 1.5–2 MB（上面 101.8 → 99.9，第 12 批报告里也是 1.4 MB），
+  用户在任务管理器里看不到回落（清单第 30 条就是看这个）。要不要改成不提内存的说法，你们定；改的话又要重打。
+- 自检的小毛病（不挡发布）：`--ui-snapshots` 的 `settings-launcher-end` 拍出来是通用页，不是启动器页滚到底。
 
 ## 多屏截图：只能在光标那块屏上框选、扩展屏过不去（审查方在 Mac 上写、没编译，2026-11-22）
 
