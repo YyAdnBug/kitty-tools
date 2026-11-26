@@ -598,8 +598,10 @@ nonisolated enum OCR {
   static let helperFlag = "--ocr"
   /// 编译磁盘缓存：子进程在内存里生成样图，不接受路径。
   static let prepareFlag = "--prepare-ocr"
-  /// 子进程最多跑这么久，到点杀掉、退回进程内识（整屏截图实测一两秒；长截图慢一些）
-  static let helperTimeout = Duration.seconds(60)
+  /// 子进程最多跑这么久，到点杀掉、退回进程内识（整屏截图实测一两秒；长截图慢一些）。和准备一样长：磁盘快满时系统的紧急清理
+  /// 会删掉编好的模型（2026-11-26 实测几分钟一次，标记还在、prepare 看不出），子进程要先现场重编：一个 30–45 s，
+  /// 和另一个进程同时编时 64 s——原来的 60 s 在编到一半时把它杀掉，退回进程内又编一遍，模型还留在了主进程里
+  static let helperTimeout = prepareTimeout
 
   /// 这次启动是不是子进程识字
   enum Launch: Equatable {
@@ -710,7 +712,7 @@ nonisolated enum OCR {
     in url: URL, executable: String? = Bundle.main.executablePath
   ) async -> String? {
     guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-    // 模型还没编好时先等它：不然这一个子进程自己去编，过了 helperTimeout 被杀、退回进程内再编一遍
+    // 模型还没编好时先等它，免得这一个子进程自己去编（编好后被系统清掉的那种看不出，靠 helperTimeout 等得够长）
     await prepare()
     let result: Subprocess.Result? =
       if let executable {

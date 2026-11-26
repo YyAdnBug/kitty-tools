@@ -2061,3 +2061,11 @@ macOS 26 起才有这个菜单；要一个能往自己邮箱或手机发验证�
 - [ ] 4. （B1）同上但 GitHub 能连：照常查到、从 GitHub 下（`updateSite` 是 github 或没有）；关于页「打开发布页」打开的是 GitHub 的发布页，第 3 条那台打开的是 GitCode 的。
 - [ ] 5. （B1）下载更新包时点「取消」再点「更新」：这次从另一个站下（看活动监视器 › 网络，或 `nettop -p <pid>` 里连的是 gitcode / github），照样装得上。
 - [ ] 6. （E1）`publish-gitcode.sh emoji-pack-1` 搬完后，在第 3 条那台删掉数据目录里的 `emoji-pack/`，设置 › 状态屏选一个没下过的动画表情 → 一两秒内变成动的（不等 20 秒）。
+
+## 识字变慢：磁盘快满时系统清掉编好的模型（下一版；2026-11-26，mac-clipboard §1「磁盘快满时系统会清掉编好的模型」）
+
+背景：磁盘快满时系统每几分钟清一次缓存，编好的识字模型跟着没了，下一次识字要现场重编半分钟左右（系统行为，代码改不了）。这一版只修剪贴板后台识字的子进程编到一半被杀（超时 60 → 300 秒）。
+
+- [ ] 1. Kitty Tools 开着，删掉 `~/Library/Caches/com.yy.kitty-tools.native/com.apple.e5rt.e5bundlecache` 里的文件（只删文件，同系统清理）→ 复制一张有字的图 → 半分钟到一分多钟后剪贴板面板里搜得到图里的字；`log show --last 5m --predicate 'subsystem == "com.yy.kitty-tools.native"' | grep 子进程识字` 没有「状态 15」。
+- [ ] 2. 接着（子进程编完之后）⌥S 框一段文字 → 不到一秒就开始翻（浮窗里出原文；子进程编好的缓存主进程也用）。
+- [ ] 3. 磁盘空间够（可用 20 GB 以上）时，正常用一天：`log show --last 1d --predicate 'process == "deleted"' | grep -c "critical purge"` 是 0，⌥S 闲了十分钟以上再用也不慢。

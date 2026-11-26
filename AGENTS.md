@@ -136,6 +136,11 @@ TEST_RUNNER_KITTY_LIVE_LAUNCHPAD_ANIM=/tmp/kitty-launchpad-anim xcodebuild -proj
 TEST_RUNNER_KITTY_MEMORY_PROBE_DIR=/tmp/kitty-memory xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/MemoryProbeTests/measure()'
 
+# 识字速度探针（按需，几秒；grep「ocr-speed」：冷识 / 热识 / 放掉后再识 / 实况文本，和每步前后系统编好的模型缓存里几个文件。
+# 值换成 purge 会中途照磁盘快满时系统的紧急清理删掉 Dev 版编好的模型，之后要现场重编半分钟，用法见文件头）
+TEST_RUNNER_KITTY_OCR_SPEED_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test SWIFT_OPTIMIZATION_LEVEL=-O -only-testing:'KittyToolsTests/OCRSpeedProbeTests/measure()'
+
 # 剪贴板采集读大图的探针（按需，几秒；第四轮体检 F4②）：在一块自己起名的剪贴板上（不碰系统剪贴板、不进历史）放一张约 40 MP
 # 的 PNG + TIFF，量主线程 data(forType:) 读 .png / .tiff 各多久（本进程写、另一个进程写、只有 TIFF 三种），grep「clipboard-probe」；
 # 2026-10-30 本机：另一个进程写的 87 MB PNG 第一次 10 ms、114 MB TIFF 18 ms。iPhone 传来的通用剪贴板量不到，看 HANDTEST
