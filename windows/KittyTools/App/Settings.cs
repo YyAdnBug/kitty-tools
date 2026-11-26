@@ -67,6 +67,12 @@ internal sealed class Settings
     public string LauncherPanelPosition { get; set; } = "top";
 
     /// <summary>
+    /// 轻提示出在哪（PLAN-v27 I1，设置 › 通用「提示显示在」）："bottom" 屏幕底部、任务栏上方（默认，0.1.0 定的 Windows 样子）/
+    /// "top" 屏幕顶部正中、黑色胶囊（灵动岛样式）。Windows 独有，进 windows-settings 一类（Windows 之间同步、跟导出导入）。
+    /// </summary>
+    public string NoticePosition { get; set; } = "bottom";
+
+    /// <summary>
     /// 剪贴板面板、启动器上次被拖到的左上角（物理像素；null = 没拖过）。这台电脑自己的状态，不在导出清单里
     /// （同 mac 的 frameName：只有用户拖过才记）。
     /// </summary>

@@ -34,6 +34,7 @@
 - **.NET 10（LTS）+ C# 14 + WinUI 3**（Windows App SDK 2.x 当前稳定版，写本文时是 2.5.1）。**Native AOT 从第一天就开**，不要最后再补。
 - **不打 MSIX**：`WindowsPackageType=None` + `WindowsAppSDKSelfContained=true`。发布物是一个 zip，解压就能用。
 - **只支持 Windows 11 22H2（10.0.22621）及以上**，出 x64 和 ARM64 两个包。
+  （2026-11-26 PLAN-v27 W1 W2 改了：**Windows 10 2004（19041）起**「尽力支持」，`TargetPlatformMinVersion` 19041、`TargetFramework` 留 22621；Win11 才有的效果在 Win10 上退化，见 `MAC-DIFF.md`。）
 - **依赖只用微软自家的包**：Windows App SDK、`Microsoft.Windows.CsWin32`（生成 Win32 / COM 声明）、`Microsoft.Graphics.Win2D`（截图画布）、`MSTest.Sdk`（单测）。托盘图标、SQLite、JSON、HTTP 都自己写或用 .NET 自带的。要加别的包，先在报告里说明理由，审查同意再加。
   - Windows App SDK 先用聚合包 `Microsoft.WindowsAppSDK` 跑通。第 0 批对比「只引组件包」（WinUI、Foundation、InteractiveExperiences、Runtime 这类）的发布目录：聚合包会带进用不到的 AI / ML 原生库（onnxruntime、DirectML）的话，改成只引组件包，几个组件包的版本保持配套。
 - **AOT 规矩**：应用工程开 `PublishAot`，Core 开 `IsAotCompatible`（两样都会打开 trim / AOT 分析），**发布构建零 trim / AOT 警告**。

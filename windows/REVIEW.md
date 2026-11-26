@@ -16,28 +16,74 @@
 
 ### 给 Windows agent 的开工指令
 
-这一版 §2 §3 **你们自己写、自己编译、自己验**，照 `AGENTS.md`「每一批的流程」和自查清单一批接一批做，中间不等审查；每批的报告写在本节「第 N 批」下面。版本 0.5.0。
+**2026-11-26 用户「我们来实现，然后我再让 windows agent 核验」**：§1 §2 §3 的代码**审查方都在 Mac 上写了、都没编译**（R115、R116），
+都在分支 `claude/win-v26-df962e` 上。你们这一版是**核验**：编译、单测、核对、真机 / 虚拟机测，编不过、对不上直接改，交接里写一句改了什么。
+照 `AGENTS.md`「每一批的流程」和自查清单走，报告写在本节下面。版本 0.5.0。
 
-1. **开工**：`git fetch origin`，读 `PLAN-v27.md` 全文、`AGENTS.md` 第 27 条、本节。
-2. **R115 先做**（§1 的 bug，审查方写的、没编译）：在本地 `windows` 上 `git merge --no-ff origin/claude/win-v26-df962e`（已经合过 PLAN-v26 做完的 `windows`，应该没冲突），
-   照下面 R115「先核对再跑」三条、「要你们做」1–6 走完再推。0.4.0 还没发：用户要发 0.4.0 之前核完的话，R115 进 0.4.0（更新日志补那两条），不然进 0.5.0。
-3. **W-1 摸底**（W1 = A、W4 = A，用户点了头）：Windows 测试机上开 Hyper-V（要的话先在「启用或关闭 Windows 功能」里打开），从微软官网下 **Win10 22H2** 的镜像装一个虚拟机
-   （不激活也行；不用用户的账号，本地账户）。装当时最新的包（0.4.0 / 合了 R115 的构建）：起不起得来、托盘、各功能开一遍、`--ui-snapshots`、`--launcher-apps-probe`，哪里坏写在本节「W-1」下面。
-   **下镜像、开 Hyper-V 只做这一次，虚拟机留着以后每版冒烟用**；别动这台机器上别的虚拟机和设置。
-4. **I-1 透明窗口小样**（I2 = A）：一扇自己写透明背景（`SystemBackdrop` 子类，`OnTargetConnected` 里给 `ICompositionSupportsSystemBackdrop.SystemBackdrop`
-   塞一个全透明的 `CompositionColorBrush`）的窗口，里面一颗黑胶囊（圆角 = 高的一半）、白字；入口 `--island-shape-probe`。在**这台机器**（0.1.0 透明层发白的就是它）上浅色 / 深色、
-   100 / 150 / 200 % 各截一张：胶囊外面没有白边、黑边、灰边才算成。不成：写下试过什么，I-2 用 DWM 8 圆角的黑条。窗口不抢焦点、不进截图（同轻提示）。
-5. **W-2**：`TargetPlatformMinVersion` 改 `10.0.19041.0`（`TargetFramework` 留 22621）；安装包 `MinVersion=10.0.19041`、zip 版启动时查一次，太老的系统说「需要 Windows 10 2004 或更新」；
-   PLAN.md §2、README（Windows 那一段）、发布说明模板的系统要求改成「Windows 10 2004 起（推荐 Windows 11）」——README 和官网在 `main` 分支，**你们只改 `windows/` 里的**，要改 `main` 的写进报告、审查方去改。
-   图标：写一个自检把全部 108 个码点排成一张图（`--glyph-sheet`），Win10 虚拟机和 Win11 各截一张；MDL2 里没有的（Win10 上空白）换成两套字体都有的近似字形，意思照 mac 图标表。
-6. **W-3**：照 HANDTEST 2060–2079（写这一批时自己编）在 Win10 虚拟机里逐个功能走、坏的修；设置 › 录制写一句「Windows 10 上录屏时屏幕外面会有一圈黄框，录出来的视频里没有」；
-   `MAC-DIFF.md`（Win10 上直角、纯色底、MDL2 图标）、`STATUS.md`（支持的系统、Win10 没测的几样：真显卡、多屏、高分屏）；HANDTEST 开头「真机回归清单」后面加「Win10 冒烟」10 条，以后每版发版前在虚拟机里走。
-7. **I-2**：照 PLAN-v27 §3.3 和 §5：`Core/MonitorLayout.Notice` 加顶部的算法配单测（工作区顶部居中、离上沿 8、任务栏在上时让到它下面）；`Shell/Notice.cs` 按设置摆位置、展开往下长、
-   顶部时黑底白字（深浅色都黑，语气色圆底符号照旧）；设置 › 通用「提示显示在」：屏幕底部（默认）/ 屏幕顶部（灵动岛样式），**不进设置同步**、跟导出导入走；
-   全屏不另做（I4 = A），系统通知不碰（I5 = A）。`--notice-anim-test` 顶部、底部各跑一遍，`--ui-snapshots` 顶部的收着 / 展开 / 挂着 / 进度各一张。
-8. **收尾**：`Directory.Build.props` 0.5.0、`changelog.json`（feat：支持 Windows 10 2004 起、提示能放到屏幕顶部；fix：R115 那两条要是没进 0.4.0）、`build-release.ps1`、`--update-live=<已经发出去的上一版>`，
-   **不发布**；Win10 虚拟机里装 0.5.0 的安装包走一遍「Win10 冒烟」。
+1. **开工**：`git fetch origin`，读 `PLAN-v27.md` 全文、`AGENTS.md` 第 27 条、本节、R115、R116。
+2. **并分支**：在本地 `windows` 上 `git merge --no-ff origin/claude/win-v26-df962e`（已经合过 PLAN-v26 做完的 `windows`，应该没冲突）。Debug x64 编译零警告、`dotnet test` 全过、
+   x64 / ARM64 AOT 零警告——**先过这一步再往下**，编不过的照 R115 / R116「先核对」那几条找。
+3. **R115**（cmd、应用别名）：照 R115「要你们做」2–6。0.4.0 还没发：用户要发 0.4.0 之前核完的话，R115 进 0.4.0（更新日志补那两条），不然进 0.5.0。
+4. **I-1 透明胶囊**（I2 = A）：测试档里 `KITTY_NOTICE_TOP=1` 跑 `--notice-anim-test=<目录>`（在**这台机器**上：0.1.0 透明层发白的就是它）。
+   看它存的 PNG：胶囊两头外面是棋盘格（透明）才算成；是白的、黑的、灰的，日志里看 `transparent-backdrop.connected` / `failed`，照 R116「先核对」第 1 条试；
+   试不成就把 `Shell/Notice.cs` 的 `Capsule` 改成 false（退回 DWM 8 圆角的黑条），写下试过什么。浅色 / 深色外观、100 / 150 / 200 % 各看一次。
+5. **I-2 顶部样式**：`--ui-snapshots` 的 `island-top*.png` 三张、`--notice-anim-test` 顶部 / 底部各一遍，手测 HANDTEST 2080–2095。
+6. **W-1 / W-3 Win10**（W1 = A、W4 = A，用户点了头）：Windows 测试机上开 Hyper-V（要的话先在「启用或关闭 Windows 功能」里打开），从微软官网下 **Win10 22H2** 的镜像装一个虚拟机
+   （不激活也行；本地账户，不用用户的账号）。**下镜像、开 Hyper-V 只做这一次，虚拟机留着以后每版冒烟用**；别动这台机器上别的虚拟机和设置。
+   先装 0.4.0 看一眼哪里坏（写在本节「W-1」下面，当改之前的底），再装合了这条分支的构建，走 HANDTEST 2050–2068；坏的修。
+7. **README / 官网**：系统要求在 `main` 分支（README 的 Windows 那一段、官网下载页），**你们只改 `windows/` 里的**，报告里提一句，审查方去改。
+8. **收尾**：`Directory.Build.props` 0.5.0、`changelog.json`（feat：支持 Windows 10 2004 起；ui：提示能放到屏幕顶部（灵动岛样式）；fix：R115 那两条要是没进 0.4.0）、
+   `build-release.ps1`、`--update-live=<已经发出去的上一版>`，**不发布**；Win10 虚拟机里装 0.5.0 的安装包走一遍 HANDTEST 开头的「Win10 冒烟」W1–W10。
 
+### R116（P2）支持 Windows 10、灵动岛样式的提示 → 待核验（审查方写的、没编译）
+
+PLAN-v27 §2 §3，用户「全部按推荐」后「我们来实现」。行号按这条分支。
+
+#### 改了哪些
+
+**Windows 10（W2 W3）**：
+- 工程 `TargetPlatformMinVersion` 22621 → **19041**（`TargetFramework` 留 22621）；安装包 `MinVersion=10.0.19041`（Inno 自己的那句提示）；
+  `App/Program.cs` 启动时查一次（zip 版）：太老就弹「需要 Windows 10 2004 或更新的系统」、退出码 1。
+- 新 `Core/WindowsVersions`（最低版本 19041、Win11 从 22000、黄框开关从 20348、`FontFor` 换字体）配 `WindowsVersionsTests`。
+- 字体：Win2D / RichEdit 那几处写死的 Segoe UI Variable、Cascadia Mono 在 Win10 上换成 Segoe UI / Consolas（标注文字、标注序号、启动器的大字、计时、录屏的按键胶囊、便签正文和代码块）；
+  XAML 里本来就写了「Cascadia Mono, Consolas」的没动。
+- 图标：没换。审查方对过微软的 MDL2 图标表（GitHub 上 windows-dev-docs 的历史版本）：用到的 101 个码点 MDL2 里都有，最晚进表的一个是 2019-06（F714），早于 2004。
+  `--ui-snapshots` 加一张 `glyphs-light / dark.png`（102 个格子带十六进制号），Win10、Win11 各出一张对着看。
+- 设置 › 录制：Win10 上（`ShowsCaptureBorder`）多一行黄框的说明。
+- 不用改的（已经有退路）：设置窗先查 `MicaController.IsSupported`、全部便签的 `MicaBackdrop` 自己退纯色；`IsBorderRequired` / `IsCursorCaptureEnabled` 都包了 try / catch；
+  DWM 圆角、边框色在 Win10 上返回错误、不抛；带阴影的窗口截图已经按 22000 分了；亚克力（`DesktopAcrylicController`）Win10 1809 起支持；没用系统通知。
+
+**灵动岛样式（I1–I5）**：
+- 设置 `NoticePosition`（"bottom" 默认 / "top"），进 windows-settings 一类（`Core/Sync/SettingsSyncMap.BuildWindowsOnly`、`Storage/SettingsSyncFields`）：Windows 之间同步、跟导出导入
+  （导出本来就按同步表走，R84）；mac 没有这一项。`SettingsSyncTests` 的 C 组 15 → 16，加了一条只认 bottom / top。
+- 设置 › 通用 新的一组「提示」：「提示显示在」屏幕底部 / 屏幕顶部，换了马上出一条示例；搜索词加了提示、通知、灵动岛、顶部……
+- `Core/MonitorLayout.NoticeTop`（工作区顶部居中、离上沿 8；任务栏在上时让到下面）配单测 `IslandNoticeHangsFromTheTop`。
+- `Shell/Notice.cs`：建窗口时按设置定 `_top`；顶部时黑底白字（`Theme.Shot.IslandBackground`、`HudTextSecondary`，归在截图 HUD 那一套里）、一圈 `HudStroke` 描边、按深色主题；
+  真胶囊（`Capsule = true`）：窗口不要 DWM 边框和阴影、圆角设成不圆，背景 `TransparentBackdrop`，`_content` 自己画圆角（收着 = 高的一半，展开 = 20）；
+  `Capsule = false` 时退回 DWM 8 圆角、底下垫黑。`ApplyPosition`：位置设置变了关掉重建，挂着的提醒挪过去；每次 Show / ShowProgress / Pin 前都看一眼（同步、导入、恢复默认不用另接线）。
+- 新 `Shell/TransparentBackdrop.cs`：`SystemBackdrop` 子类，给 `ICompositionSupportsSystemBackdrop.SystemBackdrop` 一块 alpha 0 的 `Windows.UI.Composition` 画刷；
+  线程上没有 `Windows.System.DispatcherQueue` 时用 CoreMessaging 的 `CreateDispatcherQueueController` 建一个。
+- 自检：`--notice-anim-test` 设了 `KITTY_NOTICE_TOP=1` 时按顶部样式跑；`--ui-snapshots` 多三张 `island-top.png`、`island-top-expanded.png`、`island-top-progress.png`（只改内存里的设置）。
+
+#### 先核对再跑
+
+1. **透明背景**（最没把握的一处）：`Windows.UI.Composition.Compositor` 能不能在 WinUI 的线程上建（要 `Windows.System.DispatcherQueue`，代码里没有时自己建）、
+   `ICompositionSupportsSystemBackdrop.SystemBackdrop` 收不收它的画刷。不成的几种退路，按顺序试：
+   ① `Windows.System.DispatcherQueue.GetForCurrentThread()` 本来就有、但 `new Compositor()` 抛错 → 看异常；② 画刷接上了、胶囊外面却是黑的 → 窗口可能还带着重定向表面，
+   试 `DwmExtendFrameIntoClientArea(hwnd, -1 四边)`；③ 还不行 → `Capsule = false`。
+2. **`SystemBackdrop = !_top ? … : _capsule ? … : null`**（`Notice.cs` 构造里）靠的是 C# 按目标类型推条件表达式；编不过就给第一个分支加 `(SystemBackdrop)`。
+3. **`ApplyPosition` 里 `_window.Close()`**：关的是轻提示那扇窗口；要是这时它恰好是最后一扇 WinUI 窗口、关了以后程序退了（`DispatcherShutdownMode`），改成只 `Hide`、留着旧的不用。
+4. **`TargetPlatformMinVersion` 降到 19041 以后**：CsWinRT 有没有对 19041 以后才有的 API 报新的平台警告（CA1416 这类）。有的话照位置加版本判断或 try，别关警告。
+
+#### 要你们做
+
+照本节开工指令第 2、4、5、6、8 步；手测 HANDTEST 2050–2068（Win10）、2080–2095（灵动岛）、开头「Win10 冒烟」W1–W10。
+
+#### 风险 / 退路
+
+- 透明胶囊在用户那台机器上不干净：`Capsule = false`，顶部样式照样能用（黑色圆角条），设置页的说明不用改。
+- 胶囊两头透明的那几个角照样接鼠标（窗口是方的）：点到那几个像素会被它吃掉；提示一两秒就收，先不管（`TransparentBackdrop.cs` 的 ponytail）。
+- Win10 上虚拟机测不了的（真显卡上的亚克力、多屏、高分屏）：等用户反馈。
 
 ### R115（P1）启动器打 cmd 搜不到「命令提示符」、应用别名那一栏不列出装的应用 → 待核验（审查方写的、没编译）
 

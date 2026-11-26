@@ -85,6 +85,7 @@ internal static class SettingsSyncFields
         Flag("AutoCheckUpdates", s => s.AutoCheckUpdates, (s, v) => s.AutoCheckUpdates = v);
         Flag("PanelSqueezeEntrance", s => s.PanelSqueezeEntrance, (s, v) => s.PanelSqueezeEntrance = v);
         Flag("UpdateInstallOnQuit", s => s.UpdateInstallOnQuit, (s, v) => s.UpdateInstallOnQuit = v);
+        Text("NoticePosition", s => s.NoticePosition, (s, v) => s.NoticePosition = v is "top" ? "top" : "bottom");
 
         // 剪贴板
         Number("ClipboardRetentionDays", s => s.ClipboardRetentionDays, (s, v) => s.ClipboardRetentionDays = v);

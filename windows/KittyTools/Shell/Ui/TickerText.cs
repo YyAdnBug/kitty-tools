@@ -27,7 +27,7 @@ namespace KittyTools.Ui;
 internal sealed partial class TickerText : Grid
 {
     /// <summary>Win2D 排这一行用的字体（Windows 11 的界面字体，小字号那一档）。</summary>
-    private const string FontFamilyName = "Segoe UI Variable Text";
+    private static readonly string FontFamilyName = WindowsVersions.FontFor("Segoe UI Variable Text");
 
     private readonly double _fontSize;
     private readonly Brush _foreground;

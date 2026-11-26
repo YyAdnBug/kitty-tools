@@ -7,6 +7,10 @@
 // 按钮全露出来、加 ×；离开合回一行、接着走剩下的时间（至少 1.5 s）。点卡片本身只执行「打开」类的按钮。
 // 鼠标在上面时来的新提示先排着（只留最新的），进行中那条的结果原地换。
 // 窗口不抢焦点：WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW，SW_SHOWNOACTIVATE；不进截图和录屏（WDA_EXCLUDEFROMCAPTURE）。
+// 灵动岛样式（PLAN-v27 I1–I5，设置 › 通用「提示显示在」屏幕顶部；默认还是底部）：同一扇窗口换位置和皮——
+// 工作区顶部居中、离上沿 8，悬停往下长；黑底白字（深浅色都黑，同 mac 的岛），胶囊两头半圆：窗口背景全透明（TransparentBackdrop）、
+// 没有 DWM 边框和阴影，形状是里面那块 Border 画的。透明接不上（I-1 小样不成）把 Capsule 改成 false：退回 DWM 8 圆角的黑条。
+// 只换我们自己的提示，不碰系统通知（I5）；全屏不另做（I4）。设置改了 ApplyPosition 关掉重建。
 // 挂着（Pin，PLAN-v12 N6 提醒的轻提醒，mac Island.pin）：不自己收，等点按钮或 ×（× = dismiss，「知道了」）；别处来的提示照常出，
 // 它收起之后挂着的那条再露出来；Nudge = 再出一次、左右晃一下（催促）；Unpin 撤下。
 using System.Runtime.InteropServices;
@@ -104,6 +108,18 @@ internal sealed unsafe partial class NoticeHost
     /// <summary>卡片底边离工作区底边（任务栏上沿）的距离，Win11 音量浮层也是这么高。</summary>
     private const double BottomGap = 12;
 
+    /// <summary>灵动岛样式：胶囊顶边离工作区顶边（PLAN-v27 I1）。</summary>
+    private const double TopGap = 8;
+
+    /// <summary>灵动岛样式展开成卡片时的圆角（收着时是高的一半）。</summary>
+    private const double IslandCardRadius = 20;
+
+    /// <summary>
+    /// 灵动岛样式画真胶囊（透明背景）。I-1 小样在用户机器上透明那层不干净时改成 false：窗口留 DWM 边框和 8 圆角、内容铺黑。
+    /// 不写成 const：false 那条分支编译器会报「到不了的代码」（警告当错误）。
+    /// </summary>
+    private static readonly bool Capsule = true;
+
     private const double ProgressWidth = 56;
 
     /// <summary>内容刚换 / 刚展开这么久之内点卡片不算（mac 0.3 s）。</summary>
@@ -122,6 +138,12 @@ internal sealed unsafe partial class NoticeHost
     internal static int LayoutPassesForProbe { get; private set; }
 
     private readonly Window _window;
+
+    /// <summary>这一扇是顶部的灵动岛样式（建的时候按设置定）。</summary>
+    private readonly bool _top;
+
+    /// <summary>顶部样式、并且画的是真胶囊（透明背景）。</summary>
+    private readonly bool _capsule;
     private readonly Grid _root;
     private readonly Border _content;
     private readonly FontIcon _icon;
@@ -158,6 +180,8 @@ internal sealed unsafe partial class NoticeHost
 
     private NoticeHost()
     {
+        _top = SettingsService.Current.NoticePosition == "top";
+        _capsule = _top && Capsule;
         _icon = new FontIcon
         {
             FontSize = 16,
@@ -223,18 +247,29 @@ internal sealed unsafe partial class NoticeHost
         _content = new Border
         {
             MaxWidth = MaxCardWidth,
-            Padding = new Thickness(16, 0, 10, 0),
+            Padding = new Thickness(16, 0, _top ? 12 : 10, 0),
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Top,
             Child = layout,
         };
+        if (_top)
+        {
+            // 灵动岛的皮：纯黑、白字，一圈很淡的白描边（全屏的黑底上也看得出轮廓，同 mac 的岛）
+            _content.Background = new SolidColorBrush(Theme.Shot.IslandBackground);
+            _content.BorderBrush = new SolidColorBrush(Theme.Shot.HudStroke);
+            _content.BorderThickness = new Thickness(_capsule ? 1 : 0);
+            _content.CornerRadius = new CornerRadius(_capsule ? RowHeight / 2 : 0);
+        }
+
         _root = new Grid
         {
-            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            // 退回 8 圆角黑条时（没有透明背景）窗口底下垫黑，内容没盖到的一两像素也是黑的
+            Background = new SolidColorBrush(_top && !_capsule ? Theme.Shot.IslandBackground : Microsoft.UI.Colors.Transparent),
             // 建窗口时就按设置里选的深浅色：亚克力接上那一刻按的是这里的主题。以前到第一次 ShowCore 才设，
             // App 外观和系统不同（系统浅色、App 深色）时第一条提示从浅色那套过渡约 300 ms 才到深色，
             // 截图后的「已复制截图」就是一块白闪一下（0.1.2 用户反馈，逐帧录屏量的：黑 → 242 白 → 70 深）。
-            RequestedTheme = Theme.ElementTheme,
+            // 灵动岛样式一律按深色（黑底上的字、按钮）。
+            RequestedTheme = _top ? ElementTheme.Dark : Theme.ElementTheme,
         };
         _root.Children.Add(_content);
         _root.Tapped += OnTapped;
@@ -262,15 +297,16 @@ internal sealed unsafe partial class NoticeHost
             Title = Paths.ProductName + " 提示",
             Content = _root,
             // 系统的亚克力：和 Win11 的音量 / 亮度浮层、开始菜单同一种材质，浅色 / 深色跟着窗口主题走。
-            SystemBackdrop = new DesktopAcrylicBackdrop(),
+            // 灵动岛样式：真胶囊要全透明的背景；退回黑条时不要材质（底下垫的黑）。
+            SystemBackdrop = !_top ? new DesktopAcrylicBackdrop() : _capsule ? new TransparentBackdrop() : null,
         };
         var presenter = OverlappedPresenter.Create();
         presenter.IsAlwaysOnTop = true;
         presenter.IsResizable = false;
         presenter.IsMaximizable = false;
         presenter.IsMinimizable = false;
-        // 留着系统的细边框：圆角、阴影、发丝线都由 DWM 画（同截图卡片）。
-        presenter.SetBorderAndTitleBar(true, false);
+        // 留着系统的细边框：圆角、阴影、发丝线都由 DWM 画（同截图卡片）。真胶囊不要：透明的两头外面会是一圈方形的阴影。
+        presenter.SetBorderAndTitleBar(!_capsule, false);
         _window.AppWindow.SetPresenter(presenter);
         _window.AppWindow.IsShownInSwitchers = false;
         _hwnd = (HWND)WinRT.Interop.WindowNative.GetWindowHandle(_window);
@@ -279,7 +315,7 @@ internal sealed unsafe partial class NoticeHost
         // 否则会在浮层里复制 / 删除之后把浮层抢掉（浮层失去激活就会收起）。
         var style = GetWindowLong((IntPtr)_hwnd.Value, GwlExStyle);
         SetWindowLong((IntPtr)_hwnd.Value, GwlExStyle, style | WsExNoActivate | WsExToolWindow);
-        var round = 2; // DWMWCP_ROUND：8 圆角
+        var round = _capsule ? 1 : 2; // DWMWCP_DONOTROUND（形状自己画）/ DWMWCP_ROUND：8 圆角（Win10 上这一句不起作用，窗口是直角）
         DwmSetWindowAttribute((IntPtr)_hwnd.Value, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, ref round, sizeof(int));
 
         _hideTimer = _window.DispatcherQueue.CreateTimer();
@@ -296,8 +332,31 @@ internal sealed unsafe partial class NoticeHost
         }
     }
 
+    /// <summary>
+    /// 设置里换了「提示显示在」（PLAN-v27 I1）：手上这扇按旧样子建的，关掉；挂着的那条挪到新样子上。下一条提示按新设置建。
+    /// 每次出提示前也看一眼（设置同步、导入、恢复默认改了它时不用另外接线）。
+    /// </summary>
+    public static void ApplyPosition()
+    {
+        if (_current is not { } host || host._top == (SettingsService.Current.NoticePosition == "top"))
+        {
+            return;
+        }
+
+        var pin = host._pin;
+        host._pin = null;
+        host.Hide();
+        host._window.Close();
+        _current = null;
+        if (pin is { } kept)
+        {
+            Pin(kept.Title, kept.Detail, kept.Dismiss, kept.Actions);
+        }
+    }
+
     public static void Show(string title, string detail, NoticeTone tone, params NoticeAction[] actions)
     {
+        ApplyPosition();
         _current ??= new NoticeHost();
         _current.ShowCore(title, detail, tone, null, actions);
     }
@@ -308,6 +367,7 @@ internal sealed unsafe partial class NoticeHost
     /// </summary>
     public static void ShowProgress(string title, string detail, double fraction, params NoticeAction[] actions)
     {
+        ApplyPosition();
         _current ??= new NoticeHost();
         _current.ShowCore(title, detail, NoticeTone.Normal, fraction, actions);
     }
@@ -328,12 +388,13 @@ internal sealed unsafe partial class NoticeHost
         _actions = actions;
         _showingPin = _pin is { } pin && pin.Title == title && pin.Detail == detail;
         BuildButtons();
-        _root.RequestedTheme = Theme.ElementTheme;
+        _root.RequestedTheme = _top ? ElementTheme.Dark : Theme.ElementTheme;
         _title.Text = title;
         _detail.Text = detail;
         _detailFull.Text = detail;
-        _detail.Foreground = Theme.SecondaryText();
-        _detailFull.Foreground = Theme.SecondaryText();
+        var secondary = _top ? new SolidColorBrush(Theme.Shot.HudTextSecondary) : Theme.SecondaryText();
+        _detail.Foreground = secondary;
+        _detailFull.Foreground = secondary;
         _progressBar.Visibility = _progress ? Visibility.Visible : Visibility.Collapsed;
         if (fraction is { } value)
         {
@@ -386,6 +447,7 @@ internal sealed unsafe partial class NoticeHost
     /// <summary>
     /// 排好收着 / 展开的样子，把窗口摆成卡片那么大：鼠标所在屏的工作区底部居中、底边离任务栏 12，
     /// 展开时底边不动往上长（H10）。窗口带系统边框，客户区比窗口小一圈，按客户区算再把边框加回去。
+    /// 灵动岛样式：工作区顶部居中、离上沿 8，展开时顶边不动往下长；真胶囊收着时圆角是高的一半，展开成卡片是 20。
     /// </summary>
     private void Place(bool expanded)
     {
@@ -405,7 +467,14 @@ internal sealed unsafe partial class NoticeHost
         var scale = display.Scale;
         var frameX = Math.Max(0, _window.AppWindow.Size.Width - _window.AppWindow.ClientSize.Width) / scale;
         var frameY = Math.Max(0, _window.AppWindow.Size.Height - _window.AppWindow.ClientSize.Height) / scale;
-        var rect = MonitorLayout.Notice(display.Work, scale, width + frameX, height + frameY, BottomGap);
+        var rect = _top
+            ? MonitorLayout.NoticeTop(display.Work, scale, width + frameX, height + frameY, TopGap)
+            : MonitorLayout.Notice(display.Work, scale, width + frameX, height + frameY, BottomGap);
+        if (_capsule)
+        {
+            _content.CornerRadius = new CornerRadius(expanded ? IslandCardRadius : RowHeight / 2);
+        }
+
         _window.AppWindow.MoveAndResize(new RectInt32(rect.X, rect.Y, rect.Width, rect.Height));
     }
 
@@ -724,6 +793,7 @@ internal sealed unsafe partial class NoticeHost
     /// </summary>
     public static void Pin(string title, string detail, Action dismiss, params NoticeAction[] actions)
     {
+        ApplyPosition();
         _current ??= new NoticeHost();
         _current._pin = (title, detail, actions, dismiss);
         _current.ShowPin();

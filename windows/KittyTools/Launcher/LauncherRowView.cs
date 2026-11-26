@@ -335,7 +335,7 @@ internal sealed partial class LauncherRowView : Grid
             Text = item.Title,
             FontSize = Theme.FontSize("Kitty.FontSize.Result"),
             FontWeight = FontWeights.SemiBold,
-            FontFamily = new FontFamily("Segoe UI Variable Display"),
+            FontFamily = new FontFamily(WindowsVersions.FontFor("Segoe UI Variable Display")),
             TextTrimming = TextTrimming.CharacterEllipsis,
             MaxLines = 1,
             VerticalAlignment = VerticalAlignment.Center,

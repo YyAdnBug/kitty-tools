@@ -110,6 +110,7 @@ internal sealed partial class SettingsWindow : Window
             "隐私", "导出", "导入", "备份", "恢复", "迁移", "换电脑", "配置", "功能", "模块", "关闭", "停用", "启用", "不用",
             "同步", "OneDrive", "云盘", "多台", "几台", "另一台", "数据", "数据目录", "目录", "文件夹", "卸载", "移除",
             "动效", "动画", "挤压", "弹开", "插件", "添加",
+            "提示", "轻提示", "通知", "灵动岛", "刘海", "顶部", "底部",
             // 没添加的插件的词不写在这里：Core SettingsSearch.Matching 把它们算成通用页对上（PLAN-v23 W5，同 mac SettingsPage.matching）
         },
         ["keepAwake"] = new[]
@@ -1096,6 +1097,19 @@ internal sealed partial class SettingsWindow : Window
             {
                 SettingsService.Current.PanelSqueezeEntrance = isOn;
                 SettingsService.Save();
+            });
+
+        // 提示出在哪（PLAN-v27 I1：灵动岛样式，默认还是底部）。换了马上出一条示例，在新位置上
+        _content.Children.Add(SettingsUi.Section("提示"));
+        AddSegmented("提示显示在", "顶部是黑色胶囊，鼠标停上去往下展开；只换本应用自己的提示，不改系统通知",
+            new[] { "屏幕底部", "屏幕顶部" },
+            SettingsService.Current.NoticePosition == "top" ? 1 : 0,
+            index =>
+            {
+                SettingsService.Current.NoticePosition = index == 1 ? "top" : "bottom";
+                SettingsService.Save();
+                // Show 先看位置变没变（ApplyPosition），换了就按新样子建
+                NoticeHost.Show(index == 1 ? "提示会出现在屏幕顶部" : "提示会出现在屏幕底部", string.Empty, NoticeTone.Normal);
             });
 
         // 启动
@@ -3436,6 +3450,12 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Save();
             });
         AddHideDesktopIconsToggle();
+        // PLAN-v27 W3：Win10 关不掉系统画的黄框（20348 才给开关），先说清楚，免得以为被监控
+        if (WindowsVersions.ShowsCaptureBorder(Environment.OSVersion.Version))
+        {
+            _content.Children.Add(SettingsUi.Footnote("Windows 10 上录屏时，录的那块屏幕外面会有一圈黄框，是系统画的，录出来的视频里没有。"));
+        }
+
         AddToggle("显示点按", "录制画面里画一个圈（左键粉色、右键蓝色）",
             SettingsService.Current.RecordClicks,
             value =>

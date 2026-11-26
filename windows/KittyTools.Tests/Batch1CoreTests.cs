@@ -106,6 +106,24 @@ public sealed class MonitorLayoutTests
     }
 
     [TestMethod]
+    public void IslandNoticeHangsFromTheTop()
+    {
+        // PLAN-v27 I1：顶部样式在工作区顶边往下 8，水平居中；任务栏在顶上（工作区 Top = 48）时在它下面。
+        var rect = MonitorLayout.NoticeTop(Primary, 1.0, 300, 46, 8);
+        Assert.AreEqual((1920 - 300) / 2, rect.X);
+        Assert.AreEqual(8, rect.Y);
+        var taskbarOnTop = new WorkArea(0, 48, 1920, 1080);
+        Assert.AreEqual(48 + 12, MonitorLayout.NoticeTop(taskbarOnTop, 1.5, 300, 46, 8).Y);
+        // 展开（更高）时顶边不动
+        Assert.AreEqual(rect.Y, MonitorLayout.NoticeTop(Primary, 1.0, 460, 134, 8).Y);
+        // 副屏在左边、坐标是负的：照样居中在那块屏里
+        var left = new WorkArea(-1920, 0, 0, 1040);
+        var onLeft = MonitorLayout.NoticeTop(left, 1.0, 300, 46, 8);
+        Assert.AreEqual(-1920 + 810, onLeft.X);
+        Assert.IsTrue(onLeft.Right <= left.Right);
+    }
+
+    [TestMethod]
     public void NegativeAndPortraitMonitorsKeepContentInside()
     {
         // 副屏在左边：坐标是负的，居中不能按 0 夹。

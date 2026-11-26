@@ -68,6 +68,8 @@ ArchitecturesInstallIn64BitMode=arm64
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 #endif
+; PLAN-v27 W2：Windows 10 2004（19041）起；更老的系统 Inno 自己说「需要更新的 Windows」（ChineseSimplified.isl 的 WinVersionTooLowError）
+MinVersion=10.0.19041
 
 [Languages]
 Name: "zh"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"

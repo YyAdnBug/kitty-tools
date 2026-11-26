@@ -146,6 +146,8 @@ internal static class UiSnapshotProbe
                 // 0.1.1 功能图标：左栏五类、截图那一类的组头（框选 / 钉图 / 录制换了，标注 / 出图 / 长截图照旧）。
                 await SafeRenderAsync(root, () => ShortcutsSheet.ProbeSheet("screenshot"), "shortcuts-sheet", dark, directory);
                 await SafeRenderAsync(root, IconScaleView, "icons-scale", dark, directory);
+                // PLAN-v27 W-2：用到的全部 Segoe 图标码点（Win10 上退到 MDL2，缺的是空白）
+                await SafeRenderAsync(root, GlyphSheetView, "glyphs", dark, directory);
                 await SafeRenderShotHistoryAsync(dark, directory);
             }
 
@@ -207,6 +209,29 @@ internal static class UiSnapshotProbe
             NoticeHost.ExpandForProbe();
             await Task.Delay(700);
             await WindowShot.SaveAsync(NoticeHost.HandleForProbe, Path.Combine(directory, "island-expanded.png"));
+
+            // PLAN-v27 I-2：灵动岛样式（屏幕顶部的黑胶囊）收着 / 展开 / 进度三张；只改内存里的设置、拍完换回去（下一条 Show 自己按设置重建）。
+            // WindowShot 存图不带透明：胶囊两头外面干不干净看 --notice-anim-test（KITTY_NOTICE_TOP=1）存的棋盘格 PNG。
+            var position = SettingsService.Current.NoticePosition;
+            SettingsService.Current.NoticePosition = "top";
+            NoticeHost.Show("已复制到剪贴板", "3 条记录已合并", NoticeTone.Normal);
+            await Task.Delay(900);
+            await WindowShot.SaveAsync(NoticeHost.HandleForProbe, Path.Combine(directory, "island-top.png"));
+            NoticeHost.Show(
+                "录屏已保存",
+                "录屏 2026-10-26 23.15.08.mp4 · 1 分 23 秒，存在「视频 › Kitty Tools」",
+                NoticeTone.Normal,
+                new NoticeAction("在资源管理器中显示", () => { }, Opens: true),
+                new NoticeAction("打开", () => { }, Opens: true));
+            await Task.Delay(900);
+            NoticeHost.ExpandForProbe();
+            await Task.Delay(700);
+            await WindowShot.SaveAsync(NoticeHost.HandleForProbe, Path.Combine(directory, "island-top-expanded.png"));
+            NoticeHost.ShowProgress("正在转成 GIF", "42%", 0.42);
+            await Task.Delay(900);
+            await WindowShot.SaveAsync(NoticeHost.HandleForProbe, Path.Combine(directory, "island-top-progress.png"));
+            NoticeHost.HideNow();
+            SettingsService.Current.NoticePosition = position;
 
             RecordingHud.Show(new PixelBounds(200, 200, 1000, 700));
             await Task.Delay(800);
@@ -572,6 +597,37 @@ internal static class UiSnapshotProbe
         }
 
         return canvas;
+    }
+
+    /// <summary>
+    /// PLAN-v27 W-2：用到的全部 Segoe 图标码点排成一张（102 个，带十六进制号）。Win11 上是 Segoe Fluent Icons，Win10 上 WinUI 退到 Segoe MDL2 Assets，
+    /// 缺的字形是空白——Win10 虚拟机、Win11 各出一张对着看（2026-11-26 对过微软的 MDL2 图标表：这些码点 2019 年起都在，最低 2004 应该一个不缺）。
+    /// ponytail: 码点是写方案时 grep 出来的表，新加的图标不会自己进来；加了新码点顺手补一个。
+    /// </summary>
+    private static FrameworkElement GlyphSheetView()
+    {
+        const string codes =
+            "E706 E708 E70B E70D E70E E70F E710 E711 E712 E713 E718 E71A E71B E71D E720 E721 E722 E72C E72E E734 E735 E738 E73E E740 E74A E74B " +
+            "E74D E74E E74F E756 E765 E767 E768 E769 E76B E76C E76E E774 E77A E77B E77F E790 E792 E7A6 E7A7 E7A8 E7B3 E7B8 E7BA E7C3 E7C8 E7C9 " +
+            "E7E6 E7E8 E7F4 E7FB E80A E80F E81C E823 E840 E890 E894 E895 E8A5 E8A7 E8AB E8AD E8B7 E8BD E8C1 E8C6 E8C8 E8CB E8CE E8D2 E8D3 E8D7 " +
+            "E8E4 E8EF E8FD E921 E924 E92E E943 E946 E962 E968 E97E E993 E995 E9D5 E9F5 EA39 EA3A EB9F EC54 EC8F EF3C F0E2 F463 F714";
+        var grid = new VariableSizedWrapGrid
+        {
+            Orientation = Orientation.Horizontal,
+            ItemWidth = 60,
+            ItemHeight = 46,
+            MaximumRowsOrColumns = 12,
+            Margin = new Thickness(0, 8, 0, 0),
+        };
+        foreach (var code in codes.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var cell = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+            cell.Children.Add(new FontIcon { Glyph = ((char)Convert.ToInt32(code, 16)).ToString(), FontSize = 20, Foreground = Theme.PrimaryText() });
+            cell.Children.Add(new TextBlock { Text = code, FontSize = 10, Foreground = Theme.SecondaryText(), HorizontalAlignment = HorizontalAlignment.Center });
+            grid.Children.Add(cell);
+        }
+
+        return grid;
     }
 
     private static async Task SafeRenderAsync(

@@ -5,8 +5,11 @@ using KittyTools.Infrastructure;
 
 namespace KittyTools;
 
-public static class Program
+public static partial class Program
 {
+    [System.Runtime.InteropServices.LibraryImport("user32.dll", EntryPoint = "MessageBoxW", StringMarshalling = System.Runtime.InteropServices.StringMarshalling.Utf16)]
+    private static partial int MessageBox(IntPtr hwnd, string text, string caption, uint type);
+
     [STAThread]
     public static int Main(string[] args)
     {
@@ -33,6 +36,13 @@ public static class Program
         if (UninstallCleanup.IsRequested(args))
         {
             return UninstallCleanup.Run(args);
+        }
+
+        // PLAN-v27 W2：太老的系统（Win10 2004 以前）说一句就退，不往下起（安装包有 MinVersion，这里管 zip 版）
+        if (!KittyTools.Core.WindowsVersions.IsSupported(Environment.OSVersion.Version))
+        {
+            _ = MessageBox(IntPtr.Zero, KittyTools.Core.WindowsVersions.TooOldMessage, "Kitty Tools", 0x40 /* MB_ICONINFORMATION */);
+            return 1;
         }
 
         // 自动更新换上的新版本要等旧进程退出并放掉互斥量，所以带 --updated 时多等几秒；

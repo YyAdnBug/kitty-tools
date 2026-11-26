@@ -12,11 +12,12 @@
 - **§1（第 3 条）是 bug，直接修**：审查方在 Mac 上写完了（**没编译**），交接在 `REVIEW.md` R115，手测 `HANDTEST.md` 2030–2045。
 - **§2（Windows 10）、§3（灵动岛样式）：2026-11-26 用户「全部按推荐」**（§4 W1–W4、I1–I5 都是 A，拍板页 https://claude.ai/artifact/UJFPpUyvKnhNQAf3us9PgU）。
   W4 = A 包括下 Win10 22H2 的镜像、在测试机上开 Hyper-V 虚拟机（用户这次点了头）。开工指令在 `REVIEW.md`「PLAN-v27」。
+- **同日用户「我们来实现，然后我再让 windows agent 核验」**：§2 §3 的代码审查方也在 Mac 上写了（`REVIEW.md` R116，**没编译**），Windows 编译、核验、在虚拟机里测。
 - 编号：起初交代用 PLAN-v26，但 `origin/windows` 上已经有 PLAN-v26（跟上 mac 0.10.x，Windows 已经做到第 10 批），这一份接着排 v27；
   REVIEW 接 R115，手测接 PLAN-v26 预留到 2029 之后的 2030。
 
 **分工**：§1 审查方写好了（分支 `claude/win-v26-df962e`，已 rebase 在 `origin/windows` = `5b2a58f2` 上，第 9 批的启动器改动都在底下），Windows 编译、单测、照 R115 核对和手测，过了并进 `windows`。
-§2 §3 Windows 自己写、自己编译、自己验（同 PLAN-v26），交接写在 `REVIEW.md`「PLAN-v27」。行号按 `origin/windows` = `405ed2e4`，路径相对 `windows/`。
+§2 §3 也是审查方在 Mac 上写的（R116），Windows 编译、核验（W-1 摸底和 Win10 的手测在虚拟机里），交接写在 `REVIEW.md`「PLAN-v27」。行号按 `origin/windows` = `405ed2e4`，路径相对 `windows/`。
 
 ## 1. 启动器搜不到 cmd、应用别名不列出装的应用（bug，已修，没编译）
 
@@ -233,7 +234,7 @@ PATH 里的 exe、`.url`（Steam 游戏这类）都不收。能搜的名字：�
 | W-2 | 最低版本 19041（工程、安装包、zip 启动时查）、系统要求的文案（PLAN.md、README、官网、发布说明）；图标：全部字形排成一张图的自检、MDL2 缺的换掉 | W-1 | Win10 / Win11 各一张字形图没有空白；Win10 1909 及以前装不上、说清楚要什么系统 | 2050–2059 |
 | W-3 | 逐个功能在 Win10 上走、修；录制页写黄框的说明；`MAC-DIFF.md`、`STATUS.md`；HANDTEST 开头加「Win10 冒烟」10 条 | W-2 | HANDTEST 2060–2079 全走（真显卡、多屏两条写「没测」）；内存、空闲 CPU 和 Win11 上比 | 2060–2079 |
 | I-1 | 透明窗口小样：自己写的透明背景 + 一颗黑胶囊，浅 / 深色、100 / 150 / 200 % 各截一张；`--island-shape-probe` | I1 = A 或 B、I2 = A | 用户那台机器上看没有白边 / 黑边；不成写下试过什么，走 8 圆角 | — |
-| I-2 | 顶部样式：`Core/MonitorLayout.Notice` 加顶部算法配单测（工作区顶部、任务栏在上时让到它下面）；`Notice.cs` 按设置摆位置、往下长、黑底白字；设置 › 通用「提示显示在」；不进设置同步（Windows 独有，跟导出走） | I-1 | `--notice-anim-test` 顶部、底部各跑一遍；`--ui-snapshots` 顶部的收着 / 展开 / 挂着 / 进度；任务栏放顶部（26H2）时在任务栏下面 | 2080–2099 |
+| I-2 | 顶部样式：`Core/MonitorLayout.Notice` 加顶部算法配单测（工作区顶部、任务栏在上时让到它下面）；`Notice.cs` 按设置摆位置、往下长、黑底白字；设置 › 通用「提示显示在」；只在 Windows 之间同步（导出按同步表走） | I-1 | `--notice-anim-test` 顶部、底部各跑一遍；`--ui-snapshots` 顶部的收着 / 展开 / 挂着 / 进度；任务栏放顶部（26H2）时在任务栏下面 | 2080–2099 |
 
 W 和 I 两组互不依赖，PLAN-v26 已经做完（0.4.0 打了包、没发），这两组算 0.5.0；R115 是 bug，跟下一个出的包走（0.4.0 发之前核验完就进 0.4.0）。
 顺序：R115 → W-1 → I-1 → W-2 → W-3 → I-2（I-1 小样早做：不成要退回 8 圆角，I-2 的样子跟着变）。
@@ -245,3 +246,8 @@ W 和 I 两组互不依赖，PLAN-v26 已经做完（0.4.0 打了包、没发）
 3. B3 去重带上参数后，带 `|参数` 的别名键跟着「哪个快捷方式先扫到」走：只影响同一个 exe、参数不同的那几个，记在 `AppCatalog.cs` 注释和 R115「风险」。
 4. 别名页每行不画图标（mac 有）：几百行一起取图标要读几百个文件，先不做。
 5. W、I 两组排在 PLAN-v26 之后（0.5.0）；R115 跟下一个出的包。手测 2050–2079 给 Win10、2080–2099 给灵动岛。
+6. 写代码时（R116）定的：
+   - 「提示显示在」进 Windows 之间的设置同步（windows-settings）：导出本来就是按同步表走的（R84），单独「只导出不同步」要另开一条路，不值；mac 没有这一项。
+   - 图标不换：用到的 101 个码点在 Win10 的 Segoe MDL2 Assets 里都有（对的是微软文档的图标表和它的历史版本，最晚一个 2019-06 进表），只加了一张全部图标的自检图给 Win10 虚拟机核。
+   - 小样（I-1）不另写一扇窗口：直接在真的轻提示上试（`--notice-anim-test` + `KITTY_NOTICE_TOP=1`，WGC 带透明逐帧存图），不成改 `Capsule = false` 一行退回黑条。
+   - Win10 上 Segoe UI Variable / Cascadia Mono 换成 Segoe UI / Consolas（`WindowsVersions.FontFor`）：只换 Win2D、RichEdit 那几处写死一个名字的，XAML 本来写了退路的不动。

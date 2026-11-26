@@ -4,6 +4,8 @@
 // 每帧量胶囊的宽度和左边缘（不透明那几行正中一行里 alpha > 128 的像素），另记每段动画期间 XAML 排了几次版
 // （只动 Composition 几何时应该接近 0；以前每 16 ms 改一次 Width，一段动画要排二三十次）。
 // 报告写到 <目录>\report.md，隔几帧存一张 PNG（透明处铺棋盘格）；跑完就退。
+// PLAN-v27 I-1：设了 KITTY_NOTICE_TOP=1 时按灵动岛样式跑（只改内存里的设置、不存）：胶囊两头外面应该是棋盘格（透明），
+// 是白的 / 黑的说明透明背景没接上（日志 transparent-backdrop.connected / failed）。
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices.WindowsRuntime;
@@ -60,6 +62,11 @@ internal static class NoticeAnimationProbe
         var exitCode = 1;
         try
         {
+            if (Environment.GetEnvironmentVariable("KITTY_NOTICE_TOP") == "1")
+            {
+                SettingsService.Current.NoticePosition = "top";
+            }
+
             // 先放一条，把轻提示窗口建出来、显示着，WGC 才有窗口可抓。
             NoticeHost.Show("轻提示自检", "准备", NoticeTone.Normal);
             var handle = NoticeHost.HandleForProbe;

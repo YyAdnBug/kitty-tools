@@ -20,7 +20,7 @@ namespace KittyTools;
 internal static class AnnotationRenderer
 {
     /// <summary>文字标注的字体（输入框用同一个，所见即所得）。</summary>
-    public const string TextFontFamily = "Segoe UI Variable Text";
+    public static readonly string TextFontFamily = WindowsVersions.FontFor("Segoe UI Variable Text");
 
     /// <summary>阴影的模糊（标准差，DIP）：mac 是 CG 的 blur 3，约等于标准差 1.5。</summary>
     private const float ShadowBlur = 1.5f;
@@ -502,7 +502,7 @@ internal static class AnnotationRenderer
             ds, text,
             new CanvasTextFormat
             {
-                FontFamily = "Segoe UI Variable Display",
+                FontFamily = WindowsVersions.FontFor("Segoe UI Variable Display"),
                 FontSize = fontSize,
                 FontWeight = Microsoft.UI.Text.FontWeights.Bold,
                 WordWrapping = CanvasWordWrapping.NoWrap,

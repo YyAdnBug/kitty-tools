@@ -59,6 +59,19 @@ public static class MonitorLayout
         return Clamp(new PixelRect(x, y, width, height), work);
     }
 
+    /// <summary>
+    /// 灵动岛样式的轻提示（PLAN-v27 I1，设置 › 通用「提示显示在」屏幕顶部）：水平居中、顶边离工作区顶边 topOffsetDip，展开时顶边不动往下长。
+    /// 按工作区算：任务栏放在顶上（26H2 起）时自然让到它下面；自动隐藏的任务栏不占工作区，贴着屏幕顶边。
+    /// </summary>
+    public static PixelRect NoticeTop(WorkArea work, double scale, double widthDip, double heightDip, double topOffsetDip)
+    {
+        var width = Pixels(widthDip, scale);
+        var height = Pixels(heightDip, scale);
+        var x = work.Left + Math.Max(0, (work.Width - width) / 2);
+        var y = work.Top + (int)Math.Round(topOffsetDip * scale);
+        return Clamp(new PixelRect(x, y, width, height), work);
+    }
+
     /// <summary>跟随鼠标：鼠标右下 offsetDip；右边放不下翻到左边，下面放不下翻到上边；最后夹进工作区。</summary>
     public static PixelRect NearPointer(
         int cursorX,

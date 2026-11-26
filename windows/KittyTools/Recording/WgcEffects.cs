@@ -92,7 +92,7 @@ internal sealed class WgcEffects : IDisposable
                 var alpha = (byte)Math.Clamp((int)(215 * fade), 0, 255);
                 using var format = new CanvasTextFormat
                 {
-                    FontFamily = "Segoe UI Variable",
+                    FontFamily = WindowsVersions.FontFor("Segoe UI Variable"),
                     FontSize = 22,
                     FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                     HorizontalAlignment = CanvasHorizontalAlignment.Center,
