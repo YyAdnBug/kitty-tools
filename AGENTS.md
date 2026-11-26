@@ -235,6 +235,13 @@ TEST_RUNNER_KITTY_LIVE_PATH=/tmp/kitty-path xcodebuild -project macos/KittyTools
 TEST_RUNNER_KITTY_TRANSLATE_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/TranslateFavoriteProbeTests/streamingCost()'
 
+# 长截图对着真 App 录帧再离线回放（按需，issue #57；要「屏幕录制」授权）：record() 用那个 App（默认 WPS，另加
+# TEST_RUNNER_KITTY_LIVE_SCROLL_APP_BUNDLE=<bundle id>）打开自己生成的测试文档和表格，**会把光标挪到它的窗口中间、发合成滚轮约 2 分钟，
+# 跑之前先问用户、手离开键鼠**；用户的聊天、文档一律不拍。帧是裸 BGRA（几 GB），看完删目录。replay() 用当前的 ScrollStitcher
+# 把存下的帧拼一遍，报每帧接没接上、对不上时每一步的最高票、算帧 / 拼接耗时（量耗时加 SWIFT_OPTIMIZATION_LEVEL=-O 和单独的 -derivedDataPath）
+TEST_RUNNER_KITTY_LIVE_SCROLL_APP=/tmp/kitty-scroll xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:'KittyToolsTests/ScrollAppProbeTests/record()'
+
 # 启动台的性能 / 内存探针（按需，屏外，几秒；grep「launchpad-probe」：扫目录、第一帧、翻页布局、footprint）
 TEST_RUNNER_KITTY_LAUNCHPAD_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/LaunchpadProbeTests/measure()'

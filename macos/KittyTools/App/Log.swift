@@ -18,4 +18,6 @@ nonisolated enum Log {
   static let hotkeys = Logger(subsystem: subsystem, category: "hotkeys")
   /// 键位映射插件（KeyRemapping）：读不出 / 存不下规则、系统没收映射（键盘的名字按默认的不公开记）
   static let keyRemapping = Logger(subsystem: subsystem, category: "keyremapping")
+  /// 长截图（ScrollCapture）：开始时的帧大小、每一帧对不上时各步投票的结果、结束时的汇总（只有数，没有画面内容；issue #57）
+  static let scroll = Logger(subsystem: subsystem, category: "scroll")
 }
