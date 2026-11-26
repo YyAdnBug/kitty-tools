@@ -313,7 +313,8 @@ public sealed class ReminderTests
         state.Marks["a"].At = ReminderTime.FromUtc(Now.AddDays(2));
         var pulled = state.PulledBack(Now, 1800);
         Assert.AreEqual(ReminderTime.FromUtc(Now), pulled.Marks["a"].At);
-        Assert.AreEqual(ReminderTime.FromUtc(Now) + 86_400, pulled.PausedUntil);
+        // PLAN-v26 E1（mac 0.10.1 E5）：暂停最远两天（「暂停到明天」到明天第一个时段开始，不会超过后天零点）
+        Assert.AreEqual(ReminderTime.FromUtc(Now) + ReminderState.MaxPause, pulled.PausedUntil);
     }
 
     [TestMethod]

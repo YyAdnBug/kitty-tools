@@ -272,9 +272,17 @@ internal sealed partial class SettingsWindow
             : ReminderMath.Local(DateTime.UtcNow.AddHours(1), zone);
         var date = new DatePicker { Header = "日期和时间", Date = new DateTimeOffset(onceLocal.Date) };
         var time = new TimePicker { Header = "时间", ClockIdentifier = "24HourClock", MinuteIncrement = 5 };
-        time.Time = schedule.Kind == ReminderSchedule.Once ? onceLocal.TimeOfDay : TimeSpan.FromMinutes(schedule.Time);
+        // 时间不带秒（PLAN-v26 E3，mac cdbe9dad）：新建的一次性默认是一小时后，去掉秒
+        time.Time = schedule.Kind == ReminderSchedule.Once
+            ? TimeSpan.FromMinutes(Math.Floor(onceLocal.TimeOfDay.TotalMinutes))
+            : TimeSpan.FromMinutes(schedule.Time);
         var until = new TimePicker { Header = "到", ClockIdentifier = "24HourClock", MinuteIncrement = 5 };
         until.Time = TimeSpan.FromMinutes(schedule.Until % 1440);
+        // 早于「从」的跨过半夜、算到第二天（E2，mac U10）：标题上写出来
+        void UntilHeader() => until.Header = until.Time != TimeSpan.Zero && until.Time < time.Time ? "到（第二天）" : "到";
+        UntilHeader();
+        time.TimeChanged += (_, _) => UntilHeader();
+        until.TimeChanged += (_, _) => UntilHeader();
         var monthDay = new ComboBox { Header = "每月几号", ItemsSource = Enumerable.Range(1, 31).Select(day => $"{day} 号").ToList(), MinWidth = 120 };
         monthDay.SelectedIndex = Math.Clamp(schedule.Day, 1, 31) - 1;
         var every = new ComboBox
@@ -502,7 +510,7 @@ internal sealed partial class SettingsWindow
             var minutes = (int)time.Time.TotalMinutes;
             if (next.Kind == ReminderSchedule.Once)
             {
-                var local = date.Date.Date + time.Time;
+                var local = date.Date.Date + TimeSpan.FromMinutes(Math.Floor(time.Time.TotalMinutes));
                 next.Date = ReminderTime.FromUtc(ReminderMath.LocalToUtc(local, zone));
             }
             else

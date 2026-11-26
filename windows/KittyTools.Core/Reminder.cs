@@ -356,7 +356,8 @@ public static class Reminders
     public static string AlertExplanation(string alert) => alert switch
     {
         Reminder.Glow => "屏幕四边一圈光，鼠标点得穿，底部的提示同时挂着",
-        Reminder.Full => "盖住所有屏幕，键盘鼠标照常能用",
+        // 说法改准（PLAN-v26 E2，mac 0.10.1 U10）：压暗层接住点击、前台在底板上，后面的窗口点不到、打不了字
+        Reminder.Full => "盖住所有屏幕，点不到后面的窗口、也打不了字；点按钮或按 Enter / Esc 收起",
         Reminder.Status => "到点进入一个状态，拦住键盘鼠标",
         _ => "屏幕底部的提示挂着，点了「知道了」或「稍后」才收",
     };

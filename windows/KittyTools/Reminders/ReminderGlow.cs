@@ -103,6 +103,18 @@ internal static unsafe partial class ReminderGlow
         _breath.Start();
     }
 
+    /// <summary>显示器插拔、改分辨率（E13）：亮着就按现在的屏重摆一圈。</summary>
+    public static void DisplaysChanged()
+    {
+        if (!IsShowing)
+        {
+            return;
+        }
+
+        Dismiss();
+        Show();
+    }
+
     public static void Dismiss()
     {
         _breath?.Stop();

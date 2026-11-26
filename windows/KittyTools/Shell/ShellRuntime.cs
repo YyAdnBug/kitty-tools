@@ -1485,6 +1485,9 @@ internal sealed class ShellRuntime
         {
             // 显示器插拔、改分辨率：状态屏按现在的屏幕重摆（没在状态屏里什么都不做）；便签屏幕边缘那叠也重摆；正在框选的截图退出。
             StatusScreenHost.OnDisplaysChanged();
+            // 全屏提醒、边框也按现在的屏重摆（PLAN-v26 E1，mac E13）
+            ReminderScreen.DisplaysChanged();
+            ReminderGlow.DisplaysChanged();
             NoteDeck.Refresh();
             ScreenshotSession.DisplaysChanged();
         }

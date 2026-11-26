@@ -136,12 +136,17 @@ internal static partial class ReminderCenter
     public static DateTime? PausedUntil
         => _state.PausedUntil is { } paused && ReminderTime.ToUtc(paused) > DateTime.UtcNow ? ReminderTime.ToUtc(paused) : null;
 
-    /// <summary>下一条要响的是哪条、几点（托盘「下一个」）；正挂着的不算。</summary>
+    /// <summary>「暂停到明天」暂停到哪一刻：明天第一个时段开始，没设时段的到 8:00（PLAN-v26 E1，mac 0.10.1 E6）。</summary>
+    public static DateTime PauseUntilTomorrow() => ReminderCheck.PauseUntilTomorrow(_list, DateTime.UtcNow, Zone);
+
+    /// <summary>下一条要响的是哪条、几点（托盘「下一个」）；正挂着的不算，暂停着时间隔类不列（暂停结束重新数，E6）。</summary>
     public static (Reminder Reminder, DateTime At)? NextUp()
     {
         var now = DateTime.UtcNow;
         var showing = Firing.Concat(Missed).ToHashSet(StringComparer.Ordinal);
-        return _list.Where(reminder => reminder.IsOn && !showing.Contains(reminder.Id))
+        var paused = PausedUntil is not null;
+        return _list.Where(reminder => reminder.IsOn && !showing.Contains(reminder.Id) &&
+                                       !(paused && reminder.Schedule.Kind == ReminderSchedule.Interval && !_state.Snoozed.ContainsKey(reminder.Id)))
             .Select(reminder => (Reminder: reminder, At: ReminderCheck.Due(reminder, _state, Anchors, Zone)))
             .Where(item => item.At is { } at && at > now)
             .OrderBy(item => item.At)
@@ -215,7 +220,8 @@ internal static partial class ReminderCenter
             return;
         }
 
-        var pulled = _state.PulledBack(DateTime.UtcNow, Reminders.SnoozeChoices[^1] * 60);
+        // 推后的上限按实际能推到的最远（全屏上能推 1 小时，E5；以前截到 30 分钟，推 1 小时的一对时就提前了）
+        var pulled = _state.PulledBack(DateTime.UtcNow, ReminderAlerts.FarthestSnoozeMinutes * 60);
         if (!pulled.SameAs(_state))
         {
             _state = pulled;
@@ -342,10 +348,28 @@ internal static partial class ReminderCenter
             _away = true;
         }
 
+        // 暂停到点了：间隔类从这一刻重新数（暂停期间它们不攒，E6）
+        if (_state.EndPause(now))
+        {
+            RestartIntervals(now);
+            SaveState();
+        }
+
         var paused = PausedUntil;
+        // 暂停着的间隔类同离开电脑：不响也不等，暂停结束重新数（E6）
         var result = ReminderCheck.Check(
             _list, _state, Anchors, Firing.Concat(Missed).ToHashSet(StringComparer.Ordinal), now, Zone,
-            held: _locked || StatusScreenHost.Active || paused is not null, away: _away);
+            held: _locked || StatusScreenHost.Active || paused is not null, away: _away || paused is not null);
+        // 过了点、已经出了时段的间隔类：不补响，从现在数（下一个时段，E6）
+        foreach (var id in result.Rested)
+        {
+            if (Find(id) is { } rested)
+            {
+                Anchors[id] = now;
+                AnchorRules[id] = rested.Schedule.Copy();
+            }
+        }
+
         var fresh = result.Fire.Concat(result.Missed).ToList();
         if (fresh.Count > 0)
         {
@@ -368,6 +392,7 @@ internal static partial class ReminderCenter
             if (newly.Count > 0)
             {
                 _nags = 0;
+                _quiet = false;
             }
 
             Sound(newly);
@@ -466,7 +491,8 @@ internal static partial class ReminderCenter
                         notice.Title, notice.Detail, fired.FirstOrDefault(reminder => reminder.Symbol.Length > 0)?.Symbol ?? string.Empty,
                         ReminderAlerts.FullSeconds(fired), ReminderAlerts.SnoozeChoices(SnoozeMinutes), _note),
                     Acknowledge,
-                    minutes => Snooze(minutes)))
+                    minutes => Snooze(minutes),
+                    Expired))
             {
                 return;
             }
@@ -511,7 +537,7 @@ internal static partial class ReminderCenter
     {
         _nagTimer?.Stop();
         var minutes = Firing.Select(Find).Where(reminder => reminder is { NagMinutes: > 0 }).Select(reminder => reminder!.NagMinutes).ToList();
-        if (_mode == Reminder.Full || minutes.Count == 0)
+        if (_mode == Reminder.Full || _quiet || minutes.Count == 0)
         {
             return;
         }
@@ -558,6 +584,32 @@ internal static partial class ReminderCenter
     }
 
     // ---- 处理
+
+    /// <summary>
+    /// 全屏倒数完自己收起（E7，同 mac expired）：倒数期间有人碰过键盘鼠标才算「知道了」；一直没人碰、锁着屏（人不在跟前）时，
+    /// 不是间隔类的不算——收起全屏、挂到底部的提示上等处理（以前一次性的就这样被删掉了）；间隔类照旧算处理了、从这一刻重新数。
+    /// 挂上去不再催（全屏已经出过）。
+    /// </summary>
+    private static void Expired(double shownSeconds)
+    {
+        var pending = ReminderAlerts.Unattended(Firing.Concat(Missed), _list, IdleSeconds(), shownSeconds, _locked);
+        if (pending.Count == 0)
+        {
+            Acknowledge();
+            return;
+        }
+
+        var handled = Firing.Concat(Missed).Where(id => !pending.Contains(id)).ToList();
+        Firing.RemoveAll(id => !pending.Contains(id));
+        Missed.RemoveAll(id => !pending.Contains(id));
+        _mode = Reminder.Light;
+        _quiet = true;
+        Log.Info($"reminder.unattended pending={pending.Count}");
+        Finish(handled);
+    }
+
+    /// <summary>全屏自己收起后挂在提示上的那几条：不再催（E7）；有新的到点时清掉。</summary>
+    private static bool _quiet;
 
     /// <summary>「知道了」：挂着的都算处理了。</summary>
     private static void Acknowledge()

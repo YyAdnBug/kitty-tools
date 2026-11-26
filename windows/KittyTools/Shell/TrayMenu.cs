@@ -308,8 +308,12 @@ internal static partial class TrayMenu
             }
             else
             {
-                var tomorrow = DateTime.Today.AddDays(1).ToUniversalTime();
-                foreach (var (title, pauseUntil) in new[] { ("暂停全部提醒 1 小时", DateTime.UtcNow.AddHours(1)), ("暂停到明天", tomorrow) })
+                // 「暂停到明天」到明天第一个时段开始（没设时段的到 8:00；凌晨点的是今天的），菜单上写到几点（PLAN-v26 E1）
+                var tomorrow = ReminderCenter.PauseUntilTomorrow();
+                var tomorrowTitle = tomorrow.ToLocalTime().Date == DateTime.Today
+                    ? $"暂停到 {tomorrow.ToLocalTime():H:mm}"
+                    : $"暂停到明天 {tomorrow.ToLocalTime():H:mm}";
+                foreach (var (title, pauseUntil) in new[] { ("暂停全部提醒 1 小时", DateTime.UtcNow.AddHours(1)), (tomorrowTitle, tomorrow) })
                 {
                     children.Add(new Item(title, null, () =>
                     {

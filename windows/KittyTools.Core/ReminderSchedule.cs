@@ -200,12 +200,21 @@ public sealed class ReminderState
            Marks.All(pair => other.Marks.TryGetValue(pair.Key, out var mark) && mark.At.Equals(pair.Value.At) &&
                              mark.Schedule.SameAs(pair.Value.Schedule));
 
-    /// <summary>系统时间往回调过：记在「将来」的处理时刻收回到现在、推到的时刻最多再推 maxSnooze 秒；暂停最长到明天。</summary>
+    /// <summary>时钟往回调多少秒以内不算（对时的几秒、几十秒；PLAN-v26 E1，同 mac 0.10.1 E5）。</summary>
+    public const double ClockSlack = 60;
+
+    /// <summary>暂停最远到哪（秒）：「暂停到明天」到明天第一个时段开始，不会超过后天零点。</summary>
+    public const double MaxPause = 2 * 86_400;
+
+    /// <summary>
+    /// 系统时间变了：只收明显往回调过的（E5）——记在「将来」超过 ClockSlack 的处理时刻收回到现在（差几秒的对时不动，免得刚响过的又响一次）；
+    /// 推到的时刻超过 maxSnooze（实际能推到的最远）才截回那么远，正常推后的一律不动；暂停超过 MaxPause 才截回。
+    /// </summary>
     public ReminderState PulledBack(DateTime nowUtc, double maxSnooze)
     {
         var now = ReminderTime.FromUtc(nowUtc);
         var next = Copy();
-        foreach (var mark in next.Marks.Values.Where(mark => mark.At > now))
+        foreach (var mark in next.Marks.Values.Where(mark => mark.At > now + ClockSlack))
         {
             mark.At = now;
         }
@@ -215,12 +224,24 @@ public sealed class ReminderState
             next.Snoozed[id] = now + maxSnooze;
         }
 
-        if (next.PausedUntil is { } paused && paused > now + 86_400)
+        if (next.PausedUntil is { } paused && paused > now + MaxPause)
         {
-            next.PausedUntil = now + 86_400;
+            next.PausedUntil = now + MaxPause;
         }
 
         return next;
+    }
+
+    /// <summary>暂停到点了（E6）：清掉、返回 true——间隔提醒从这一刻重新数（暂停期间它们不攒，同离开电脑）。</summary>
+    public bool EndPause(DateTime nowUtc)
+    {
+        if (PausedUntil is not { } paused || paused > ReminderTime.FromUtc(nowUtc))
+        {
+            return false;
+        }
+
+        PausedUntil = null;
+        return true;
     }
 }
 
@@ -236,6 +257,37 @@ public static class ReminderCheck
         public List<string> Missed { get; } = new();
 
         public DateTime? Next { get; set; }
+
+        /// <summary>过了点、此刻又不在它的时段里的间隔类（E6）：不响，执行层从现在重新数、交给下一个时段。</summary>
+        public List<string> Rested { get; } = new();
+    }
+
+    /// <summary>没设时段的「暂停到明天」到几点（一天里的第几分钟）。</summary>
+    public const int Morning = 8 * 60;
+
+    /// <summary>
+    /// 「暂停到明天」暂停到哪一刻（E6，同 mac pauseUntilTomorrow）：明天第一个时段开始；半夜 0:00 之后、今天第一个时段还没到时点的，
+    /// 是今天的那一刻。某一天的第一个时段 = 开着的、那天勾了的、设了时段（不是全天）的间隔提醒里最早的开始；一条都没有就是 8:00。
+    /// </summary>
+    public static DateTime PauseUntilTomorrow(IReadOnlyList<Reminder> list, DateTime nowUtc, TimeZoneInfo zone)
+    {
+        var today = ReminderMath.Local(nowUtc, zone).Date;
+        foreach (var day in new[] { today, today.AddDays(1) })
+        {
+            var weekday = ReminderMath.Weekday(day);
+            var starts = list
+                .Where(reminder => reminder.IsOn && reminder.Schedule.Kind == ReminderSchedule.Interval &&
+                                   reminder.Schedule.WindowMinutes() < 1440 && reminder.Schedule.Days.Contains(weekday))
+                .Select(reminder => reminder.Schedule.Time)
+                .ToList();
+            var at = ReminderMath.Moment(starts.Count > 0 ? starts.Min() : Morning, day, zone);
+            if (at > nowUtc)
+            {
+                return at;
+            }
+        }
+
+        return ReminderMath.Moment(0, today.AddDays(1), zone);
     }
 
     /// <summary>每条该什么时候响：推过的按推到的时刻；间隔按锚点；一次 / 每周 / 每月按上一次处理到的那一刻往后算。</summary>
@@ -285,6 +337,16 @@ public static class ReminderCheck
             else if (held)
             {
                 continue;
+            }
+            else if (isInterval && !state.Snoozed.ContainsKey(reminder.Id) &&
+                     ReminderMath.WindowContaining(reminder.Schedule, nowUtc, zone) is null)
+            {
+                // 过了点、已经出了时段（从状态屏出来、时钟往前跳、醒得晚）：不在时段外补响，从现在数（E6）
+                result.Rested.Add(reminder.Id);
+                if (ReminderMath.NextFromAnchor(reminder.Schedule, nowUtc, zone) is { } next)
+                {
+                    result.Next = result.Next is { } soonest && soonest < next ? soonest : next;
+                }
             }
             else if (nowUtc - due <= LateLimit || isInterval)
             {
@@ -364,6 +426,22 @@ public static class ReminderAlerts
 
     /// <summary>全屏上「稍后」的几个选项：设置里定的那个 + 15 分钟 + 1 小时，去重、从小到大。</summary>
     public static IReadOnlyList<int> SnoozeChoices(int minutes) => new[] { minutes, 15, 60 }.Distinct().Order().ToList();
+
+    /// <summary>
+    /// 实际能推到的最远（分钟，E5）：全屏上最多推 60 分钟，再算 5 分钟的余量（mac farthestSnooze 65 分钟）。
+    /// 时钟往回调时只把超过它的截回来。
+    /// </summary>
+    public const int FarthestSnoozeMinutes = 65;
+
+    /// <summary>
+    /// 全屏自己收起时还要挂在提示上等处理的（E7）：出来的这 shownSeconds 秒里没人碰过键盘鼠标（空闲得比它还久）、或者人不在（锁着屏）时，
+    /// 不是间隔类的那几条；有人碰过、或者全是间隔类，是空的（都算知道了；「休息眼睛」照做的人正好不碰键鼠）。
+    /// </summary>
+    public static List<string> Unattended(
+        IEnumerable<string> ids, IReadOnlyList<Reminder> list, double idleSeconds, double shownSeconds, bool away)
+        => away || idleSeconds >= shownSeconds
+            ? ids.Where(id => list.FirstOrDefault(reminder => reminder.Id == id)?.Schedule.Kind != ReminderSchedule.Interval).ToList()
+            : new List<string>();
 
     /// <summary>
     /// 提示上那一条写什么：到点的标题连在一起（只有一条时带它的说明），错过的写在详情里；只有错过的时

@@ -63,10 +63,12 @@ internal static class ReminderScreen
     public static bool IsShowing => Screens.Count > 0;
 
     /// <summary>出来；已经在了就原地换内容（时长和那 1 秒都从这一刻重新数）。建不出来返回 false（已建的都撤掉，调用方退回底部的轻提醒）。</summary>
-    public static bool Show(Content content, Action onDone, Action<int> onSnooze)
+    /// <param name="onExpired">倒数到 0 自己收起时调（传出来了几秒），由 ReminderCenter 看有没有人碰过再定算不算「知道了」（E7）；没给就当「知道了」。</param>
+    public static bool Show(Content content, Action onDone, Action<int> onSnooze, Action<double>? onExpired = null)
     {
         _onDone = onDone;
         _onSnooze = onSnooze;
+        _onExpired = onExpired;
         // 内容一样就不重来（mac 的 == 按值比；record 比 Snoozes 比的是引用，每次新建的列表永远不等）。
         if (IsShowing && _content is { } shown && shown with { Snoozes = content.Snoozes } == content &&
             shown.Snoozes.SequenceEqual(content.Snoozes))
@@ -133,6 +135,33 @@ internal static class ReminderScreen
 
     public static void Dismiss() => Close();
 
+    /// <summary>
+    /// 显示器插拔、改分辨率（WM_DISPLAYCHANGE，PLAN-v26 E1，同 mac 0.10.1 E13）：显示着就按现在的屏重摆，倒数接着数、按钮的事照旧。
+    /// </summary>
+    public static void DisplaysChanged()
+    {
+        if (!IsShowing || _content is not { } content || _onDone is not { } done || _onSnooze is not { } snooze)
+        {
+            return;
+        }
+
+        var remaining = _remaining;
+        var shownAt = _shownAt;
+        var expired = _onExpired;
+        Close();
+        if (Show(content, done, snooze, expired))
+        {
+            _remaining = remaining;
+            _shownAt = shownAt;
+            Log.Info("reminder.screen-relaid");
+        }
+        else
+        {
+            // 重摆失败（R78 同款）：当成知道了，免得「点了才收」的那几条没人收得掉
+            done();
+        }
+    }
+
     private static void Close()
     {
         _countdown?.Stop();
@@ -183,7 +212,17 @@ internal static class ReminderScreen
 
         if (_content is { Seconds: > 0 } && --_remaining <= 0)
         {
-            Done();
+            if (_onExpired is { } expired)
+            {
+                var shown = (Environment.TickCount64 - _shownAt) / 1000.0;
+                Close();
+                expired(shown);
+            }
+            else
+            {
+                Done();
+            }
+
             return;
         }
 
@@ -200,6 +239,8 @@ internal static class ReminderScreen
     }
 
     private static bool Settled => Environment.TickCount64 - _shownAt >= SettleMs;
+
+    private static Action<double>? _onExpired;
 
     private static void Done()
     {
