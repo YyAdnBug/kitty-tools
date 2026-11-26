@@ -1226,7 +1226,18 @@ struct SnapshotProbeTests {
         ["打开系统设置"], true
       ),
     ]
-    for (name, content, geometry, titles, expanded) in interactive {
+    // 识字慢、磁盘快满（2026-11-26）：系统清掉了编好的模型，挂着说明和「打开储存空间」，收着 / 悬停展开各一张
+    let rebuildNote = String(
+      localized: "磁盘快满了，系统清掉了编好的识字模型，正在重新准备，要等半分钟左右；腾出磁盘空间后就不用等")
+    let rebuilding = [false, true].map { expanded in
+      (
+        expanded ? "island-rebuilding-expanded" : "island-rebuilding",
+        Island.Content(
+          title: "正在准备识字模型…", detail: "\(rebuildNote) · 已等 \(12) 秒", tone: .progress,
+          symbol: "text.viewfinder", leading: .tone), notch, ["打开储存空间"], expanded
+      )
+    }
+    for (name, content, geometry, titles, expanded) in interactive + rebuilding {
       let island = Island(
         showing: content, geometry: geometry,
         actions: titles.map { Island.Action(Self.key($0)) {} },

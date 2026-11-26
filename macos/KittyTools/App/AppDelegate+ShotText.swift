@@ -193,14 +193,79 @@ extension AppDelegate {
   /// 不然看着像卡死了
   private static let preparingTitle: LocalizedStringResource = "正在准备识字模型…"
 
-  private func recognizing<T>(_ work: () async -> T) async -> T {
+  /// since：岛上「已等 N 秒」从哪一刻数（拷贝图中文字先扫码 / 实况文本、再走 Vision，两段接着数，不跳回去）
+  private func recognizing<T>(
+    since started: ContinuousClock.Instant = .now, _ work: () async -> T
+  ) async -> T {
     // 进程内识过字，模型就留在内存里：这一路不一定开关面板（⌥O 识字、钉图上识字），自己记得回头放掉
     defer { idleReclaim.schedule() }
     let warmup = OCR.foreground.beginUse()
     await prepareRecognition()
     return await island.showIfSlow(Self.recognizingTitle) {
       await warmup?.value
-      return await work()
+      return await explainingRebuild(since: started, work)
+    }
+  }
+
+  /// 识字过了这么久还没好、磁盘又快满了：多半是系统清掉了编好的模型、正在现场重编（2026-11-26，mac-clipboard §1
+  /// 「磁盘快满时系统会清掉编好的模型」：清掉后第一次 23–44 s；没清时整屏密集文字也就 0.9 s）
+  static let rebuildHintDelay = Duration.seconds(5)
+  /// 磁盘可用空间不到这么多算「快满了」。ponytail: 本机（460 GB 盘）实测系统按约 15 GB 的目标紧急清理，留了余量；
+  /// 别的盘大小目标可能不同，看到说明出得不对再按盘大小算
+  static let lowDiskBytes = 20_000_000_000
+
+  /// 磁盘快满（看缓存所在的卷，编好的模型在那里）
+  static func isLowOnDisk(free: Int? = AppDelegate.freeBytes()) -> Bool {
+    free.map { $0 < lowDiskBytes } ?? false
+  }
+
+  static func freeBytes() -> Int? {
+    (try? URL.cachesDirectory.resourceValues(forKeys: [.volumeAvailableCapacityKey]))?
+      .volumeAvailableCapacity
+  }
+
+  /// work 过了 rebuildHintDelay 还没好、磁盘又快满时，岛上换成「正在准备识字模型…」并说明原因、按秒报已等多久（从 started
+  /// 数，最多数到 OCR.prepareTimeout：实况文本没有超时，服务不回时别让岛一直续着挂），带「打开储存空间」。结果出来调用方的
+  /// 结果岛原地换掉它（截图翻译那一路自己收 preparingTitle）；中途取消（盖回截图的就地翻译按 Esc）当场收掉
+  private func explainingRebuild<T>(since started: ContinuousClock.Instant, _ work: () async -> T)
+    async -> T
+  {
+    let hint = Task { [island] in
+      guard (try? await Task.sleep(for: Self.rebuildHintDelay)) != nil, Self.isLowOnDisk() else {
+        return
+      }
+      let note = String(localized: "磁盘快满了，系统清掉了编好的识字模型，正在重新准备，要等半分钟左右；腾出磁盘空间后就不用等")
+      island.show(
+        Self.preparingTitle, detail: "\(note)", tone: .progress, symbol: "text.viewfinder",
+        actions: [
+          Island.Action("打开储存空间", opens: true) {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.settings.Storage") {
+              NSWorkspace.shared.open(url)
+            }
+          }
+        ])
+      // sleep 被取消时出错退出：取消之后不再多报一次（和 prepareRecognition 共用标题，多报一次会把它那句换掉）
+      while (try? await Task.sleep(for: .seconds(1))) != nil,
+        ContinuousClock.now - started < OCR.prepareTimeout
+      {
+        let seconds = (ContinuousClock.now - started).components.seconds
+        island.progress(Self.preparingTitle, detail: "\(note) · 已等 \(seconds) 秒")
+      }
+    }
+    // 没有结果岛来换掉它们：识字本身（现场编模型时）不一定因为取消提前返回，所以取消那一刻就收，不等 work
+    let dismiss = { @MainActor [island] in
+      hint.cancel()
+      island.dismiss(ifShowing: Self.preparingTitle)
+      island.dismiss(ifShowing: Self.recognizingTitle)
+    }
+    defer {
+      hint.cancel()
+      if Task.isCancelled { dismiss() }
+    }
+    return await withTaskCancellationHandler {
+      await work()
+    } onCancel: {
+      Task { @MainActor in dismiss() }
     }
   }
 
@@ -214,8 +279,7 @@ extension AppDelegate {
         Self.preparingTitle, detail: "\(note)", tone: .progress, symbol: "text.viewfinder")
       let started = ContinuousClock.now
       ticker = Task { [island] in
-        while !Task.isCancelled {
-          try? await Task.sleep(for: .seconds(1))
+        while (try? await Task.sleep(for: .seconds(1))) != nil {
           let seconds = (ContinuousClock.now - started).components.seconds
           island.progress(Self.preparingTitle, detail: "\(note) · 已等 \(seconds) 秒")
         }
@@ -279,12 +343,16 @@ extension AppDelegate {
       await prepareBatchVision()
       lines = await readLines()
     } else {
-      let fast = await island.showIfSlow(Self.recognizingTitle, fastRead)
+      // 实况文本的系统服务那份模型同样会被清掉（冷的 54 s），也给说明；转到 Vision 时「已等」接着数
+      let started = ContinuousClock.now
+      let fast = await island.showIfSlow(Self.recognizingTitle) {
+        await explainingRebuild(since: started, fastRead)
+      }
       if let result = Task.isCancelled ? .cancelled : fast {
         idleReclaim.schedule()  // 查码也会留下模型；下面的 Vision 分支由 recognizing 安排回收
         return result
       }
-      lines = await recognizing(readLines)
+      lines = await recognizing(since: started, readLines)
     }
     guard !Task.isCancelled else { return .cancelled }
     guard let lines else { return .unreadable }

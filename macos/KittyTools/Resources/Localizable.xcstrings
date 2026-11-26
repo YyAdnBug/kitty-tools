@@ -1225,16 +1225,16 @@
     },
     "%lld 个做好了（原件移到了废纸篓），%lld 个没成：%@" : {
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$lld 个做好了（原件移到了废纸篓），%2$lld 个没成：%3$@"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld done (originals moved to the Trash), %lld failed: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld 个做好了（原件移到了废纸篓），%2$lld 个没成：%3$@"
           }
         }
       }
@@ -28019,6 +28019,16 @@
         }
       }
     },
+    "打开储存空间" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Storage Settings"
+          }
+        }
+      }
+    },
     "打开全部便签…" : {
       "localizations" : {
         "en" : {
@@ -41280,6 +41290,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "disk name"
+          }
+        }
+      }
+    },
+    "磁盘快满了，系统清掉了编好的识字模型，正在重新准备，要等半分钟左右；腾出磁盘空间后就不用等" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your disk is almost full, so macOS cleared the text recognition model. Preparing it again takes about half a minute. Free up disk space to avoid the wait."
           }
         }
       }

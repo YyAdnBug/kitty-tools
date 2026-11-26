@@ -707,6 +707,14 @@ struct ScreenshotTests {
     #expect(!AppDelegate.usesLiveText(joined: false, visionPrepared: true))
   }
 
+  /// 识字慢时岛上说明「系统清掉了模型」只在磁盘快满时出（2026-11-26）；读不到可用空间不出
+  @Test func rebuildHintOnlyWhenLowOnDisk() {
+    #expect(AppDelegate.isLowOnDisk(free: 9_300_000_000))
+    #expect(!AppDelegate.isLowOnDisk(free: AppDelegate.lowDiskBytes))
+    #expect(!AppDelegate.isLowOnDisk(free: 117_000_000_000))
+    #expect(!AppDelegate.isLowOnDisk(free: nil))
+  }
+
   @MainActor @Test(arguments: [false, true])
   func unavailableOrFailedTranscriptRequestsVision(failed: Bool) async {
     let result = await AppDelegate.fastTextForCopy(codes: [], liveText: true) {
