@@ -114,6 +114,32 @@ struct KeyboardChecksTests {
         == nil)
   }
 
+  /// 反过来查打出某个字的键位（长截图面板不当 key、按键靠临时快捷键，issue #57）：法语 AZERTY 的 a 在美式 Q 的位置；
+  /// Dvorak – QWERTY ⌘ 按 ⌘ 那一层是美式（⌘C 在美式 C 上），不按修饰键时 c 在美式 I 的位置；美式照旧
+  @Test func keyCodeTypingLetterInInstalledLayouts() throws {
+    func layout(_ id: String) -> Data? {
+      let filter = [kTISPropertyInputSourceID as String: id] as CFDictionary
+      guard
+        let list = TISCreateInputSourceList(filter, true)?.takeRetainedValue()
+          as? [TISInputSource],
+        let source = list.first,
+        let pointer = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData)
+      else { return nil }
+      return Unmanaged<CFData>.fromOpaque(pointer).takeUnretainedValue() as Data
+    }
+    let us = try #require(layout("com.apple.keylayout.US"))
+    #expect(HotKey.keyCode(typing: "a", command: false, in: us) == kVK_ANSI_A)
+    #expect(HotKey.keyCode(typing: "s", command: true, in: us) == kVK_ANSI_S)
+    let french = try #require(layout("com.apple.keylayout.French"))
+    #expect(HotKey.keyCode(typing: "a", command: false, in: french) == kVK_ANSI_Q)
+    #expect(HotKey.keyCode(typing: "c", command: true, in: french) == kVK_ANSI_C)
+    let dvorak = try #require(layout("com.apple.keylayout.DVORAK-QWERTYCMD"))
+    #expect(HotKey.keyCode(typing: "c", command: true, in: dvorak) == kVK_ANSI_C)
+    #expect(HotKey.keyCode(typing: "c", command: false, in: dvorak) == kVK_ANSI_I)
+    // 打不出来的字给 nil（调用方退回美式的位置）
+    #expect(HotKey.keyCode(typing: "ж", command: false, in: us) == nil)
+  }
+
   /// 会吞掉的字母（E9）：⌥ + 键打出的是非 ASCII 的字母、语言里又要用到才算；中文、英文系统的 ⌥C = ç 不算，
   /// 法语算；北欧的 å ø、德语 ß、波兰语 ą；不是字母（∂、不换行空格、死键给的 ˜）、ASCII 字母、同一个布局不按 ⌥ 也打得出的都不算
   @Test func swallowedLettersFollowSystemLanguages() {

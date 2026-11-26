@@ -1,7 +1,10 @@
 // 长截图会话：截图框选后按 S（或工具栏按钮）进入。遮罩收起、露出实时画面，选区外画一圈边框，旁边一个面板
 // （拼接预览、状态、按钮）。用户在选区里滚动（滚轮、触控板都行），或按空格自动滚动；一直用 ScreenCaptureKit
 // 截选区（滤掉本 App，设置窗这类普通窗口照拍：filter），交给 ScrollStitcher 拼。↩ 拷贝、⌘S 存储、⇧⌘S 另存为…，Esc 取消。
-// 边框和面板是不激活前台的 NSPanel（面板要当 key 收按键），会话结束立即释放；前台 App 一直不变。
+// 边框和面板是不激活前台的 NSPanel，会话结束立即释放；前台 App 一直不变。面板**不当 key**（issue #57，2026-11-26）：
+// 被截的 App 失焦会变样（WPS 把失焦的窗口整扇压暗，第一帧亮、之后全暗，一张都接不上；别的 App 的选中高亮、光标会变灰），
+// 键盘一直留在被截的 App；面板上的键靠长截图期间临时挂的快捷键（HotKeyCenter.registerSessionKeys），按钮照样点。
+// 开始滚动之前画面变了（刚拿回焦点、悬停、重画）不算对不上，拿最新那一帧重新当第一帧（restarts）。
 // 预览上滚轮 = 往回看长图前面的内容（右边一条细指示条说在哪一段，双击或滚回最新那头回到跟随；浏览时不滑纸带、不闪接缝）。
 // Whisker（mac-whisker §6 长截图）：面板是永远深色的 HUD（216 宽、圆角 16）；预览像纸带一样滚动、上下 18 pt 渐隐，
 // 每拼上一段接缝处闪一下品牌粉；高度数字 22 pt 圆体滚动变化；选区边框 2 pt 品牌粉 + 外发光呼吸，自动滚动时只走蚂蚁线
@@ -33,13 +36,15 @@ final class ScrollCapture {
   private static let maxPixels = ImageStore.maxPixels
 
   /// region：选区（点，AppKit 全局坐标）。取消返回 nil；开头截屏失败抛错
-  static func run(region: CGRect) async throws -> Result? {
+  /// hotKeys：长截图期间临时挂面板上的键（nil 时只能点按钮，单测用）
+  static func run(region: CGRect, hotKeys: HotKeyCenter?) async throws -> Result? {
     guard
       let screen = NSScreen.screens.max(by: {
         area($0.frame.intersection(region)) < area($1.frame.intersection(region))
       }), area(screen.frame.intersection(region)) > 0
     else { return nil }
     let capture = try await ScrollCapture(region: region, screen: screen)
+    capture.hotKeys = hotKeys
     return await withCheckedContinuation { capture.start(continuation: $0) }
   }
 
@@ -58,6 +63,9 @@ final class ScrollCapture {
   private let panel: ScrollCapturePanel
   private var continuation: CheckedContinuation<Result?, Never>?
   private var loop: Task<Void, Never>?
+  private var hotKeys: HotKeyCenter?
+  /// 用户开始滚了没有（选区外的滚轮、拖动，或开了自动滚动）：之前画面的变化都不是滚动（restarts）
+  private var hasScrolled = false
 
   // 自动滚动：跟着屏幕刷新每一帧发一小段像素滚轮，匀速滚（2026-11-05 用户：原来截一帧跳一大步，「一顿一顿」）；
   // 抓帧照旧一帧接一帧，按实测位移校准滚轮的倍率，对不上就退回、放慢，连着几帧不动就是到头了；
@@ -173,16 +181,30 @@ final class ScrollCapture {
     panel.hudView.speed = Prefs.ScrollSpeed.current()
     border.orderFrontRegardless()
     panel.orderFrontRegardless()
-    panel.makeKey()
+    // 面板不当 key（键盘留在被截的 App，它不会失焦变样）：面板上的键挂成长截图期间的临时快捷键
+    hotKeys?.registerSessionKeys(
+      ScrollCaptureHUD.sessionKeys(
+        a: HotKey.keyCode(typing: "a", command: false),
+        c: HotKey.keyCode(typing: "c", command: true),
+        s: HotKey.keyCode(typing: "s", command: true)
+      ).map { key in
+        HotKeyCenter.SessionKey(hotKey: key.hotKey, characters: key.characters) {
+          [unowned self] in panel.hudView.press(key.item)
+        }
+      })
     updateStatus()
     // 第一帧先摆进预览（原来要等拼上第二段才有，开头预览是空的）；预览按自己的大小出图，先布局
     panel.layoutIfNeeded()
     refreshPreview(force: true)
     // 手动滚时静止睡着的那一觉，选区里一滚就叫醒（滚轮落在别的 App 上，global 监听收得到；落在自家面板上是往回看预览，
     // 不管）。自动滚动自己发的滚轮这里也收得到，那时的 160 ms 一帧不能被它叫醒
-    wheelMonitor = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { [weak self] _ in
+    // 拖动（拖别的 App 的滚动条）也算开始滚了（hasScrolled）
+    wheelMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.scrollWheel, .leftMouseDragged]) {
+      [weak self] _ in
       MainActor.assumeIsolated {
-        guard let self, !self.isAutoScrolling else { return }
+        guard let self else { return }
+        self.hasScrolled = true
+        guard !self.isAutoScrolling else { return }
         self.nap?.cancel()
       }
     }
@@ -212,7 +234,13 @@ final class ScrollCapture {
         postedAtCapture = shot.posted
         let frame = await ScrollStitcher.frame(shot.image, layout: stitcher.layout)
         guard continuation != nil else { return }
-        let outcome = stitcher.add(frame)
+        var outcome = stitcher.add(frame)
+        if Self.restarts(outcome, hasScrolled: hasScrolled, stitched: counts.moved > 0) {
+          stitcher.restart(from: frame)
+          outcome = .unchanged
+          counts.restarts += 1
+          previewIsStale = true
+        }
         quietFrames = outcome == .unchanged ? quietFrames + 1 : 0
         handle(outcome)
       } catch {
@@ -253,6 +281,15 @@ final class ScrollCapture {
   private var nap: Task<Void, Never>?
   private var wheelMonitor: Any?
 
+  /// 这一帧对不上时要不要拿它重新当第一帧（纯函数，配单测）：还没开始滚、也还没拼上过东西时，画面的变化都不是滚动——
+  /// 被截的 App 刚拿回焦点（框选遮罩收起的那一下）、悬停高亮、重画——第一帧要是截在变之前，之后每一帧都对不上
+  /// （issue #57：WPS 的 PDF 第一帧亮、之后全暗）。开始滚了以后照旧报对不上（不悄悄丢掉开头那一屏）
+  static func restarts(_ outcome: ScrollStitcher.Outcome, hasScrolled: Bool, stitched: Bool)
+    -> Bool
+  {
+    outcome == .lost && !hasScrolled && !stitched
+  }
+
   /// 截完一帧后隔多久截下一帧（纯函数，配单测）：自动滚动 160 ms（边滚边截，每帧滚出一两成选区高）；手动时画面在动
   /// 不等（nil：下一帧已经和这一帧叠着在截了），没变化 40 ms，连着 5 帧没变化（停着看、去拿鼠标）放宽到 200 ms、
   /// 滚轮一来就醒（第四轮体检 F1：静止时原来也每秒在主线程上算 25 帧）
@@ -264,8 +301,8 @@ final class ScrollCapture {
 
   // MARK: 状态
 
-  /// 这一次会话里每种结果各有几帧（诊断日志的汇总）
-  private var counts = (moved: 0, unchanged: 0, lost: 0)
+  /// 这一次会话里每种结果各有几帧、开始滚动之前重取了几次第一帧（诊断日志的汇总）
+  private var counts = (moved: 0, unchanged: 0, lost: 0, restarts: 0)
   /// 对不上：拼上新内容之前一直提示
   private var isLost = false
   private var isFull = false
@@ -416,6 +453,7 @@ final class ScrollCapture {
       return updateStatus()
     }
     direction = stitcher.isGrowingUp ? -1 : 1
+    hasScrolled = true
     stalls = 0
     lostStreak = 0
     carry = 0
@@ -610,6 +648,7 @@ final class ScrollCapture {
   private func finish(_ action: Action?) {
     guard let continuation else { return }
     self.continuation = nil
+    hotKeys?.unregisterSessionKeys()  // 另存为的存储面板要 ↩ / Esc
     loop?.cancel()
     wheelMonitor.map(NSEvent.removeMonitor)
     wheelMonitor = nil
@@ -618,7 +657,7 @@ final class ScrollCapture {
     border.orderOut(nil)
     panel.orderOut(nil)
     Log.scroll.notice(
-      "结束：帧 \(self.stitcher.width)×\(self.stitcher.height)，接上 \(self.counts.moved)、没动 \(self.counts.unchanged)、对不上 \(self.counts.lost)，长图 \(self.stitcher.outputHeight) 像素"
+      "结束：帧 \(self.stitcher.width)×\(self.stitcher.height)，接上 \(self.counts.moved)、没动 \(self.counts.unchanged)、对不上 \(self.counts.lost)、重取第一帧 \(self.counts.restarts)，长图 \(self.stitcher.outputHeight) 像素"
     )
     let result = action.flatMap { action in
       stitcher.makeImage().map { Result(image: $0, scale: scale, action: action) }
@@ -787,13 +826,14 @@ final class ScrollCapturePanel: NSPanel {
     initialFirstResponder = hudView
   }
 
-  override var canBecomeKey: Bool { true }
+  /// 不当 key（issue #57）：被截的 App 失焦会变样；按键走 HotKeyCenter.registerSessionKeys
+  override var canBecomeKey: Bool { false }
   override var canBecomeMain: Bool { false }
 }
 
 /// 面板内容：预览（最近拼上的那头）、高度、状态（固定两行高：换提示时上面的读数和预览不跳）、自动滚动的速度（慢 / 标准 / 快）、
 /// 按钮（自动滚动 ｜ 另存为…、
-/// 存储 ｜ 取消、拷贝：同截图工具栏、录制条，取消紧挨主圆钮；32 × 32）。按键也在这里收。
+/// 存储 ｜ 取消、拷贝：同截图工具栏、录制条，取消紧挨主圆钮；32 × 32）。面板不当 key，按键由长截图期间临时挂的快捷键交进来（press）。
 /// 永远深色的 HUD 皮肤（和截图工具栏一致）：普通 NSView 包一层材质。15 是 `.hudWindow` 的毛玻璃，圆角裁切、描边、
 /// 内圈 rim 都在毛玻璃自己的图层上（和它以前自己就是 NSVisualEffectView 时一样，外层只是透明的壳）；
 /// macOS 26 起是液态玻璃（mac-whisker §2「26 分支」）
@@ -1139,21 +1179,6 @@ final class ScrollCaptureHUD: NSView {
   override var acceptsFirstResponder: Bool { true }
   override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-  override func updateTrackingAreas() {
-    super.updateTrackingAreas()
-    if trackingAreas.isEmpty {
-      addTrackingArea(
-        NSTrackingArea(
-          rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-          owner: self))
-    }
-  }
-
-  /// 点过目标 App 后面板就不是 key 了：鼠标移回面板就拿回键盘（不激活本 App，前台 App 不变）
-  override func mouseEntered(with event: NSEvent) {
-    if window?.isKeyWindow == false { window?.makeKey() }
-  }
-
   /// tone：平常 / 要注意（缺授权、截屏失败，橙色）/ 对不上（橙色，刚变成对不上时抖一下 0.35 s）/ 等着再按一次 Esc（危险色）
   func show(_ text: String, tone: Tone = .normal, width: Int, height: Int) {
     status.stringValue = text
@@ -1284,32 +1309,37 @@ final class ScrollCaptureHUD: NSView {
     }?.button
   }
 
-  override func keyDown(with event: NSEvent) {
-    openMenu?.dismiss()
-    let flags = event.modifierFlags.intersection([.command, .control, .option])
-    // A 按打出来的字认（E2），别的是按键位的方向键 / 回车 / Esc / 空格
-    switch event.typedKeyCode {
-    case kVK_Escape: onAction(.escape)
-    case kVK_Return where flags.isEmpty, kVK_ANSI_KeypadEnter where flags.isEmpty:
-      onAction(.output(.copy))
-    case kVK_ANSI_A where flags.isEmpty: onAction(.output(.annotate))
-    case kVK_Space where flags.isEmpty:
-      if !event.isARepeat { onAction(.toggleAuto) }  // 按住不放不反复开关
-    default: super.keyDown(with: event)
-    }
+  /// 长截图期间临时挂的键（HotKeyCenter.registerSessionKeys，面板不当 key、收不到按键，issue #57）：组合、合成按键时打出的字、
+  /// 交给 press 的动作。a / c / s 是当前键盘布局下打出 a（不按修饰键）、c 和 s（按 ⌘ 那一层）的键位
+  /// （HotKey.keyCode(typing:command:)：面板里的字母按打出来的字认，E2）。纯函数，配单测
+  static func sessionKeys(a: Int, c: Int, s: Int) -> [(
+    hotKey: HotKey, characters: String, item: Item
+  )] {
+    let command = UInt32(cmdKey)
+    return [
+      (HotKey(keyCode: UInt32(kVK_Escape), modifiers: 0), "\u{1b}", .escape),
+      (HotKey(keyCode: UInt32(kVK_Return), modifiers: 0), "\r", .output(.copy)),
+      (HotKey(keyCode: UInt32(kVK_ANSI_KeypadEnter), modifiers: 0), "\u{3}", .output(.copy)),
+      (HotKey(keyCode: UInt32(kVK_Space), modifiers: 0), " ", .toggleAuto),
+      (HotKey(keyCode: UInt32(a), modifiers: 0), "a", .output(.annotate)),
+      (HotKey(keyCode: UInt32(c), modifiers: command), "c", .output(.copy)),
+      (HotKey(keyCode: UInt32(s), modifiers: command), "s", .output(.save)),
+      (HotKey(keyCode: UInt32(s), modifiers: command | UInt32(shiftKey)), "s", .output(.saveAs)),
+    ]
   }
 
-  override func performKeyEquivalent(with event: NSEvent) -> Bool {
-    guard window?.isKeyWindow == true else { return super.performKeyEquivalent(with: event) }
-    let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
-    switch (event.typedKeyCode, flags) {
-    case (kVK_ANSI_C, .command): onAction(.output(.copy))
-    case (kVK_ANSI_S, .command): onAction(.output(.save))
-    case (kVK_ANSI_S, [.command, .shift]): onAction(.output(.saveAs))
-    default: return super.performKeyEquivalent(with: event)
+  /// 按了面板上的某个键（长截图期间临时挂的快捷键交进来）：先收起开着的存储菜单。空格按住不放不反复开关自动滚动
+  func press(_ item: Item) {
+    openMenu?.dismiss()
+    if item == .toggleAuto {
+      let now = ContinuousClock.now
+      // ponytail: 0.3 秒内的第二下当成按住不放（Carbon 热键按住时会不会重复没实测）；真要连点两下开关，隔开一点
+      guard now - lastToggle > .milliseconds(300) else { return }
+      lastToggle = now
     }
-    return true
+    onAction(item)
   }
+  private var lastToggle = ContinuousClock.now - .seconds(1)
 
   private static func symbol(_ name: String) -> NSImage {
     NSImage(systemSymbolName: name, accessibilityDescription: nil)!

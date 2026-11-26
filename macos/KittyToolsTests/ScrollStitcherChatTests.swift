@@ -113,7 +113,10 @@ struct ScrollStitcherChatTests {
   }
 
   /// 滚到 offset（可以是小数：半像素那一帧每行是相邻两行的平均，像按小数位置重画的字）的一帧；caret：输入框里的光标亮着
-  private static func frame(at offset: Double, _ selection: Selection, caret: Bool) -> CGImage {
+  /// dimmed：整扇压暗到 78%（WPS 失焦时那样）
+  private static func frame(
+    at offset: Double, _ selection: Selection, caret: Bool, dimmed: Bool = false
+  ) -> CGImage {
     let (left, width) = columns(selection)
     let right = left + chatWidth
     var bytes = [UInt8](repeating: 255, count: width * 4 * height)
@@ -181,6 +184,11 @@ struct ScrollStitcherChatTests {
       fill((inputTop + 10)..<(inputTop + 26), x0..<(x0 + 16), 120)
     }
     if caret { fill((inputTop + 40)..<(inputTop + 58), (left + 16)..<(left + 18), 0) }
+    if dimmed {
+      for index in bytes.indices where index % 4 != 3 {
+        bytes[index] = UInt8(Double(bytes[index]) * 0.78)
+      }
+    }
     return image(bytes, width: width)
   }
 
@@ -289,6 +297,32 @@ struct ScrollStitcherChatTests {
       return
     }
     #expect(stitcher.outputHeight == 700 - 100 + Self.height)
+  }
+
+  @Test func restartsWhenTheWindowDimsBeforeScrolling() throws {
+    // issue #57 第二轮：WPS 把失焦的窗口整扇压暗，长截图的第一帧截在压暗之前，之后每一帧都对不上。还没开始滚、
+    // 也没拼上过东西时拿压暗后的那一帧重新当第一帧，接着滚就一路接上，长图是压暗后的样子
+    var stitcher = try #require(
+      ScrollStitcher(
+        first: Self.frame(at: 100, .chat, caret: false), scrollbarWidth: Self.scrollbar,
+        maxHeight: 100_000))
+    let dim = Self.frame(at: 100, .chat, caret: false, dimmed: true)
+    let outcome = stitcher.add(dim)
+    #expect(outcome == .lost)
+    #expect(ScrollCapture.restarts(outcome, hasScrolled: false, stitched: false))
+    #expect(!ScrollCapture.restarts(outcome, hasScrolled: true, stitched: false))
+    #expect(!ScrollCapture.restarts(outcome, hasScrolled: false, stitched: true))
+    #expect(!ScrollCapture.restarts(.unchanged, hasScrolled: false, stitched: false))
+    stitcher.restart(from: ScrollStitcher.Frame(dim, layout: stitcher.layout))
+    for offset in [160.0, 250, 330] {
+      guard case .moved = stitcher.add(Self.frame(at: offset, .chat, caret: false, dimmed: true))
+      else {
+        Issue.record("重取第一帧后滚到 \(offset) 没接上：\(stitcher.attempts)")
+        return
+      }
+    }
+    #expect(stitcher.outputHeight == 330 - 100 + Self.height)
+    #expect(stitcher.rows == 0..<(330 - 100 + Self.height))
   }
 
   @Test(arguments: Selection.allCases)

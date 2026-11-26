@@ -6,7 +6,8 @@
 //   TEST_RUNNER_KITTY_LIVE_SCROLL_APP=/tmp/kitty-scroll xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
 //     test '-only-testing:KittyToolsTests/ScrollAppProbeTests/record()'
 //   （同一个目录）… '-only-testing:KittyToolsTests/ScrollAppProbeTests/replay()'
-// 另可加 TEST_RUNNER_KITTY_LIVE_SCROLL_APP_BUNDLE=<bundle id>（默认 WPS：com.kingsoft.wpsoffice.mac）。
+// 另可加 TEST_RUNNER_KITTY_LIVE_SCROLL_APP_BUNDLE=<bundle id>（默认 WPS：com.kingsoft.wpsoffice.mac）、
+// TEST_RUNNER_KITTY_LIVE_SCROLL_APP_DOCS=doc,sheet,pdf（录哪几份，默认全部）。
 import AppKit
 import ScreenCaptureKit
 import Testing
@@ -35,7 +36,11 @@ struct ScrollAppProbeTests {
     let app = try #require(
       NSWorkspace.shared.urlForApplication(withBundleIdentifier: Self.bundle), "没装 \(Self.bundle)")
     try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
-    for document in try Self.makeDocuments() {
+    let wanted =
+      (ProcessInfo.processInfo.environment["KITTY_LIVE_SCROLL_APP_DOCS"] ?? "doc,sheet,pdf")
+      .split(separator: ",").map(String.init)
+    for document in try Self.makeDocuments()
+    where wanted.contains(where: { document.lastPathComponent.contains("-\($0).") }) {
       let configuration = NSWorkspace.OpenConfiguration()
       configuration.activates = true
       let running = try await NSWorkspace.shared.open(
@@ -52,7 +57,7 @@ struct ScrollAppProbeTests {
     }
   }
 
-  /// 一份长文档（标题、段落、列表、表格，转成 docx）和一张表格（CSV），内容是随机拼的词
+  /// 一份长文档（标题、段落、列表、表格，转成 docx）、一张表格（CSV）和同一篇文档排成 A4 的 PDF，内容是随机拼的词
   static func makeDocuments() throws -> [URL] {
     let words = [
       "长截图", "拼接", "滚动", "选区", "预览", "文档", "表格", "段落", "标题", "列表", "the", "quick", "brown",
@@ -93,7 +98,96 @@ struct ScrollAppProbeTests {
     }
     let sheet = directory.appending(path: "scroll-probe-sheet.csv")
     try csv.write(to: sheet, atomically: true, encoding: .utf8)
-    return [docx, sheet]
+    let pdf = directory.appending(path: "scroll-probe-pdf.pdf")
+    try makePDF(html: Data(html.utf8), to: pdf)
+    return [docx, sheet, pdf]
+  }
+
+  /// 把 HTML 排成 A4（595 × 842 点、四边 56 点）多页 PDF：CoreText 一页一页地排
+  static func makePDF(html: Data, to url: URL) throws {
+    let text = try NSAttributedString(
+      data: html, options: [.documentType: NSAttributedString.DocumentType.html],
+      documentAttributes: nil)
+    var box = CGRect(x: 0, y: 0, width: 595, height: 842)
+    let context = try #require(CGContext(url as CFURL, mediaBox: &box, nil))
+    let framesetter = CTFramesetterCreateWithAttributedString(text)
+    var start = 0
+    while start < text.length {
+      context.beginPDFPage(nil)
+      let frame = CTFramesetterCreateFrame(
+        framesetter, CFRange(location: start, length: 0),
+        CGPath(rect: box.insetBy(dx: 56, dy: 56), transform: nil), nil)
+      CTFrameDraw(frame, context)
+      context.endPDFPage()
+      let visible = CTFrameGetVisibleStringRange(frame).length
+      guard visible > 0 else { break }
+      start += visible
+    }
+    context.closePDF()
+  }
+
+  /// 只录不滚（TEST_RUNNER_KITTY_LIVE_SCROLL_APP_WATCH=<秒>）：用那个 App 打开生成的 PDF，录它最大那扇窗口，
+  /// 画面变了才存一帧（带时刻），期间由用户自己在上面走一遍长截图——看框选遮罩盖上、拿掉的前后那个 App 画了什么
+  /// （2026-11-26：WPS 的 PDF 长截图一开始第一帧就和之后的帧一张都对不上）
+  @Test func watch() async throws {
+    let seconds = try #require(
+      ProcessInfo.processInfo.environment["KITTY_LIVE_SCROLL_APP_WATCH"].flatMap(Double.init))
+    try #require(CGPreflightScreenCaptureAccess(), "要「屏幕录制」授权")
+    let app = try #require(
+      NSWorkspace.shared.urlForApplication(withBundleIdentifier: Self.bundle), "没装 \(Self.bundle)")
+    try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
+    let pdf = try #require(Self.makeDocuments().first { $0.pathExtension == "pdf" })
+    let configuration = NSWorkspace.OpenConfiguration()
+    configuration.activates = true
+    let running = try await NSWorkspace.shared.open(
+      [pdf], withApplicationAt: app, configuration: configuration)
+    try await Task.sleep(for: .seconds(3))
+    let content = try await SCShareableContent.excludingDesktopWindows(
+      false, onScreenWindowsOnly: true)
+    let windows = content.windows.filter {
+      $0.owningApplication?.processID == running.processIdentifier && $0.windowLayer == 0
+    }
+    let window = try #require(
+      windows.max { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height })
+    let screen = try #require(NSScreen.screens.first)
+    let scale = screen.backingScaleFactor
+    let filter = SCContentFilter(desktopIndependentWindow: window)
+    let stream = SCStreamConfiguration()
+    stream.width = Int(window.frame.width * scale)
+    stream.height = Int(window.frame.height * scale)
+    stream.showsCursor = false
+    let folder = Self.directory.appending(path: "watch")
+    try? FileManager.default.removeItem(at: folder)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    print("scroll-watch 开始录 \(Int(seconds)) 秒：\(Date())")
+    var times: [Double] = []
+    var last = 0
+    let start = Date()
+    while Date().timeIntervalSince(start) < seconds {
+      guard
+        let image = try? await SCScreenshotManager.captureImage(
+          contentFilter: filter, configuration: stream),
+        let data = image.dataProvider?.data as Data?
+      else { continue }
+      let hash = data.hashValue
+      guard hash != last else { continue }
+      last = hash
+      let rowBytes = image.width * 4
+      var pixels = Data(count: rowBytes * image.height)
+      pixels.withUnsafeMutableBytes { buffer in
+        let context = CGContext(
+          data: buffer.baseAddress, width: image.width, height: image.height, bitsPerComponent: 8,
+          bytesPerRow: rowBytes, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+          bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+            | CGBitmapInfo.byteOrder32Little.rawValue)
+        context?.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+      }
+      try pixels.write(to: folder.appending(path: String(format: "%04d.raw", times.count)))
+      times.append(Date().timeIntervalSince1970)
+    }
+    let meta: [String: Any] = ["width": stream.width, "height": stream.height, "epoch": times]
+    try JSONSerialization.data(withJSONObject: meta).write(to: folder.appending(path: "watch.json"))
+    print("scroll-watch 存了 \(times.count) 帧")
   }
 
   /// 找那个 App 最大的普通窗口，按 region 取选区，按 mode 滚 6 秒、能截多快截多快，帧存进 <目录>/<name>/

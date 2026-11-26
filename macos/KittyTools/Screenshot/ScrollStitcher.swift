@@ -158,6 +158,24 @@ struct ScrollStitcher {
     bottom = height
   }
 
+  /// 换一张第一帧（长截图还没开始滚、也没拼上过东西时画面变了：被截的 App 刚拿回焦点、悬停、重画，issue #57）：
+  /// 画布、位置、在动的那一块都从这一帧重来。尺寸不对（nil）不换
+  mutating func restart(from frame: Frame?) {
+    guard let frame else { return }
+    reference = frame
+    referenceTop = 0
+    (top, bottom, anchor) = (0, height, 0)
+    above = []
+    aboveStripes = []
+    below = frame.pixels
+    belowStripes = frame.stripeHashes
+    lastGrown = nil
+    lastShift = 0
+    movedRows = [Bool](repeating: false, count: height)
+    movedColumns = [Bool](repeating: false, count: movedColumns.count)
+    (movingRows, movingColumns) = (0..<0, 0..<0)
+  }
+
   /// 接一帧（尺寸必须和第一帧相同）：当场算帧再接（单测、截图自检用；长截图会话在主线程外算帧，见 frame(_:layout:)）
   mutating func add(_ image: CGImage) -> Outcome {
     add(Frame(image, layout: layout))
