@@ -3667,7 +3667,7 @@ internal sealed partial class SettingsWindow : Window
                 HotKeyActions.Audio, HotKeyActions.RecordPause, HotKeyActions.PinClipboard, HotKeyActions.ShotHistory,
             }),
             // 便签（PLAN-v13）：三项同名同序（同 mac 那一节、托盘、速查表）。
-            ("便签", new List<string> { HotKeyActions.NoteCapture, HotKeyActions.NoteNew, HotKeyActions.NoteAll }),
+            ("便签", new List<string> { HotKeyActions.NoteCapture, HotKeyActions.NoteNew, HotKeyActions.NoteAll, HotKeyActions.NoteDeck }),
             // 提醒、状态屏各一节（同 mac，原来掉进兜底、追加在截图与录制最后，REVIEW R90）
             ("提醒", new List<string> { HotKeyActions.ReminderNew }),
             ("状态屏", new List<string> { HotKeyActions.StatusScreen }),
@@ -4847,7 +4847,7 @@ internal sealed partial class SettingsWindow : Window
             HotKeyActions.ReminderNew => FeatureIcons.Reminders,
             HotKeyActions.NoteCapture => FeatureIcons.NotesCapture,
             HotKeyActions.NoteNew => FeatureIcons.NotesNew,
-            HotKeyActions.NoteAll => FeatureIcons.Notes,
+            HotKeyActions.NoteAll or HotKeyActions.NoteDeck => FeatureIcons.Notes,
             HotKeyActions.KeepAwake => FeatureIcons.KeepAwake,
             _ => FeatureIcons.Screenshot,
         };

@@ -63,6 +63,15 @@ public static class NotesWindowRules
         _ => book.Trashed,
     };
 
+    /// <summary>「全部」按最近修改排（PLAN-v26 N4，mac notesWindowSort = modified）：固定的照旧在前，各自按「改于」从新到旧（同一刻按原来的顺序）。</summary>
+    public static List<Note> ByModified(IEnumerable<Note> notes)
+        => notes.Select((note, index) => (note, index))
+            .OrderBy(pair => pair.note.IsPinned ? 0 : 1)
+            .ThenByDescending(pair => pair.note.ModifiedAt)
+            .ThenBy(pair => pair.index)
+            .Select(pair => pair.note)
+            .ToList();
+
     /// <summary>列表换了之后选中谁：原来那条还在就不动，不在了选第一条，空的就不选。</summary>
     public static string? SelectionKeeping(string? id, IReadOnlyList<string> ids)
         => id is not null && ids.Contains(id) ? id : ids.Count > 0 ? ids[0] : null;

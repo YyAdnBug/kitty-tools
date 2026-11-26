@@ -51,6 +51,9 @@ internal static class HotKeyActions
 
     /// <summary>暂停 / 继续录制（PLAN-v26 V2，同 mac 名字）：录屏、录音都认；不设默认键。</summary>
     public const string RecordPause = "recordPause";
+
+    /// <summary>屏幕边缘的便签（PLAN-v26 N5，同 mac 名字）：叫出那一列，↑↓ 选、Enter 打开、Esc 收回；不设默认键。</summary>
+    public const string NoteDeck = "noteDeck";
 }
 
 internal sealed record HotKeyDefault(
@@ -89,6 +92,7 @@ internal static class SettingsDefaults
         new(HotKeyActions.KeepAwake, "保持唤醒（再按一次停止）", HotKeyModifiers.None, 0),
         new(HotKeyActions.DelayedScreenshot, "延时截图", HotKeyModifiers.None, 0),
         new(HotKeyActions.RecordPause, "暂停 / 继续录制", HotKeyModifiers.None, 0),
+        new(HotKeyActions.NoteDeck, "屏幕边缘的便签", HotKeyModifiers.None, 0),
     };
 
     public static void Apply(Settings settings)

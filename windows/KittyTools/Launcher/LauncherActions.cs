@@ -33,6 +33,7 @@ internal static class LauncherActions
     public const string NoteCapture = "action:note-capture";
     public const string NoteNew = "action:note-new";
     public const string NoteAll = "action:note-all";
+    public const string NoteDeck = "action:note-deck";
     public const string KeepAwake = "action:keep-awake";
     public const string Home = "action:home";
     public const string Settings = "action:settings";
@@ -126,6 +127,7 @@ internal static class LauncherActions
             items.Add(Item(new(NoteCapture, "快速记一条", "Quick Note Capture", FeatureIcons.NotesCapture, "notes", HotKeyActions.NoteCapture)));
             items.Add(Item(new(NoteNew, "新建便签", "New Note Sticky", FeatureIcons.NotesNew, "notes", HotKeyActions.NoteNew)));
             items.Add(Item(new(NoteAll, "全部便签", "All Notes Sticky", FeatureIcons.Notes, "notes", HotKeyActions.NoteAll)));
+            items.Add(Item(new(NoteDeck, "屏幕边缘的便签", "Notes Edge Deck Sticky", FeatureIcons.Notes, "notes", HotKeyActions.NoteDeck)));
         }
 
         // 提醒（mac 内置动作 reminderNew，排在状态屏前面）：同它的快捷键，打开启动器填好「提醒 」（REVIEW R92）
@@ -195,7 +197,7 @@ internal static class LauncherActions
         Screenshot or ScreenshotTranslate or ScreenshotLast or Ocr or ShotHistory or PinClipboard or PinsToggle or PinsClose
             or Record or Audio => "capture",
         Shortcuts => "shortcut",
-        NoteCapture or NoteNew or NoteAll => "notes",
+        NoteCapture or NoteNew or NoteAll or NoteDeck => "notes",
         ReminderNew => "reminders",
         ScriptNew or ScriptGuide => "launcher",
         KeepAwake => "keepAwake",
@@ -229,7 +231,7 @@ internal static class LauncherActions
         Home => FeatureIcons.Home,
         NoteCapture => FeatureIcons.NotesCapture,
         NoteNew => FeatureIcons.NotesNew,
-        NoteAll => FeatureIcons.Notes,
+        NoteAll or NoteDeck => FeatureIcons.Notes,
         KeepAwake => FeatureIcons.KeepAwake,
         _ when KeepAwakeLauncher.IsKeepAwake(target) => FeatureIcons.KeepAwake,
         _ when target.StartsWith(PluginOffers.Prefix, StringComparison.Ordinal) => FeatureIcons.KeepAwake,
@@ -303,6 +305,10 @@ internal static class LauncherActions
                 break;
             case NoteNew:
                 NotesHost.NewNote();
+                break;
+            case NoteDeck:
+                // 先收起启动器、把前台还回去，再叫出那一列（它要拿键盘）
+                StartLater(KittyTools.NoteDeck.Summon);
                 break;
             case NoteAll:
                 NotesWindow.ShowWindow();

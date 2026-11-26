@@ -185,6 +185,36 @@ internal static partial class NoteDeck
     /// <summary>「新建便签」：建一条并在鼠标所在屏的那叠里打开。false = 这边开不了（总开关关着、哪块屏都放不了），调用方去全部便签窗口。</summary>
     public static bool OpenNew() => Open(null);
 
+    /// <summary>
+    /// 全局动作「屏幕边缘的便签」（noteDeck，PLAN-v26 N5，同 mac 0.10.0 X16 / 09c70e9d）：鼠标所在那块屏的那一列扇出来、拿键盘，
+    /// ↑↓ 选、Enter 打开、Esc 收回（键盘还给原来的程序）；再按一次也收回。屏幕边缘关着、一条便签都没有、正在截图 / 录屏 / 状态屏时说一声。
+    /// </summary>
+    public static void Summon()
+    {
+        if (!SettingsService.Current.NotesDeckEnabled)
+        {
+            NoticeHost.Show("屏幕边缘的便签关着", "在 设置 › 便签 里打开「屏幕边缘」", NoticeTone.Normal,
+                new NoticeAction("打开设置", () => ShellRuntime.Instance?.ShowSettings(false, "notes")));
+            return;
+        }
+
+        if (Bays.Count == 0)
+        {
+            NoticeHost.Show("还没有便签", string.Empty, NoticeTone.Normal, new NoticeAction("新建便签", () => NotesHost.NewNote()));
+            return;
+        }
+
+        if (!CanFan())
+        {
+            NoticeHost.Show("现在展开不了屏幕边缘的便签", "截图、录屏、状态屏结束后再试", NoticeTone.Warning);
+            return;
+        }
+
+        PInvoke.GetCursorPos(out var cursor);
+        var bay = Bays.FirstOrDefault(bay => bay.ContainsScreenPoint(cursor.X, cursor.Y)) ?? Bays[0];
+        bay.Summon();
+    }
+
     /// <summary>在鼠标所在屏的那叠里打开 id 这条（它正浮着就叫到前面）；null = 新建一条。</summary>
     public static bool Open(string? id)
     {
@@ -377,6 +407,11 @@ internal sealed partial class NoteDeckBay
 
     private NoteDeckState _state;
     private NoteDeckOptions _options = new();
+
+    // 快捷键叫出来的（N5）：拿着键盘、鼠标离开不收；↑↓ 选到第几张、叫之前前台是谁（Esc 还回去）
+    private bool _summoned;
+    private int _keyIndex;
+    private Windows.Win32.Foundation.HWND _summonedFrom;
     private NoteDeckScreen _screen;
     private RectD _screenPixels;
     private double _scale = 1;
@@ -681,6 +716,7 @@ internal sealed partial class NoteDeckBay
         if (_state.Phase != NoteDeckPhase.Fanned)
         {
             ClearHover();
+            _summoned = false;
         }
 
         var effects = NoteDeckState.EffectsOf(old, _state);
@@ -796,6 +832,98 @@ internal sealed partial class NoteDeckBay
     // ---- 标签上的动作（标签列的窗口调）----
 
     /// <summary>点了一张标签：打开它；打开着的就是它 = 关（回到扇出）。它正浮在屏幕上：把浮着的那张叫到前面。</summary>
+    /// <summary>快捷键叫出来（N5）：扇出、那一列拿键盘、选中第一张；已经是叫出来的就收回。</summary>
+    public void Summon()
+    {
+        if (_summoned && _state.Phase == NoteDeckPhase.Fanned)
+        {
+            Dismissed(restore: true);
+            return;
+        }
+
+        if (_state.Phase == NoteDeckPhase.Open)
+        {
+            Send(NoteDeckEvent.Close);
+        }
+
+        _summonedFrom = PInvoke.GetForegroundWindow();
+        Activity();
+        if (_state.Phase != NoteDeckPhase.Fanned)
+        {
+            Send(NoteDeckEvent.PillEntered(dragKeyDown: false, allowed: true));
+        }
+
+        if (_state.Phase != NoteDeckPhase.Fanned || Tabs.Count == 0)
+        {
+            return;
+        }
+
+        _summoned = true;
+        _keyIndex = 0;
+        _column?.TakeKeys();
+        _column?.MarkKeyed(Tabs[0].Id);
+        Log.Info("notes.deck-summoned");
+    }
+
+    /// <summary>叫出来的那一列上按了键：↑↓ 选、Enter 打开、Esc 收回。认了返回 true。</summary>
+    public bool ColumnKey(Windows.System.VirtualKey key)
+    {
+        if (!_summoned)
+        {
+            return false;
+        }
+
+        var tabs = Tabs;
+        if (tabs.Count == 0)
+        {
+            return false;
+        }
+
+        switch (key)
+        {
+            case Windows.System.VirtualKey.Up or Windows.System.VirtualKey.Down:
+                var delta = key == Windows.System.VirtualKey.Down ? 1 : -1;
+                _keyIndex = ((_keyIndex + delta) % tabs.Count + tabs.Count) % tabs.Count;
+                _column?.MarkKeyed(tabs[_keyIndex].Id);
+                Activity();
+                return true;
+            case Windows.System.VirtualKey.Enter:
+                var id = tabs[Math.Clamp(_keyIndex, 0, tabs.Count - 1)].Id;
+                _summoned = false;
+                _column?.MarkKeyed(null);
+                TapTab(id);
+                return true;
+            case Windows.System.VirtualKey.Escape:
+                Dismissed(restore: true);
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>那一列丢了键盘（点了别处）：不再算叫出来的，鼠标不在上面就照常收。</summary>
+    public void ColumnDeactivated()
+    {
+        if (_summoned)
+        {
+            _summoned = false;
+            _column?.MarkKeyed(null);
+        }
+    }
+
+    private void Dismissed(bool restore)
+    {
+        _summoned = false;
+        _column?.MarkKeyed(null);
+        Send(NoteDeckEvent.Left);
+        if (restore && _summonedFrom != default)
+        {
+            PInvoke.SetForegroundWindow(_summonedFrom);
+        }
+
+        _summonedFrom = default;
+    }
+
     public void TapTab(string id)
     {
         Activity();
@@ -1069,7 +1197,7 @@ internal sealed partial class NoteDeckBay
 
         var inside = IsInside(cursor.X, cursor.Y);
         var now = Now;
-        if (_state.Phase == NoteDeckPhase.Fanned && !MenuOpen && !_state.IsDragging)
+        if (_state.Phase == NoteDeckPhase.Fanned && !MenuOpen && !_state.IsDragging && !_summoned)
         {
             if (inside)
             {

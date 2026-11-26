@@ -20,9 +20,18 @@ public static class NoteCaptureRules
 
     public const string DraftName = "notes-draft.json";
 
-    public sealed record Draft(string Title = "", string Body = "", string? Destination = null)
+    /// <param name="Images">贴进来的图（PLAN-v26 N2，同 mac X5）：每张一个令牌（NoteImages.Token），记下时每张一行接在正文后面；没有是 null。</param>
+    public sealed record Draft(string Title = "", string Body = "", string? Destination = null, IReadOnlyList<string>? Images = null)
     {
-        public bool IsEmpty => NoteText.TrimSpacesAndNewlines(Title).Length == 0 && NoteText.TrimSpacesAndNewlines(Body).Length == 0;
+        public bool IsEmpty => NoteText.TrimSpacesAndNewlines(Title).Length == 0 && NoteText.TrimSpacesAndNewlines(Body).Length == 0 &&
+                               (Images is null || Images.Count == 0);
+
+        /// <summary>按值比（record 默认比 Images 的引用）。</summary>
+        public bool Equals(Draft? other)
+            => other is not null && Title == other.Title && Body == other.Body && Destination == other.Destination &&
+               (Images ?? Array.Empty<string>()).SequenceEqual(other.Images ?? Array.Empty<string>());
+
+        public override int GetHashCode() => HashCode.Combine(Title, Body, Destination, Images?.Count ?? 0);
 
         public string Json()
         {
@@ -32,6 +41,22 @@ public static class NoteCaptureRules
             {
                 builder.Append(",\"destination\":");
                 CanonicalJson.WriteString(Destination, builder);
+            }
+
+            if (Images is { Count: > 0 } images)
+            {
+                builder.Append(",\"images\":[");
+                for (var index = 0; index < images.Count; index++)
+                {
+                    if (index > 0)
+                    {
+                        builder.Append(',');
+                    }
+
+                    CanonicalJson.WriteString(images[index], builder);
+                }
+
+                builder.Append(']');
             }
 
             builder.Append(",\"title\":");
@@ -62,7 +87,15 @@ public static class NoteCaptureRules
                         : string.Empty;
 
                 var destination = Field("destination");
-                var draft = new Draft(Field("title"), Field("body"), destination.Length == 0 ? null : destination);
+                // 图：只收认得出的令牌（文件被改坏、手改过的不收）
+                var images = root.TryGetProperty("images", out var array) && array.ValueKind == JsonValueKind.Array
+                    ? array.EnumerateArray()
+                        .Where(item => item.ValueKind == JsonValueKind.String)
+                        .Select(item => item.GetString() ?? string.Empty)
+                        .Where(token => NoteImages.Match(token, 0) is { } match && match.Range.Location == 0 && match.Range.Length == token.Length)
+                        .ToList()
+                    : new List<string>();
+                var draft = new Draft(Field("title"), Field("body"), destination.Length == 0 ? null : destination, images.Count == 0 ? null : images);
                 return draft.IsEmpty ? null : draft;
             }
             catch (JsonException)
@@ -86,7 +119,22 @@ public static class NoteCaptureRules
         => new(
             NoteText.TrimSpacesAndNewlines(current.Title).Length == 0 ? cleared.Title : current.Title,
             current.Body.Length == 0 ? cleared.Body : Appending(current.Body, cleared.Body),
-            current.Destination ?? cleared.Destination);
+            current.Destination ?? cleared.Destination,
+            (cleared.Images ?? Array.Empty<string>()).Concat(current.Images ?? Array.Empty<string>()).Distinct().ToList() is { Count: > 0 } images
+                ? images
+                : null);
+
+    /// <summary>记下时的正文（N2，同 mac NoteCaptureModel.text）：字后面每张图一行；只有图时就是那几行。</summary>
+    public static string WithImages(string body, IReadOnlyList<string>? images)
+    {
+        if (images is not { Count: > 0 })
+        {
+            return body;
+        }
+
+        var text = NoteText.TrimSpacesAndNewlines(body);
+        return (text.Length == 0 ? string.Empty : body.TrimEnd('\n', '\r') + "\n") + string.Join("\n", images);
+    }
 
     public enum Outcome
     {

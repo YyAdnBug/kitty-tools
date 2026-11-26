@@ -371,6 +371,30 @@ internal sealed class NotesWindow : Window
             AddAction(Glyphs.Delete, NotesWindowRules.DeleteTitle, () => Run(RemoveSelected), note is not null);
         }
 
+        // 排序（N4）：只在「全部」里能换
+        if (_scope == NotesScope.All)
+        {
+            Button? sort = null;
+            sort = AddAction("\uE8CB", SortedByModified ? "排序：最近修改" : "排序：手动", () =>
+            {
+                var menu = new MenuFlyout();
+                foreach (var (value, title) in new[] { ((string?)null, "手动（能拖动排序）"), ("modified", "最近修改") })
+                {
+                    var item = new ToggleMenuFlyoutItem { Text = title, IsChecked = (SettingsService.Current.NotesWindowSort ?? "manual") == (value ?? "manual") };
+                    item.Click += (_, _) =>
+                    {
+                        SettingsService.Current.NotesWindowSort = value;
+                        SettingsService.Save();
+                        BuildActions();
+                        Populate();
+                    };
+                    menu.Items.Add(item);
+                }
+
+                menu.ShowAt(sort!);
+            }, true);
+        }
+
         AddAction(_wallMode ? "\uE8FD" : "\uF0E2", _wallMode ? "换成列表" : "换成便签墙", ToggleLayout, true);
         AddAction(Glyphs.Settings, NotesWindowRules.SettingsTitle, () => ShellRuntime.Instance?.ShowSettings(false, "notes"), true);
     }
@@ -459,10 +483,15 @@ internal sealed class NotesWindow : Window
 
     private List<Note> Notes
         => NoteStore.Instance is { } store
-            ? store.Book.Search(_search.Text, NotesWindowRules.List(store.Book, _scope))
+            ? SortedByModified
+                ? NotesWindowRules.ByModified(store.Book.Search(_search.Text, NotesWindowRules.List(store.Book, _scope)))
+                : store.Book.Search(_search.Text, NotesWindowRules.List(store.Book, _scope))
             : new List<Note>();
 
-    private bool CanReorder => _scope == NotesScope.All && Core.Search.Tokens(_search.Text).Length == 0 && !_wallMode;
+    /// <summary>「全部」按最近修改排着（N4）：这时不能拖动排序。归档、最近删除照旧。</summary>
+    private bool SortedByModified => _scope == NotesScope.All && SettingsService.Current.NotesWindowSort == "modified";
+
+    private bool CanReorder => _scope == NotesScope.All && !SortedByModified && Core.Search.Tokens(_search.Text).Length == 0 && !_wallMode;
 
     /// <summary>列表 / 墙按现在的视图和搜索词重排；选中的还在就不动，不在了选第一条。</summary>
     private void Populate()
@@ -913,7 +942,7 @@ internal sealed class NotesWindow : Window
     private Vector2 _wallPressedAt;
 
     /// <summary>能拖动排序：「全部」里、没在搜索（墙；列表另有 CanReorder）。</summary>
-    private bool CanReorderWall => _scope == NotesScope.All && Core.Search.Tokens(_search.Text).Length == 0;
+    private bool CanReorderWall => _scope == NotesScope.All && !SortedByModified && Core.Search.Tokens(_search.Text).Length == 0;
 
     private double WallViewport => _wallScroll.ViewportHeight > 0 ? _wallScroll.ViewportHeight : 600;
 

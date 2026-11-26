@@ -214,7 +214,7 @@ internal sealed partial class NoteEditor
         return true;
     }
 
-    private static bool IsImageFile(string path)
+    internal static bool IsImageFile(string path)
         => Path.GetExtension(path).ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".gif" or ".heic" or ".heif" or ".bmp"
             or ".tif" or ".tiff" or ".webp";
 

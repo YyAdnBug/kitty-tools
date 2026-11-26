@@ -588,7 +588,7 @@ internal static class ShortcutsSheet
         // 打开的便签（那叠、浮动、全部便签窗口共用）在 NoteSheetView.OnKeyDown + NoteEditor.Input.cs 的 OnPreviewKeyDown；
         // 全部便签窗口自己的在 NotesWindow.OnKeyDown。新建便签、全部便签不设默认键，没设时那两行写「未设置」。
         new("notes", "便签", "notes", FeatureIcons.Notes,
-            new[] { HotKeyActions.NoteCapture, HotKeyActions.NoteNew, HotKeyActions.NoteAll },
+            new[] { HotKeyActions.NoteCapture, HotKeyActions.NoteNew, HotKeyActions.NoteAll, HotKeyActions.NoteDeck },
             new ShortcutEntry[]
             {
                 new("Enter", "快速记一条里：记下"),

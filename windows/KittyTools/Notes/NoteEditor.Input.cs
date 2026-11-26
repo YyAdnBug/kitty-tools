@@ -49,6 +49,14 @@ internal sealed partial class NoteEditor
         var control = Down(VirtualKey.Control);
         var shift = Down(VirtualKey.Shift);
         var alt = Down(VirtualKey.Menu);
+        // Ctrl+Alt+Shift+V：粘贴为纯文本（PLAN-v26 N1，mac ⌥⇧⌘V）：网页、文稿也不转 Markdown
+        if (alt && control && shift && e.Key == VirtualKey.V && !_readOnly)
+        {
+            e.Handled = true;
+            _ = PasteAsync(plain: true);
+            return;
+        }
+
         if (alt)
         {
             return;
@@ -361,7 +369,7 @@ internal sealed partial class NoteEditor
         _ = PasteAsync();
     }
 
-    private async Task PasteAsync()
+    private async Task PasteAsync(bool plain = false)
     {
         try
         {
@@ -382,6 +390,21 @@ internal sealed partial class NoteEditor
             if (!hasText)
             {
                 return;
+            }
+
+            // 网页、文稿（剪贴板里带 HTML）：Markdown 开着、不在代码块里时转成 Markdown 粘进来（PLAN-v26 N1，Core/Notes/NoteRichPaste）；
+            // 一个标记都没转出来照常粘纯文本
+            if (!plain && _markdown && content.Contains(StandardDataFormats.Html) && !InCodeBlock(NoteText.Line(_text, Selection.Location).Start))
+            {
+                var html = await content.GetHtmlFormatAsync();
+                if (!string.IsNullOrEmpty(html) && NoteRichPaste.Markdown(NoteRichPaste.Fragment(html)) is { } markdown)
+                {
+                    var at = Selection;
+                    char? previous = at.Location > 0 ? _text[at.Location - 1] : null;
+                    char? next = at.End < _text.Length ? _text[at.End] : null;
+                    InsertText(NoteRichPaste.Fitting(markdown, previous, next));
+                    return;
+                }
             }
 
             var text = await content.GetTextAsync();
@@ -524,6 +547,7 @@ internal sealed partial class NoteEditor
             Add(menu.Items, "剪切", Glyphs.Cut, () => CopySelection(cut: true), Selection.Length > 0, "Ctrl+X");
             Add(menu.Items, "拷贝", Glyphs.Copy, () => CopySelection(cut: false), Selection.Length > 0, "Ctrl+C");
             Add(menu.Items, "粘贴", Glyphs.Paste, () => _ = PasteAsync(), true, "Ctrl+V");
+            Add(menu.Items, "粘贴为纯文本", Glyphs.Paste, () => _ = PasteAsync(plain: true), true, "Ctrl+Alt+Shift+V");
             // 「打开链接」「插入图片…」（mac 正文右键，REVIEW R98）：键盘、读屏用户打开链接靠它
             if (LinkAtSelection() is { } link)
             {

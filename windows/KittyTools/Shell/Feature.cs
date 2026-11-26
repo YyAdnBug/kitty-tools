@@ -134,7 +134,7 @@ internal static class Features
         HotKeyActions.Record or HotKeyActions.Audio or HotKeyActions.RecordPause => Feature.Recording,
         HotKeyActions.StatusScreen => Feature.StatusScreen,
         HotKeyActions.ReminderNew => Feature.Reminders,
-        HotKeyActions.NoteCapture or HotKeyActions.NoteNew or HotKeyActions.NoteAll => Feature.Notes,
+        HotKeyActions.NoteCapture or HotKeyActions.NoteNew or HotKeyActions.NoteAll or HotKeyActions.NoteDeck => Feature.Notes,
         HotKeyActions.KeepAwake => Feature.KeepAwake,
         _ => Feature.Screenshot,
     };

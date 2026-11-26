@@ -4,6 +4,8 @@
 // 各是它的纸色圆点，选中的外面一圈强调色）；中间多行输入框（Enter 记下、Shift+Enter 换行，组字时不误提交；Tab 去标题框），3 行起、最多 8 行；
 // 底栏左边是键位提示，存不了时换成原因；右边「记下 ↵」。
 // 收起：Esc 清空草稿（提示里能「恢复」）、Ctrl+W / 再按一次快捷键 / 点别处留着草稿。草稿停手 1 秒、收起、退出前存进 notes-draft.json。
+// 贴图（PLAN-v26 N2，同 mac X5）：Ctrl+V 剪贴板里只有图（没有字）时存进便签的图片目录，正文下面一排缩略图（× 去掉）；记下时每张一行
+// 接在正文后面；图跟着草稿走，Esc 之后「恢复」也带回来；图没存完不让记下；草稿清掉之后晚到的图不掉进下一份草稿。
 using KittyTools.Core;
 using KittyTools.Core.Notes;
 using KittyTools.Infrastructure;
@@ -16,6 +18,10 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
 using Windows.Graphics;
+using System.Runtime.InteropServices.WindowsRuntime;
+using Windows.ApplicationModel.DataTransfer;
+using Windows.Storage;
+using Windows.Storage.Streams;
 using Windows.System;
 using Windows.Win32;
 using Windows.Win32.Foundation;
@@ -32,6 +38,12 @@ internal sealed class NoteCaptureWindow : Window
     private readonly TextBlock _targetTitle;
     private readonly StackPanel _dots;
     private readonly TextBox _body;
+
+    /// <summary>贴进来的图（令牌，N2）、它们那一排缩略图、正在存的几张、草稿换了几次（清掉之后晚到的图不要）。</summary>
+    private readonly List<string> _images = new();
+    private readonly StackPanel _strip;
+    private int _storing;
+    private int _generation;
     private readonly PanelFooter _footer;
     private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _draftTimer;
     private string? _destination;
@@ -142,8 +154,16 @@ internal sealed class NoteCaptureWindow : Window
         _body.TextCompositionStarted += (_, _) => _composing = true;
         _body.TextCompositionEnded += (_, _) => _composing = false;
         _body.PreviewKeyDown += OnBodyKeyDown;
-        Grid.SetRow(_body, 1);
-        _root.Children.Add(_body);
+        _body.Paste += OnBodyPaste;
+        var middle = new Grid { RowSpacing = 6 };
+        middle.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        middle.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        middle.Children.Add(_body);
+        _strip = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Visibility = Visibility.Collapsed };
+        Grid.SetRow(_strip, 1);
+        middle.Children.Add(_strip);
+        Grid.SetRow(middle, 1);
+        _root.Children.Add(middle);
 
         _footer = new PanelFooter { Margin = new Thickness(-18, 0, -18, 0) };
         Grid.SetRow(_footer, 2);
@@ -266,7 +286,7 @@ internal sealed class NoteCaptureWindow : Window
         var display = Displays.AtCursor();
         _scale = display.Scale <= 0 ? 1 : display.Scale;
         var lines = Math.Clamp(_body.Text.Count(ch => ch == '\r' || ch == '\n') + 1, 3, 8);
-        var height = 44 + lines * LineDip + 24 + 36;
+        var height = 44 + lines * LineDip + 24 + 36 + (_images.Count > 0 ? StripDip + 6 : 0);
         var rect = MonitorLayout.Overlay(display.Work, _scale, WidthDip, height, MonitorLayout.ClipboardTopFraction);
         AppWindow.MoveAndResize(new RectInt32(rect.X, rect.Y, rect.Width, rect.Height));
     }
@@ -415,8 +435,15 @@ internal sealed class NoteCaptureWindow : Window
             return;
         }
 
+        if (_storing > 0)
+        {
+            _footer.ShowNotice("图片还没存好，稍等一下", success: false);
+            return;
+        }
+
         var target = Target;
-        var (outcome, body, notice) = NoteCaptureRules.Check(_body.Text.Replace("\r\n", "\n").Replace('\r', '\n'), _title.Text, target);
+        var typed = NoteCaptureRules.WithImages(_body.Text.Replace("\r\n", "\n").Replace('\r', '\n'), _images);
+        var (outcome, body, notice) = NoteCaptureRules.Check(typed, _title.Text, target);
         if (outcome == NoteCaptureRules.Outcome.Empty)
         {
             SystemSound.Beep();
@@ -477,13 +504,16 @@ internal sealed class NoteCaptureWindow : Window
     // ---- 草稿 ----
 
     private NoteCaptureRules.Draft CurrentDraft
-        => new(_title.Text, _body.Text.Replace("\r\n", "\n").Replace('\r', '\n'), _destination);
+        => new(_title.Text, _body.Text.Replace("\r\n", "\n").Replace('\r', '\n'), _destination, _images.Count == 0 ? null : _images.ToList());
 
     private void Put(NoteCaptureRules.Draft draft)
     {
         _title.Text = draft.Title;
         _body.Text = draft.Body;
         _destination = draft.Destination;
+        _images.Clear();
+        _images.AddRange(draft.Images ?? Array.Empty<string>());
+        RenderStrip();
     }
 
     private void Reset()
@@ -491,7 +521,153 @@ internal sealed class NoteCaptureWindow : Window
         _title.Text = string.Empty;
         _body.Text = string.Empty;
         _destination = null;
+        _images.Clear();
+        _generation++;
+        RenderStrip();
         _footer.HideNotice();
+    }
+
+    // ---- 贴图（N2）----
+
+    private const double StripDip = 56;
+
+    /// <summary>草稿里的图（30 天清理时算有人引用）：开着的那份，没开过就读存着的草稿。</summary>
+    public static IEnumerable<Guid> DraftImages()
+    {
+        var tokens = _instance is { } window ? window._images.ToList() : (IReadOnlyList<string>?)ReadDraft()?.Images ?? Array.Empty<string>();
+        return tokens.Select(token => NoteImages.Match(token, 0)?.Image.Id).OfType<Guid>().ToList();
+    }
+
+    /// <summary>Ctrl+V：剪贴板里只有图（没有字）时存成便签的图、排在正文下面；有字照常粘字。</summary>
+    private void OnBodyPaste(object sender, TextControlPasteEventArgs e)
+    {
+        var content = Clipboard.GetContent();
+        if (content.Contains(StandardDataFormats.Text) ||
+            !(content.Contains(StandardDataFormats.StorageItems) || content.Contains(StandardDataFormats.Bitmap)))
+        {
+            return;
+        }
+
+        e.Handled = true;
+        _ = AddImagesAsync(content);
+    }
+
+    private async Task AddImagesAsync(DataPackageView content)
+    {
+        if (NoteStore.Instance?.Images is not { } store)
+        {
+            return;
+        }
+
+        var generation = _generation;
+        var results = new List<NoteImageStore.StoreResult>();
+        _storing++;
+        try
+        {
+            if (content.Contains(StandardDataFormats.StorageItems))
+            {
+                foreach (var item in await content.GetStorageItemsAsync())
+                {
+                    if (item is StorageFile file && NoteEditor.IsImageFile(file.Path))
+                    {
+                        results.Add(await NoteImageStore.StoreFileAsync(file.Path, store.Directory));
+                    }
+                }
+            }
+            else
+            {
+                var reference = await content.GetBitmapAsync();
+                using var stream = await reference.OpenReadAsync();
+                var bytes = new byte[stream.Size];
+                await stream.ReadAsync(bytes.AsBuffer(), (uint)bytes.Length, InputStreamOptions.None);
+                results.Add(await NoteImageStore.StoreBytesAsync(bytes, store.Directory));
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"notes.capture-image-failed {ex.GetType().Name}");
+        }
+        finally
+        {
+            _storing--;
+        }
+
+        // 存的时候草稿被清掉 / 记下了：晚到的图不掉进下一份草稿（文件没人引用，30 天后清理）
+        if (generation != _generation)
+        {
+            return;
+        }
+
+        if (results.FirstOrDefault(result => result.Rejection is not null) is { Rejection: { } rejection })
+        {
+            _footer.ShowNotice(NoteImageRules.NoticeTitle(rejection), success: false);
+        }
+
+        foreach (var stored in results.Select(result => result.Stored).OfType<NoteImageStore.Stored>())
+        {
+            store.Remember(stored);
+            _images.Add(NoteImages.Token(stored.Image));
+        }
+
+        RenderStrip();
+        DraftChanged();
+        Resize();
+    }
+
+    /// <summary>正文下面那一排缩略图，每张右上角一个 ×。</summary>
+    private void RenderStrip()
+    {
+        _strip.Children.Clear();
+        _strip.Visibility = _images.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (NoteStore.Instance?.Images is not { } store)
+        {
+            return;
+        }
+
+        foreach (var token in _images.ToList())
+        {
+            if (NoteImages.Match(token, 0) is not { } match)
+            {
+                continue;
+            }
+
+            var thumbnail = new Microsoft.UI.Xaml.Controls.Image
+            {
+                Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage
+                {
+                    UriSource = new Uri(store.PathFor(match.Image.Id, match.Image.Ext)),
+                    DecodePixelHeight = (int)(StripDip * 2),
+                },
+                Height = StripDip,
+                MaxWidth = StripDip * 2,
+                Stretch = Stretch.Uniform,
+            };
+            var remove = new Button
+            {
+                Content = new FontIcon { Glyph = Glyphs.Close, FontSize = 9 },
+                Width = 20,
+                Height = 20,
+                MinWidth = 0,
+                MinHeight = 0,
+                Padding = new Thickness(0),
+                CornerRadius = new CornerRadius(10),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, -4, -4, 0),
+            };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(remove, "去掉这张图");
+            remove.Click += (_, _) =>
+            {
+                _images.Remove(token);
+                RenderStrip();
+                DraftChanged();
+                Resize();
+            };
+            var cell = new Grid { CornerRadius = new CornerRadius(4) };
+            cell.Children.Add(thumbnail);
+            cell.Children.Add(remove);
+            _strip.Children.Add(cell);
+        }
     }
 
     private void DraftChanged()

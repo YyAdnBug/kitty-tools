@@ -1614,6 +1614,9 @@ internal sealed class ShellRuntime
             case HotKeyActions.NoteAll:
                 NotesWindow.ShowWindow();
                 break;
+            case HotKeyActions.NoteDeck:
+                NoteDeck.Summon();
+                break;
         }
     }
 

@@ -554,6 +554,9 @@ internal sealed class Settings
     /// <summary>全部便签窗口上次用的显示方式：wall 便签墙（默认）/ list 列表。</summary>
     public string? NotesWindowLayout { get; set; }
 
+    /// <summary>全部便签窗口「全部」的排法（PLAN-v26 N4，mac notesWindowSort）：null / "manual" 手动顺序，"modified" 最近修改。这台电脑自己的，不同步。</summary>
+    public string? NotesWindowSort { get; set; }
+
     /// <summary>同步便签（PLAN-v13 第 3 批；默认开，跟着便签功能开关）。</summary>
     public bool SyncNotes { get; set; } = true;
 

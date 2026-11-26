@@ -179,7 +179,10 @@ internal static partial class NotesHost
             Log.Info($"notes.trash-purged count={purged}");
         }
 
-        store.Images?.Purge(store.Book.ReferencedImages, NoteStore.Now);
+        // 快速记一条的草稿里贴的图也算有人引用（PLAN-v26 N2）
+        var referenced = store.Book.ReferencedImages;
+        referenced.UnionWith(NoteCaptureWindow.DraftImages());
+        store.Images?.Purge(referenced, NoteStore.Now);
     }
 
     /// <summary>便签库的每日备份（线程池上调）；便签这次用不了、还没问怎么恢复的时候不备（别拿坏的库顶掉好的备份）。</summary>

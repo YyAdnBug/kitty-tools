@@ -442,6 +442,16 @@ internal sealed class NoteDeckColumnWindow : Window
             }
         };
         _root.PointerMoved += (_, _) => _bay.Activity();
+        // 快捷键叫出来时（PLAN-v26 N5）：这一列拿键盘，↑↓ / Enter / Esc 交给 NoteDeckBay.ColumnKey；丢了前台就不算叫出来的
+        _root.IsTabStop = true;
+        _root.KeyDown += (_, e) => e.Handled = _bay.ColumnKey(e.Key);
+        Activated += (_, e) =>
+        {
+            if (e.WindowActivationState == WindowActivationState.Deactivated)
+            {
+                _bay.ColumnDeactivated();
+            }
+        };
         Content = _root;
         // 亚克力放在 Content 之后：AcrylicBackdrop 连上时按内容的 ActualTheme 定深浅、挂主题变化；先设它的话那时还没有内容，深色下也是浅的（Windows 核验 PLAN-v13）
         SystemBackdrop = new AcrylicBackdrop();
@@ -451,6 +461,24 @@ internal sealed class NoteDeckColumnWindow : Window
             _hideTimer?.Stop();
             _shown = false;
         };
+    }
+
+    /// <summary>拿键盘（N5）：激活这一列、焦点放到根上。</summary>
+    public void TakeKeys()
+    {
+        Activate();
+        _root.Focus(FocusState.Programmatic);
+    }
+
+    /// <summary>键盘选中的那张（N5）：同鼠标停着的样子（探出来）；null = 都不选。</summary>
+    public void MarkKeyed(string? id)
+    {
+        foreach (var tab in _tabs)
+        {
+            tab.Hovered = tab.Id == id;
+        }
+
+        UpdateStates(animated: true);
     }
 
     private bool OnRight => _bay.Edge == NoteDeckEdge.Right;
