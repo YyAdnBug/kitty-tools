@@ -480,7 +480,7 @@ internal sealed partial class LauncherModel
         var candidates = new List<LauncherItem>();
         if (AppCatalog.Instance is { } catalog)
         {
-            candidates.AddRange(catalog.Apps);
+            candidates.AddRange(AppsWithAliases(catalog));
         }
 
         candidates.AddRange(_settings);
@@ -1249,6 +1249,12 @@ internal sealed partial class LauncherModel
         });
     }
 
+    /// <summary>应用目录，起了别名的把别名加进能搜的名字（PLAN-v27 B5，同 mac：打别名的开头、拼音也能搜到；输完整的别名照旧排第一）。</summary>
+    private static IEnumerable<LauncherItem> AppsWithAliases(AppCatalog catalog)
+        => SettingsService.Current.LauncherAppAliases is { Count: > 0 } aliases
+            ? catalog.Apps.Select(app => AppAliases.Apply(app, aliases))
+            : catalog.Apps;
+
     /// <summary>文件结果到了：前面放整句（连关键词）匹配到的应用 / 内置动作（「find my」照样能打开同名的应用）；空格开头的不放。</summary>
     private void ShowFiles(LauncherMode mode, string terms, List<LauncherItem> files)
     {
@@ -1259,7 +1265,7 @@ internal sealed partial class LauncherModel
             var apps = new List<LauncherItem>();
             if (AppCatalog.Instance is { } catalog)
             {
-                apps.AddRange(catalog.Apps);
+                apps.AddRange(AppsWithAliases(catalog));
             }
 
             apps.AddRange(LauncherActions.Items());

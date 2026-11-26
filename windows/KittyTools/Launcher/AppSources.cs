@@ -223,22 +223,15 @@ internal static partial class AppSources
         var title = string.IsNullOrWhiteSpace(description) || string.Equals(description, fileTitle, StringComparison.OrdinalIgnoreCase)
             ? fileTitle
             : description;
-        var names = new List<string> { LauncherMatch.Fold(title), LauncherMatch.Fold(fileTitle) };
-        var initials = new List<string> { LauncherMatch.Initials(title), LauncherMatch.Initials(fileTitle) };
-        if (Pinyin.For(title) is { } pinyin)
-        {
-            names.Add(pinyin.Full);
-            initials.Add(pinyin.Initials);
-        }
-
+        var (names, initials) = AppNames.Build(new[] { title, fileTitle });
         return new LauncherItem
         {
             Kind = LauncherKind.App,
             Target = path,
             Title = title,
             Subtitle = subtitle,
-            Names = names.Distinct().ToList(),
-            Initials = initials.Where(value => value.Length > 0).Distinct().ToList(),
+            Names = names,
+            Initials = initials,
             IconPath = path,
             AliasKey = AppAliases.Key(path, path, AliasFolders),
         };

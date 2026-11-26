@@ -410,7 +410,8 @@ internal sealed partial class SettingsWindow
         var engines = (SettingsService.Current.LauncherSearchEngines ?? WebSearch.Defaults()).Select(engine => engine.Keyword);
         var conflicts = LauncherCommandTable.Conflicts(
             LauncherCommandKeys.Rows.Where(row => settings.IsOn(row.Id)).Select(row => (row.Id, settings.Alias(row.Id, row.Keyword))), engines,
-            SettingsService.Current.LauncherAppAliases?.Values);
+            // 一个应用能起几个别名（PLAN-v27 B5）：按词比，不按整段原文
+            SettingsService.Current.LauncherAppAliases?.Values.SelectMany(text => AppAliases.Words(text)));
         foreach (var (id, box) in _aliasBoxes)
         {
             if (conflicts.Contains(id))

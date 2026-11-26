@@ -332,6 +332,23 @@ public sealed class StartMenuFilterTests
         // 目录 / 无扩展名的启动项不按扩展名拦。
         Assert.IsFalse(StartMenuFilter.ShouldSkipTarget(@"C:\Program Files\Foo"));
     }
+
+    [TestMethod]
+    public void DocumentLikeNamesStayWhenTheTargetIsAProgram()
+    {
+        // PLAN-v27 B2：「腾讯文档」「金山文档」本身是应用，以前按名字整个丢了
+        Assert.IsFalse(StartMenuFilter.ShouldSkip("腾讯文档", @"C:\Program Files (x86)\Tencent\TencentDocs\TencentDocs.exe"));
+        Assert.IsFalse(StartMenuFilter.ShouldSkip("HelpNDoc", @"C:\Program Files\HelpNDoc\hnd.exe"));
+        // 目标是看文档的程序、或者解析不到：照旧当文档
+        Assert.IsTrue(StartMenuFilter.ShouldSkip("Foo 帮助", @"C:\Windows\hh.exe"));
+        Assert.IsTrue(StartMenuFilter.ShouldSkip("Readme", @"%windir%\system32\notepad.exe"));
+        Assert.IsTrue(StartMenuFilter.ShouldSkip("Foo 帮助文档", null));
+        Assert.IsTrue(StartMenuFilter.ShouldSkip("Foo Manual", @"C:\Program Files\Foo\manual.pdf"));
+        // 卸载、网址：目标是程序也拦
+        Assert.IsTrue(StartMenuFilter.ShouldSkip("卸载 Foo", @"C:\Windows\System32\msiexec.exe"));
+        Assert.IsTrue(StartMenuFilter.ShouldSkip("Foo 官网", @"C:\Program Files\Google\Chrome\Application\chrome.exe"));
+        Assert.IsFalse(StartMenuFilter.ShouldSkip("命令提示符", @"%windir%\system32\cmd.exe"));
+    }
 }
 
 [TestClass]

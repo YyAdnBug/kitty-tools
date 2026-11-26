@@ -8,6 +8,69 @@
 
 条目编号不复用。行号按条目里写的那个提交。
 
+## PLAN-v27：启动器搜不到 cmd、应用别名不列出装的应用；Windows 10；灵动岛样式的提示（用户转来的反馈，审查方在 Mac 上查的，2026-11-26）
+
+用户转来三条反馈（原话在 `PLAN-v27.md` 开头）。§1 是 bug：审查方在 Mac 上直接修了（R115，**没编译**）；§2（支持 Windows 10）、§3（灵动岛样式的提示）
+是拍板题（`PLAN-v27.md` §4，拍板页 https://claude.ai/artifact/UJFPpUyvKnhNQAf3us9PgU），**用户回之前别动 §2 §3**。手测 2030–2045（`HANDTEST.md` 末尾），2050 起留给 §2 §3。
+
+### R115（P1）启动器打 cmd 搜不到「命令提示符」、应用别名那一栏不列出装的应用 → 待核验（审查方写的、没编译）
+
+行号按 `405ed2e4`。
+
+1. **cmd 搜不到**：开始菜单的「命令提示符.lnk」收进来了（中文系统上标题是「命令提示符」、副标题写着 cmd），但能搜的名字只有标题、.lnk 文件名
+   （Command Prompt）和拼音（`Launcher/AppCatalog.cs:246–252`），**目标 exe 的名字不在里面**；cmd.exe 在 System32，App Paths 和「运行过的程序」
+   又都按「在 Windows 目录下」排掉（`Core/PortableApps.cs:89` `IsCandidate`）。regedit、taskmgr、msconfig、services 同样。→ B1。
+2. **名字像文档的应用整个丢了**：`Core/StartMenuFilter.cs:10` 的名单里有「文档」「帮助」「help」「manual」，按名字子串一律拦（`AppCatalog.cs:226`，在解析目标之前）：
+   「腾讯文档」「金山文档」这类本身是应用的搜不到。→ B2。
+3. **同一个 exe 的几个快捷方式只留第一个**：去重只看目标路径（`AppCatalog.cs:239`），浏览器装的网页应用都指向 `chrome_proxy.exe` / `msedge_proxy.exe`、
+   Chrome 几个用户资料的快捷方式都指向 chrome.exe，只出第一个。→ B3。
+4. **商店应用在中文系统上英文名搜不到**：只有显示名（「终端」）和包的显示名；`wt`、`terminal`、`calc`、`paint` 都对不上。→ B4。
+5. **应用别名不列应用**：「搜应用名，给它起个别名」是一个 `AutoSuggestBox`（`Settings/SettingsWindow.LauncherApps.cs:104–132`）：没打字什么都不出；
+   右边的 + 是查询按钮，`QuerySubmitted` 没接，点了没反应；键盘 ↓ 选候选时 `SuggestionChosen` 就触发，会直接加上第一个。
+   mac 那一页（`Settings/AppAliasesPage.swift`）是一进来就列出全部应用、每行一个别名框、能起几个别名、别名也当名字搜。→ B5、B6。
+
+#### 交接（2026-11-26，审查方在 Mac 上写的，**都没编译**）
+
+**改了哪些**：
+
+- Core：新 `AppNames`（能搜的名字统一一处：标题、文件名、拼音，加快捷方式目标 exe 的名字——宿主 `rundll32` / `javaw` / `*_proxy` 和更新器不算；
+  商店应用的包名去掉发布者那一截）；`StartMenuFilter.ShouldSkip(title, target)`（「像文档」的词只在目标不是程序、或者是 hh / notepad 这类看文档的程序时才拦；
+  卸载、网址照旧一律拦）；`AppAliases`：`Words`（一段原文里几个别名，中英文逗号、分号、顿号、换行隔开）、`Apply`（别名加进能搜的名字）、`EntryLimit = 256`，
+  `KeyFor` / `Sanitize` 改成按词认。单测 `AppNamesTests`（新）、`AppAliasesTests`、`StartMenuFilterTests` 各加了几条。
+- `Launcher/Shortcuts.cs`：`Read(path)` 另取参数（`IShellLinkW.GetArguments`），`ResolveTarget` 照旧。
+- `Launcher/AppCatalog.cs`：先解析目标再按名字拦；按「展开后的目标 + 参数」去重（同一个 exe 带参数的那几个扫完再记，不挡后面不带参数的那个）；
+  别名的键：同一个 exe 的第一个快捷方式照旧 `exe:路径`（已经起的别名不变），后面参数不同的键后面加 `|参数`；`ResolvedExe` 改成展开后的路径（对得上运行记录）。
+  商店应用、`AppSources.ExeItem` 都改用 `AppNames.Build`。
+- `Launcher/LauncherModel.cs`：`AppsWithAliases` 把别名加进候选的名字（主搜索和「文件结果前面那几个应用」两处）。
+- `Settings/SettingsWindow.LauncherApps.cs`：别名那一块照 mac 重写：搜索框 + 列出装着的应用（同一个键只一行、按名字排），每行一个「添加别名」框；
+  起过别名、这台电脑上没有的排最前；行在空闲时 40 个一批补（`DispatcherQueuePriority.Low`），筛选只换显隐；还没扫过时写「正在读取应用…」、扫完重画。
+- `Shell/ShellRuntime.cs`：自检 `--launcher-apps-probe`（等一轮扫完，16 个词各记第一条，日志 `launcher.apps-probe`）。
+
+**先核对再跑**：
+
+1. `IShellLinkW.GetArguments` 在 CsWin32 生成的结构里的签名：照 `GetPath` 那样传 `char*` + 容量，编不过就照它生成的重载改（`PWSTR` / `Span<char>`）。
+2. `Package.Id.Name` 在没有包身份的进程里读不读得到（`FindPackagesForUser` 拿到的 `Package` 应该能）；读不到会走 catch、只是少了英文名。
+3. `SettingsWindow.LauncherApps.cs` 里 `More()` 用 `list.XamlRoot is null` 判断换没换页：切页后补行的回调要停下，不然报错或者往别的页里加行。
+
+**要你们做**：
+
+1. Debug x64 编译零警告、`dotnet test` 全过（新加的三组）、x64 / ARM64 AOT 零警告。
+2. 中文系统跑 `--launcher-apps-probe`：`cmd` 的 `first=命令提示符`，`regedit`、`taskmgr`、`wt`、`calc` 各自第一条是对的；`total=` 和改之前的 `launcher.apps count=` 比，
+   多出来的那几条是哪些（应该是网页应用、浏览器用户资料、「XX 文档」这类），有不该出来的（卸载、帮助、更新器）记下来、按名字 / 目标补进名单。
+3. `--ui-snapshots`（`settings-sub-apps`）浅色、深色、高对比度各一张：别名那一栏是列表、计算器那一行框里是 jsq。
+4. 手测 `HANDTEST.md` 2030–2045，英文系统（或者把显示语言换成英文的测试账户）再走一遍 2030–2032。
+5. 量一下设置页「应用」那一页打开到第一屏出来、全部行补完各多久（几百个应用），超过 300 ms 才出第一屏的话把每批改小。
+6. 更新日志等下一版一起写：fix「启动器打 cmd、regedit 这类程序名能搜到系统工具；名字里带『文档』的应用、浏览器装的网页应用不再被漏掉」、
+   ui「设置 › 启动器 › 应用：应用别名一进来就列出装着的应用，一个应用能起几个别名，别名的开头和拼音也能搜」。
+
+**风险 / 退路**：
+
+- 和 PLAN-v26 第 9 批（启动器 L1–L6）都改 `LauncherModel.cs`：先并这一条再做第 9 批，冲突只在 `AppsWithAliases` 那两行附近。
+- 目标 exe 名当名字后，指向同一个 exe 的快捷方式打 exe 名会一起出（`cmd` 出命令提示符和 VS 的开发者命令提示符）：同分时标题短的在前、用过的在前，可以接受；
+  哪个 exe 名被一堆不相干的快捷方式共用（像 `Update.exe`），加进 `AppNames.Hosts`。
+- 别名的键带 `|参数` 的那几个，键跟着「哪个快捷方式先扫到」走（所有用户的先、当前用户的后，同一个文件夹按名字）：快捷方式增删之后，后面那几个的别名可能换到别的快捷方式上。
+  只影响同一个 exe、参数不同的那几个（网页应用、浏览器用户资料），记在 `AppCatalog.cs` 注释里。
+
 ## PLAN-v26（跟上 mac 0.10.0–0.10.3、收口挂着的分支、优化，2026-11-25）
 
 方案在 `PLAN-v26.md`（§0 先说的几件事、§1 清单、§2 分批、§4 拍板题）。用户：「给 windows 指令，同步和优化最近的需求开始实现」。
