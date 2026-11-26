@@ -48,6 +48,8 @@ macos/                       # 本分支唯一开发区
 ├── KittyToolsTests/         # 纯函数单测（Swift Testing），M2 起建
 ├── Config/                  # Base/Debug/Release.xcconfig、Info.plist（局部）、Secrets.xcconfig（不入库）
 ├── build-dmg.sh             # 打包：archive → 自检 → DMG + App 内更新用的 zip → notes
+├── publish-gitcode.sh       # 发版后把 GitHub 上的 release 原样搬到 GitCode 镜像（国内用户）、换上那边的更新清单
+├── sign-manifest.swift      # Windows 更新清单的签名（P-256，私钥只在钥匙串）：new-key / public-key / sign，publish-gitcode.sh 调
 ├── sync-strings.sh          # 构建一遍、把代码里能本地化的字面量并进 String Catalog（xcstringstool sync）
 ├── TRANSLATION.md           # 多语言：代码怎么写、每批的流程、英文口径、术语表、不翻的清单
 ├── status-emoji.swift       # 状态屏打进包里的那几个动画表情（自带的状态和示例提醒用的 + 眼睛）：下载好的动画 PNG → Resources/status-emoji-*.heics（只用 ImageIO）；别的在 release emoji-pack-1，用到时下载
@@ -265,6 +267,9 @@ TEST_RUNNER_KITTY_LAUNCHPAD_FUZZ=20000 xcodebuild -project macos/KittyTools.xcod
 macos/build-dmg.sh
 # Intel 包（Apple 芯片上交叉编；出 _x86_64.dmg / .zip，不写清单）
 ARCH=x86_64 macos/build-dmg.sh
+# GitHub 上的 release 发完、核过之后：原样搬到 GitCode 镜像（国内下载和 App 内更新），换上那边的清单；重跑就是补发。
+# 令牌用户自己存进钥匙串（security add-generic-password -a "$USER" -s kitty-tools-gitcode -w）；DRY_RUN=1 只读不写
+macos/publish-gitcode.sh macos-v<版本>
 
 # 重新生成 App 图标（Resources/AppIcon.icon + 平面 PNG）、菜单栏剪影 / 彩色小图和 DMG 背景（改角色或产品名只改这个脚本；
 # 加一个目录参数另存放大预览，含 ictool 渲的六种图标风格；--layers <目录> 只出分层图标的各层）
@@ -319,7 +324,7 @@ defaults delete com.yy.kitty-tools.native.dev folderAccessRequested
 - 刻意的简化写 `ponytail:` 注释，写明上限和升级路径。
 - commit 格式 `<type>: <description>`，type 取 feat / fix / ui / refactor / docs / perf / build / chore。**标题一行、70 字以内，空一行再写正文**：为什么改、改了什么、怎么验的都写进正文（会话开头会自动带上最近几条提交的标题，写长了每个会话都白读一遍）。旧提交不改。
 - **更新日志（必遵）**：改 `MARKETING_VERSION` 必须在 `macos/KittyTools/Resources/changelog.json` 追加该版本条目，`type` 只允许 feat / fix / perf / ui（refactor / build / chore 不进用户日志）；缺条目时 `build-dmg.sh` 直接中止。0.10.0 起中英两份（`summaryEn`、`textEn`，mac-native §7）。
-- 发布：本仓库 github.com/YyAdnBug/kitty-tools（不碰 Tauri 版的仓库），tag `macos-v*`，正式 release、标 latest，附 DMG、`_arm64.zip` 和更新清单 `macos-update.json`（App 内更新先读 latest 上的清单、读不到再走 API，mac-native §7）；不公证，发布说明固定附「系统设置 › 隐私与安全 › 仍要打开」步骤（只有第一次安装要，之后 App 内更新）。
+- 发布：本仓库 github.com/YyAdnBug/kitty-tools（不碰 Tauri 版的仓库），tag `macos-v*`，正式 release、标 latest，附 DMG、`_arm64.zip` 和更新清单 `macos-update.json`（App 内更新先读 latest 上的清单、读不到再走 API，mac-native §7）；不公证，发布说明固定附「系统设置 › 隐私与安全 › 仍要打开」步骤（只有第一次安装要，之后 App 内更新）。发完再跑 `macos/publish-gitcode.sh <tag>` 搬到 GitCode 镜像 gitcode.com/yyandbug/kitty-tools（国内用户，2026-11-25；往 GitCode 写之前先问用户）。
 
 ## 给 agent 的工具
 

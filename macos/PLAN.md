@@ -297,7 +297,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 
 1. 版本和 tag：Phase 1 发布版为 `0.1.0`，tag 是 `macos-v0.1.0`（打在 `main` 分支上，原名 `macos-native`）。原生版的版本号与 Tauri 版的 0.1.x 各自独立。
 2. （2026-09-27 起）在本仓库 github.com/YyAdnBug/kitty-tools 的网页上发**正式 Release**（标 latest，本机没装 `gh`）：tag `macos-v<版本>`，附 `build-dmg.sh` 出的 DMG（首次安装）、`_arm64.zip`（App 内更新下载它）和 `macos-update.json`（App 内更新先读 latest 上的它，不走 API；2026-11-09 起，见 mac-native §7）。和 Tauri 版的仓库无关。~~旧：勾选 pre-release，不要勾 Set as latest release。~~Tauri 的 updater 读的是 `releases/latest/.../latest.json`，一旦被原生版顶成 latest，Tauri 全平台的更新都会 404。
-3. ~~GitCode：在确认它的 `releases/latest` 会排除预发布版本之前，不在 GitCode 上发布。~~（2026-09-27 废止，同下）
+3. ~~GitCode：在确认它的 `releases/latest` 会排除预发布版本之前，不在 GitCode 上发布。~~（2026-09-27 废止，同下）（2026-11-25 起）GitHub 发完、核过之后跑 `macos/publish-gitcode.sh macos-v<版本>`，把这个 release 原样搬到 GitCode 镜像、换上那边的清单，给国内用户（§10「GitCode 国内分发」）。
 4. ~~发布后，在 master 工作区执行 `pnpm release:verify`。不修改 `releases/latest.json`。~~（2026-09-27 废止：那是 Tauri 仓库的约束，原生版发在本仓库）
 5. CI：Phase 1 不做。以后需要时用 `macos-15` runner，并 `xcode-select` 到 `Xcode_26.3`，保持和本机同一版本。
 
@@ -2784,6 +2784,37 @@ P8、V8 以后。材料（追问稿、实测报告、sample、对标、图标样
 - **剪贴板的行不再是 Button**（每行一个按钮会让 SwiftUI 每次重排整条焦点链）：整行一个 `DragGesture(minimumDistance: 0)` + `allowsWindowActivationEvents`，例外和代价在 mac-clipboard §5。
 - 玻璃上系统「次要」层级色的字（启动器副标题、底栏条数）仍只有约 2.4–3.1:1，不在 V3 范围，没改。
 - **V6 已进包**（第 6 批，样稿和进包前的说明在 `build/research/polish-2026-11-23/icon/`）：`.icon` 一加，15 上也只能用 Xcode 从它压平的那份（同名 appiconset 被无声忽略，手调的 16 / 32 px 没了；Apple 文档和 actool 实测都是）；appiconset 照旧生成、留给 Windows 的 .ico；26 起 `NSApp.applicationIconImage` 跟着系统图标风格变色，所以菜单栏彩色图标、设置侧栏「关于」那一行和 `StatusItemTests.colorIconIsTheWholeAppIcon` 改读 brand-icons 出的 `ColorIcon16` / `ColorIcon20`（设置 › 关于页的大图仍是 `applicationIconImage`，跟着风格变是对的）。
+
+### GitCode 国内分发（2026-11-25）
+
+用户：国内打不开 GitHub，代码已经由 GitCode 镜像 https://gitcode.com/yyandbug/kitty-tools 自动同步，要让国内用户也能下载、App 内更新。
+拍板页 https://claude.ai/artifact/FHmjtbwYMqFtW6dpoj5Whh（A–E），用户「按照推荐的来」。
+
+查到的（别重查；接口文档 https://atomgit-api-doc.atomgit.com/ 的 14.release，帮助中心的「发行版」「仓库镜像」）：
+- GitCode 2026 年改名 AtomGit，`gitcode.com` = `atomgit.com`、`api.gitcode.com` = `api.atomgit.com`。镜像只同步分支、标签、提交，**release 不过去**。
+- 匿名下载 `https://gitcode.com/<用户>/<仓库>/releases/download/<tag>/<文件>` → 302 到 `file-cdn.gitcode.com` 带时效签名的地址，不要登录、
+  不查来源页、支持 Range；格式和 GitHub 一样。单个 release 的页面是 `…/releases/<tag>`（没有 `tag/`，带了是 404）。
+- **没有 `releases/latest/download/<文件>`**：那个地址回的是网页（200 + HTML），所以 GitCode 上的清单挂在固定标签的 release 上
+  （mac `macos-update`、Windows `windows-update`）。`releases/latest` 接口默认按「最后改过的」挑，不用它。
+- 写：`POST releases`（标签要已经在 GitCode 上）、`GET releases/{tag}/upload_url?file_name=` → 预签名地址 + 要带的头 → `PUT`；
+  同名附件再传被拒，换要先 `DELETE releases/{tag}/attach_files/{id}`。附件大小、个数上限文档没写。限流 400 次 / 分。
+- Windows 包没有代码签名，更新只信「GitHub 地址白名单 + 同站的 sha256」：接 GitCode 等于多一个信任根，所以先签清单（W1）。
+  mac 不受影响：装之前只认本团队签名和版本号。
+
+做法：
+- **A1 发布**：`macos/publish-gitcode.sh <tag>…`（做法、令牌、失败怎么补都在它的头部）：GitHub 发完后把那个 release 原样搬过去、换上 GitCode 的清单；
+  幂等，重跑就是补发；mac、Windows、表情包同一个脚本。
+- **B1 mac 更新**：同时读 GitHub 和 GitCode 的清单，先回来、过了校验的为准；下载从那个站下，网络原因没成换另一个站；「打开发布页」跟着它。
+  清单里的地址只认 https、本仓库在两个站上的路径（防清单把发布页指到别处）。
+- **W1 Windows**：清单用 ECDSA P-256 签名（私钥只在用户的钥匙串），App 写死公钥，GitCode 那份签名对得上才认。
+- **C1**：中文 README、官网中文下载页加「国内下载（GitCode）」。**D1**：令牌用户自己建、自己存进钥匙串（`kitty-tools-gitcode`），脚本只读。
+- **E1**：动画表情包也搬过去，App 按 B1 记下的站先取。
+
+| 批 | 提交 | 内容 |
+|---|---|---|
+| 1 | `8d19c396` | A1 + D1：`publish-gitcode.sh`、build-dmg.sh 头部、mac-native §7 |
+| 2 | — | B1 + E1：`Updater.Site`、`firstManifest`（两个站一起问；任务组的写法 Swift 6.2 的区域隔离检查器认不出，改成两个主线程任务 + AsyncStream）、`sources` / 下载换站、`Prefs.updateSite`；`EmojiPack` 先找 `Site.preferred`。HANDTEST「GitCode 国内分发」1–6 |
+| 3 | — | W1 mac 这一半：`sign-manifest.swift`（CryptoKit P-256，私钥存钥匙串；`selftest` 出的测试向量用 openssl 交叉核过，Windows 单测用同一组）、`publish-gitcode.sh` 给 GitCode 的 windows-update.json 签名。Windows 那一半在 windows 分支 `claude/gitcode-win`（`windows/PLAN-gitcode.md`） |
 
 ## 11½. Whisker 设计语言改造（2026-09-25 起）
 

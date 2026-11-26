@@ -8,6 +8,8 @@
 //   插件按需下载评估里定的瘦身，PLAN §10「功能管理」下的记录）：包里只带自带的三个状态、三条示例提醒用的和眼睛
 //   （StatusEmoji.bundled），其余 22 个第一次用到时同样从这个 release 下（编号见 choiceAliases / packID(forChoice:)，
 //   release 上本来就有、和原来包里的是同一份）。
+// - 2026-11-25（GitCode 国内分发）：publish-gitcode.sh 把这个 release 原样搬到 GitCode，先从 Updater.Site.preferred 那个站下，
+//   没下成换另一个站（下下来的东西照样按不可信输入查，换站不影响）。
 // - 缓存在数据目录的 emoji-pack/（<编号>.heics），不备份、不导出、不同步（另一台用到时自己下）；用一次把文件的修改时间碰成现在，
 //   超过 50 MB 删最久没用的（启动时、每下好一个之后）。
 // - 什么时候下：选上的那个显示到的时候（设置的列表行、详情页的大预览、进入状态屏、全屏提醒；图标格子、气泡里没选的不下）——
@@ -188,9 +190,10 @@ import Observation
     return result == true
   }
 
-  /// 本仓库那个 release 里的文件；设了本机测试服务器（Prefs.emojiPackTestServer，发表情包之前试用）时是那里的
+  /// 本仓库那个 release 里的文件，site 那个站上的（GitCode 上是 publish-gitcode.sh 搬过去的同一份）；设了本机测试服务器
+  /// （Prefs.emojiPackTestServer，发表情包之前试用）时是那里的
   nonisolated static func remoteURL(
-    _ id: String, tag: String,
+    _ id: String, tag: String, site: Updater.Site = .github,
     testServer: String? = UserDefaults.standard.string(forKey: Prefs.emojiPackTestServer)
   ) -> URL? {
     if let testServer, let base = URL(string: testServer), base.scheme == "http",
@@ -198,13 +201,23 @@ import Observation
     {
       return base.appending(path: id + ".heics")
     }
-    return URL(
-      string: "https://github.com/YyAdnBug/kitty-tools/releases/download/\(tag)/\(id).heics")
+    return URL(string: site.base + "releases/download/\(tag)/\(id).heics")
   }
 
-  /// 下好、存好是 true；没下成是 false；没联网是 nil（fetch 不记失败时间）
+  /// 先从上一次更新清单先回来的那个站下（国内是 GitCode，Updater.Site.preferred），没下成换另一个站；从另一个站下成了就记下它。
+  /// 下好、存好是 true；没下成是 false；没联网是 nil（fetch 不记失败时间；换站也没用）
   private static func download(_ id: String, tag: String) async -> Bool? {
-    guard let url = remoteURL(id, tag: tag) else { return false }
+    let first = Updater.Site.preferred
+    guard let url = remoteURL(id, tag: tag, site: first) else { return false }
+    let result = await download(id, from: url)
+    guard result == false, let other = remoteURL(id, tag: tag, site: first.other), other != url
+    else { return result }
+    let retried = await download(id, from: other)
+    if retried == true { Updater.Site.remember(first.other) }
+    return retried
+  }
+
+  private static func download(_ id: String, from url: URL) async -> Bool? {
     let request = URLRequest(
       url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
     let data: Data
