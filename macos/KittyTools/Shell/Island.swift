@@ -246,6 +246,12 @@ import SwiftUI
   /// 这会儿不响应刘海（AppDelegate 给：截图 / 录屏框选中、启动台开着、状态屏里）：点它、停在它上面都不算
   @ObservationIgnored var isSuppressed: () -> Bool = { false }
   @ObservationIgnored var screenObserver: Any?
+  /// 换了桌面：查一下窗口还在不在当前桌面上（verifyOnScreen，issue #55）
+  @ObservationIgnored var spaceObserver: Any?
+  /// 正在查窗口在不在当前桌面上（verifyOnScreen）
+  @ObservationIgnored var spaceCheck: Task<Void, Never>?
+  /// 上一次因为掉出了所有桌面换窗口的时刻（rebuildWindow：隔一会儿才换第二次）
+  @ObservationIgnored var rebuiltAt: ContinuousClock.Instant?
   @ObservationIgnored var geometry = Geometry.capsule(menuBar: 24)
   @ObservationIgnored var window: IslandPanel?
   @ObservationIgnored var host: IslandHost?
@@ -259,9 +265,13 @@ import SwiftUI
   @ObservationIgnored var turnedAt: ContinuousClock.Instant?
   /// 鼠标在岛上时来的新提示：移开再换上，只留最新一条（拍板 B5）
   @ObservationIgnored var pending: (content: Content, actions: [Action])?
-  /// 挂着直到处理的那一条（提醒，PLAN §10「提醒」C2；pin）：不到点收起，别的提示来了先显示那条、收起后换回它
+  /// 挂着直到处理的那一条（提醒，PLAN §10「提醒」C2；pin）：不到点收起，别的提示来了先显示那条、收起后换回它。
+  /// 挂着时全屏也不藏（hides）
   @ObservationIgnored private var pinned:
     (content: Content, actions: [Action], onClose: () -> Void)?
+  {
+    didSet { syncFullScreenAlpha() }
+  }
   @ObservationIgnored var monitors: [Any] = []
   /// 悬停期间每 0.2 s 再核一次指针：从岛直接挪进本 App 不收鼠标移动的窗口时没有移动事件，靠它发现离开
   @ObservationIgnored var hoverCheck: Task<Void, Never>?
@@ -284,12 +294,20 @@ import SwiftUI
     didSet { if oldValue != hiddenForFullScreen { syncFullScreenAlpha() } }
   }
 
-  /// 现在藏着（窗口在刘海屏上、全屏、不是那一张、不是音量 / 亮度提示）
+  /// 现在藏着（窗口在刘海屏上、全屏、不是那一张、不是音量 / 亮度提示、没挂着提醒）
   var hidesNow: Bool {
-    guard hiddenForFullScreen, !isBoardOpen, level == nil, let window,
-      let notch = Self.notchScreen
-    else { return false }
-    return window.screen?.frame == notch.frame
+    guard let window, let notch = Self.notchScreen else { return false }
+    return Self.hides(
+      fullScreen: hiddenForFullScreen, onNotchScreen: window.screen?.frame == notch.frame,
+      board: isBoardOpen, level: level != nil, pinned: pinned != nil)
+  }
+
+  /// 全屏时藏不藏（纯函数）：刘海屏上前台全屏、岛摆在刘海屏上才藏；那一张（快捷键叫出来的拿着键盘）、音量 / 亮度提示照常，
+  /// 挂着提醒时整座岛都不藏（issue #51：边框亮在每块屏上，能关掉它的只有岛上那张卡，藏起来就再也关不掉）
+  static func hides(
+    fullScreen: Bool, onNotchScreen: Bool, board: Bool, level: Bool, pinned: Bool
+  ) -> Bool {
+    fullScreen && onNotchScreen && !board && !level && !pinned
   }
 
   private func syncFullScreenAlpha() {
@@ -884,6 +902,19 @@ import SwiftUI
     Self.post([content.title, content.detail].compactMap { $0 }.joined(separator: Self.comma))
   }
 
+  /// 挂着的那条跟着指针换屏（issue #51）：它只摆在到点那一刻指针所在的屏上，边框却亮在每块屏上——人在另一块屏上、
+  /// 那块屏被拔掉了，就找不到能关边框的那张卡。指针换了屏（track）、屏幕变了（updateNotches）时，正显示着它、指针不在岛上、
+  /// 键盘不在它的按钮上，就挪到指针那块屏上重新摆（同一块屏上不动）。别的提示、那一张在上面时不挪（它们收起时换回它）
+  func followPointer() {
+    guard isShowingPinned, !isStaged, !isHovered, !holdsKeyboard, let window,
+      let target = NSScreen.underMouse, window.screen?.frame != target.frame
+    else { return }
+    // 直接挪过去，不排下去再排上来：进出全屏空间、屏幕变化的那一刻排下去，窗口会掉出所有桌面（issue #55；
+    // 这里正是屏幕变化时 updateNotches 调的）。展开着的 showWindow 不重摆，自己摆
+    place(window, on: target)
+    showWindow(on: target)
+  }
+
   /// 不再挂着（调用方那边处理完了、功能关了）：正显示着就收
   func unpin() {
     guard pinned != nil else { return }
@@ -1143,7 +1174,7 @@ import SwiftUI
       // 有活动：缩回耳朵、窗口留着；提示是在别的屏（外接屏的胶囊）上弹的，就挪回刘海屏
       if self.isShowingWings {
         if case .notch = self.geometry { return }
-        self.window?.orderOut(nil)
+        // 收着的 showWindow 自己重摆；不排下去再排上来（同 followPointer，issue #55）
         self.showWindow(on: Self.notchScreen)
         return
       }
@@ -1254,9 +1285,12 @@ import SwiftUI
     syncFullScreenAlpha()
     window.orderFrontRegardless()
     watchMouse()
+    // 排上去了不等于看得见：窗口可能掉出了所有桌面、只在别的桌面上（issue #55）
+    verifyOnScreen()
   }
 
-  /// 放到鼠标所在屏（耳朵给的是刘海屏）顶部正中（刘海屏贴着顶边，其它屏在菜单栏下方）。只在窗口不在屏上时调
+  /// 放到鼠标所在屏（耳朵给的是刘海屏）顶部正中（刘海屏贴着顶边，其它屏在菜单栏下方）。只在窗口不在屏上、或者要换一块屏时调
+  /// （换屏：followPointer；窗口尺寸一次定死，同一块屏上挪会跳一下）
   func place(_ window: IslandPanel, on target: NSScreen? = nil) {
     guard let screen = target ?? NSScreen.underMouse else { return }
     geometry = Self.geometry(of: screen)

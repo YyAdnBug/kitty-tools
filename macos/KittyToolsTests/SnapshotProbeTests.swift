@@ -6045,6 +6045,17 @@ struct SnapshotProbeTests {
       FinderMenuTab(extensionEnabled: true, finderAutomation: .denied, desktopInICloud: true)
         .defaultAppStorage(prefs),
       size: NSSize(width: 640, height: 560), dark: false, to: "\(out)/finder-settings-icloud.png")
+    // 打开了、访达却没把扩展跑起来（issue #54：那一行橙色 !、「去重新打开…」，页脚说怎么放行、能拷贝位置）+ 控制访达拒绝过
+    for dark in [false, true] {
+      try snapshot(
+        FinderMenuTab(
+          extensionEnabled: true, extensionStalled: true, finderAutomation: .denied,
+          desktopInICloud: false
+        )
+        .defaultAppStorage(prefs),
+        size: NSSize(width: 640, height: 640), dark: dark,
+        to: "\(out)/finder-settings-stalled\(dark ? "-dark" : "").png")
+    }
     // 「在访达里用 ⌘X 剪切、⌘V 移动」开着、没有辅助功能授权（「整理文件」里一行橙字 +「打开系统设置」）
     prefs.set(true, forKey: Prefs.finderMenuKeys)
     try snapshot(
@@ -6054,6 +6065,15 @@ struct SnapshotProbeTests {
       )
       .defaultAppStorage(prefs),
       size: NSSize(width: 640, height: 2400), dark: false, to: "\(out)/finder-settings-keys.png")
+    // 授权显示有、拦截却没建起来（橙字换成「关掉再打开」那句）
+    try snapshot(
+      FinderMenuTab(
+        extensionEnabled: true, finderAutomation: .granted, desktopInICloud: false,
+        accessibilityTrusted: true, keysFailed: { true }
+      )
+      .defaultAppStorage(prefs),
+      size: NSSize(width: 640, height: 2400), dark: false,
+      to: "\(out)/finder-settings-keys-failed.png")
     prefs.removeObject(forKey: Prefs.finderMenuKeys)
     func page() -> some View { NavigationStack { CompressSkipPage() }.defaultAppStorage(prefs) }
     prefs.removeObject(forKey: Prefs.finderCompressSkip)

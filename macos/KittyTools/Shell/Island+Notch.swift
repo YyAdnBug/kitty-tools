@@ -15,6 +15,11 @@ extension Island {
     ) { [weak self] _ in
       MainActor.assumeIsolated { self?.updateNotches() }
     }
+    spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+      forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
+    ) { [weak self] _ in
+      MainActor.assumeIsolated { self?.verifyOnScreen(again: true) }
+    }
   }
 
   /// 刘海屏的 Mac：启动时先把窗口建好、按刘海屏收着的样子排一遍（不显示）——第一次停到刘海上就有现成的窗口和
@@ -53,6 +58,83 @@ extension Island {
     if isShowingWings, !isOpen, !isStaged, let window, let screen = Self.notchScreen {
       place(window, on: screen)
     }
+    // 挂着的提醒（边框亮着时能关它的只有这张卡）：原来那块屏拔掉了、合上了，挪到指针那块屏上（issue #51）
+    followPointer()
+    // 屏幕一变，窗口可能就掉出了所有桌面（issue #55，报告人是切过外接屏之后）：没显示着的直接换一扇新的（同启动时，
+    // 下一次停到刘海上用新的），显示着的查一下
+    if let window, !window.isVisible, !isStaged {
+      window.close()
+      self.window = nil
+      prepareWindow()
+    } else {
+      verifyOnScreen(again: true)
+    }
+  }
+
+  /// 岛的窗口真的在当前桌面上吗（issue #55）。设了 .canJoinAllSpaces 的窗口，窗口服务器有时会丢掉它「所有桌面」的归属、
+  /// 只留在一个桌面上：报告人（15.7.4、台前调度、6 个桌面）切过外接屏之后，窗口服务器里岛的窗口只属于一个 Space，
+  /// orderFrontRegardless 只是在那个桌面里拿到前面，别的桌面上停在刘海上、点刘海都没反应。GitHub 上别的项目记过同样的事
+  /// （有一家说退出全屏空间的那一刻窗口正被排下去就会这样），起因没有公开的说法；重设 collectionBehavior、排下去再排上来
+  /// 都救不回来，只有换一扇新窗口能救（别家实测）。岛的窗口整个进程只建一次、每次收起都排下去，坏了就一直坏到重启——
+  /// issue #51「边框亮着、刘海上的提醒卡没出来」也是它：边框是到点新建的窗口，每个桌面上都在。
+  /// 所以排上去之后（showWindow）、换了桌面、屏幕变了时过 0.3 s 问一次窗口服务器，不在就再等 0.3 s 问一次（排上去那一拍
+  /// 可能还没交给它、换桌面的动画可能还没走完），还不在就换一扇新的（rebuildWindow）。
+  /// again：换桌面、屏幕变了——正在查的那一次作废、从头查（不然查的是换之前的样子）；showWindow 来的正在查就不重来
+  /// （内容一换就调一次，进度条这类连着换的会让它一直查不完）
+  func verifyOnScreen(again: Bool = false) {
+    if again {
+      spaceCheck?.cancel()
+      spaceCheck = nil
+    }
+    guard spaceCheck == nil, !isStaged, let watched = window, watched.isVisible else { return }
+    spaceCheck = Task { [weak self] in
+      let lost = await Self.stillLost(watched)
+      guard !Task.isCancelled, let self else { return }
+      self.spaceCheck = nil
+      if lost, self.window === watched { self.rebuildWindow() }
+    }
+  }
+
+  /// 查一次的间隔
+  static let spaceCheckDelay = Duration.milliseconds(300)
+  /// 换过一次窗口之后多久内不再换（换了还不在：调度中心开着这类窗口服务器本来就不给看的时候，不来回换）
+  static let rebuildGap = Duration.seconds(10)
+
+  /// 隔 spaceCheckDelay 问两次，两次都说掉出了当前桌面才算
+  private static func stillLost(_ window: NSWindow) async -> Bool {
+    for _ in 0..<2 {
+      try? await Task.sleep(for: spaceCheckDelay)
+      guard !Task.isCancelled,
+        IslandFullScreen.lostSpace(
+          visible: window.isVisible, onScreen: IslandFullScreen.isOnScreen(window.windowNumber),
+          hasScreens: !NSScreen.screens.isEmpty)
+      else { return false }
+    }
+    return true
+  }
+
+  /// 换一扇新窗口顶上（issue #55）：新窗口排上去时窗口服务器重新把它放进所有桌面。旧的排下去关掉，内容、接不接鼠标照旧
+  /// （新窗口的内容直接画成现在的样子，没有长出来的动画）。键盘在它上面时（快捷键叫出的那一张、交给按钮的键盘）不换，
+  /// 收起后下一次显示再查
+  // ponytail: 只能事后救（掉出去的那一次最多晚 0.6 s 出现）；要从根上避开得改成收起时不排下去（透明度 0 留在屏上），
+  // 那要重新量窗口常驻的内存、点穿和截图里会不会带上，等这个救法不够再说
+  private func rebuildWindow() {
+    guard let old = window, !holdsKeyboard else { return }
+    let now = ContinuousClock.now
+    if let rebuiltAt, now - rebuiltAt < Self.rebuildGap {
+      Log.island.error("岛的窗口换过一扇还是不在当前桌面上")
+      return
+    }
+    rebuiltAt = now
+    Log.island.notice("岛的窗口不在当前桌面上，换一扇新的")
+    let ignoresMouse = old.ignoresMouseEvents
+    let screen = old.screen
+    old.orderOut(nil)
+    old.close()
+    window = nil
+    showWindow(on: screen)
+    window?.ignoresMouseEvents = ignoresMouse
+    syncBackdrop()
   }
 
   /// 有刘海屏、插件也添加着才常驻监听（点刘海、停在刘海上、耳朵的悬停要它们）；否则照旧显示时装、收起后卸
@@ -237,6 +319,8 @@ extension Island {
     if isShowingLevel { return }
     if content != nil || isBoardOpen {
       if let window { hover(NSMouseInRect(mouse, shapeOnScreen(window), false)) }
+      // 挂着的提醒跟着指针换屏（issue #51）
+      followPointer()
       return
     }
     // 刚收起、还在缩回时不鼓

@@ -116,6 +116,9 @@ import Synchronization
   /// 拦截建着没有
   var isRunning: Bool { thread.map { !$0.isFinished } ?? false }
 
+  /// 授权显示有、拦截却没建起来（或者自己失效了）：设置页照它说一句（同平滑滚动、片段展开；回到前台、醒来时再试）
+  var hasFailed: Bool { gaveUp || thread?.isFinished == true }
+
   /// 照偏好和授权起 / 停（启动时、偏好变了时 AppDelegate 调）：没变不动
   func apply() {
     if let thread, thread.isFinished {

@@ -1018,7 +1018,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       case .statusScreen: AnyView(StatusScreenTab())
       case .reminders: AnyView(RemindersTab())
       case .dockPreview: AnyView(DockPreviewTab())
-      case .finderMenu: AnyView(FinderMenuTab())
+      case .finderMenu:
+        AnyView(FinderMenuTab(keysFailed: { [unowned self] in finderKeys.hasFailed }))
       case .keepAwake: AnyView(KeepAwakeTab(keepAwake: keepAwake))
       case .bluetoothSnooze:
         AnyView(BluetoothSnoozeTab { [unowned self] in bluetoothSnooze.requestAccess() })

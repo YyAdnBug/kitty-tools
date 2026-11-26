@@ -421,4 +421,22 @@ import UniformTypeIdentifiers
     #expect(block(app) != nil)
     #expect(block(app) == block(source))
   }
+
+  /// 设置页那一行的三种样子（issue #54）：系统里打开着、访达也开着，扩展却没在跑 = 被拦下了；访达没开着看不出来，当没事
+  @Test func extensionStalledOnlyWhenFinderRunsWithoutIt() {
+    #expect(
+      FinderMenuTab.extensionState(elected: false, finderRunning: true, extensionRunning: false)
+        == .off)
+    #expect(
+      FinderMenuTab.extensionState(elected: true, finderRunning: true, extensionRunning: true)
+        == .on)
+    #expect(
+      FinderMenuTab.extensionState(elected: true, finderRunning: true, extensionRunning: false)
+        == .stalled)
+    #expect(
+      FinderMenuTab.extensionState(elected: true, finderRunning: false, extensionRunning: false)
+        == .on)
+    #expect(FinderMenuTab.extensionID.hasSuffix(".finder"))
+    #expect(FinderMenuTab.extensionPath.hasSuffix("/PlugIns/KittyToolsFinder.appex"))
+  }
 }

@@ -432,11 +432,24 @@ private struct GeneralPermissionsPage: View {
         }
         .settingsAnchor(.generalMicrophone)
         if #available(macOS 15.4, *) { pasteboardAccess }
+      } footer: {
+        // 系统不会再弹框了、这里还是没授权：系统设置里那一项可能是旧的（显示开着却不算数）、或者第一次的框被别的软件拦了、
+        // 列表里根本没有（issue #54 同一类）。说怎么从那一页重新加一遍
+        if (!trusted && Self.asked(Prefs.accessibilityRequested))
+          || (!screenRecording && Self.asked(Prefs.screenRecordingRequested))
+        {
+          SectionFootnote(
+            "系统设置里显示已经打开、这里却还是没授权，或者那一页的列表里没有 Kitty Tools：在那一页选中 Kitty Tools 点「−」删掉，再点「+」把它加回来、打开。屏幕录制改完要重新打开本 App。"
+          )
+        }
       }
     }
     .onAppear(perform: refresh)
     .onSettingsBecameKey(perform: refresh)
   }
+
+  /// 「去授权」点过（系统的框弹过一次，不会再弹）
+  private static func asked(_ key: String) -> Bool { UserDefaults.standard.bool(forKey: key) }
 
   private func refresh() {
     trusted = Permissions.isAccessibilityTrusted
