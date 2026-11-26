@@ -909,7 +909,9 @@ import SwiftUI
     guard isShowingPinned, !isStaged, !isHovered, !holdsKeyboard, let window,
       let target = NSScreen.underMouse, window.screen?.frame != target.frame
     else { return }
-    window.orderOut(nil)
+    // 直接挪过去，不排下去再排上来：进出全屏空间、屏幕变化的那一刻排下去，窗口会掉出所有桌面（issue #55；
+    // 这里正是屏幕变化时 updateNotches 调的）。展开着的 showWindow 不重摆，自己摆
+    place(window, on: target)
     showWindow(on: target)
   }
 
@@ -1172,7 +1174,7 @@ import SwiftUI
       // 有活动：缩回耳朵、窗口留着；提示是在别的屏（外接屏的胶囊）上弹的，就挪回刘海屏
       if self.isShowingWings {
         if case .notch = self.geometry { return }
-        self.window?.orderOut(nil)
+        // 收着的 showWindow 自己重摆；不排下去再排上来（同 followPointer，issue #55）
         self.showWindow(on: Self.notchScreen)
         return
       }
@@ -1287,7 +1289,8 @@ import SwiftUI
     verifyOnScreen()
   }
 
-  /// 放到鼠标所在屏（耳朵给的是刘海屏）顶部正中（刘海屏贴着顶边，其它屏在菜单栏下方）。只在窗口不在屏上时调
+  /// 放到鼠标所在屏（耳朵给的是刘海屏）顶部正中（刘海屏贴着顶边，其它屏在菜单栏下方）。只在窗口不在屏上、或者要换一块屏时调
+  /// （换屏：followPointer；窗口尺寸一次定死，同一块屏上挪会跳一下）
   func place(_ window: IslandPanel, on target: NSScreen? = nil) {
     guard let screen = target ?? NSScreen.underMouse else { return }
     geometry = Self.geometry(of: screen)
