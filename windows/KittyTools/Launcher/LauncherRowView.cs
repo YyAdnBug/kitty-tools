@@ -28,7 +28,12 @@ internal sealed partial class LauncherRowView : Grid
 {
     private readonly Border _hover;
     private readonly TextBlock _kind;
-    private readonly Border _shortcut;
+    private Border _shortcut;
+    private readonly Grid _kindHost;
+    /// <summary>键帽上现在写的是 Ctrl+几（从看得见的第一行数起，PLAN-v26 L6）。</summary>
+    private int _shortcutSlot;
+    /// <summary>多选勾上了（PLAN-v26 L3）：底色同悬停、一直亮着。</summary>
+    private bool _marked;
     private readonly StackPanel _trailing;
     private TextBlock? _subtitle;
     private Border? _hotKey;
@@ -74,11 +79,9 @@ internal sealed partial class LauncherRowView : Grid
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Right,
         };
-        _shortcut = KeyCap.Create("Ctrl+" + (index + 1));
-        HideVisual(_shortcut);
-        _shortcut.HorizontalAlignment = HorizontalAlignment.Right;
-        _shortcut.VerticalAlignment = VerticalAlignment.Center;
-        var kindHost = new Grid { VerticalAlignment = VerticalAlignment.Center };
+        _shortcutSlot = index;
+        _shortcut = ShortcutCap(index);
+        var kindHost = _kindHost = new Grid { VerticalAlignment = VerticalAlignment.Center };
         kindHost.Children.Add(_kind);
         kindHost.Children.Add(_shortcut);
         _trailing = new StackPanel
@@ -107,6 +110,18 @@ internal sealed partial class LauncherRowView : Grid
         ApplyHover();
     }
 
+    public void SetMarked(bool marked)
+    {
+        if (_marked == marked)
+        {
+            return;
+        }
+
+        _marked = marked;
+        AutomationProperties.SetItemStatus(this, marked ? "已勾选" : _selected ? "已选中" : string.Empty);
+        ApplyHover();
+    }
+
     public void SetSelected(bool selected)
     {
         _selected = selected;
@@ -114,15 +129,33 @@ internal sealed partial class LauncherRowView : Grid
         ApplyHover();
     }
 
-    /// <summary>按住 Ctrl 150 ms：种类换成「Ctrl+N」键帽（前九行，每行错开 15 ms）；松开换回。</summary>
-    public void SetShortcutShown(bool shown)
+    private static Border ShortcutCap(int slot)
     {
-        if (Index >= 9)
+        var cap = KeyCap.Create("Ctrl+" + (slot + 1));
+        HideVisual(cap);
+        cap.HorizontalAlignment = HorizontalAlignment.Right;
+        cap.VerticalAlignment = VerticalAlignment.Center;
+        return cap;
+    }
+
+    /// <summary>
+    /// 按住 Ctrl 150 ms：种类换成「Ctrl+N」键帽（看得见的前九行，每行错开 15 ms；slot 是从看得见的第一行数起第几行，PLAN-v26 L6）；松开换回。
+    /// </summary>
+    public void SetShortcutShown(bool shown, int slot)
+    {
+        if (slot is < 0 or >= 9)
         {
-            return;
+            shown = false;
+        }
+        else if (slot != _shortcutSlot)
+        {
+            _kindHost.Children.Remove(_shortcut);
+            _shortcut = ShortcutCap(slot);
+            _kindHost.Children.Add(_shortcut);
+            _shortcutSlot = slot;
         }
 
-        var delay = Motion.Reduced ? 0 : Index * 15;
+        var delay = Motion.Reduced ? 0 : Math.Max(0, slot) * 15;
         Motion.Fade(_kind, shown ? 0 : 1, 0.12, delay);
         Motion.Fade(_shortcut, shown ? 1 : 0, 0.12, delay);
         if (_hotKey is not null)
@@ -174,7 +207,7 @@ internal sealed partial class LauncherRowView : Grid
 
     private void ApplyHover()
     {
-        var target = _hovered && !_selected ? 1 : 0;
+        var target = (_hovered && !_selected) || _marked ? 1 : 0;
         if (Motion.Reduced)
         {
             ElementCompositionPreview.GetElementVisual(_hover).Opacity = target;

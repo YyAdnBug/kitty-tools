@@ -55,6 +55,40 @@ internal static partial class LauncherOpeners
         }
     }
 
+    /// <summary>
+    /// 在终端中打开（PLAN-v26 L2）：Windows 终端（wt.exe -d，装了才有）在那个文件夹开一个标签；没装就开 PowerShell，起始目录是它。
+    /// 成功返回 null，不然是一句原因。
+    /// </summary>
+    public static string? OpenTerminal(string folder)
+    {
+        // 「C:\」末尾的反斜杠会把 wt 的引号吃掉：去掉末尾分隔符，根目录写成「C:\.」
+        var trimmed = Path.TrimEndingDirectorySeparator(folder);
+        var directory = trimmed.EndsWith(':') ? trimmed + @"\." : trimmed;
+        try
+        {
+            var terminal = new ProcessStartInfo("wt.exe") { UseShellExecute = false };
+            terminal.ArgumentList.Add("-d");
+            terminal.ArgumentList.Add(directory);
+            Process.Start(terminal)?.Dispose();
+            return null;
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            // 没装 Windows 终端：退到 PowerShell
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo("powershell.exe") { UseShellExecute = true, WorkingDirectory = folder })?.Dispose();
+            return null;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"launcher.terminal-failed {ex.GetType().Name}");
+            return "系统打不开终端";
+        }
+    }
+
     /// <summary>Alt+Enter：在资源管理器里按文件名搜（mac ⌥↩ 在访达里用聚焦搜索），从用户文件夹开始。</summary>
     public static bool SearchInExplorer(string text)
     {

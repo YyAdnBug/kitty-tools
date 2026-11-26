@@ -205,7 +205,9 @@ public static class LauncherCommandTable
     }
 
     /// <summary>一个别名被几条用了（连网页搜索的关键词一起算）：重复的那几条的编号。entries 是（编号，此刻的别名）。</summary>
-    public static IReadOnlySet<string> Conflicts(IEnumerable<(string Id, string? Alias)> entries, IEnumerable<string> engineKeywords)
+    /// <param name="appAliases">应用别名（PLAN-v26 L5，同 mac 0.10.0）：命令、脚本的别名和哪个应用的别名一样也算撞了。</param>
+    public static IReadOnlySet<string> Conflicts(
+        IEnumerable<(string Id, string? Alias)> entries, IEnumerable<string> engineKeywords, IEnumerable<string>? appAliases = null)
     {
         var owners = new Dictionary<string, List<string>>();
         foreach (var (id, alias) in entries)
@@ -223,7 +225,10 @@ public static class LauncherCommandTable
             list.Add(id);
         }
 
-        var engines = engineKeywords.Select(LauncherMatch.Fold).ToHashSet();
+        var engines = engineKeywords.Select(LauncherMatch.Fold)
+            .Concat((appAliases ?? Array.Empty<string>()).Select(Normalized))
+            .Where(keyword => keyword.Length > 0)
+            .ToHashSet();
         return owners.Where(pair => pair.Value.Count > 1 || engines.Contains(pair.Key)).SelectMany(pair => pair.Value).ToHashSet();
     }
 

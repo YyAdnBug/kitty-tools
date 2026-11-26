@@ -92,7 +92,7 @@ internal static class UiSnapshotProbe
                              "launcher", "launcher-home", "launcher-calc", "launcher-kill", "launcher-port", "launcher-prompt",
                              "launcher-empty", "launcher-actions", "launcher-calc-actions", "launcher-keys",
                              "launcher-icons-shot", "launcher-icons-clip", "launcher-icons-record", "launcher-icons-home",
-                             "launcher-icons-fy", "launcher-currency",
+                             "launcher-icons-fy", "launcher-currency", "launcher-path", "launcher-path-filter", "launcher-path-multi",
                          })
                 {
                     await SafeRenderAsync(root, () => new LauncherPanel(), state, dark, directory);
@@ -1273,7 +1273,7 @@ internal static class UiSnapshotProbe
                 launcher.OnShown();
                 launcher.ApplyProbeState(name);
                 // kill / port 在后台列：等它到了再按内容定高。
-                await Task.Delay(name is "launcher-kill" or "launcher-port" ? 1500 : 300);
+                await Task.Delay(name is "launcher-kill" or "launcher-port" || name.StartsWith("launcher-path", StringComparison.Ordinal) ? 1500 : 300);
                 panel.Height = launcher.ContentHeightDip;
                 break;
             case ClipboardPanel clipboard:

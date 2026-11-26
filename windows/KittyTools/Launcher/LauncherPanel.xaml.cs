@@ -84,6 +84,30 @@ public sealed partial class LauncherPanel : UserControl
                 model.UserMovedSelection = true;
             }
 
+            // 多选（L3）：Ctrl 点勾上 / 去掉一行，Shift 点从起点勾到这一行；平常的点清掉勾选
+            if (IsDown(VirtualKey.Control) && CanMark(index))
+            {
+                var marks = _marked.Count == 0 && CanMark(_selected) ? new HashSet<string> { Model!.Results[_selected].Id } : new HashSet<string>(_marked);
+                var id = Model!.Results[index].Id;
+                if (!marks.Remove(id))
+                {
+                    marks.Add(id);
+                }
+
+                _markAnchor = index;
+                ApplyMarks(marks);
+            }
+            else if (IsDown(VirtualKey.Shift) && CanMark(index))
+            {
+                var anchor = _markAnchor >= 0 ? _markAnchor : _selected;
+                MarkRange(anchor, index);
+                _markAnchor = anchor;
+            }
+            else
+            {
+                ClearMarks();
+            }
+
             Select(index, MotionCurve.Glide);
         };
         _list.ItemDoubleTapped += index =>
@@ -294,6 +318,9 @@ public sealed partial class LauncherPanel : UserControl
         AfterAction();
     }
 
+    /// <summary>自检里晚一点再摆的那一步（拿着它，不然计时器还没到点就被回收了）。</summary>
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _probeTimer;
+
     /// <summary>截图自检摆状态（UiSnapshotProbe）：launcher-home / -calc / -kill / -empty / -actions / -keys。</summary>
     public void ApplyProbeState(string name)
     {
@@ -301,6 +328,25 @@ public sealed partial class LauncherPanel : UserControl
         {
             case "launcher-home":
                 SetQuery(string.Empty);
+                break;
+            // 路径模式（PLAN-v26 L1、L3）：系统自带的壁纸文件夹（截图里没有个人的东西）；文件夹在后台读，读到了再勾两行、开 Ctrl+K
+            case "launcher-path":
+                SetQuery(@"C:\Windows\Web\");
+                break;
+            case "launcher-path-filter":
+                SetQuery(@"C:\Windows\Web\sc");
+                break;
+            case "launcher-path-multi":
+                SetQuery(@"C:\Windows\Web\");
+                var later = _probeTimer = DispatcherQueue.CreateTimer();
+                later.Interval = TimeSpan.FromMilliseconds(900);
+                later.IsRepeating = false;
+                later.Tick += (_, _) =>
+                {
+                    MarkRange(1, 2);
+                    ToggleActions();
+                };
+                later.Start();
                 break;
             case "launcher-calc":
                 SetQuery("10 km to mi");
@@ -395,6 +441,7 @@ public sealed partial class LauncherPanel : UserControl
         }
 
         model.UserMovedSelection = false;
+        ClearMarks();
         model.Search(SearchBox.Text);
         Render(null, resetScroll: true);
     }
@@ -431,6 +478,13 @@ public sealed partial class LauncherPanel : UserControl
         _selectedId = _selected >= 0 ? results[_selected].Id : null;
         _pendingHosts.Clear();
         _pendingPaths.Clear();
+        // 后台结果换了一批（文件到了、读完了文件夹、删掉了几项）：勾着的还在的留着
+        _marked.IntersectWith(results.Select(item => item.Id));
+        if (_marked.Count == 0)
+        {
+            _markAnchor = -1;
+        }
+
         _list.SetItems(layout, titles, _selected, BuildRow);
         _list.Visibility = results.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         EmptyText.Text = model.EmptyText;
@@ -457,6 +511,11 @@ public sealed partial class LauncherPanel : UserControl
     {
         var item = Model!.Results[index];
         var row = new LauncherRowView(item, index, Context(item, index));
+        if (_marked.Contains(item.Id))
+        {
+            row.SetMarked(true);
+        }
+
         // 滚出来的新行要的网站图标、文件图标也攒成一批去查（Render 末尾那一次只管得到当时建好的行）。
         if ((_pendingHosts.Count > 0 || _pendingPaths.Count > 0) && !_iconLoadQueued)
         {
@@ -873,12 +932,16 @@ public sealed partial class LauncherPanel : UserControl
         switch (e.Key)
         {
             case VirtualKey.Escape:
-                // 先撤上膛，再清空搜索，最后收起。
+                // 先撤上膛，再清掉多选，再清空搜索，最后收起。
                 e.Handled = true;
                 model.DropUndo();
                 if (model.Disarm())
                 {
                     AfterAction();
+                }
+                else if (_marked.Count > 0)
+                {
+                    ClearMarks();
                 }
                 else if (SearchBox.Text.Length > 0)
                 {
@@ -899,6 +962,19 @@ public sealed partial class LauncherPanel : UserControl
                     break;
                 }
 
+                // Shift+↑↓（L3）：文件搜索、路径模式里从起点勾到移到的那一行（不绕回）
+                if (shift && !control && !alt && CanMark(_selected))
+                {
+                    var anchor = _markAnchor >= 0 ? _markAnchor : _selected;
+                    var next = Math.Clamp(_selected + delta, 0, model.Results.Count - 1);
+                    model.UserMovedSelection = true;
+                    Select(next, repeat ? MotionCurve.Instant : MotionCurve.Snap);
+                    MarkRange(anchor, next);
+                    _markAnchor = anchor;
+                    break;
+                }
+
+                ClearMarks();
                 MoveSelection(delta, repeat);
                 break;
             case VirtualKey.Enter:
@@ -909,7 +985,19 @@ public sealed partial class LauncherPanel : UserControl
                 }
 
                 model.KeyRepeat = repeat;
-                if (alt)
+                if (_marked.Count > 1 && !alt && !shift)
+                {
+                    // 多选（L3）：Enter 一起打开，Ctrl+Enter 一起在资源管理器里显示
+                    if (control)
+                    {
+                        model.RevealAll(MarkedItems);
+                    }
+                    else
+                    {
+                        model.OpenAll(MarkedItems);
+                    }
+                }
+                else if (alt)
                 {
                     model.SearchInExplorer();
                 }
@@ -937,13 +1025,23 @@ public sealed partial class LauncherPanel : UserControl
                 AfterAction();
                 break;
             case VirtualKey.Tab:
-                // 没得补也吞掉，不让焦点跳到别的控件。
+                // 没得补也吞掉，不让焦点跳到别的控件。路径模式里 Shift+Tab 回上一级（L1）。
                 e.Handled = true;
+                if (shift && model.GoUp())
+                {
+                    break;
+                }
+
                 if (item is not null)
                 {
                     model.Complete(item);
                 }
 
+                break;
+            // Ctrl+T：文件、文件夹在终端中打开（L2）
+            case VirtualKey.T when control && !shift && item is not null && LauncherModel.IsFileRow(item):
+                e.Handled = true;
+                model.OpenInTerminal(item);
                 break;
             // 菜单开着时 → 交给过滤框（HandlePaletteKey 没接它）；不然光标在末尾按 → 会把刚开的菜单又关掉。
             case VirtualKey.Right when item is not null && CaretAtEnd && !_palette.IsOpen:
@@ -965,13 +1063,30 @@ public sealed partial class LauncherPanel : UserControl
                 CloseRequested?.Invoke();
                 break;
             case VirtualKey.C when control && SearchBox.SelectionLength == 0 && item is not null:
-                if (shift)
+                // 文件、文件夹（L2、L3）：Ctrl+Shift+C 拷贝文件、Ctrl+Alt+C 复制终端写法的路径；多选时 Ctrl+C 一行一个路径
+                var files = _marked.Count > 1 ? MarkedItems : new List<LauncherItem> { item };
+                if (alt && !shift && LauncherModel.IsFileRow(item))
+                {
+                    e.Handled = true;
+                    model.CopyShellPaths(files);
+                }
+                else if (shift && LauncherModel.IsFileRow(item))
+                {
+                    e.Handled = true;
+                    model.CopyFiles(files);
+                }
+                else if (shift)
                 {
                     if (LauncherText.IsWebLink(item))
                     {
                         e.Handled = true;
                         model.Copy(item, LauncherModel.CopyFormat.Markdown);
                     }
+                }
+                else if (_marked.Count > 1)
+                {
+                    e.Handled = true;
+                    model.CopyPaths(files);
                 }
                 else if (model.CopyTitle(item) is not null)
                 {
@@ -1009,7 +1124,8 @@ public sealed partial class LauncherPanel : UserControl
                 break;
             case >= VirtualKey.Number1 and <= VirtualKey.Number9 when control:
                 e.Handled = true;
-                var number = (int)e.Key - (int)VirtualKey.Number1;
+                // 从看得见的第一行数起（L6，同 mac 0.10.1：滚下去之后 Ctrl+1 是屏幕上第一行）
+                var number = _list.FirstVisible + (int)e.Key - (int)VirtualKey.Number1;
                 if (number < model.Results.Count)
                 {
                     model.KeyRepeat = repeat;
@@ -1039,6 +1155,65 @@ public sealed partial class LauncherPanel : UserControl
     }
 
     private bool CaretAtEnd => SearchBox.SelectionLength == 0 && SearchBox.SelectionStart == SearchBox.Text.Length;
+
+    // ---- 多选（PLAN-v26 L3，同 mac 0.10.3 c38685f0）：文件搜索、路径模式里 Shift+↑↓、Ctrl 点、Shift 点勾好几行
+
+    /// <summary>勾上的那几行（结果的编号）和 Shift 扩选的起点。</summary>
+    private readonly HashSet<string> _marked = new();
+    private int _markAnchor = -1;
+
+    private List<LauncherItem> MarkedItems => Model?.Results.Where(item => _marked.Contains(item.Id)).ToList() ?? new List<LauncherItem>();
+
+    /// <summary>能勾的：文件搜索、路径模式里的文件 / 文件夹行。</summary>
+    private bool CanMark(int index)
+        => Model is { } model && index >= 0 && index < model.Results.Count && (model.Mode.IsFileMode() || model.InPathMode) &&
+           model.Results[index].IsFileResult && LauncherModel.IsFileRow(model.Results[index]);
+
+    private void MarkRange(int from, int to)
+    {
+        var marks = new HashSet<string>();
+        for (var index = Math.Min(from, to); index <= Math.Max(from, to); index++)
+        {
+            if (CanMark(index))
+            {
+                marks.Add(Model!.Results[index].Id);
+            }
+        }
+
+        ApplyMarks(marks);
+    }
+
+    private void ClearMarks()
+    {
+        _markAnchor = -1;
+        if (_marked.Count > 0)
+        {
+            ApplyMarks(new HashSet<string>());
+        }
+    }
+
+    private void ApplyMarks(HashSet<string> marks)
+    {
+        _marked.Clear();
+        _marked.UnionWith(marks);
+        if (Model is not { } model)
+        {
+            return;
+        }
+
+        for (var index = 0; index < model.Results.Count; index++)
+        {
+            _list.RowAt(index)?.SetMarked(_marked.Contains(model.Results[index].Id));
+        }
+
+        if (_marked.Count > 1)
+        {
+            model.Announce($"勾选了 {_marked.Count} 项");
+        }
+
+        _footerKey = string.Empty;
+        UpdateFooter();
+    }
 
     private static bool IsDown(VirtualKey key)
         => Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(key)
@@ -1094,8 +1269,8 @@ public sealed partial class LauncherPanel : UserControl
             return;
         }
 
-        // 点菜单项（不经过 Enter）执行的也要刷新上膛的副标题和底栏。
-        var actions = model.ActionsFor(item)
+        // 点菜单项（不经过 Enter）执行的也要刷新上膛的副标题和底栏。多选时是对勾上的那几项的动作（L3）。
+        var actions = (_marked.Count > 1 ? model.ActionsForMany(MarkedItems) : model.ActionsFor(item))
             .Select(action => action.Run is { } run
                 ? action with
                 {

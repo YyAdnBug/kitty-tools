@@ -63,6 +63,15 @@ public sealed class LauncherCommandTableTests
         Assert.AreEqual(LauncherCommandTable.BuiltIns.Length, LauncherCommandTable.BuiltIns.Select(command => command.Id).Distinct().Count());
     }
 
+    /// <summary>PLAN-v26 L5：命令 / 脚本的别名和应用别名撞了也描橙框。</summary>
+    [TestMethod]
+    public void ConflictsWithAppAliases()
+    {
+        var found = LauncherCommandTable.Conflicts(
+            new (string, string?)[] { ("script:a", "vs"), ("b", "ps") }, Array.Empty<string>(), new[] { "VS", string.Empty });
+        CollectionAssert.AreEquivalent(new[] { "script:a" }, found.ToArray());
+    }
+
     [TestMethod]
     public void AliasEqualToAnotherKeywordKeepsTheOriginal()
     {

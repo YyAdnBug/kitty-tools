@@ -403,19 +403,20 @@ internal sealed partial class SettingsWindow
         SettingsService.Save();
     }
 
-    /// <summary>别名和别的命令、网页搜索的关键词撞了：那一格描橙框。</summary>
+    /// <summary>别名和别的命令、网页搜索的关键词、应用别名（PLAN-v26 L5）撞了：那一格描橙框。</summary>
     private void MarkAliasConflicts()
     {
         var settings = LauncherCommandKeys.Settings;
         var engines = (SettingsService.Current.LauncherSearchEngines ?? WebSearch.Defaults()).Select(engine => engine.Keyword);
         var conflicts = LauncherCommandTable.Conflicts(
-            LauncherCommandKeys.Rows.Where(row => settings.IsOn(row.Id)).Select(row => (row.Id, settings.Alias(row.Id, row.Keyword))), engines);
+            LauncherCommandKeys.Rows.Where(row => settings.IsOn(row.Id)).Select(row => (row.Id, settings.Alias(row.Id, row.Keyword))), engines,
+            SettingsService.Current.LauncherAppAliases?.Values);
         foreach (var (id, box) in _aliasBoxes)
         {
             if (conflicts.Contains(id))
             {
                 box.BorderBrush = Theme.Caution();
-                ToolTipService.SetToolTip(box, "和别的命令或网页搜索的关键词撞了");
+                ToolTipService.SetToolTip(box, "和别的命令、网页搜索的关键词或应用别名撞了");
             }
             else
             {

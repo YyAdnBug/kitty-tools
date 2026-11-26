@@ -7,7 +7,8 @@
 // 「open / find 词」、空格开头搜文件，「quit / hide / forcequit / kill / port 空格」列正在运行的应用 / 后台进程 / 在监听的端口
 // （都在后台列、异步到）。不可撤销的（清空回收站、注销、重启、关机、结束进程、强制退出）第一下只上膛（选中行的副标题换成
 // 确认提示），同一个键再按一次才执行；打字、移动选中、Esc、收起都撤掉。打开应用 / 文件 / 网址先收起面板、再交给系统，
-// 打开成功才记使用。没执行就收起的，60 秒内再呼出保留查询和选中项。Ctrl+K 的动作表在 ActionsFor（右键同一份）。
+// 打开成功才记使用。没执行就收起的、打开了文件（文件搜索、路径模式）的，90 秒内再呼出保留查询和选中项（PLAN-v26 L4）。
+// Ctrl+K 的动作表在 ActionsFor（右键同一份）。输入以 C:\、~\、%变量%\、\\服务器\共享\ 开头时是路径模式（PLAN-v26 L1，Core/PathBrowse）。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 
@@ -29,8 +30,20 @@ internal sealed partial class LauncherModel
     /// <summary>浏览历史最多列几行：排在书签后面，别把兜底搜索、补全提示挤出可见区。</summary>
     private const int HistoryLimit = 5;
 
-    /// <summary>没执行就收起后，多久内再呼出保留查询。</summary>
-    private const long KeepQueryMs = 60_000;
+    /// <summary>没执行就收起、或者打开了文件之后，多久内再呼出保留查询（PLAN-v26 L4，同 mac eb4c9495：60 → 90 秒）。</summary>
+    private const long KeepQueryMs = 90_000;
+
+    /// <summary>这次执行的是文件搜索 / 路径模式里的一行（打开了也留着查询，L4）。</summary>
+    private bool _executedFile;
+
+    // 路径模式（L1）：读到的那个文件夹（展开后的）、读到的东西、读不出来的原因；读在线程池上。
+    private CancellationTokenSource? _pathCts;
+    private string? _pathFolder;
+    private List<PathBrowse.Entry>? _pathEntries;
+    private string? _pathProblem;
+
+    /// <summary>现在是路径模式（Shift+Tab 回上一级、多选认它）。</summary>
+    public bool InPathMode { get; private set; }
 
     private sealed record Armed(string Id, bool CommandKey, string Text);
 
@@ -143,6 +156,7 @@ internal sealed partial class LauncherModel
     {
         _shown = true;
         Executed = false;
+        _executedFile = false;
         UserMovedSelection = false;
         LauncherOpeners.ForgetBrowsers();
         ResetIp();
@@ -231,8 +245,12 @@ internal sealed partial class LauncherModel
         _targets = null;
         _targetsMode = LauncherMode.Normal;
         _filesQuery = null;
+        _pathCts?.Cancel();
+        _pathFolder = null;
+        _pathEntries = null;
+        _pathProblem = null;
         ResetIp();
-        if (Executed || Query.Trim().Length == 0)
+        if ((Executed && !_executedFile) || Query.Trim().Length == 0)
         {
             _keptAt = 0;
             _keptQuery = string.Empty;
@@ -246,6 +264,7 @@ internal sealed partial class LauncherModel
         }
 
         Executed = false;
+        _executedFile = false;
     }
 
     /// <summary>后台换上了新的应用目录 / 浏览器数据：开着、在搜、用户还没挑过、没上膛时按新的重搜。</summary>
@@ -304,6 +323,19 @@ internal sealed partial class LauncherModel
         {
             CancelRatesFetch();
         }
+
+        InPathMode = false;
+        if (mode == LauncherMode.Normal && PathQuery(query) is { } browse)
+        {
+            InPathMode = true;
+            BrowsePath(browse);
+            return;
+        }
+
+        _pathCts?.Cancel();
+        _pathFolder = null;
+        _pathEntries = null;
+        _pathProblem = null;
 
         if (mode.IsFileMode())
         {
@@ -834,6 +866,307 @@ internal sealed partial class LauncherModel
 
     // ---- 文件搜索、带对象模式（异步）
 
+    /// <summary>
+    /// 后台结果到了时停在哪一行：接着上次的查询呼出、还没自己挪过选中时，回到上次那一行（L4：打开文件后再呼出，文件结果是后到的）。
+    /// </summary>
+    private string? KeptRow => ResumesQuery && !UserMovedSelection ? KeptSelection : null;
+
+    // ---- 路径模式（PLAN-v26 L1）
+
+    private static PathBrowse.Parsed? PathQuery(string query)
+        => PathBrowse.Parse(query, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), Environment.GetEnvironmentVariable);
+
+    /// <summary>列出输入的那个文件夹：读过就按没打完的那段筛，没读过先在后台读（读好了重搜一遍）。</summary>
+    private void BrowsePath(PathBrowse.Parsed browse)
+    {
+        if (!string.Equals(_pathFolder, browse.Folder, StringComparison.OrdinalIgnoreCase))
+        {
+            ReadFolder(browse);
+        }
+
+        if (_pathEntries is not { } entries)
+        {
+            Results = new List<LauncherItem>();
+            EmptyText = _pathProblem ?? "正在读这个文件夹…";
+            return;
+        }
+
+        var rows = new List<LauncherItem>();
+        if (browse.Partial.Length == 0)
+        {
+            // 「C:\Windows\」：先是这个文件夹自己（Enter 打开它），下面是里面的东西
+            var name = Path.GetFileName(browse.Folder.TrimEnd('\\'));
+            rows.Add(new LauncherItem
+            {
+                Kind = LauncherKind.Path,
+                Target = browse.Folder,
+                Title = name.Length > 0 ? $"打开「{name}」" : $"打开 {browse.Folder}",
+                Subtitle = LauncherText.MiddleEllipsis(browse.Folder),
+                IsFileResult = true,
+                IsFolder = true,
+            });
+        }
+
+        rows.AddRange(PathBrowse.Filter(entries, browse.Partial).Select(entry => new LauncherItem
+        {
+            Kind = LauncherKind.Path,
+            Target = browse.Folder + entry.Name,
+            Title = entry.Name,
+            Subtitle = entry.IsFolder ? "文件夹 · Tab 进入" : Path.GetExtension(entry.Name) is { Length: > 1 } extension
+                ? extension[1..].ToUpperInvariant() + " 文件"
+                : "文件",
+            Completion = PathBrowse.Completion(browse, entry),
+            IsFileResult = true,
+            IsFolder = entry.IsFolder,
+        }));
+        Results = rows;
+        Groups = new List<LauncherGroup> { new(0, LauncherText.MiddleEllipsis(browse.Folder)) };
+        EmptyText = entries.Count == 0 ? "这个文件夹是空的" : "没有名字对得上的";
+    }
+
+    /// <summary>
+    /// 在线程池上读文件夹（不卡打字）：读好了回界面线程、还是这个文件夹就重搜。网络路径（\\）1 秒没回就不等了（L1）。
+    /// </summary>
+    private void ReadFolder(PathBrowse.Parsed browse)
+    {
+        _pathCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _pathCts = cts;
+        var folder = browse.Folder;
+        _pathFolder = folder;
+        _pathEntries = null;
+        _pathProblem = null;
+        var dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+        void Done(List<PathBrowse.Entry>? entries, string? problem) => dispatcher?.TryEnqueue(() =>
+        {
+            if (cts.IsCancellationRequested || !string.Equals(_pathFolder, folder, StringComparison.OrdinalIgnoreCase) ||
+                _pathEntries is not null || _pathProblem is not null)
+            {
+                return;
+            }
+
+            _pathEntries = entries;
+            _pathProblem = entries is null ? problem ?? "读不出这个文件夹" : null;
+            if (_shown && InPathMode)
+            {
+                Search(Query);
+                ResultsChanged(KeptRow);
+            }
+        });
+
+        _ = Task.Run(() => ReadEntries(folder), cts.Token)
+            .ContinueWith(task => Done(task.IsCompletedSuccessfully ? task.Result.Entries : null,
+                task.IsCompletedSuccessfully ? task.Result.Problem : null), TaskScheduler.Default);
+        if (browse.IsNetwork)
+        {
+            _ = Task.Delay(1000, cts.Token).ContinueWith(task =>
+            {
+                if (!task.IsCanceled)
+                {
+                    Done(null, "这个网络文件夹 1 秒内没有回应");
+                }
+            }, TaskScheduler.Default);
+        }
+    }
+
+    private static (List<PathBrowse.Entry>? Entries, string? Problem) ReadEntries(string folder)
+    {
+        try
+        {
+            if (!Directory.Exists(folder))
+            {
+                return (null, "没有这个文件夹");
+            }
+
+            var entries = new List<PathBrowse.Entry>();
+            var options = new EnumerationOptions { IgnoreInaccessible = true, AttributesToSkip = 0 };
+            foreach (var info in new DirectoryInfo(folder).EnumerateFileSystemInfos("*", options))
+            {
+                entries.Add(new PathBrowse.Entry(info.Name, (info.Attributes & FileAttributes.Directory) != 0,
+                    PathBrowse.IsHidden(info.Name, info.Attributes)));
+                // ponytail：几万项的文件夹只读前两万项（筛之前），再多的要换成边读边列
+                if (entries.Count >= 20_000)
+                {
+                    break;
+                }
+            }
+
+            return (entries, null);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return (null, "没有权限读这个文件夹");
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"launcher.path-read {ex.GetType().Name}");
+            return (null, "读不出这个文件夹");
+        }
+    }
+
+    /// <summary>Shift+Tab：路径模式里回上一级（到了根不动）。不是路径模式返回 false（交给原来的 Tab）。</summary>
+    public bool GoUp()
+    {
+        if (!InPathMode)
+        {
+            return false;
+        }
+
+        if (PathBrowse.Up(Query) is { } up)
+        {
+            ReplaceQuery(up);
+        }
+        else
+        {
+            Beep();
+        }
+
+        return true;
+    }
+
+    // ---- 文件的几样（PLAN-v26 L2、L3）：在终端中打开、拷贝文件、复制 PowerShell 写法的路径，多选时一起打开 / 显示 / 复制 / 删
+
+    /// <summary>这一行是能在终端里打开、拷贝成文件的东西（存在的文件 / 文件夹）。</summary>
+    public static bool IsFileRow(LauncherItem item)
+        => item.Kind == LauncherKind.Path && (File.Exists(item.Target) || Directory.Exists(item.Target));
+
+    /// <summary>Ctrl+T：在终端中打开（文件夹就是它，文件是它所在的文件夹）。</summary>
+    public void OpenInTerminal(LauncherItem item)
+    {
+        var folder = Directory.Exists(item.Target) ? item.Target : Path.GetDirectoryName(item.Target);
+        if (folder is null)
+        {
+            Beep();
+            return;
+        }
+
+        Close();
+        if (LauncherOpeners.OpenTerminal(folder) is { } error)
+        {
+            NoticeHost.Show("没能打开终端", error, NoticeTone.Error);
+        }
+    }
+
+    /// <summary>Ctrl+Shift+C：把文件本身拷进剪贴板（在资源管理器里能粘贴；剪贴板历史照常记）。</summary>
+    public void CopyFiles(IReadOnlyList<LauncherItem> items)
+    {
+        var paths = items.Where(IsFileRow).Select(item => item.Target).ToList();
+        if (paths.Count == 0)
+        {
+            Beep();
+            return;
+        }
+
+        if (!ClipboardWriter.WriteFiles(paths))
+        {
+            NoticeHost.Show("没能拷贝", "剪贴板被别的程序占着，稍后再试", NoticeTone.Error);
+            return;
+        }
+
+        Close();
+        NoticeHost.Show(paths.Count == 1 ? "已拷贝文件" : $"已拷贝 {paths.Count} 个文件",
+            paths.Count == 1 ? Path.GetFileName(paths[0].TrimEnd('\\')) : "到资源管理器里粘贴", NoticeTone.Normal);
+    }
+
+    /// <summary>Ctrl+Alt+C：复制 PowerShell 写法的路径（单引号括起，多个用空格隔开）。</summary>
+    public void CopyShellPaths(IReadOnlyList<LauncherItem> items)
+        => CopyText(string.Join(" ", items.Where(item => item.Kind == LauncherKind.Path).Select(item => PathBrowse.PowerShellQuoted(item.Target))),
+            "复制终端写法的路径");
+
+    /// <summary>多选时 Ctrl+C：一行一个路径。</summary>
+    public void CopyPaths(IReadOnlyList<LauncherItem> items)
+        => CopyText(string.Join("\r\n", items.Where(item => item.Kind == LauncherKind.Path).Select(item => item.Target)), "复制路径");
+
+    private void CopyText(string text, string title)
+    {
+        if (text.Length == 0)
+        {
+            Beep();
+            return;
+        }
+
+        if (!ClipboardWriter.WriteText(text))
+        {
+            NoticeHost.Show("没能复制", "剪贴板被别的程序占着，稍后再试", NoticeTone.Error);
+            return;
+        }
+
+        ClipboardService.Instance?.MarkOwnWrite();
+        ClipboardService.Instance?.Store.RecordOwnText(text);
+        Close();
+        NoticeHost.Show("已" + title, LauncherText.MiddleEllipsis(text, 80), NoticeTone.Normal);
+    }
+
+    /// <summary>多选时 Enter：一起打开（一个打不开不挡别的，最后说哪几个没打开）。</summary>
+    public void OpenAll(IReadOnlyList<LauncherItem> items)
+    {
+        var query = Query;
+        _executedFile = true;
+        Close();
+        var failed = 0;
+        foreach (var item in items)
+        {
+            if (LauncherOpeners.Start(item.Target) is null)
+            {
+                Record(item, query);
+            }
+            else
+            {
+                failed++;
+            }
+        }
+
+        if (failed > 0)
+        {
+            NoticeHost.Show($"有 {failed} 个没能打开", string.Empty, NoticeTone.Warning);
+        }
+    }
+
+    /// <summary>多选时 Ctrl+Enter：一起在资源管理器里显示。</summary>
+    public void RevealAll(IReadOnlyList<LauncherItem> items)
+    {
+        _executedFile = true;
+        Close();
+        foreach (var item in items)
+        {
+            LauncherOpeners.Reveal(item.Target);
+        }
+    }
+
+    /// <summary>多选时 Ctrl+K 里的「移到回收站」：一个个删（能在回收站里还原），删掉的从列表里拿掉。</summary>
+    public void RecycleAll(IReadOnlyList<LauncherItem> items)
+    {
+        var removed = new HashSet<string>();
+        string? error = null;
+        foreach (var item in items)
+        {
+            if (LauncherOpeners.Recycle(item.Target) is { } problem)
+            {
+                error ??= problem;
+            }
+            else
+            {
+                removed.Add(item.Id);
+            }
+        }
+
+        Results = Results.Where(result => !removed.Contains(result.Id)).ToList();
+        ResultsChanged(null);
+        NoticeHost.Show(error is null ? $"已把 {removed.Count} 项移到回收站" : $"移到回收站 {removed.Count} 项，有的没删成",
+            error ?? "在回收站里能还原", error is null ? NoticeTone.Normal : NoticeTone.Warning);
+    }
+
+    /// <summary>多选时的 Ctrl+K（L3）：一起打开 / 显示 / 复制路径 / 拷贝文件 / 复制终端写法 / 移到回收站。</summary>
+    public List<PaletteItem> ActionsForMany(IReadOnlyList<LauncherItem> items) => new()
+    {
+        new PaletteItem($"打开这 {items.Count} 项", Glyphs.OpenInNewWindow, 0, () => OpenAll(items), "Enter"),
+        new PaletteItem("在资源管理器中显示", Glyphs.Folder, 0, () => RevealAll(items), "Ctrl+Enter"),
+        new PaletteItem("复制路径", Glyphs.Link, 2, () => CopyPaths(items), "Ctrl+C"),
+        new PaletteItem("拷贝文件", Glyphs.Copy, 2, () => CopyFiles(items), "Ctrl+Shift+C"),
+        new PaletteItem("复制终端写法的路径", Glyphs.CommandPrompt, 2, () => CopyShellPaths(items), "Ctrl+Alt+C"),
+        new PaletteItem($"把这 {items.Count} 项移到回收站", Glyphs.Delete, 4, () => RecycleAll(items), Danger: true),
+    };
+
     private void SearchFiles()
     {
         var terms = Terms;
@@ -911,7 +1244,7 @@ internal sealed partial class LauncherModel
                 }
 
                 ShowFiles(mode, terms, items);
-                ResultsChanged(null);
+                ResultsChanged(KeptRow);
             });
         });
     }
@@ -1087,6 +1420,8 @@ internal sealed partial class LauncherModel
     /// <summary>Enter。</summary>
     public void Execute(LauncherItem item)
     {
+        // 打开了文件搜索 / 路径模式里的一行：收起后 90 秒内再呼出回到原来的搜索和那一行（L4）
+        _executedFile = item.IsFileResult;
         if (InTargetMode(item))
         {
             RunTarget(item, LauncherCommands.RowMode(Mode, item.Process), commandKey: false);
@@ -1904,12 +2239,23 @@ internal sealed partial class LauncherModel
             }));
         }
 
+        if (IsFileRow(item))
+        {
+            actions.Add(new PaletteItem("在终端中打开", Glyphs.CommandPrompt, 1, () => OpenInTerminal(item), "Ctrl+T"));
+        }
+
         // 2 复制（计算结果的 Ctrl+C 和 Ctrl+Enter 一样，不重复列）。
         // 计算结果、ip 的 Ctrl+C 和 Ctrl+Enter 一样，不重复列。
         if (item.Kind is not (LauncherKind.Calculation or LauncherKind.Ip) && CopyTitle(item) is { } copyTitle)
         {
             actions.Add(new PaletteItem(copyTitle, item.Kind is LauncherKind.App or LauncherKind.Path ? Glyphs.Link : Glyphs.Copy, 2,
                 () => Copy(item), "Ctrl+C"));
+        }
+
+        if (IsFileRow(item))
+        {
+            actions.Add(new PaletteItem("拷贝文件", Glyphs.Copy, 2, () => CopyFiles(new[] { item }), "Ctrl+Shift+C"));
+            actions.Add(new PaletteItem("复制终端写法的路径", Glyphs.CommandPrompt, 2, () => CopyShellPaths(new[] { item }), "Ctrl+Alt+C"));
         }
 
         if (web)

@@ -156,13 +156,32 @@ internal sealed partial class LauncherListView : Grid
     /// <summary>某一行现在建好的视图（换副标题、键帽用）；不在可见区附近时 null。</summary>
     public LauncherRowView? RowAt(int row) => _rows.TryGetValue(row, out var view) ? view : null;
 
-    /// <summary>按住 Ctrl 150 ms：前九行的种类换成键帽；之后建出来的行跟着。</summary>
+    /// <summary>按住 Ctrl 150 ms：看得见的前九行的种类换成键帽（从看得见的第一行数起，PLAN-v26 L6）；之后建出来的行跟着。</summary>
     public void SetShortcutsShown(bool shown)
     {
         _shortcutsShown = shown;
+        var first = FirstVisible;
         foreach (var row in _rows.Values)
         {
-            row.SetShortcutShown(shown);
+            row.SetShortcutShown(shown, row.Index - first);
+        }
+    }
+
+    /// <summary>看得见的第一行（露出一半以上算）：Ctrl+1–9 从它数起。</summary>
+    public int FirstVisible
+    {
+        get
+        {
+            var top = _scroll.VerticalOffset - Inset;
+            for (var index = 0; index < _layout.Count; index++)
+            {
+                if (_layout.Top(index) + _layout.Height(index) / 2 >= top)
+                {
+                    return index;
+                }
+            }
+
+            return 0;
         }
     }
 
@@ -199,7 +218,7 @@ internal sealed partial class LauncherListView : Grid
                 row.SetSelected(index == _selected);
                 if (_shortcutsShown)
                 {
-                    row.SetShortcutShown(true);
+                    row.SetShortcutShown(true, index - FirstVisible);
                 }
 
                 _rows[index] = row;
