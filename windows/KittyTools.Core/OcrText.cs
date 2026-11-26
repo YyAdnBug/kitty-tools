@@ -164,6 +164,36 @@ public static partial class OcrText
         >= '\uF900' and <= '\uFAFF' or
         >= '\uFF00' and <= '\uFFEF';
 
+    /// <summary>
+    /// 一行的字从词拼回来（PLAN-v26 O1，Windows 核验 R103 时量的）：Windows 的识字常把一个短英文词拆成两块（「G ot it」「N ew」「github ℃ om」），
+    /// 拆开的两块之间的空只有字高的 0.07–0.16，真的词间空在 0.3 以上——两边都是字母数字、空不到字高的 0.2 就不加空格。
+    /// 词没有框（全是 0）时照原来用空格连。
+    /// </summary>
+    public static string JoinWords(IReadOnlyList<(string Text, double Left, double Right, double Height)> words)
+    {
+        var builder = new System.Text.StringBuilder();
+        for (var index = 0; index < words.Count; index++)
+        {
+            var word = words[index];
+            if (index > 0)
+            {
+                var previous = words[index - 1];
+                var height = Math.Max(previous.Height, word.Height);
+                var gap = word.Left - previous.Right;
+                var tight = height > 0 && gap < height * 0.2 && previous.Text.Length > 0 && word.Text.Length > 0 &&
+                            char.IsAsciiLetterOrDigit(previous.Text[^1]) && char.IsAsciiLetterOrDigit(word.Text[0]);
+                if (!tight)
+                {
+                    builder.Append(' ');
+                }
+            }
+
+            builder.Append(word.Text);
+        }
+
+        return builder.ToString();
+    }
+
     /// <summary>Windows 的识字会在汉字 / 假名之间插空格：两边都是 CJK 的空格去掉（英文词之间的保留）。</summary>
     public static string RemoveCjkSpaces(string text)
     {
