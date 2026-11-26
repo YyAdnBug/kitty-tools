@@ -6,7 +6,8 @@
 //   TEST_RUNNER_KITTY_LIVE_SCROLL_APP=/tmp/kitty-scroll xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
 //     test '-only-testing:KittyToolsTests/ScrollAppProbeTests/record()'
 //   （同一个目录）… '-only-testing:KittyToolsTests/ScrollAppProbeTests/replay()'
-// 另可加 TEST_RUNNER_KITTY_LIVE_SCROLL_APP_BUNDLE=<bundle id>（默认 WPS：com.kingsoft.wpsoffice.mac）。
+// 另可加 TEST_RUNNER_KITTY_LIVE_SCROLL_APP_BUNDLE=<bundle id>（默认 WPS：com.kingsoft.wpsoffice.mac）、
+// TEST_RUNNER_KITTY_LIVE_SCROLL_APP_DOCS=doc,sheet,pdf（录哪几份，默认全部）。
 import AppKit
 import ScreenCaptureKit
 import Testing
@@ -35,7 +36,11 @@ struct ScrollAppProbeTests {
     let app = try #require(
       NSWorkspace.shared.urlForApplication(withBundleIdentifier: Self.bundle), "没装 \(Self.bundle)")
     try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
-    for document in try Self.makeDocuments() {
+    let wanted =
+      (ProcessInfo.processInfo.environment["KITTY_LIVE_SCROLL_APP_DOCS"] ?? "doc,sheet,pdf")
+      .split(separator: ",").map(String.init)
+    for document in try Self.makeDocuments()
+    where wanted.contains(where: { document.lastPathComponent.contains("-\($0).") }) {
       let configuration = NSWorkspace.OpenConfiguration()
       configuration.activates = true
       let running = try await NSWorkspace.shared.open(
@@ -52,7 +57,7 @@ struct ScrollAppProbeTests {
     }
   }
 
-  /// 一份长文档（标题、段落、列表、表格，转成 docx）和一张表格（CSV），内容是随机拼的词
+  /// 一份长文档（标题、段落、列表、表格，转成 docx）、一张表格（CSV）和同一篇文档排成 A4 的 PDF，内容是随机拼的词
   static func makeDocuments() throws -> [URL] {
     let words = [
       "长截图", "拼接", "滚动", "选区", "预览", "文档", "表格", "段落", "标题", "列表", "the", "quick", "brown",
@@ -93,7 +98,32 @@ struct ScrollAppProbeTests {
     }
     let sheet = directory.appending(path: "scroll-probe-sheet.csv")
     try csv.write(to: sheet, atomically: true, encoding: .utf8)
-    return [docx, sheet]
+    let pdf = directory.appending(path: "scroll-probe-pdf.pdf")
+    try makePDF(html: Data(html.utf8), to: pdf)
+    return [docx, sheet, pdf]
+  }
+
+  /// 把 HTML 排成 A4（595 × 842 点、四边 56 点）多页 PDF：CoreText 一页一页地排
+  static func makePDF(html: Data, to url: URL) throws {
+    let text = try NSAttributedString(
+      data: html, options: [.documentType: NSAttributedString.DocumentType.html],
+      documentAttributes: nil)
+    var box = CGRect(x: 0, y: 0, width: 595, height: 842)
+    let context = try #require(CGContext(url as CFURL, mediaBox: &box, nil))
+    let framesetter = CTFramesetterCreateWithAttributedString(text)
+    var start = 0
+    while start < text.length {
+      context.beginPDFPage(nil)
+      let frame = CTFramesetterCreateFrame(
+        framesetter, CFRange(location: start, length: 0),
+        CGPath(rect: box.insetBy(dx: 56, dy: 56), transform: nil), nil)
+      CTFrameDraw(frame, context)
+      context.endPDFPage()
+      let visible = CTFrameGetVisibleStringRange(frame).length
+      guard visible > 0 else { break }
+      start += visible
+    }
+    context.closePDF()
   }
 
   /// 找那个 App 最大的普通窗口，按 region 取选区，按 mode 滚 6 秒、能截多快截多快，帧存进 <目录>/<name>/
