@@ -3,7 +3,8 @@
 //   没问过点「授权…」让系统问，拒绝过点「去打开…」到 系统设置 › 自动化；页脚说工具栏按钮怎么放上去，桌面或文稿同步在 iCloud
 //   里时多一行橙字（那里右键没有这些项）。
 // 「访达右键」——启用开关（Feature.finderMenu，默认关）；系统里扩展开没开（FIFinderSyncController.isExtensionEnabled）和
-//   「去打开…」；「收进一个子菜单」（Prefs.finderMenuGrouped，默认关）（拍板 D3：直接到 系统设置 › 通用 › 登录项与扩展）。15.0、15.1 的系统设置里没有扩展的入口，那两版上给一条
+//   「去打开…」；开着却没在跑（安全软件拦下了，issue #54，extensionState）时那一行是橙色 !、按钮「去重新打开…」，页脚说怎么放行、
+//   能拷贝扩展的位置；「控制访达」拒绝过时页脚说去哪打开、列表里没有时的 tccutil 命令；「收进一个子菜单」（Prefs.finderMenuGrouped，默认关）（拍板 D3：直接到 系统设置 › 通用 › 登录项与扩展）。15.0、15.1 的系统设置里没有扩展的入口，那两版上给一条
 //   终端命令和「拷贝命令」（不替用户跑）。页脚说在哪右键、哪里不出现。
 // 「新建文件」——右键里显示不显示、模板文件夹一行 +「在访达中显示」，页脚说菜单里有什么、建好后怎样。
 // 「压缩和解压」里另有一行「压缩时跳过 ›」（2026-11-13 拍板 Z1，Prefs.finderCompressSkip）：小字写跳哪几个，推进 CompressSkipPage
@@ -22,18 +23,25 @@ import UniformTypeIdentifiers
 struct FinderMenuTab: View {
   /// 系统里扩展开没开（截图自检传固定的：屏外问不到真的状态）
   var extensionEnabled: Bool?
+  /// 截图自检传固定的：打开了、访达却没把扩展跑起来（issue #54）
+  var extensionStalled: Bool?
   /// 截图自检传固定的：控制访达的授权、桌面 / 文稿是不是同步在 iCloud 里
   var finderAutomation: Permissions.AutomationState?
   var desktopInICloud: Bool?
   /// 截图自检传固定的：辅助功能给没给（「⌘X 剪切、⌘V 移动」开着时下面那行橙字）
   var accessibilityTrusted: Bool?
+  /// 「⌘X 剪切、⌘V 移动」授权有、拦截却没建起来（AppDelegate 给：FinderKeys.hasFailed）
+  var keysFailed: () -> Bool = { false }
   @State private var automation = Permissions.automation(Self.finderID)
   @State private var enabled = FIFinderSyncController.isExtensionEnabled
   @State private var folders = Self.storedFolders
   @State private var folderSelection: String?
   @State private var apps = Self.storedApps
   @State private var selection: String?
-  @State private var copied = false
+  /// 刚拷贝的是哪一条命令 / 位置（按钮换成「已拷贝」）
+  @State private var copied: String?
+  /// 打开了、访达却没把扩展跑起来（checkExtension）
+  @State private var stalled = false
   @AppStorage(Prefs.finderMenuGrouped) private var grouped = false
   @AppStorage(Prefs.finderCompressSkip) private var compressSkip = ""
   @AppStorage(Prefs.finderTrashAfterExtract) private var trashAfterExtract = false
@@ -61,6 +69,11 @@ struct FinderMenuTab: View {
         automation = Permissions.automation(Self.finderID)
         accessChecks += 1
       }
+      // 打开页面、从系统设置回来时看一眼扩展在不在跑
+      .task(id: accessChecks) {
+        guard extensionStalled == nil, extensionEnabled == nil else { return }
+        await checkExtension()
+      }
     }
     .navigationTitle(SettingsPage.finderMenu.title)
     .navigationDestination(for: String.self) { route in
@@ -72,9 +85,12 @@ struct FinderMenuTab: View {
     Form {
       Section {
         PermissionRow(
-          title: "在系统设置里打开", detail: "系统要你自己打开一次访达扩展，右键里才会出现这几项",
+          title: "在系统设置里打开",
+          detail: isStalled
+            ? "打开了，但访达没有把它跑起来，右键里没有这几项" : "系统要你自己打开一次访达扩展，右键里才会出现这几项",
           symbol: "puzzlepiece.extension.fill", color: Style.Family.finderMenu,
-          granted: extensionEnabled ?? enabled, button: "去打开…"
+          granted: (extensionEnabled ?? enabled) && !isStalled,
+          button: isStalled ? "去重新打开…" : "去打开…"
         ) { Self.openExtensionSettings() }
         .gated(by: .finderMenu)
         PermissionRow(
@@ -96,10 +112,13 @@ struct FinderMenuTab: View {
         )
         .settingsAnchor(.finderMenu)
       } footer: {
-        // 橙字是状态（桌面在 iCloud 里、旧系统没有那一项），照旧写在页脚
+        // 橙字是状态（扩展没在跑、控制访达拒绝过、桌面在 iCloud 里、旧系统没有那一项），照旧写在页脚
         let inICloud = desktopInICloud ?? Self.desktopInICloud
-        if inICloud || !Self.settingsHaveEntry {
+        let denied = (finderAutomation ?? automation) == .denied
+        if isStalled || denied || inICloud || !Self.settingsHaveEntry {
           VStack(alignment: .leading, spacing: 6) {
+            if isStalled { stalledHint }
+            if denied { deniedHint }
             if inICloud { iCloudHint }
             if !Self.settingsHaveEntry { oldSystemHint }
           }
@@ -150,15 +169,24 @@ struct FinderMenuTab: View {
         }
         .onChange(of: keys) { WhatsNew.touch(section: "在访达里用 ⌘X 剪切、⌘V 移动", of: .finderMenu) }
         // 开关关着时不去查授权
-        if keys, !(accessibilityTrusted ?? Permissions.isAccessibilityTrusted) {
-          LabeledContent {
-            Button(Permissions.Kind.accessibility.settingsTitle) {
-              Permissions.Kind.accessibility.openSettings()
+        if keys {
+          let trusted = accessibilityTrusted ?? Permissions.isAccessibilityTrusted
+          if !trusted || keysFailed() {
+            LabeledContent {
+              Button(Permissions.Kind.accessibility.settingsTitle) {
+                Permissions.Kind.accessibility.openSettings()
+              }
+            } label: {
+              // 授权显示有、拦截建不起来（系统记的那份是旧的、被别的软件拦了）：同 设置 › 刘海岛「音量和亮度」那句
+              Text(
+                trusted
+                  ? "授权显示给了，却接不住这两个键：在系统设置里把 Kitty Tools 的「辅助功能」关掉再打开"
+                  : "没有「辅助功能」授权，接不住这两个键"
+              )
+              .foregroundStyle(.orange)
             }
-          } label: {
-            Text("没有「辅助功能」授权，接不住这两个键").foregroundStyle(.orange)
+            .id(accessChecks)
           }
-          .id(accessChecks)
         }
         ItemToggle(.deskAlias)
       } header: {
@@ -338,9 +366,57 @@ struct FinderMenuTab: View {
       OperatingSystemVersion(majorVersion: 15, minorVersion: 2, patchVersion: 0))
   }
 
-  /// 15.0、15.1 上打开扩展的终端命令（扩展的 id = App 的 id 加 .finder）
-  static var enableCommand: String {
-    "pluginkit -e use -i \(Bundle.main.bundleIdentifier ?? "com.yy.kitty-tools.native").finder"
+  /// 扩展的 id = App 的 id 加 .finder
+  static var extensionID: String {
+    "\(Bundle.main.bundleIdentifier ?? "com.yy.kitty-tools.native").finder"
+  }
+
+  /// 15.0、15.1 上打开扩展的终端命令
+  static var enableCommand: String { "pluginkit -e use -i \(extensionID)" }
+
+  /// 清掉「控制访达」这类自动化授权记录的终端命令（只清本 App 的）
+  static var resetAutomationCommand: String {
+    "tccutil reset AppleEvents \(Bundle.main.bundleIdentifier ?? "com.yy.kitty-tools.native")"
+  }
+
+  /// 包里那个扩展的位置（放行安全软件时要它）
+  static var extensionPath: String {
+    Bundle.main.builtInPlugInsURL?.appending(path: "KittyToolsFinder.appex").path(
+      percentEncoded: false)
+      ?? "Kitty Tools.app/Contents/PlugIns/KittyToolsFinder.appex"
+  }
+
+  /// 扩展的三种样子（issue #54）：没打开；打开着（在跑，或者访达没开着、看不出来）；打开了、访达开着，扩展却没在跑——
+  /// 系统设置里照旧是打开的，右键里一项都没有（安全软件在它第一次跑起来时拦下了、之后一直不让跑）
+  enum ExtensionState { case off, on, stalled }
+
+  /// 纯函数：系统记着打开没有、访达在不在跑、扩展在不在跑
+  static func extensionState(elected: Bool, finderRunning: Bool, extensionRunning: Bool)
+    -> ExtensionState
+  {
+    guard elected else { return .off }
+    return finderRunning && !extensionRunning ? .stalled : .on
+  }
+
+  /// 现在的样子：扩展进程按它的 bundle id 找（访达开着、扩展打开着时访达一直让它跑着，本机 27.0.1 看过）
+  static var currentExtensionState: ExtensionState {
+    let running = { !NSRunningApplication.runningApplications(withBundleIdentifier: $0).isEmpty }
+    return extensionState(
+      elected: FIFinderSyncController.isExtensionEnabled, finderRunning: running(finderID),
+      extensionRunning: running(extensionID))
+  }
+
+  private var isStalled: Bool { extensionStalled ?? stalled }
+
+  /// 看扩展在不在跑：刚在系统设置里打开时访达要一会儿才把它跑起来，看到没在跑先等 3 秒再看一次才算
+  private func checkExtension() async {
+    guard Self.currentExtensionState == .stalled else {
+      stalled = false
+      return
+    }
+    try? await Task.sleep(for: .seconds(3))
+    guard !Task.isCancelled else { return }
+    stalled = Self.currentExtensionState == .stalled
   }
 
   static func openExtensionSettings() {
@@ -393,15 +469,42 @@ struct FinderMenuTab: View {
   }
 
   private var oldSystemHint: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 8) {
+    hint(copying: Self.enableCommand, button: "拷贝命令") {
       Text("这台 Mac 的系统设置里没有访达扩展的入口（macOS 15.2 起才有）：在终端里运行「\(Self.enableCommand)」打开它。")
+    }
+  }
+
+  /// 扩展打开了却没在跑（issue #54）：多半是安全软件在它第一次跑起来时拦下了，之后一直不让跑；系统那边照旧记着「打开了」
+  private var stalledHint: some View {
+    hint(copying: Self.extensionPath, button: "拷贝位置") {
+      Text(
+        "访达扩展没在运行：装了安全软件的话，多半是它在扩展第一次运行时拦下了。在安全软件的拦截记录或信任列表里放行「KittyToolsFinder」（位置可以拷贝），再点「去重新打开…」把 Kitty Tools 关掉、重新打开；没装的话直接关掉再打开一次。"
+      )
+    }
+  }
+
+  /// 控制访达拒绝过：去哪打开；系统设置的列表里没有 Kitty Tools 时（拒绝是别的软件替你点的），用 tccutil 清掉再问一次
+  private var deniedHint: some View {
+    hint(copying: Self.resetAutomationCommand, button: "拷贝命令") {
+      Text(
+        "「控制访达」拒绝过：点「去打开…」，在 系统设置 › \(Permissions.privacyPane) › 自动化 里展开 Kitty Tools、打开「访达」。列表里没有 Kitty Tools 的话，在终端里运行「\(Self.resetAutomationCommand)」清掉记录，再回来点「授权…」重新问。"
+      )
+    }
+  }
+
+  /// 页脚里一行橙字 + 一个拷贝按钮（拷贝过的那条按钮换成「已拷贝」）
+  private func hint(
+    copying value: String, button: LocalizedStringResource, @ViewBuilder text: () -> Text
+  ) -> some View {
+    HStack(alignment: .firstTextBaseline, spacing: 8) {
+      text()
         .font(.caption)
         .foregroundStyle(Color(nsColor: .systemOrange))
         .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
-      Button(copied ? "已拷贝" : "拷贝命令") {
-        Paster.write(string: Self.enableCommand)
-        copied = true
+      Button(copied == value ? "已拷贝" : button) {
+        Paster.write(string: value)
+        copied = value
       }
       .controlSize(.small)
     }

@@ -10341,6 +10341,22 @@
         }
       }
     },
+    "「控制访达」拒绝过：点「去打开…」，在 系统设置 › %@ › 自动化 里展开 Kitty Tools、打开「访达」。列表里没有 Kitty Tools 的话，在终端里运行「%@」清掉记录，再回来点「授权…」重新问。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“Control Finder” was denied. Click “Turn On…”, then in System Settings › %1$@ › Automation, expand Kitty Tools and turn on Finder. If Kitty Tools isn’t in the list, run “%2$@” in Terminal to clear the record, then come back and click “Allow…” to be asked again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "「控制访达」拒绝过：点「去打开…」，在 系统设置 › %1$@ › 自动化 里展开 Kitty Tools、打开「访达」。列表里没有 Kitty Tools 的话，在终端里运行「%2$@」清掉记录，再回来点「授权…」重新问。"
+          }
+        }
+      }
+    },
     "「新建文件」里有文本文件、Markdown、Word 文档、Excel 表格、PPT 演示文稿，和模板文件夹里放的文件；「从剪贴板新建」把剪贴板里的图存成 PNG、文字存成文本文件；「自定义后缀…」建一个任意后缀的空文件，可以顺手记进菜单。建好后在访达里选中它、直接改名；重名的自动加「 2」。" : {
       "localizations" : {
         "en" : {
@@ -16764,6 +16780,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pages visited more than once, listed after bookmarks"
+          }
+        }
+      }
+    },
+    "去重新打开…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn On Again…"
           }
         }
       }
@@ -27655,6 +27681,16 @@
         }
       }
     },
+    "打开了，但访达没有把它跑起来，右键里没有这几项" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It’s on, but Finder isn’t running it, so these items won’t appear when you right-click"
+          }
+        }
+      }
+    },
     "打开全部便签…" : {
       "localizations" : {
         "en" : {
@@ -28603,6 +28639,16 @@
         }
       }
     },
+    "拷贝位置" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy Location"
+          }
+        }
+      }
+    },
     "拷贝命令" : {
       "localizations" : {
         "en" : {
@@ -29489,6 +29535,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Access shows as granted, but the wheel can’t be caught: turn Kitty Tools off and on again in System Settings › %@ › Accessibility."
+          }
+        }
+      }
+    },
+    "授权显示给了，却接不住这两个键：在系统设置里把 Kitty Tools 的「辅助功能」关掉再打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Access shows as granted, but these two keys can’t be caught: turn Accessibility for Kitty Tools off and on again in System Settings"
           }
         }
       }
@@ -41987,6 +42043,16 @@
         }
       }
     },
+    "系统设置里显示已经打开、这里却还是没授权，或者那一页的列表里没有 Kitty Tools：在那一页选中 Kitty Tools 点「−」删掉，再点「+」把它加回来、打开。屏幕录制改完要重新打开本 App。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "If System Settings shows it as on but it still isn’t granted here, or Kitty Tools isn’t in that list: select Kitty Tools there and click “−” to remove it, then click “+” to add it back and turn it on. After changing Screen Recording, reopen this app."
+          }
+        }
+      }
+    },
     "系统词典" : {
       "localizations" : {
         "en" : {
@@ -44530,6 +44596,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Finder Extension"
+          }
+        }
+      }
+    },
+    "访达扩展没在运行：装了安全软件的话，多半是它在扩展第一次运行时拦下了。在安全软件的拦截记录或信任列表里放行「KittyToolsFinder」（位置可以拷贝），再点「去重新打开…」把 Kitty Tools 关掉、重新打开；没装的话直接关掉再打开一次。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Finder extension isn’t running. If you use security software, it most likely blocked the extension the first time it ran. Allow “KittyToolsFinder” in its blocked items or trusted list (you can copy its location), then click “Turn On Again…” to turn Kitty Tools off and back on. Without security software, just turn it off and on once."
           }
         }
       }
