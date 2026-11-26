@@ -946,7 +946,7 @@ internal sealed partial class NoteEditor
         var whole = _box.Document.GetRange(start, Math.Max(end, contentsEnd));
         var size = LineSize(shape);
         var baseFormat = whole.CharacterFormat;
-        baseFormat.Name = shape.Kind == NoteStyles.ShapeKind.Code ? "Cascadia Mono" : "Segoe UI Variable Text";
+        baseFormat.Name = KittyTools.Core.WindowsVersions.FontFor(shape.Kind == NoteStyles.ShapeKind.Code ? "Cascadia Mono" : "Segoe UI Variable Text");
         baseFormat.Size = (float)(size * PointsPerDip);
         baseFormat.ForegroundColor = shape.Kind == NoteStyles.ShapeKind.Quote ? Shade(_paper.QuoteBar(_dark, _contrast)) : Ink(1);
         baseFormat.BackgroundColor = shape.Kind == NoteStyles.ShapeKind.Code ? Shade(_paper.CodeFill(_dark)) : Colors.Transparent;

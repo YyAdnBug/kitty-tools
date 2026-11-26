@@ -272,6 +272,9 @@ public static class SettingsSyncMap
         Flag("ScreenshotCursor");
         Flag("CaptureHideDesktopIcons");
         Flag("UpdateInstallOnQuit");
+        // 轻提示出在哪（PLAN-v27 I1）：mac 的刘海岛没有这个选项，只在 Windows 之间
+        keys.Add(new(PrefPrefix + "NoticePosition", "NoticePosition", SettingType.Text, false, Same,
+            value => value.Text is "bottom" or "top" ? value : null));
         // 保持唤醒：开关和「屏幕也不熄」同步，定时每台的作息不一样、不同步（PLAN-v20 D3）
         Flag("KeepAwakeDisplay");
         keys.Add(new(PrefPrefix + "feature.keepAwake", "feature.keepAwake", SettingType.Bool, false, Same, Same));

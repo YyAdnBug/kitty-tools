@@ -8,6 +8,142 @@
 
 条目编号不复用。行号按条目里写的那个提交。
 
+## PLAN-v27：启动器搜不到 cmd、应用别名不列出装的应用；Windows 10；灵动岛样式的提示（用户转来的反馈，审查方在 Mac 上查的，2026-11-26）
+
+用户转来三条反馈（原话在 `PLAN-v27.md` 开头）。§1 是 bug：审查方在 Mac 上直接修了（R115，**没编译**）；§2（支持 Windows 10）、§3（灵动岛样式的提示）
+是拍板题（`PLAN-v27.md` §4，拍板页 https://claude.ai/artifact/UJFPpUyvKnhNQAf3us9PgU）。**2026-11-26 用户「全部按推荐」**：W1–W4、I1–I5 全部 A。
+手测 2030–2045（`HANDTEST.md` 末尾），2050–2079 给 Win10、2080–2099 给灵动岛。
+
+### 给 Windows agent 的开工指令
+
+**2026-11-26 用户「我们来实现，然后我再让 windows agent 核验」**：§1 §2 §3 的代码**审查方都在 Mac 上写了、都没编译**（R115、R116），
+都在分支 `claude/win-v26-df962e` 上。你们这一版是**核验**：编译、单测、核对、真机 / 虚拟机测，编不过、对不上直接改，交接里写一句改了什么。
+照 `AGENTS.md`「每一批的流程」和自查清单走，报告写在本节下面。版本 0.5.0。
+
+1. **开工**：`git fetch origin`，读 `PLAN-v27.md` 全文、`AGENTS.md` 第 27 条、本节、R115、R116。
+2. **并分支**：在本地 `windows` 上 `git merge --no-ff origin/claude/win-v26-df962e`（已经合过 PLAN-v26 做完的 `windows`，应该没冲突）。Debug x64 编译零警告、`dotnet test` 全过、
+   x64 / ARM64 AOT 零警告——**先过这一步再往下**，编不过的照 R115 / R116「先核对」那几条找。
+3. **R115**（cmd、应用别名）：照 R115「要你们做」2–6。0.4.0 还没发：用户要发 0.4.0 之前核完的话，R115 进 0.4.0（更新日志补那两条），不然进 0.5.0。
+4. **I-1 透明胶囊**（I2 = A）：测试档里 `KITTY_NOTICE_TOP=1` 跑 `--notice-anim-test=<目录>`（在**这台机器**上：0.1.0 透明层发白的就是它）。
+   看它存的 PNG：胶囊两头外面是棋盘格（透明）才算成；是白的、黑的、灰的，日志里看 `transparent-backdrop.connected` / `failed`，照 R116「先核对」第 1 条试；
+   试不成就把 `Shell/Notice.cs` 的 `Capsule` 改成 false（退回 DWM 8 圆角的黑条），写下试过什么。浅色 / 深色外观、100 / 150 / 200 % 各看一次。
+5. **I-2 顶部样式**：`--ui-snapshots` 的 `island-top*.png` 三张、`--notice-anim-test` 顶部 / 底部各一遍，手测 HANDTEST 2080–2095。
+6. **W-1 / W-3 Win10**（W1 = A、W4 = A，用户点了头）：Windows 测试机上开 Hyper-V（要的话先在「启用或关闭 Windows 功能」里打开），从微软官网下 **Win10 22H2** 的镜像装一个虚拟机
+   （不激活也行；本地账户，不用用户的账号）。**下镜像、开 Hyper-V 只做这一次，虚拟机留着以后每版冒烟用**；别动这台机器上别的虚拟机和设置。
+   先装 0.4.0 看一眼哪里坏（写在本节「W-1」下面，当改之前的底），再装合了这条分支的构建，走 HANDTEST 2050–2068；坏的修。
+7. **README / 官网**：系统要求在 `main` 分支（README 的 Windows 那一段、官网下载页），**你们只改 `windows/` 里的**，报告里提一句，审查方去改。
+8. **收尾**：`Directory.Build.props` 0.5.0、`changelog.json`（feat：支持 Windows 10 2004 起；ui：提示能放到屏幕顶部（灵动岛样式）；fix：R115 那两条要是没进 0.4.0）、
+   `build-release.ps1`、`--update-live=<已经发出去的上一版>`，**不发布**；Win10 虚拟机里装 0.5.0 的安装包走一遍 HANDTEST 开头的「Win10 冒烟」W1–W10。
+
+### R116（P2）支持 Windows 10、灵动岛样式的提示 → 待核验（审查方写的、没编译）
+
+PLAN-v27 §2 §3，用户「全部按推荐」后「我们来实现」。行号按这条分支。
+
+#### 改了哪些
+
+**Windows 10（W2 W3）**：
+- 工程 `TargetPlatformMinVersion` 22621 → **19041**（`TargetFramework` 留 22621）；安装包 `MinVersion=10.0.19041`（Inno 自己的那句提示）；
+  `App/Program.cs` 启动时查一次（zip 版）：太老就弹「需要 Windows 10 2004 或更新的系统」、退出码 1。
+- 新 `Core/WindowsVersions`（最低版本 19041、Win11 从 22000、黄框开关从 20348、`FontFor` 换字体）配 `WindowsVersionsTests`。
+- 字体：Win2D / RichEdit 那几处写死的 Segoe UI Variable、Cascadia Mono 在 Win10 上换成 Segoe UI / Consolas（标注文字、标注序号、启动器的大字、计时、录屏的按键胶囊、便签正文和代码块）；
+  XAML 里本来就写了「Cascadia Mono, Consolas」的没动。
+- 图标：没换。审查方对过微软的 MDL2 图标表（GitHub 上 windows-dev-docs 的历史版本）：用到的 101 个码点 MDL2 里都有，最晚进表的一个是 2019-06（F714），早于 2004。
+  `--ui-snapshots` 加一张 `glyphs-light / dark.png`（102 个格子带十六进制号），Win10、Win11 各出一张对着看。
+- 设置 › 录制：Win10 上（`ShowsCaptureBorder`）多一行黄框的说明。
+- 不用改的（已经有退路）：设置窗先查 `MicaController.IsSupported`、全部便签的 `MicaBackdrop` 自己退纯色；`IsBorderRequired` / `IsCursorCaptureEnabled` 都包了 try / catch；
+  DWM 圆角、边框色在 Win10 上返回错误、不抛；带阴影的窗口截图已经按 22000 分了；亚克力（`DesktopAcrylicController`）Win10 1809 起支持；没用系统通知。
+
+**灵动岛样式（I1–I5）**：
+- 设置 `NoticePosition`（"bottom" 默认 / "top"），进 windows-settings 一类（`Core/Sync/SettingsSyncMap.BuildWindowsOnly`、`Storage/SettingsSyncFields`）：Windows 之间同步、跟导出导入
+  （导出本来就按同步表走，R84）；mac 没有这一项。`SettingsSyncTests` 的 C 组 15 → 16，加了一条只认 bottom / top。
+- 设置 › 通用 新的一组「提示」：「提示显示在」屏幕底部 / 屏幕顶部，换了马上出一条示例；搜索词加了提示、通知、灵动岛、顶部……
+- `Core/MonitorLayout.NoticeTop`（工作区顶部居中、离上沿 8；任务栏在上时让到下面）配单测 `IslandNoticeHangsFromTheTop`。
+- `Shell/Notice.cs`：建窗口时按设置定 `_top`；顶部时黑底白字（`Theme.Shot.IslandBackground`、`HudTextSecondary`，归在截图 HUD 那一套里）、一圈 `HudStroke` 描边、按深色主题；
+  真胶囊（`Capsule = true`）：窗口不要 DWM 边框和阴影、圆角设成不圆，背景 `TransparentBackdrop`，`_content` 自己画圆角（收着 = 高的一半，展开 = 20）；
+  `Capsule = false` 时退回 DWM 8 圆角、底下垫黑。`ApplyPosition`：位置设置变了关掉重建，挂着的提醒挪过去；每次 Show / ShowProgress / Pin 前都看一眼（同步、导入、恢复默认不用另接线）。
+- 新 `Shell/TransparentBackdrop.cs`：`SystemBackdrop` 子类，给 `ICompositionSupportsSystemBackdrop.SystemBackdrop` 一块 alpha 0 的 `Windows.UI.Composition` 画刷；
+  线程上没有 `Windows.System.DispatcherQueue` 时用 CoreMessaging 的 `CreateDispatcherQueueController` 建一个。
+- 自检：`--notice-anim-test` 设了 `KITTY_NOTICE_TOP=1` 时按顶部样式跑；`--ui-snapshots` 多三张 `island-top.png`、`island-top-expanded.png`、`island-top-progress.png`（只改内存里的设置）。
+
+#### 先核对再跑
+
+1. **透明背景**（最没把握的一处）：`Windows.UI.Composition.Compositor` 能不能在 WinUI 的线程上建（要 `Windows.System.DispatcherQueue`，代码里没有时自己建）、
+   `ICompositionSupportsSystemBackdrop.SystemBackdrop` 收不收它的画刷。不成的几种退路，按顺序试：
+   ① `Windows.System.DispatcherQueue.GetForCurrentThread()` 本来就有、但 `new Compositor()` 抛错 → 看异常；② 画刷接上了、胶囊外面却是黑的 → 窗口可能还带着重定向表面，
+   试 `DwmExtendFrameIntoClientArea(hwnd, -1 四边)`；③ 还不行 → `Capsule = false`。
+2. **`SystemBackdrop = !_top ? … : _capsule ? … : null`**（`Notice.cs` 构造里）靠的是 C# 按目标类型推条件表达式；编不过就给第一个分支加 `(SystemBackdrop)`。
+3. **`ApplyPosition` 里 `_window.Close()`**：关的是轻提示那扇窗口；要是这时它恰好是最后一扇 WinUI 窗口、关了以后程序退了（`DispatcherShutdownMode`），改成只 `Hide`、留着旧的不用。
+4. **`TargetPlatformMinVersion` 降到 19041 以后**：CsWinRT 有没有对 19041 以后才有的 API 报新的平台警告（CA1416 这类）。有的话照位置加版本判断或 try，别关警告。
+
+#### 要你们做
+
+照本节开工指令第 2、4、5、6、8 步；手测 HANDTEST 2050–2068（Win10）、2080–2095（灵动岛）、开头「Win10 冒烟」W1–W10。
+
+#### 风险 / 退路
+
+- 透明胶囊在用户那台机器上不干净：`Capsule = false`，顶部样式照样能用（黑色圆角条），设置页的说明不用改。
+- 胶囊两头透明的那几个角照样接鼠标（窗口是方的）：点到那几个像素会被它吃掉；提示一两秒就收，先不管（`TransparentBackdrop.cs` 的 ponytail）。
+- Win10 上虚拟机测不了的（真显卡上的亚克力、多屏、高分屏）：等用户反馈。
+
+### R115（P1）启动器打 cmd 搜不到「命令提示符」、应用别名那一栏不列出装的应用 → 待核验（审查方写的、没编译）
+
+行号按 `405ed2e4`。
+
+1. **cmd 搜不到**：开始菜单的「命令提示符.lnk」收进来了（中文系统上标题是「命令提示符」、副标题写着 cmd），但能搜的名字只有标题、.lnk 文件名
+   （Command Prompt）和拼音（`Launcher/AppCatalog.cs:246–252`），**目标 exe 的名字不在里面**；cmd.exe 在 System32，App Paths 和「运行过的程序」
+   又都按「在 Windows 目录下」排掉（`Core/PortableApps.cs:89` `IsCandidate`）。regedit、taskmgr、msconfig、services 同样。→ B1。
+2. **名字像文档的应用整个丢了**：`Core/StartMenuFilter.cs:10` 的名单里有「文档」「帮助」「help」「manual」，按名字子串一律拦（`AppCatalog.cs:226`，在解析目标之前）：
+   「腾讯文档」「金山文档」这类本身是应用的搜不到。→ B2。
+3. **同一个 exe 的几个快捷方式只留第一个**：去重只看目标路径（`AppCatalog.cs:239`），浏览器装的网页应用都指向 `chrome_proxy.exe` / `msedge_proxy.exe`、
+   Chrome 几个用户资料的快捷方式都指向 chrome.exe，只出第一个。→ B3。
+4. **商店应用在中文系统上英文名搜不到**：只有显示名（「终端」）和包的显示名；`wt`、`terminal`、`calc`、`paint` 都对不上。→ B4。
+5. **应用别名不列应用**：「搜应用名，给它起个别名」是一个 `AutoSuggestBox`（`Settings/SettingsWindow.LauncherApps.cs:104–132`）：没打字什么都不出；
+   右边的 + 是查询按钮，`QuerySubmitted` 没接，点了没反应；键盘 ↓ 选候选时 `SuggestionChosen` 就触发，会直接加上第一个。
+   mac 那一页（`Settings/AppAliasesPage.swift`）是一进来就列出全部应用、每行一个别名框、能起几个别名、别名也当名字搜。→ B5、B6。
+
+#### 交接（2026-11-26，审查方在 Mac 上写的，**都没编译**）
+
+**改了哪些**：
+
+- Core：新 `AppNames`（能搜的名字统一一处：标题、文件名、拼音，加快捷方式目标 exe 的名字——宿主 `rundll32` / `javaw` / `*_proxy` 和更新器不算；
+  商店应用的包名去掉发布者那一截）；`StartMenuFilter.ShouldSkip(title, target)`（「像文档」的词只在目标不是程序、或者是 hh / notepad 这类看文档的程序时才拦；
+  卸载、网址照旧一律拦）；`AppAliases`：`Words`（一段原文里几个别名，中英文逗号、分号、顿号、换行隔开）、`Apply`（别名加进能搜的名字）、`EntryLimit = 256`，
+  `KeyFor` / `Sanitize` 改成按词认。单测 `AppNamesTests`（新）、`AppAliasesTests`、`StartMenuFilterTests` 各加了几条。
+- `Launcher/Shortcuts.cs`：`Read(path)` 另取参数（`IShellLinkW.GetArguments`），`ResolveTarget` 照旧。
+- `Launcher/AppCatalog.cs`：先解析目标再按名字拦；按「展开后的目标 + 参数」去重（同一个 exe 带参数的那几个扫完再记，不挡后面不带参数的那个）；
+  别名的键：同一个 exe 的第一个快捷方式照旧 `exe:路径`（已经起的别名不变），后面参数不同的键后面加 `|参数`；`ResolvedExe` 改成展开后的路径（对得上运行记录）。
+  商店应用、`AppSources.ExeItem` 都改用 `AppNames.Build`。
+- `Launcher/LauncherModel.cs`：`AppsWithAliases` 把别名加进候选的名字（主搜索和「文件结果前面那几个应用」两处）。
+- `Settings/SettingsWindow.LauncherApps.cs`：别名那一块照 mac 重写：搜索框 + 列出装着的应用（同一个键只一行、按名字排），每行一个「添加别名」框；
+  起过别名、这台电脑上没有的排最前；行在空闲时 40 个一批补（`DispatcherQueuePriority.Low`），筛选只换显隐；还没扫过时写「正在读取应用…」、扫完重画。
+- `Shell/ShellRuntime.cs`：自检 `--launcher-apps-probe`（等一轮扫完，16 个词各记第一条，日志 `launcher.apps-probe`）。
+
+**先核对再跑**：
+
+1. `IShellLinkW.GetArguments` 在 CsWin32 生成的结构里的签名：照 `GetPath` 那样传 `char*` + 容量，编不过就照它生成的重载改（`PWSTR` / `Span<char>`）。
+2. `Package.Id.Name` 在没有包身份的进程里读不读得到（`FindPackagesForUser` 拿到的 `Package` 应该能）；读不到会走 catch、只是少了英文名。
+3. `SettingsWindow.LauncherApps.cs` 里 `More()` 用 `list.XamlRoot is null` 判断换没换页：切页后补行的回调要停下，不然报错或者往别的页里加行。
+
+**要你们做**：
+
+1. Debug x64 编译零警告、`dotnet test` 全过（新加的三组）、x64 / ARM64 AOT 零警告。
+2. 中文系统跑 `--launcher-apps-probe`：`cmd` 的 `first=命令提示符`，`regedit`、`taskmgr`、`wt`、`calc` 各自第一条是对的；`total=` 和改之前的 `launcher.apps count=` 比，
+   多出来的那几条是哪些（应该是网页应用、浏览器用户资料、「XX 文档」这类），有不该出来的（卸载、帮助、更新器）记下来、按名字 / 目标补进名单。
+3. `--ui-snapshots`（`settings-sub-apps`）浅色、深色、高对比度各一张：别名那一栏是列表、计算器那一行框里是 jsq。
+4. 手测 `HANDTEST.md` 2030–2045，英文系统（或者把显示语言换成英文的测试账户）再走一遍 2030–2032。
+5. 量一下设置页「应用」那一页打开到第一屏出来、全部行补完各多久（几百个应用），超过 300 ms 才出第一屏的话把每批改小。
+6. 更新日志等下一版一起写：fix「启动器打 cmd、regedit 这类程序名能搜到系统工具；名字里带『文档』的应用、浏览器装的网页应用不再被漏掉」、
+   ui「设置 › 启动器 › 应用：应用别名一进来就列出装着的应用，一个应用能起几个别名，别名的开头和拼音也能搜」。
+
+**风险 / 退路**：
+
+- 分支已 rebase 在 `5b2a58f2`（PLAN-v26 第 10 批）上，第 9 批的启动器改动在底下，没冲突（只有 `HANDTEST.md` 末尾两边各加一节，都留了）。
+  第 9 批 L5 的撞名橙框（`Settings/SettingsWindow.LauncherCommands.cs` `MarkAliasConflicts`）改成按应用别名的每个词比（一个应用能起几个别名了），`LauncherCommandTableTests` 加了一条。
+- 目标 exe 名当名字后，指向同一个 exe 的快捷方式打 exe 名会一起出（`cmd` 出命令提示符和 VS 的开发者命令提示符）：同分时标题短的在前、用过的在前，可以接受；
+  哪个 exe 名被一堆不相干的快捷方式共用（像 `Update.exe`），加进 `AppNames.Hosts`。
+- 别名的键带 `|参数` 的那几个，键跟着「哪个快捷方式先扫到」走（所有用户的先、当前用户的后，同一个文件夹按名字）：快捷方式增删之后，后面那几个的别名可能换到别的快捷方式上。
+  只影响同一个 exe、参数不同的那几个（网页应用、浏览器用户资料），记在 `AppCatalog.cs` 注释里。
+
 ## PLAN-v26（跟上 mac 0.10.0–0.10.3、收口挂着的分支、优化，2026-11-25）
 
 方案在 `PLAN-v26.md`（§0 先说的几件事、§1 清单、§2 分批、§4 拍板题）。用户：「给 windows 指令，同步和优化最近的需求开始实现」。

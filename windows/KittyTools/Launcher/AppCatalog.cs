@@ -4,6 +4,9 @@
 // 打开面板时距上次超过 5 分钟再扫；扫的时候先用上一次的结果。
 // PLAN-v18 §6（便携软件）：另扫桌面（A1）、App Paths（A2）、运行过的程序（A3）、用户加的应用文件夹（A4）；「从启动器里隐藏」的不列（A5）。
 // 每个应用带上别名的键（L5）和系统记的最后一次运行（L6）。来源在 AppSources。
+// PLAN-v27 B1–B4（启动器搜不到 cmd）：能搜的名字统一走 Core AppNames（快捷方式目标 exe 的名字也算：「命令提示符」打 cmd 能搜到）；
+// 「像文档」的名字只在目标不是程序时才拦（「腾讯文档」照收）；同一个 exe 参数不同的快捷方式（网页应用、浏览器的几个用户资料）各算一个；
+// 商店应用另加包名（中文系统上「终端」打 wt / terminal 能搜到）。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 using Microsoft.UI.Dispatching;
@@ -172,6 +175,12 @@ internal sealed class AppCatalog
         // 「所有用户」和「当前用户」下各有一个快捷方式 = 同一个程序：按解析出来的目标去重，
         // 先扫到的那份（所有用户）留下（第二版 §2 第 13 条）；桌面上的和开始菜单里已有的同一个程序，开始菜单那条留着。
         var seenFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // 带参数的快捷方式指向的 exe：扫完再记进 seenTargets（App Paths、运行过的程序别再把同一个 exe 收一遍；
+        // 扫的过程中不记，免得「Chrome - 工作」先占了位、不带参数的「Google Chrome」被当成重复）
+        var exesWithArguments = new List<string>();
+        // 别名的键：同一个 exe 的第一个快捷方式照旧是「exe:路径」（以前去重留下的就是它，已经起的别名不变）；
+        // 后面参数不一样的那几个（以前被当成重复丢了）键后面带上参数，各起各的别名
+        var aliasKeys = new HashSet<string>(StringComparer.Ordinal);
         var scale = Displays.SystemScale;
         foreach (var (folder, isDesktop) in folders)
         {
@@ -223,33 +232,36 @@ internal sealed class AppCatalog
                 // .lnk 文件名是英文），英文文件名也留在能搜的名字里。
                 var display = ShellIcons.DisplayName(file).Trim();
                 var title = display.Length > 0 && !display.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase) ? display : fileTitle;
-                if (StartMenuFilter.ShouldSkip(title) || StartMenuFilter.ShouldSkip(fileTitle))
+                // 先解析目标再按名字拦：名字像文档、目标却是程序的照收（PLAN-v27 B2）。
+                // 目标是原样的（%windir%\system32\cmd.exe）：别名的键照旧用它（不让已经起的别名失效）；去重、对运行记录用展开的。
+                var (target, arguments) = Shortcuts.Read(file);
+                if (StartMenuFilter.ShouldSkip(title, target) || StartMenuFilter.ShouldSkip(fileTitle, target))
                 {
                     stats.SkippedByName++;
                     continue;
                 }
 
-                var target = Shortcuts.ResolveTarget(file);
                 if (target is not null && StartMenuFilter.ShouldSkipTarget(target))
                 {
                     stats.SkippedByTarget++;
                     continue;
                 }
 
-                var key = target ?? file;
+                var expanded = target is null ? null : Environment.ExpandEnvironmentVariables(target);
+                // 同一个程序在「所有用户」「当前用户」下各一个快捷方式：目标和参数都一样，合成一条；参数不一样的是不同的应用（PLAN-v27 B3）
+                var key = expanded is null ? file : arguments.Length == 0 ? expanded : expanded + "\n" + arguments;
                 if (!seenTargets.Add(key))
                 {
                     stats.Duplicates++;
                     continue;
                 }
 
-                var names = new List<string> { LauncherMatch.Fold(title), LauncherMatch.Fold(fileTitle) };
-                var initials = new List<string> { LauncherMatch.Initials(title), LauncherMatch.Initials(fileTitle) };
-                if (Pinyin.For(title) is { } pinyin)
+                if (expanded is not null && arguments.Length > 0)
                 {
-                    names.Add(pinyin.Full);
-                    initials.Add(pinyin.Initials);
+                    exesWithArguments.Add(expanded);
                 }
+
+                var (names, initials) = AppNames.Build(new[] { title, fileTitle }, target);
 
                 // PLAN-v9-launcher B9（mac A25）：不写和右边「应用」重复的「桌面应用」；中文名写 exe 的英文名，子文件夹里的写文件夹名。
                 // 子文件夹名同样取显示名（「System Tools」→「Windows 工具」这类，L7）；开始菜单根目录 Programs 照旧不写。
@@ -261,22 +273,31 @@ internal sealed class AppCatalog
                 }
 
                 var subtitle = isDesktop ? "桌面" : LauncherText.AppSubtitle(title, target is null ? null : Path.GetFileName(target), parent);
+                var aliasKey = AppAliases.Key(file, target, AppSources.AliasFolders);
+                if (aliasKey is not null && !aliasKeys.Add(aliasKey))
+                {
+                    aliasKey += "|" + (arguments.Length > 200 ? arguments[..200] : arguments).ToLowerInvariant();
+                    aliasKeys.Add(aliasKey);
+                }
+
                 var item = new LauncherItem
                 {
                     Kind = LauncherKind.App,
                     Target = file,
                     Title = title,
                     Subtitle = subtitle,
-                    Names = names.Distinct().ToList(),
-                    Initials = initials.Distinct().ToList(),
+                    Names = names,
+                    Initials = initials,
                     IconPath = file,
                     IconData = ShellIcons.LoadPng(file, scale),
-                    AliasKey = AppAliases.Key(file, target, AppSources.AliasFolders),
-                    ResolvedExe = target,
+                    AliasKey = aliasKey,
+                    ResolvedExe = expanded,
                 };
                 yield return item;
             }
         }
+
+        seenTargets.UnionWith(exesWithArguments);
     }
 
     /// <summary>
@@ -376,19 +397,18 @@ internal sealed class AppCatalog
                             continue;
                         }
 
-                        var names = new List<string> { LauncherMatch.Fold(display) };
-                        var initials = new List<string> { LauncherMatch.Initials(display) };
-                        if (Pinyin.For(display) is { } pinyin)
+                        // 显示名、包的显示名、包名去掉发布者那一截（Microsoft.WindowsTerminal → WindowsTerminal：wt、terminal；PLAN-v27 B4）
+                        string? shortName = null;
+                        try
                         {
-                            names.Add(pinyin.Full);
-                            initials.Add(pinyin.Initials);
+                            shortName = AppNames.PackageShortName(package.Id.Name);
+                        }
+                        catch
+                        {
+                            // 读不到包名就只用显示名
                         }
 
-                        var packageName = package.DisplayName?.Trim();
-                        if (!string.IsNullOrEmpty(packageName) && packageName != display)
-                        {
-                            names.Add(LauncherMatch.Fold(packageName));
-                        }
+                        var (names, initials) = AppNames.Build(new[] { display, package.DisplayName?.Trim(), shortName });
 
                         byte[]? icon = null;
                         try
@@ -409,8 +429,8 @@ internal sealed class AppCatalog
                             AliasKey = AppAliases.Key(@"shell:AppsFolder\" + aumid, null, AppSources.AliasFolders),
                             Title = display,
                             Subtitle = string.Empty,
-                            Names = names.Distinct().ToList(),
-                            Initials = initials.Distinct().ToList(),
+                            Names = names,
+                            Initials = initials,
                             IconData = icon,
                         });
                     }

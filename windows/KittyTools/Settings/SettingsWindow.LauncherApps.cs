@@ -1,5 +1,6 @@
 // 设置 › 启动器 › 应用（PLAN-v18 L5 + §6 A3 A4 A5，D10「同一页」）：三块——
-// 应用别名（给一个应用起个短词，输完整的别名时它排第一；键是 aumid: / exe:，App 更新、快捷方式挪位置照样认）；
+// 应用别名（PLAN-v27 B6 起照 mac 列出装着的应用、每行一个别名框，能起几个别名；输完整的别名时它排第一；
+// 键是 aumid: / exe:，App 更新、快捷方式挪位置照样认）；
 // 应用文件夹（「把运行过的程序也列出来」开关 + 用户加的文件夹和单个程序，文件夹往下扫两层；不在了的灰着写「找不到」，不删）；
 // 隐藏的应用（启动器里「从启动器里隐藏」的，能恢复）。改了文件夹 / 隐藏 / 开关就重扫应用。
 using KittyTools.Core;
@@ -42,24 +43,58 @@ internal sealed partial class SettingsWindow
         _content.Children.Add(Header("应用", "应用别名、便携软件的文件夹、隐藏的应用"));
         var apps = AppCatalog.Instance?.Apps ?? Array.Empty<LauncherItem>();
 
-        // ---- 应用别名
+        // ---- 应用别名（PLAN-v27 B6，照 mac AppAliasesPage）：列出装着的应用，每行一个别名框；上面的框按名字或别名筛。
+        // 以前是一个搜索框，打了字才在下拉里出几个、点 + 没反应（「应用别名不列出装的应用」）。
+        // 行多（几百个）：先出页面，行在空闲时 40 个一批往下补；筛选只换显隐，不重建。
+        // ponytail: 不画图标、不虚拟化；上千个应用嫌慢再换 ItemsRepeater。
         _content.Children.Add(SettingsUi.Section("应用别名"));
         var aliases = new Dictionary<string, string>(settings.LauncherAppAliases ?? new Dictionary<string, string>());
-        var list = new StackPanel { Spacing = 2 };
         void Store()
         {
-            var kept = aliases.Where(pair => AppAliases.Normalized(pair.Value).Length > 0).ToDictionary(pair => pair.Key, pair => pair.Value);
+            var kept = aliases.Where(pair => AppAliases.Words(pair.Value).Count > 0).ToDictionary(pair => pair.Key, pair => pair.Value);
             settings.LauncherAppAliases = kept.Count == 0 ? null : kept;
             SettingsService.Save();
         }
 
-        void AddRow(string key, bool focus)
+        // 同一个键（同一个 exe 的开始菜单、桌面两个快捷方式）只列一行；起过别名、这台电脑上没有的排最前面，能清掉
+        var installed = apps.Where(app => app.Kind == LauncherKind.App && app.AliasKey is not null)
+            .GroupBy(app => app.AliasKey!)
+            .Select(group => group.First())
+            .OrderBy(app => app.Title, StringComparer.CurrentCulture)
+            .ToList();
+        // 应用还没读出来时不列「这台电脑上没有」（没得比）；别名都还在设置里，读完重画这一页
+        var missing = installed.Count == 0 ? new List<string>() : aliases.Keys.Where(key => installed.All(app => app.AliasKey != key)).ToList();
+        var filter = new TextBox { PlaceholderText = "按应用名或别名找" };
+        AutomationProperties.SetName(filter, "搜索应用");
+        _content.Children.Add(filter);
+        _content.Children.Add(SettingsUi.Footnote("多个别名用逗号隔开，例如 wx, 聊天。原来的名字照样能搜，清空就是去掉别名。"));
+        var list = new StackPanel { Spacing = 2 };
+        var empty = new TextBlock { Foreground = Theme.SecondaryText(), Margin = new Thickness(4), TextWrapping = TextWrapping.Wrap };
+        list.Children.Add(empty);
+        var rows = new List<(LauncherItem? App, string Key, FrameworkElement Row)>();
+
+        bool Shows(LauncherItem? app, string key)
         {
-            var app = apps.FirstOrDefault(item => item.AliasKey == key);
+            var query = LauncherMatch.Fold(filter.Text.Trim());
+            return query.Length == 0 ||
+                   (app is not null && LauncherMatch.Score(query, app) > 0) ||
+                   LauncherMatch.Fold(aliases.GetValueOrDefault(key) ?? string.Empty).Contains(query, StringComparison.Ordinal);
+        }
+
+        void UpdateEmpty()
+        {
+            var any = missing.Any(key => Shows(null, key)) || installed.Any(app => Shows(app, app.AliasKey!));
+            empty.Text = installed.Count == 0
+                ? AppCatalog.Instance?.HasScanned == false ? "正在读取应用…" : "没有找到装着的应用"
+                : any ? string.Empty : "没有匹配的应用，试试别的名字或别名";
+            empty.Visibility = empty.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        FrameworkElement Row(LauncherItem? app, string key)
+        {
             var row = new Grid { ColumnSpacing = 10, Padding = new Thickness(8, 4, 4, 4) };
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(140) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) });
             var names = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             var title = new TextBlock { Text = app?.Title ?? "（这台电脑上没有）", TextTrimming = TextTrimming.CharacterEllipsis };
             if (app is null)
@@ -68,9 +103,17 @@ internal sealed partial class SettingsWindow
             }
 
             names.Children.Add(title);
-            names.Children.Add(new TextBlock { Text = key.StartsWith("aumid:", StringComparison.Ordinal) ? "商店应用" : key[4..], FontSize = 11, Foreground = Theme.SecondaryText(), TextTrimming = TextTrimming.CharacterEllipsis });
+            var place = key.StartsWith("aumid:", StringComparison.Ordinal) ? "商店应用" : key[4..];
+            names.Children.Add(new TextBlock { Text = place, FontSize = 11, Foreground = Theme.SecondaryText(), TextTrimming = TextTrimming.CharacterEllipsis });
+            ToolTipService.SetToolTip(names, app?.Target ?? key);
             row.Children.Add(names);
-            var alias = new TextBox { Text = aliases.GetValueOrDefault(key) ?? string.Empty, PlaceholderText = "别名", MaxLength = AppAliases.AliasLimit, VerticalAlignment = VerticalAlignment.Center };
+            var alias = new TextBox
+            {
+                Text = aliases.GetValueOrDefault(key) ?? string.Empty,
+                PlaceholderText = "添加别名",
+                MaxLength = AppAliases.EntryLimit,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
             AutomationProperties.SetName(alias, $"「{app?.Title ?? key}」的别名");
             alias.TextChanged += (_, _) =>
             {
@@ -79,59 +122,69 @@ internal sealed partial class SettingsWindow
             };
             Grid.SetColumn(alias, 1);
             row.Children.Add(alias);
-            var remove = new Button { Content = "移除", Padding = new Thickness(10, 2, 10, 2), VerticalAlignment = VerticalAlignment.Center };
-            remove.Click += (_, _) =>
-            {
-                aliases.Remove(key);
-                Store();
-                list.Children.Remove(row);
-            };
-            Grid.SetColumn(remove, 2);
-            row.Children.Add(remove);
-            list.Children.Add(row);
-            if (focus)
-            {
-                alias.Loaded += (_, _) => alias.Focus(FocusState.Programmatic);
-            }
+            row.Visibility = Shows(app, key) ? Visibility.Visible : Visibility.Collapsed;
+            return row;
         }
 
-        foreach (var key in aliases.Keys)
+        var pending = missing.Select(key => ((LauncherItem?)null, key))
+            .Concat(installed.Select(app => ((LauncherItem?)app, app.AliasKey!)))
+            .ToList();
+        var next = 0;
+        void More()
         {
-            AddRow(key, focus: false);
-        }
-
-        _content.Children.Add(new Border { CornerRadius = new CornerRadius(8), Padding = new Thickness(6), Background = Theme.CardBackground(), Child = list });
-        var pick = new AutoSuggestBox { PlaceholderText = "搜应用名，给它起个别名", QueryIcon = new SymbolIcon(Symbol.Add) };
-        AutomationProperties.SetName(pick, "添加应用别名");
-        pick.TextChanged += (sender, args) =>
-        {
-            if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput)
+            // 换了页（行所在的卡片不在页上了）就不补了
+            if (list.XamlRoot is null && next > 0)
             {
                 return;
             }
 
-            var folded = LauncherMatch.Fold(sender.Text);
-            sender.ItemsSource = folded.Length == 0
-                ? null
-                : apps.Where(app => app.AliasKey is not null && (LauncherMatch.Fold(app.Title).Contains(folded, StringComparison.Ordinal) ||
-                                                                   app.Names.Any(name => name.StartsWith(folded, StringComparison.Ordinal))))
-                    .Take(12)
-                    .Select(app => app.Title)
-                    .ToList();
-        };
-        pick.SuggestionChosen += (sender, args) =>
-        {
-            if (args.SelectedItem is string title && apps.FirstOrDefault(app => app.Title == title && app.AliasKey is not null) is { AliasKey: { } key } &&
-                !aliases.ContainsKey(key))
+            for (var count = 0; count < 40 && next < pending.Count; count++, next++)
             {
-                aliases[key] = string.Empty;
-                AddRow(key, focus: true);
+                var (app, key) = pending[next];
+                var row = Row(app, key);
+                rows.Add((app, key, row));
+                list.Children.Add(row);
             }
 
-            sender.Text = string.Empty;
+            if (next < pending.Count)
+            {
+                DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, More);
+            }
+        }
+
+        filter.TextChanged += (_, _) =>
+        {
+            foreach (var (app, key, row) in rows)
+            {
+                row.Visibility = Shows(app, key) ? Visibility.Visible : Visibility.Collapsed;
+            }
+
+            UpdateEmpty();
         };
-        _content.Children.Add(pick);
-        _content.Children.Add(SettingsUi.Footnote("输完整的别名时那个应用排第一（「vs」→ Visual Studio Code）。认的是应用本身，更新、挪了快捷方式照样认；跟着设置导出导入。"));
+        UpdateEmpty();
+        More();
+        _content.Children.Add(new Border { CornerRadius = new CornerRadius(8), Padding = new Thickness(6), Background = Theme.CardBackground(), Child = list });
+        _content.Children.Add(SettingsUi.Footnote("输完整的别名时那个应用排第一（「vs」→ Visual Studio Code）。认的是应用本身，更新、挪了快捷方式照样认；跟着设置导出导入。每个应用最多 256 字。"));
+
+        // 还没扫过（刚装、第一次开）：扫完重画这一页；扫过的照旧用手上这份，顺手看要不要重扫（下次进来用新的）
+        if (AppCatalog.Instance is { } catalog)
+        {
+            if (installed.Count == 0)
+            {
+                void Reload()
+                {
+                    catalog.Changed -= Reload;
+                    if (_currentPage == "launcher" && _launcherSubpage == "apps")
+                    {
+                        BuildPage("launcher");
+                    }
+                }
+
+                catalog.Changed += Reload;
+            }
+
+            catalog.RefreshIfStale();
+        }
 
         // ---- 应用文件夹
         _content.Children.Add(SettingsUi.Section("应用文件夹"));

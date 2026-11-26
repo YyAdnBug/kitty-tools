@@ -126,7 +126,37 @@ internal sealed class ShellRuntime
             LauncherUsageStore.Start(Clipboard.Database);
         }
 
-        AppCatalog.Start();
+        var catalog = AppCatalog.Start();
+        // 自检（PLAN-v27 B1）：等这一轮应用扫完，几个系统工具的词各搜一次，日志记第一条是谁（launcher.apps-probe），不弹界面
+        if (Environment.GetCommandLineArgs().Contains("--launcher-apps-probe", StringComparer.OrdinalIgnoreCase))
+        {
+            void Probe()
+            {
+                // 启动时先用缓存发的那一次不算（缓存是旧版本扫的名字）
+                if (!catalog.HasScanned)
+                {
+                    return;
+                }
+
+                catalog.Changed -= Probe;
+                foreach (var word in new[]
+                         {
+                             "cmd", "命令提示符", "command prompt", "powershell", "pwsh", "wt", "terminal", "regedit", "taskmgr",
+                             "control", "msconfig", "services", "explorer", "calc", "paint", "notepad",
+                         })
+                {
+                    var hits = LauncherMatch.Rank(catalog.Apps, word);
+                    Log.Info($"launcher.apps-probe word={word} hits={hits.Count} first={(hits.Count > 0 ? hits[0].Title : "none")} " +
+                             $"subtitle={(hits.Count > 0 ? hits[0].Subtitle : string.Empty)}");
+                }
+
+                Log.Info($"launcher.apps-probe total={catalog.Apps.Count}");
+            }
+
+            catalog.Changed += Probe;
+            catalog.Rescan();
+        }
+
         LauncherModel.Start();
         // 提醒（PLAN-v12 N6）：起停跟着功能开关（ApplyFeatures）。
         if (Features.IsOn(Feature.Reminders))

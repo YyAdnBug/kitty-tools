@@ -106,6 +106,24 @@ public sealed class MonitorLayoutTests
     }
 
     [TestMethod]
+    public void IslandNoticeHangsFromTheTop()
+    {
+        // PLAN-v27 I1：顶部样式在工作区顶边往下 8，水平居中；任务栏在顶上（工作区 Top = 48）时在它下面。
+        var rect = MonitorLayout.NoticeTop(Primary, 1.0, 300, 46, 8);
+        Assert.AreEqual((1920 - 300) / 2, rect.X);
+        Assert.AreEqual(8, rect.Y);
+        var taskbarOnTop = new WorkArea(0, 48, 1920, 1080);
+        Assert.AreEqual(48 + 12, MonitorLayout.NoticeTop(taskbarOnTop, 1.5, 300, 46, 8).Y);
+        // 展开（更高）时顶边不动
+        Assert.AreEqual(rect.Y, MonitorLayout.NoticeTop(Primary, 1.0, 460, 134, 8).Y);
+        // 副屏在左边、坐标是负的：照样居中在那块屏里
+        var left = new WorkArea(-1920, 0, 0, 1040);
+        var onLeft = MonitorLayout.NoticeTop(left, 1.0, 300, 46, 8);
+        Assert.AreEqual(-1920 + 810, onLeft.X);
+        Assert.IsTrue(onLeft.Right <= left.Right);
+    }
+
+    [TestMethod]
     public void NegativeAndPortraitMonitorsKeepContentInside()
     {
         // 副屏在左边：坐标是负的，居中不能按 0 夹。
@@ -331,6 +349,23 @@ public sealed class StartMenuFilterTests
         Assert.IsFalse(StartMenuFilter.ShouldSkipTarget(string.Empty));
         // 目录 / 无扩展名的启动项不按扩展名拦。
         Assert.IsFalse(StartMenuFilter.ShouldSkipTarget(@"C:\Program Files\Foo"));
+    }
+
+    [TestMethod]
+    public void DocumentLikeNamesStayWhenTheTargetIsAProgram()
+    {
+        // PLAN-v27 B2：「腾讯文档」「金山文档」本身是应用，以前按名字整个丢了
+        Assert.IsFalse(StartMenuFilter.ShouldSkip("腾讯文档", @"C:\Program Files (x86)\Tencent\TencentDocs\TencentDocs.exe"));
+        Assert.IsFalse(StartMenuFilter.ShouldSkip("HelpNDoc", @"C:\Program Files\HelpNDoc\hnd.exe"));
+        // 目标是看文档的程序、或者解析不到：照旧当文档
+        Assert.IsTrue(StartMenuFilter.ShouldSkip("Foo 帮助", @"C:\Windows\hh.exe"));
+        Assert.IsTrue(StartMenuFilter.ShouldSkip("Readme", @"%windir%\system32\notepad.exe"));
+        Assert.IsTrue(StartMenuFilter.ShouldSkip("Foo 帮助文档", null));
+        Assert.IsTrue(StartMenuFilter.ShouldSkip("Foo Manual", @"C:\Program Files\Foo\manual.pdf"));
+        // 卸载、网址：目标是程序也拦
+        Assert.IsTrue(StartMenuFilter.ShouldSkip("卸载 Foo", @"C:\Windows\System32\msiexec.exe"));
+        Assert.IsTrue(StartMenuFilter.ShouldSkip("Foo 官网", @"C:\Program Files\Google\Chrome\Application\chrome.exe"));
+        Assert.IsFalse(StartMenuFilter.ShouldSkip("命令提示符", @"%windir%\system32\cmd.exe"));
     }
 }
 

@@ -55,7 +55,7 @@ public sealed class SettingsSyncTests
     {
         var ids = SettingsSyncMap.Shared.Select(key => key.Id).ToList();
         Assert.AreEqual(91, ids.Count, "PLAN-v21 §1 A、B 组（含 7 个功能开关；R107 起多了 emojiPackDownloads；PLAN-v26 多了 translateSpeechSpeed、clipboardImageRows、clipboardSnippetExpand、截图的六项）");
-        Assert.AreEqual(15, SettingsSyncMap.WindowsOnly.Count, "C 组（快捷键另算）");
+        Assert.AreEqual(16, SettingsSyncMap.WindowsOnly.Count, "C 组（快捷键另算；PLAN-v27 多了 NoticePosition）");
         CollectionAssert.AllItemsAreUnique(ids);
         CollectionAssert.AllItemsAreUnique(SettingsSyncMap.Shared.Select(key => key.Field).ToList());
         foreach (var key in SettingsSyncMap.Shared)
@@ -150,6 +150,11 @@ public sealed class SettingsSyncTests
         Assert.IsNull(SettingsSyncMap.FindShared("pref:feature.screenshot"), "截图在 Windows 上没有开关：透传");
         Assert.IsNull(SettingsSyncMap.FindShared("pref:feature.keepAwake"), "mac 0.9.0 拿掉了保持唤醒：Windows 独有");
         Assert.IsNotNull(SettingsSyncMap.FindWindows("pref:feature.keepAwake"));
+        // PLAN-v27 I1：提示出在哪，只在 Windows 之间；只认 bottom / top
+        var notice = SettingsSyncMap.FindWindows("pref:NoticePosition")!;
+        Assert.AreEqual(SettingValue.Of("top"), notice.Incoming("\"top\""));
+        Assert.IsNull(notice.Incoming("\"middle\""));
+        Assert.IsNull(SettingsSyncMap.FindShared("pref:NoticePosition"));
 
         var hotKey = SettingsSyncMap.HotKey("clipboard");
         Assert.AreEqual("hotkey:clipboard", hotKey.Id);

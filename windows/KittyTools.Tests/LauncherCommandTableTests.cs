@@ -70,6 +70,10 @@ public sealed class LauncherCommandTableTests
         var found = LauncherCommandTable.Conflicts(
             new (string, string?)[] { ("script:a", "vs"), ("b", "ps") }, Array.Empty<string>(), new[] { "VS", string.Empty });
         CollectionAssert.AreEquivalent(new[] { "script:a" }, found.ToArray());
+        // PLAN-v27 B5：一个应用几个别名时按词比（设置页传的是 AppAliases.Words 拆出来的词）
+        var words = new[] { "wx, 聊天；VS" }.SelectMany(text => AppAliases.Words(text));
+        found = LauncherCommandTable.Conflicts(new (string, string?)[] { ("script:a", "vs"), ("b", "聊天"), ("c", "ps") }, Array.Empty<string>(), words);
+        CollectionAssert.AreEquivalent(new[] { "script:a", "b" }, found.ToArray());
     }
 
     [TestMethod]

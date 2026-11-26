@@ -43,6 +43,10 @@ internal static class Theme
 
         /// <summary>HUD 小控件的内描边（white 0.14）和悬停、按下的底。</summary>
         public static readonly Color HudStroke = Color.FromArgb(36, 255, 255, 255);
+
+        /// <summary>灵动岛样式的轻提示（PLAN-v27 I1）：纯黑底（同 mac 的岛，深浅色都黑），详情字 white 0.7。</summary>
+        public static readonly Color IslandBackground = Color.FromArgb(255, 0, 0, 0);
+        public static readonly Color HudTextSecondary = Color.FromArgb(178, 255, 255, 255);
         public static readonly Color HudHover = Color.FromArgb(245, 52, 52, 52);
         public static readonly Color HudPressed = Color.FromArgb(245, 40, 40, 40);
 
