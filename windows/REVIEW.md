@@ -234,7 +234,7 @@ WebDAV 一次 401 之后自动的轮不再发请求。**要用户看**：D1 照�
 22. 讲解外文句子：用一个 OpenAI 系的服务（有自己的 key 时）看排版（第 3 批）。
 
 **文件搜索、更新**
-23. 装 Everything 并运行：启动器空格开头搜文件走它；停掉 Windows Search 服务后照样能在桌面、文档里搜到（1800–1829 里要停服务、装软件的几条）。
+23. 装 Everything 并运行：启动器空格开头搜文件走它（**agent 在「0.4.0 发版前复查」第 5 步里先在沙盒走**，这里只剩你自己那台上看一眼）；停掉 Windows Search 服务后照样能在桌面、文档里搜到（1800–1829 里要停服务的几条）。
 24. 0.4.0 装在 Program Files（没写权限）点更新：给「到发布页下载」、不自己开浏览器；拔网线时「重试」（2000）。
 25. 从已装的 0.3.0 App 内更新到 0.4.0（发布之后；`--update-live=0.3.0` 只验了下载和校验）。
 
@@ -267,10 +267,22 @@ WebDAV 一次 401 之后自动的轮不再发请求。**要用户看**：D1 照�
 2. Debug x64 编译零警告、`dotnet test` 全过（`changelog.json` 是数据，应该不影响；`ChangelogRulesTests` 跑一下）。
 3. 关于页的更新日志：`--ui-snapshots`（关于页那张）看 0.4.0 那一条展开、32 项、没有 0.3.1；`{date+3d}`、`C:\`、`~\` 显示对。
 4. 设置页 / 片段编辑框里占位符的示例和说明对一遍（第 3 条）。
-5. 重打 0.4.0：`build-release.ps1` 零警告、`--smoke` 过、`--update-live=0.3.0` 退出码 0；`release-notes.md` 里有默认快捷键那一条和文件搜索、同步那几条；四个文件的大小和 sha256 换成新的，写在本节下面。
-6. **从 0.3.0 真升级一次**（同 0.3.0 发布那次的做法：GitHub 上 windows-v0.3.0 的 x64 zip 解到临时目录、Release 探针档、主界面底栏「更新到 0.4.0」用 UIA 点）：
+5. **Everything 真机验证**（用户 2026-11-26 要求；0.4.0 里这一项默认开，却从没对着真的 Everything 跑过）：R114「先核对再跑」第 3、4 条和 HANDTEST 1815–1822。
+   **在这一步改完、加完单测，再往下重打**，修的东西才进得了 0.4.0。
+   - **装在哪**：优先 **Windows 沙盒**（「启用或关闭 Windows 功能」里的 Windows Sandbox，关掉就什么都不留；用 `.wsb` 只读映射进 0.4.0 的 x64 zip 解出来的目录）；
+     没有沙盒（家庭版）就装在这台上，测完卸载、连 Everything 的数据和设置一起删。下载只从 voidtools.com 官网（1.4.1 正式版 x64，有 1.5 beta 也从官网拿）；
+     这台上要是本来就装着 Everything，别动它，改用沙盒。
+   - **测试档跑**：Everything 启动、建完库（它窗口底部有条目数）后跑 `--everything-probe`：要 `version=1.4.1.…`、`query=ok`、`hits>0`，ms 记下；
+     `--file-search=jpg` 和一个只在 Everything 里有的文件（放一个不进索引的文件夹）都是 `source=everything`、搜得到。
+   - **第 3 条（项标志）**：搜一个文件夹的名字，结果行右边写「文件夹」、Enter 在资源管理器里打开它。写成文件的，是 `Core/EverythingIpc.cs` 的 `ItemFolder` / `ItemDrive` 不对，照 `everything_ipc.h` 改。
+   - **第 4 条（回包是谁发的）**：日志里出现 `everything.reply-sender` = Everything 回包时的 `wParam` 不是刚才查的那扇窗口，现在的检查会让它永远用不上：照 R114 放宽成只认编号，交接写一句。
+   - HANDTEST 1816–1822 走一遍：托盘里退出 Everything 自动回到 Windows 搜索、刚启动没载完（`everything.not-loaded`）、设置里关掉开关、Everything 以管理员身份运行（`everything.send-failed`，不卡）、
+     用着它时「D: 不在索引里」那行不出、怪文件名两条路都搜得到；有 1.5 beta 再跑一次 `--everything-probe`，能不能用都记（1819）。
+   - 内存探针托盘那一步和没开 Everything 时比，不该涨；截图（设置 › 启动器「找到了 Everything 1.4.x」那一行、一张带「文件夹」的结果）推 `windows-shots` 的 `0.4.0-everything/`，只截我们自己的窗口。
+6. 重打 0.4.0：`build-release.ps1` 零警告、`--smoke` 过、`--update-live=0.3.0` 退出码 0；`release-notes.md` 里有默认快捷键那一条和文件搜索、同步那几条；四个文件的大小和 sha256 换成新的，写在本节下面。
+7. **从 0.3.0 真升级一次**（同 0.3.0 发布那次的做法：GitHub 上 windows-v0.3.0 的 x64 zip 解到临时目录、Release 探针档、主界面底栏「更新到 0.4.0」用 UIA 点）：
    升级前探针档里把截图键留默认、划词改成别的；升级后日志里截图是 Alt+A、截取上次区域是 Alt+X、划词还是改过的那个（`HotKeyDefaultsMigration`）。只结束自己起的 PID。
-7. 不发布、不打 tag。报告写在本节下面「重打结果」。
+8. 不发布、不打 tag。报告写在本节下面「重打结果」（Everything 那一步的结果也写在这里）。
 
 **之后**（不进 0.4.0，进 0.5.0）：
 
