@@ -7,6 +7,7 @@
 // 程序坞那扇窗口在别的屏上（外接屏是主屏）时认不了——刘海屏上铺满的窗口和全屏一个样子——一律不算全屏（评审）。
 // ponytail: 程序坞设成「自动隐藏」时，放大到屏幕底的窗口可能也被当成全屏（自动隐藏时程序坞那扇窗口还在不在没实测）；
 // 程序坞在别的屏上时这一项等于不起作用。要准就用辅助功能读前台窗口的 AXFullScreen（要授权）。
+// 另一件也读同一份窗口列表：岛的窗口这会儿到底在不在当前桌面上（isOnScreen，issue #55，用法见 Island+Notch 的 verifyOnScreen）。
 
 import AppKit
 
@@ -56,5 +57,23 @@ enum IslandFullScreen {
     }
     return isFullScreen(
       windows, screen: frame, top: max(screen.safeAreaInsets.top, 24), front: front)
+  }
+
+  /// 窗口服务器说这扇窗口在不在当前桌面的在屏列表里（主线程，一次约 0.7 ms）；问不到是 nil。窗口自己的
+  /// isOnActiveSpace 认不出「掉出了所有桌面」：没排上去、排下去了也说 true（2026-11-26 本机 27.0.1 探针）。
+  /// 透明度 0 的窗口照样在列表里（全屏时藏着的岛不算不在）；排上去的那一拍事件循环走完就在，排下去要过 0.1–0.3 s 才不在。
+  /// 列表整个是空的（屏都睡着、切到别的用户）算问不到
+  static func isOnScreen(_ number: Int) -> Bool? {
+    guard number > 0,
+      let list = CGWindowListCopyWindowInfo(
+        [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]],
+      !list.isEmpty
+    else { return nil }
+    return list.contains { $0[kCGWindowNumber as String] as? Int == number }
+  }
+
+  /// 算不算掉出了当前桌面（纯函数，issue #55）：窗口自己以为排在屏上、有屏幕（屏都睡着时列表是空的）、窗口服务器却说不在
+  static func lostSpace(visible: Bool, onScreen: Bool?, hasScreens: Bool) -> Bool {
+    visible && hasScreens && onScreen == false
   }
 }

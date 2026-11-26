@@ -169,6 +169,33 @@ import Testing
         fullScreen: false, onNotchScreen: true, board: false, level: false, pinned: false))
   }
 
+  @Test func lostSpaceNeedsWindowServerToSayOff() {
+    // 窗口以为排在屏上、窗口服务器的在屏列表里没有它：掉出了当前桌面（issue #55）
+    #expect(IslandFullScreen.lostSpace(visible: true, onScreen: false, hasScreens: true))
+    // 在列表里、没排上去、问不到、屏都没了：都不算
+    #expect(!IslandFullScreen.lostSpace(visible: true, onScreen: true, hasScreens: true))
+    #expect(!IslandFullScreen.lostSpace(visible: false, onScreen: false, hasScreens: true))
+    #expect(!IslandFullScreen.lostSpace(visible: true, onScreen: nil, hasScreens: true))
+    #expect(!IslandFullScreen.lostSpace(visible: true, onScreen: false, hasScreens: false))
+  }
+
+  @Test func onScreenListSeesTransparentPanel() async throws {
+    // 读窗口列表的那一下认得出本进程的窗口：透明度 0、摆在所有屏外面的面板（看不见、不当 key），排上去就在、没排上去不在。
+    // 排上去要等这一拍事件循环走完才交给窗口服务器（正式代码 0.3 s 后才查）：让出一会儿再看
+    let panel = NSPanel(
+      contentRect: CGRect(x: -20000, y: -20000, width: 40, height: 40),
+      styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+    panel.alphaValue = 0
+    panel.ignoresMouseEvents = true
+    #expect(IslandFullScreen.isOnScreen(panel.windowNumber) == false)
+    panel.orderFrontRegardless()
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(IslandFullScreen.isOnScreen(panel.windowNumber) == true)
+    panel.orderOut(nil)
+    #expect(IslandFullScreen.isOnScreen(0) == nil)
+  }
+
   @Test func lightPlatesGetDarkInk() {
     #expect(IslandLeading.ink(on: NSColor(srgbRed: 1, green: 0.85, blue: 0.1, alpha: 1)) != .white)
     #expect(

@@ -246,6 +246,12 @@ import SwiftUI
   /// 这会儿不响应刘海（AppDelegate 给：截图 / 录屏框选中、启动台开着、状态屏里）：点它、停在它上面都不算
   @ObservationIgnored var isSuppressed: () -> Bool = { false }
   @ObservationIgnored var screenObserver: Any?
+  /// 换了桌面：查一下窗口还在不在当前桌面上（verifyOnScreen，issue #55）
+  @ObservationIgnored var spaceObserver: Any?
+  /// 正在查窗口在不在当前桌面上（verifyOnScreen）
+  @ObservationIgnored var spaceCheck: Task<Void, Never>?
+  /// 上一次因为掉出了所有桌面换窗口的时刻（rebuildWindow：隔一会儿才换第二次）
+  @ObservationIgnored var rebuiltAt: ContinuousClock.Instant?
   @ObservationIgnored var geometry = Geometry.capsule(menuBar: 24)
   @ObservationIgnored var window: IslandPanel?
   @ObservationIgnored var host: IslandHost?
@@ -1277,6 +1283,8 @@ import SwiftUI
     syncFullScreenAlpha()
     window.orderFrontRegardless()
     watchMouse()
+    // 排上去了不等于看得见：窗口可能掉出了所有桌面、只在别的桌面上（issue #55）
+    verifyOnScreen()
   }
 
   /// 放到鼠标所在屏（耳朵给的是刘海屏）顶部正中（刘海屏贴着顶边，其它屏在菜单栏下方）。只在窗口不在屏上时调
