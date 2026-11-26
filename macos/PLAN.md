@@ -1515,6 +1515,16 @@ https://claude.ai/artifact/NQLWKFVipMqoqDabJ2ZQTf 当时没回，11-18 拍板页
 - WPS 的 PDF（2026-11-26 用户又报「Office 的 PDF 好像永远对不上」，探针加了生成的 A4 多页 PDF）：WPS 打开 PDF 时左边默认开着「缩略图」一栏，
   框整个窗口像素滚动，旧代码 85 帧里 75 帧对不上，新代码 0 帧；只框页面那一块新旧都能接上。录帧时 WPS 弹过一个把整扇窗口压暗的框
   （大概是删了它开着的测试文档），压暗那段画面原地不动、亮度一跳就对不上，和拼接无关。
+- **WPS 的 PDF 永远对不上（同日第二轮，用户装上新包后报）**：新包的 `Log.scroll` 显示每次都是「从第一帧起就对不上、还没滚时后面的帧
+  彼此一样、三步的票全是 0」。录 WPS 窗口（`ScrollAppProbeTests.watch()`，用户在生成的 PDF 上走一遍长截图）对时间：WPS 把**失焦的
+  窗口整扇压暗**（亮度 97.6 → 76）；按 S 后框选遮罩收起、WPS 拿回焦点的那一下 Kitty 截了第一帧（亮），长截图面板一 makeKey、
+  WPS 失焦变暗，之后每一帧都暗，一张都接不上；鼠标移回面板又 makeKey、点 WPS 又亮，亮暗来回切。拍板「面板不抢焦点」：
+  ① `ScrollCapturePanel` 永不当 key，键盘留在被截的 App（WPS 不暗、别的 App 的选中高亮和光标也不变灰，长图和屏上一样）；
+  ② 面板上的 Esc、↩、小键盘 Enter、空格、A、⌘C、⌘S、⇧⌘S 在会话开始时挂成临时快捷键（`HotKeyCenter.registerSessionKeys`，
+  Carbon，同录屏倒数的临时 Esc；`finish` 第一件事摘掉），字母按当前布局打出来的字找键位（`HotKey.keyCode(typing:command:)`）；
+  ③ 保险：开始滚动之前（选区外的滚轮、拖动、开自动滚动都算）、也没拼上过东西时，对不上的那一帧拿来重新当第一帧
+  （`ScrollCapture.restarts` + `ScrollStitcher.restart(from:)`），开始滚了以后照旧报对不上。单测：会话键表、法语 / Dvorak – QWERTY ⌘
+  布局反查键位、`restarts` 规则、压暗后重取第一帧接着拼。临时快捷键不在单测里注册（会吞掉开发机的键）；真机手测 HANDTEST 9–12。
 - 已知：没拿到微信的真帧（用户不让拍聊天），根因是按离线复现和微信的界面结构推的，要反馈人装上之后看；框进去的不动竖条在
   长图里是各帧那一截拼起来的（同别家）；取整不齐的界面接缝最多差一两行；没装微软 Office，只测了 WPS。
   手测 HANDTEST「长截图：聊天窗口和 Office 类」。

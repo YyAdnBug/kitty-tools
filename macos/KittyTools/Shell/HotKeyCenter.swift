@@ -4,6 +4,7 @@
 // 另外给界面用：动作的分组 / 色块（快捷键页、速查表、引导、菜单栏共用）、注册失败的原因、最近一次触发（引导「按一下试试」）。
 // 本 App 自己的菜单开着时热键事件会压在队列里、关了才派发，所以看到热键就先关菜单（watch(_:)）。
 // 录屏倒数期间临时注册一个不带修饰键的 Esc（registerEscape，录制 HUD 不当 key、收不到按键；和各动作的热键分开记）。
+// 长截图期间临时挂一组键（registerSessionKeys：Esc ↩ 空格 A ⌘C ⌘S ⇧⌘S，长截图面板不当 key——被截的 App 失焦会变样，issue #57）。
 // 启动器「命令和别名」里每条命令的快捷键（脚本命令第三轮 D1）也在这里注册：哪些由 commandHotKeys 给（AppDelegate 只给此刻
 // 能做事的），按下交给 onCommand；热键 id 从 commandBase 起，每条命令这次运行里一个固定的号（不按排在第几：重新注册后，
 // 按旧号排着队的事件不能落到别的命令上），和动作的下标、临时 Esc 不撞；注册失败的原因记在 commandFailures。
@@ -235,6 +236,26 @@ extension HotKey {
       typed.count == 1, let character = typed.first, let mapped = usKeys[character]
     else { return keyCode }
     return mapped
+  }
+
+  /// 反过来：给定布局（uchr 数据）下打出这个字的键位（command：按 ⌘ 那一层，Dvorak – QWERTY ⌘ 这类按 ⌘ 时换成美式）。
+  /// 长截图面板不当 key、按键靠临时快捷键（HotKeyCenter.registerSessionKeys），Carbon 只认键位，而面板里的字母按打出来的字认
+  /// （E2：法语键盘的 A 在美式 Q 的位置），所以先查哪个键打出这个字。主键盘数字、方向键这类按位置认的不查；查不到给 nil。
+  /// 纯函数，配单测（按 id 取系统自带的布局）
+  nonisolated static func keyCode(typing character: Character, command: Bool, in data: Data) -> Int?
+  {
+    (0..<128).first { code in
+      !positionalKeys.contains(code)
+        && Self.character(
+          for: UInt16(code), modifiers: command ? UInt32(cmdKey) : 0, in: data)?.lowercased()
+          == String(character)
+    }
+  }
+
+  /// 同上，用当前键盘布局（中文输入法下用它背后的 ASCII 布局）；查不到退回美式的位置
+  static func keyCode(typing character: Character, command: Bool) -> Int {
+    currentLayout().flatMap { keyCode(typing: character, command: command, in: $0) }
+      ?? usKeys[character] ?? kVK_ANSI_A
   }
 
   /// 美式键盘不按 ⇧ 时每个字母、标点在哪个键上（加一个「+」，见上）
@@ -765,9 +786,14 @@ enum HotKeyAction: String, CaseIterable {
   @ObservationIgnored private var onEscape: (() -> Void)?
   /// 本 App 的普通窗口（设置窗、全部便签、截图历史）当 key 时也把 Esc 转给它（录音待录条，不是倒数）
   @ObservationIgnored private var escapeToWindows = false
+  /// 长截图期间临时挂的键（registerSessionKeys）和它们的注册；suspend / reload 不碰它们
+  @ObservationIgnored private var sessionKeys: [SessionKey] = []
+  @ObservationIgnored private var sessionRefs: [EventHotKeyRef] = []
   private static let signature: OSType = 0x4B54_5459  // 'KTTY'
   /// 临时 Esc 的热键 id：不和动作的下标（allCases）撞
   private static let escapeID: UInt32 = 0xE5C
+  /// 长截图临时挂的那组键的热键 id 从这里起（第几个加上它）：在动作的下标之上、临时 Esc 之下
+  private static let sessionBase: UInt32 = 0xD00
   /// 命令的快捷键的热键 id 从这里起（第几条加上它）
   private static let commandBase: UInt32 = 0x1000
   /// 要注册的命令的快捷键（编号、组合；按编号排好）和按下时做什么
@@ -1183,6 +1209,42 @@ enum HotKeyAction: String, CaseIterable {
     escapeToWindows = false
   }
 
+  /// 长截图期间临时挂的一个键：组合、合成按键时打出的字（交给本 App 自己拿着键盘的面板时用）、按下时做什么
+  struct SessionKey {
+    let hotKey: HotKey
+    let characters: String
+    let handler: () -> Void
+  }
+
+  /// 长截图期间临时挂一组键（issue #57，2026-11-26）：长截图面板不当 key——被截的 App 失焦会变样（WPS 把失焦的窗口整扇压暗，
+  /// 第一帧亮、之后全暗，一张都接不上；别的 App 的选中高亮、光标也会变灰），所以面板上的键（Esc、↩、空格、A、⌘C、⌘S、⇧⌘S）
+  /// 靠它们收。只在长截图开着时挂，结束（拷贝、存储、取消、出错）立刻 unregisterSessionKeys；挂着时别的 App 收不到这几个键
+  /// （原来长截图时它们也到不了别的 App：面板拿着键盘）。本 App 自己的面板正拿着键盘时这一下交给它（同临时 Esc）。
+  /// 别的 App 开着安全输入时不带 ⌘ 的那几个收不到（系统行为，同 issue #27），面板上的按钮照样能点。没注册上的记一条日志
+  func registerSessionKeys(_ keys: [SessionKey]) {
+    unregisterSessionKeys()
+    installHandlerIfNeeded()
+    sessionKeys = keys
+    for (index, key) in keys.enumerated() {
+      var ref: EventHotKeyRef?
+      let status = RegisterEventHotKey(
+        key.hotKey.keyCode, key.hotKey.modifiers,
+        EventHotKeyID(signature: Self.signature, id: Self.sessionBase + UInt32(index)),
+        GetApplicationEventTarget(), 0, &ref)
+      if status == noErr, let ref {
+        sessionRefs.append(ref)
+      } else {
+        Log.hotkeys.error("长截图的临时快捷键 \(key.hotKey.display, privacy: .public) 没注册上：\(status)")
+      }
+    }
+  }
+
+  func unregisterSessionKeys() {
+    for ref in sessionRefs { UnregisterEventHotKey(ref) }
+    sessionRefs = []
+    sessionKeys = []
+  }
+
   /// 注册失败的原因（快捷键页、引导里那一行下面的橙字）；注册成功或没设键时为 nil
   func failureMessage(for action: HotKeyAction) -> String? {
     failures[action].map { Self.failureMessage($0, hotKey: action.hotKey) }
@@ -1205,6 +1267,9 @@ enum HotKeyAction: String, CaseIterable {
 
   private func fire(_ id: UInt32) {
     if id == Self.escapeID { return escapePressed() }
+    if (Self.sessionBase..<Self.escapeID).contains(id) {
+      return sessionPressed(Int(id - Self.sessionBase))
+    }
     if id >= Self.commandBase {
       // 只认此刻注册着的：注销了的号上排着队的事件不做
       if let command = commandsByNumber[id], commandBindings[command] != nil { onCommand(command) }
@@ -1233,6 +1298,24 @@ enum HotKeyAction: String, CaseIterable {
       return
     }
     NSApp.sendEvent(escape)
+  }
+
+  /// 长截图临时挂的键按下：本 App 自己的面板拿着键盘（长截图时又开了剪贴板、启动器……）时合成同样一下交给它，
+  /// 不然交给长截图（同 escapePressed）
+  private func sessionPressed(_ index: Int) {
+    guard sessionKeys.indices.contains(index) else { return }
+    let key = sessionKeys[index]
+    var flags: NSEvent.ModifierFlags = []
+    if key.hotKey.modifiers & UInt32(cmdKey) != 0 { flags.insert(.command) }
+    if key.hotKey.modifiers & UInt32(shiftKey) != 0 { flags.insert(.shift) }
+    guard let window = NSApp.keyWindow, window is NSPanel,
+      let event = NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: flags,
+        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+        context: nil, characters: key.characters, charactersIgnoringModifiers: key.characters,
+        isARepeat: false, keyCode: UInt16(key.hotKey.keyCode))
+    else { return key.handler() }
+    NSApp.sendEvent(event)
   }
 
   /// 本 App 的菜单（菜单栏、右键、⋯、设置里的弹出菜单）跟踪期间，热键事件压在队列里，菜单关了才派发

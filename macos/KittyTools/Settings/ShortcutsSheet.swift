@@ -479,7 +479,7 @@ struct ShortcutsSheet: View {
           Entry(key(.record), text: "录屏（选区不变；有标注时不切）", needs: .record),
           Entry(key(.recognize), text: "识字并拷贝"),
         ]),
-      // mac-overlay-panel §10 长截图；代码在 ScrollCapturePanel.keyDown
+      // mac-overlay-panel §10 长截图；键表在 ScrollCaptureHUD.sessionKeys（长截图期间临时挂的快捷键，面板不当 key）
       Group(
         title: "长截图", symbol: "arrow.up.and.down.text.horizontal", color: Style.Family.screenshot,
         features: [.screenshot],

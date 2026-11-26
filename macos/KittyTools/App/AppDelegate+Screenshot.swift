@@ -220,7 +220,7 @@ extension AppDelegate {
     }
     let finished: ScrollCapture.Result?
     do {
-      finished = try await ScrollCapture.run(region: region)
+      finished = try await ScrollCapture.run(region: region, hotKeys: hotKeys)
     } catch {
       pins.resume()
       if Feature.notes.isOn { noteEdge?.floats.resume() }  // 便签关着时它们是藏着的，别放出来

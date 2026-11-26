@@ -240,12 +240,11 @@ struct ScreenshotBatch7Tests {
     window.contentView = hud
     window.layoutIfNeeded()
     defer { window.orderOut(nil) }
-    let event = try #require(
-      NSEvent.keyEvent(
-        with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
-        context: nil, characters: "a", charactersIgnoringModifiers: "a", isARepeat: false,
-        keyCode: UInt16(kVK_ANSI_A)))
-    hud.keyDown(with: event)
+    // 面板不当 key（issue #57）：按键走长截图期间临时挂的快捷键，A 那一个交给 press
+    let keys = ScrollCaptureHUD.sessionKeys(a: kVK_ANSI_A, c: kVK_ANSI_C, s: kVK_ANSI_S)
+    let a = try #require(
+      keys.first { $0.hotKey == HotKey(keyCode: UInt32(kVK_ANSI_A), modifiers: 0) })
+    hud.press(a.item)
     if case .output(.annotate)? = actions.first {
     } else {
       Issue.record("按 A 没进标注：\(actions)")
@@ -266,6 +265,29 @@ struct ScreenshotBatch7Tests {
       Issue.record("菜单里的另存为没交回：\(actions)")
     }
     #expect(hud.subviews.compactMap { $0 as? HUDMenu }.isEmpty)  // 点了就收起
+  }
+
+  /// 长截图面板上的键（issue #57：面板不当 key，挂成长截图期间的临时快捷键）：Esc 上膛 / 放弃、↩ 和小键盘 Enter 拷贝、
+  /// 空格开关自动滚动、A 标注、⌘C 拷贝、⌘S 存储、⇧⌘S 另存为；字母用调用方给的键位（法语 A 在 Q 上）。空格按住不放不反复开关
+  @Test func scrollPanelSessionKeys() {
+    let command = UInt32(cmdKey)
+    let keys = ScrollCaptureHUD.sessionKeys(a: kVK_ANSI_Q, c: kVK_ANSI_C, s: kVK_ANSI_S)
+    let table = keys.map { "\($0.hotKey.keyCode)/\($0.hotKey.modifiers)/\($0.item)" }
+    let want: [(Int, UInt32, ScrollCaptureHUD.Item)] = [
+      (kVK_Escape, 0, .escape), (kVK_Return, 0, .output(.copy)),
+      (kVK_ANSI_KeypadEnter, 0, .output(.copy)), (kVK_Space, 0, .toggleAuto),
+      (kVK_ANSI_Q, 0, .output(.annotate)), (kVK_ANSI_C, command, .output(.copy)),
+      (kVK_ANSI_S, command, .output(.save)),
+      (kVK_ANSI_S, command | UInt32(shiftKey), .output(.saveAs)),
+    ]
+    #expect(table == want.map { "\($0.0)/\($0.1)/\($0.2)" })
+    let hud = ScrollCaptureHUD()
+    var actions: [ScrollCaptureHUD.Item] = []
+    hud.onAction = { actions.append($0) }
+    hud.press(.toggleAuto)
+    hud.press(.toggleAuto)
+    hud.press(.escape)
+    #expect(actions == [.toggleAuto, .escape])
   }
 
   // MARK: C9 D17 钉图的按键与右键菜单
