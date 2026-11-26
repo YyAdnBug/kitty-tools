@@ -1,12 +1,14 @@
 // 钉图：把截图钉在原位置当参考。不激活本 App、出现时不抢键盘（修旧版钉图抢焦点，§11 #48）；
-// 拖动移动，滚轮 / 双指捏合以鼠标为锚点缩放，双击或 Esc 关闭（Esc、按键要先点一下钉图）。
-// 按键和截图出图一致（体检 C9 D17）：⌘C 拷贝、O 识字并拷贝、⌘S 存储到快速保存的文件夹、⇧⌘S 另存为…、⌘0 原始大小、⌘W 关闭；
-// 右键菜单：拷贝 / 识字并拷贝 / 翻译 / 存储到「桌面」/ 另存为… ｜ 透明度 / 原始大小 ｜ 关闭，VoiceOver 的自定义动作同一份（B45）。
+// 拖动移动，双击或 Esc 关闭（Esc、按键要先点一下钉图）。缩放（2026-11-24 拍板，按系统手势规范）：触控板捏合、鼠标滚轮以鼠标为锚点；
+// 触控板两指滑不缩放（系统里它是滚动），妙控鼠标没有捏合、滑动照旧缩放；按住 ⌘ 滚动 / 两指滑是调透明度（scrollUse）。
+// 按键和截图出图一致（体检 C9 D17）：⌘C 拷贝、O 识字并拷贝、⌘S 存储到快速保存的文件夹、⇧⌘S 另存为…、⌘+ / ⌘- 放大 / 缩小（以钉图中心）、
+// ⌘0 原始大小、⌘W 关闭；右键菜单：拷贝 / 识字并拷贝 / 翻译 / 存储到「桌面」/ 另存为… ｜ 透明度 / 放大 / 缩小 / 原始大小 ｜ 关闭，
+// VoiceOver 的自定义动作同一份（B45）。
 // 透明度是 10–100% 的滑块（2026-10-03 用户要求，原来点一下换一档；对标 CleanShot 的钉图）：悬停圆钮点开、右键「透明度 ▸」里是同一行，
 // 拖动实时生效。滑块放在菜单里：菜单是自己的窗口，钉图整个窗口按透明度变淡，滑块放进钉图里会跟着一起淡。
 // 长截图时和选区相交的钉图让开（B40：不接鼠标、淡到 0.3，滚轮和自动滚动落到下面的窗口）。菜单栏可隐藏 / 显示、关闭全部。
 // Whisker（mac-whisker §6 钉图）：圆角 10 + 系统阴影；钉上时窗口 1.04 → 1 弹簧回弹（超过半屏的只淡入）；悬停 0.3 s 后右上角淡入透明度 / 关闭两个
-// 22 pt HUD 圆钮；缩放时中央 HUD 显示百分比、停手 0.7 s 淡出；关闭时缩到 0.92 并淡出 0.16 s。
+// 22 pt HUD 圆钮；缩放时中央 HUD 显示百分比、按着 ⌘ 滚动时显示「透明度 N%」，停手 0.7 s 淡出；关闭时缩到 0.92 并淡出 0.16 s。
 // 不做点击穿透（穿透要全局抢一个热键才能再点回来）、不做钉图历史；钉图会出现在之后的截图里。
 // 「钉住剪贴板里的图」（第二轮体检 F1）：从剪贴板取图（只读）、解码、找钉的位置在这里，AppDelegate.pinClipboard 串起来。
 // 剪贴板里是文字时（issue #4，同贴图工具）把文字排成一张卡片图再钉（clipboardText / textCard），之后就是一张普通的钉图。
@@ -272,6 +274,30 @@ final class PinPanel: NSPanel {
   static func zoomDelta(_ deltaY: CGFloat, precise: Bool, phased: Bool) -> CGFloat {
     guard precise else { return deltaY * 8 }
     return phased ? deltaY : deltaY * 8 / 40
+  }
+
+  /// 一下滚动拿来做什么（纯函数，2026-11-24 拍板）
+  enum ScrollUse: Equatable {
+    /// 缩放：zoomDelta 折算过的点（一行 8 点），乘 0.01 再取 e 的幂
+    case zoom(CGFloat)
+    /// 调透明度：加多少（一行 5%，同一个折算）
+    case opacity(CGFloat)
+    /// 不管
+    case none
+  }
+
+  /// 按着 ⌘ = 调透明度（滚轮、触控板、妙控鼠标都算；惯性不调——甩一下就从 100% 掉到 10%）；触控板（带手势阶段、不是妙控鼠标）
+  /// 不缩放——系统里两指滑是滚动，缩放交给捏合；滚轮、平滑滚动换出来的滚轮、妙控鼠标（没有捏合）缩放。
+  /// command 由调用方按这一下手势开始时定（中途松开 ⌘ 不换用途）。
+  /// ponytail: 给滚轮加上手势阶段的鼠标驱动（发出来的设备编号是 0）会被当成触控板、滚轮缩放不了，只剩捏合以外的 ⌘+ / ⌘-；
+  /// 有人报再按设备认触控板（反过来认）
+  static func scrollUse(
+    _ deltaY: CGFloat, precise: Bool, phased: Bool, momentum: Bool, command: Bool,
+    magicMouse: Bool
+  ) -> ScrollUse {
+    let delta = zoomDelta(deltaY, precise: precise, phased: phased)
+    if command { return momentum ? .none : .opacity(delta * 0.05 / 8) }
+    return phased && !magicMouse ? .none : .zoom(delta)
   }
 
   init(image: CGImage, frame: CGRect, board: PinBoard, window: Bool = false) {
@@ -568,24 +594,64 @@ private final class PinView: NSView {
     window?.performDrag(with: event)
   }
 
+  /// 这一下手势开始时按没按 ⌘：同一下的变化和惯性都照它（妙控鼠标按着 ⌘ 滑完马上松开，惯性不会接着缩放）
+  private var gestureCommand = false
+
   override func scrollWheel(with event: NSEvent) {
-    let delta = PinPanel.zoomDelta(
-      event.scrollingDeltaY, precise: event.hasPreciseScrollingDeltas,
-      phased: !event.phase.isEmpty || !event.momentumPhase.isEmpty)
-    zoom(by: exp(delta * 0.01))
+    let momentum = !event.momentumPhase.isEmpty
+    let phased = !event.phase.isEmpty || momentum
+    var command = event.modifierFlags.contains(.command)
+    if phased {
+      if !event.phase.isDisjoint(with: [.mayBegin, .began]) {
+        gestureCommand = command
+      } else {
+        command = gestureCommand
+      }
+    }
+    switch PinPanel.scrollUse(
+      event.scrollingDeltaY, precise: event.hasPreciseScrollingDeltas, phased: phased,
+      momentum: momentum, command: command,
+      magicMouse: phased && !command && Self.isMagicMouse(event))
+    {
+    case .zoom(let delta): zoom(by: exp(delta * 0.01))
+    case .opacity(let delta): changeOpacity(by: delta)
+    case .none: break
+    }
+  }
+
+  /// 发送设备 → 是不是妙控鼠标（同 ScrollTap：没公开的字段 87 + IOKit，同一台只查一次；重连换编号，多一条）
+  private static var magicMice: [Int64: Bool] = [:]
+
+  private static func isMagicMouse(_ event: NSEvent) -> Bool {
+    guard let field = ScrollTap.senderField, let cgEvent = event.cgEvent else { return false }
+    let sender = cgEvent.getIntegerValueField(field)
+    if let known = magicMice[sender] { return known }
+    let found = ScrollTap.isMagicMouse(sender: sender)
+    magicMice[sender] = found
+    return found
   }
 
   override func magnify(with event: NSEvent) { zoom(by: 1 + event.magnification) }
 
-  /// 以鼠标为锚点缩放，保持宽高比：最小到原大的 10%、且宽高都不小于 24 点（原图本来更小就是原大），最大 5 倍
-  private func zoom(by factor: CGFloat) {
+  /// 按着 ⌘ 滚动调透明度：同滑块的 10–100%，中央 HUD 显示「透明度 N%」（没有增量的——手指刚搭上、松开、横着滑——不闪）。
+  /// ponytail: HUD 在钉图窗口里，跟着整张一起淡，调到一二成时看不太清；要清楚就把它挪进自己的小窗口
+  private func changeOpacity(by delta: CGFloat) {
+    guard let panel, delta.isFinite, delta != 0 else { return }
+    panel.opacity = min(max(panel.opacity + delta, 0.1), 1)
+    let percent = Int((panel.opacity * 100).rounded())
+    showBadge(String(localized: "透明度 \(percent)%"))
+  }
+
+  /// 缩放，保持宽高比：最小到原大的 10%、且宽高都不小于 24 点（原图本来更小就是原大），最大 5 倍。
+  /// 锚点（全局坐标）默认是鼠标（滚轮、捏合）；⌘+ / ⌘- 和菜单传钉图中心
+  private func zoom(by factor: CGFloat, at anchor: CGPoint? = nil) {
     guard let window, factor.isFinite, factor > 0 else { return }
     panel?.finishPopIn()
     let frame = window.frame
     let minimum = max(min(1, max(0.1, 24 / originalSize.width)), min(1, 24 / originalSize.height))
     let scale = min(max(frame.width / originalSize.width * factor, minimum), 5)
     let ratio = originalSize.width * scale / frame.width
-    let anchor = NSEvent.mouseLocation
+    let anchor = anchor ?? NSEvent.mouseLocation
     window.setFrame(
       CGRect(
         x: anchor.x - (anchor.x - frame.minX) * ratio,
@@ -610,7 +676,12 @@ private final class PinView: NSView {
   /// 中央 HUD 显示当前倍数，停手 0.7 s 后淡出
   private func showZoom(_ scale: CGFloat) {
     placeControls()
-    zoomLabel.stringValue = "\(Int((scale * 100).rounded()))%"
+    showBadge("\(Int((scale * 100).rounded()))%")
+  }
+
+  /// 中央 HUD 显示一行字（缩放的百分比、透明度），停手 0.7 s 后淡出
+  private func showBadge(_ text: String) {
+    zoomLabel.stringValue = text
     zoomHUD.fit()
     zoomHUD.frame.origin = CGPoint(
       x: (bounds.width - zoomHUD.frame.width) / 2, y: (bounds.height - zoomHUD.frame.height) / 2)
@@ -645,10 +716,18 @@ private final class PinView: NSView {
   /// 按键和右键菜单、VoiceOver 动作查同一张 commands 表（单测经 keyDown 锁住）：修饰键只比 ⌘⌃⌥⇧、不看大写锁定；
   /// 按住不放不反复执行（O 不反复识别、⌘S 不连存几张）
   private func perform(_ event: NSEvent) -> Bool {
-    let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
+    var flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
+    var code = event.typedKeyCode
+    // ⌘+：⌘=、⌘⇧=、小键盘 + 都算；⌘-：小键盘 - 也算（同标注遮罩）
+    switch code {
+    case kVK_ANSI_KeypadPlus: code = kVK_ANSI_Equal
+    case kVK_ANSI_KeypadMinus: code = kVK_ANSI_Minus
+    case kVK_ANSI_Equal: flags.remove(.shift)
+    default: break
+    }
     guard
       let command = commands.first(where: {
-        $0.available && $0.keyCode == event.typedKeyCode && $0.modifiers == flags
+        $0.available && $0.keyCode == code && $0.modifiers == flags
       })
     else { return false }
     if !event.isARepeat { NSApp.sendAction(command.action, to: self, from: nil) }
@@ -670,7 +749,7 @@ private final class PinView: NSView {
   }
 
   /// 选中了字时的拷贝 / 翻译「…」/ 用 X 搜索 / 查询「…」/ 全选文字 ｜ 拷贝 / 识字并拷贝 / 翻译 / 存储到「桌面」/ 另存为… ｜
-  /// 原始大小 ｜ 关闭（体检 B41 C9 D17：截图家族同名同键）。选中了字时 ⌘C 拷贝字，拷贝整张图改叫「拷贝图像」、不带键
+  /// 放大 / 缩小 / 原始大小 ｜ 关闭（体检 B41 C9 D17：截图家族同名同键）。选中了字时 ⌘C 拷贝字，拷贝整张图改叫「拷贝图像」、不带键
   private var commands: [Command] {
     let text = selectedText ?? ""
     let selected = !text.isEmpty
@@ -713,6 +792,12 @@ private final class PinView: NSView {
         title: String(localized: "另存为…"), key: "s", keyCode: kVK_ANSI_S,
         modifiers: [.command, .shift],
         action: #selector(saveImageAs)),
+      Command(
+        title: String(localized: "放大"), key: "+", keyCode: kVK_ANSI_Equal, modifiers: .command,
+        action: #selector(zoomIn), group: 2),
+      Command(
+        title: String(localized: "缩小"), key: "-", keyCode: kVK_ANSI_Minus, modifiers: .command,
+        action: #selector(zoomOut), group: 2),
       Command(
         title: String(localized: "原始大小"), key: "0", keyCode: kVK_ANSI_0, modifiers: .command,
         action: #selector(actualSize), group: 2),
@@ -828,6 +913,15 @@ private final class PinView: NSView {
     let anchor = convert(sender.bounds, from: sender)
     opacityMenu().popUp(
       positioning: nil, at: CGPoint(x: anchor.minX, y: anchor.minY - 4), in: self)
+  }
+
+  /// ⌘+ / ⌘-：一下 1.25 倍（同标注遮罩），以钉图中心（按键时鼠标不一定在钉图上）
+  @objc private func zoomIn() { zoomAroundCenter(by: AnnotateOverlay.zoomStep) }
+  @objc private func zoomOut() { zoomAroundCenter(by: 1 / AnnotateOverlay.zoomStep) }
+
+  private func zoomAroundCenter(by factor: CGFloat) {
+    guard let frame = window?.frame else { return }
+    zoom(by: factor, at: CGPoint(x: frame.midX, y: frame.midY))
   }
 
   /// 回到钉上时的大小，左上角不动

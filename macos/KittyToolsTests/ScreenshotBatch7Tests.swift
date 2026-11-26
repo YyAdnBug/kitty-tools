@@ -270,7 +270,7 @@ struct ScreenshotBatch7Tests {
 
   // MARK: C9 D17 钉图的按键与右键菜单
 
-  // 右键菜单：拷贝 / 识字并拷贝 O / 翻译 / 存储到「X」⌘S / 另存为… ⇧⌘S ｜ 透明度 / 原始大小 ⌘0 ｜ 关闭 ⌘W
+  // 右键菜单：拷贝 / 识字并拷贝 O / 翻译 / 存储到「X」⌘S / 另存为… ⇧⌘S ｜ 透明度 / 放大 ⌘+ / 缩小 ⌘- / 原始大小 ⌘0 ｜ 关闭 ⌘W
   @Test func pinMenuMatchesShotOutputs() throws {
     let board = PinBoard()
     var outputs: [RegionSelector.Action] = []
@@ -289,7 +289,7 @@ struct ScreenshotBatch7Tests {
     #expect(
       menu.items.map(\.title)
         == ["拷贝", "识字并拷贝"] + (translates ? ["翻译"] : []) + [
-          "存储到「\(folder)」", "另存为…", "", "透明度", "原始大小", "", "关闭",
+          "存储到「\(folder)」", "另存为…", "", "透明度", "放大", "缩小", "原始大小", "", "关闭",
         ])
     func key(_ title: String) -> String? {
       menu.items.first { $0.title == title }.map {
@@ -301,6 +301,7 @@ struct ScreenshotBatch7Tests {
     #expect(key("拷贝") == "\(command):c" && key("识字并拷贝") == "0:o")
     #expect(key("存储到「\(folder)」") == "\(command):s" && key("另存为…") == "\(shiftCommand):s")
     #expect(key("原始大小") == "\(command):0" && key("关闭") == "\(command):w")
+    #expect(key("放大") == "\(command):+" && key("缩小") == "\(command):-")
     // 菜单项点下去走对应的输出
     for item in menu.items.prefix(translates ? 5 : 4) {
       NSApp.sendAction(try #require(item.action), to: item.target, from: item)
@@ -326,6 +327,97 @@ struct ScreenshotBatch7Tests {
     try press(kVK_ANSI_O, "o")
     try press(kVK_ANSI_O, "o", repeating: true)
     #expect(outputs == [.copy, .save, .saveAs, .save, .recognize])
+  }
+
+  // 滚动拿来做什么（2026-11-24 拍板）：滚轮、平滑滚动换出来的滚轮、妙控鼠标缩放；触控板两指滑不管（缩放交给捏合）；
+  // 按着 ⌘ 都是调透明度（一行 5%）
+  @Test func pinScrollUse() {
+    func use(
+      _ delta: CGFloat, precise: Bool = false, phased: Bool = false, momentum: Bool = false,
+      command: Bool = false, magicMouse: Bool = false
+    ) -> PinPanel.ScrollUse {
+      PinPanel.scrollUse(
+        delta, precise: precise, phased: phased, momentum: momentum, command: command,
+        magicMouse: magicMouse)
+    }
+    #expect(use(1) == .zoom(8))
+    #expect(use(40, precise: true) == .zoom(8), "平滑滚动换出来的一行")
+    #expect(use(40, precise: true, phased: true) == .none, "触控板")
+    #expect(use(40, precise: true, phased: true, magicMouse: true) == .zoom(40), "妙控鼠标")
+    #expect(use(-2, command: true) == .opacity(-0.1))
+    #expect(use(8, precise: true, phased: true, command: true) == .opacity(0.05), "⌘ + 触控板")
+    #expect(
+      use(80, precise: true, phased: true, momentum: true, command: true) == .none, "⌘ 手势的惯性不调")
+    #expect(
+      use(40, precise: true, phased: true, momentum: true, magicMouse: true) == .zoom(40),
+      "妙控鼠标的惯性照旧缩放")
+  }
+
+  // 真的滚动事件和按键走到钉图上：⌘ + 滚轮调透明度（10–100%、旁白值跟着变）；触控板两指滑（带阶段）大小不动；
+  // ⌘= / ⌘⇧=（打出 +）/ 小键盘 + 放大 1.25 倍、⌘- 缩小，都以钉图中心
+  @Test func pinScrollAndZoomKeys() throws {
+    let board = PinBoard()
+    board.pin(Self.image, frame: CGRect(x: -20000, y: -20000, width: 200, height: 100))
+    defer { board.closeAll() }
+    let panel = try #require(board.panels.first)
+    panel.finishPopIn()
+    settle()
+    let view = try #require(panel.contentView)
+    func scroll(lines: Int32 = 0, points: Int32 = 0, phase: Int64 = 0, command: Bool = false)
+      throws
+    {
+      let event = try #require(
+        CGEvent(
+          scrollWheelEvent2Source: nil, units: points != 0 ? .pixel : .line, wheelCount: 1,
+          wheel1: points != 0 ? points : lines, wheel2: 0, wheel3: 0))
+      if phase != 0 {
+        event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+        event.setIntegerValueField(.scrollWheelEventScrollPhase, value: phase)
+      }
+      if command { event.flags = .maskCommand }
+      view.scrollWheel(with: try #require(NSEvent(cgEvent: event)))
+    }
+    let start = panel.frame
+    try scroll(lines: -2, command: true)
+    #expect(abs(panel.opacity - 0.9) < 0.001 && panel.frame == start)
+    #expect(view.accessibilityValue() as? String == "200 × 100 点，透明度 90%")
+    for _ in 0..<30 { try scroll(lines: -1, command: true) }
+    #expect(abs(panel.opacity - 0.1) < 0.001, "最低 10%")
+    try scroll(lines: 30, command: true)
+    #expect(panel.opacity == 1, "最高 100%")
+    // 同一下手势照开始时定：按着 ⌘ 开始、中途松开，接着的还是调透明度（阶段字段 1 = 开始、2 = 变化）
+    try scroll(points: -16, phase: 1, command: true)
+    try scroll(points: -16, phase: 2)
+    #expect(abs(panel.opacity - 0.8) < 0.001, "松开 ⌘ 后同一下照旧调透明度")
+    try scroll(points: 30, phase: 1)
+    try scroll(points: 30, phase: 2)
+    #expect(panel.frame == start && abs(panel.opacity - 0.8) < 0.001, "触控板两指滑不缩放")
+    try scroll(lines: 1)
+    #expect(panel.frame.width > start.width, "滚轮照旧缩放")
+
+    func press(_ keyCode: Int, _ key: String, _ flags: NSEvent.ModifierFlags) throws {
+      view.keyDown(
+        with: try #require(
+          NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0,
+            context: nil, characters: key, charactersIgnoringModifiers: key, isARepeat: false,
+            keyCode: UInt16(keyCode))))
+    }
+    let presses: [(Int, String, NSEvent.ModifierFlags)] = [
+      (kVK_ANSI_Equal, "=", .command), (kVK_ANSI_Equal, "+", [.command, .shift]),
+      (kVK_ANSI_KeypadPlus, "+", [.command, .numericPad]),
+    ]
+    for (code, key, flags) in presses {
+      let before = panel.frame
+      try press(code, key, flags)
+      // 窗口的大小、位置取整到整点：差不过一点多
+      #expect(abs(panel.frame.width - before.width * 1.25) <= 1.5, "\(key) 放大")
+      #expect(
+        abs(panel.frame.midX - before.midX) <= 1.5 && abs(panel.frame.midY - before.midY) <= 1.5)
+    }
+    let before = panel.frame
+    try press(kVK_ANSI_Minus, "-", .command)
+    #expect(abs(panel.frame.width - before.width / 1.25) <= 1.5, "⌘- 缩小")
   }
 
   // 透明度（2026-10-03 用户要求，原来点一下换一档）：右键「透明度 ▸」里是一行 10–100% 的滑块，拖到哪钉图就是多少（按整数
