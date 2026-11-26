@@ -11,6 +11,7 @@
 
 import AppKit
 import Carbon.HIToolbox
+import OSLog
 import ScreenCaptureKit
 import SwiftUI
 
@@ -263,6 +264,8 @@ final class ScrollCapture {
 
   // MARK: 状态
 
+  /// 这一次会话里每种结果各有几帧（诊断日志的汇总）
+  private var counts = (moved: 0, unchanged: 0, lost: 0)
   /// 对不上：拼上新内容之前一直提示
   private var isLost = false
   private var isFull = false
@@ -278,6 +281,12 @@ final class ScrollCapture {
     let sent = postedAtCapture - postedAtReference
     let sentThisFrame = postedAtCapture - postedAtPreviousCapture
     switch outcome {
+    case .moved: counts.moved += 1
+    case .unchanged: counts.unchanged += 1
+    case .lost: counts.lost += 1
+    case .full: break
+    }
+    switch outcome {
     case .moved(let grown):
       postedAtReference = postedAtCapture
       isLost = false
@@ -286,7 +295,15 @@ final class ScrollCapture {
         previewIsStale = true
         escapeArm = .init()  // 又接上了新的一段：Esc 的上膛解除
       }
-    case .lost: isLost = true
+    case .lost:
+      isLost = true
+      // 诊断（issue #57）：各步投票的最高票，用户报「对不上」时拿日志看是哪一步、差多少（一次会话最多记 40 帧）
+      if counts.lost <= 40 {
+        let attempts = stitcher.attempts.map(\.description).joined(separator: ", ")
+        Log.scroll.notice(
+          "对不上（\(self.isAutoScrolling ? "自动" : "手动", privacy: .public)）：\(attempts, privacy: .public)"
+        )
+      }
     case .full:
       isFull = true
       stopAutoScroll()
@@ -600,6 +617,9 @@ final class ScrollCapture {
     panel.hudView.onFrame = nil
     border.orderOut(nil)
     panel.orderOut(nil)
+    Log.scroll.notice(
+      "结束：帧 \(self.stitcher.width)×\(self.stitcher.height)，接上 \(self.counts.moved)、没动 \(self.counts.unchanged)、对不上 \(self.counts.lost)，长图 \(self.stitcher.outputHeight) 像素"
+    )
     let result = action.flatMap { action in
       stitcher.makeImage().map { Result(image: $0, scale: scale, action: action) }
     }
