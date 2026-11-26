@@ -794,7 +794,7 @@ public static partial class ScreenshotOverlay
         static bool HasCjk(string value)
             => value.Any(ch => ch is >= '\u3400' and <= '\u9FFF' or >= '\u3040' and <= '\u30FF' or >= '\uAC00' and <= '\uD7AF');
 
-        if (code is not null || HasCjk(source) || !HasCjk(translation) || !source.Any(ch => ch is >= 'A' and <= 'Z' or >= 'a' and <= 'z'))
+        if (code is not null || IsCjkSource(source) || !HasCjk(translation) || !source.Any(ch => ch is >= 'A' and <= 'Z' or >= 'a' and <= 'z'))
         {
             return null;
         }
@@ -807,6 +807,18 @@ public static partial class ScreenshotOverlay
 
         var size = lineHeight * 100 / cap;
         return pitch is { } leading ? Math.Min(size, leading / 1.2) : size;
+    }
+
+    /// <summary>
+    /// 原文是不是中日韩文字（不是就要把识字量到的字面高度还原成字号）。Windows 的识字用中文引擎时，常把一大段英文里的个别笔画
+    /// 认成一个汉字（「生」「秆」，2026-11-26 核验 R103 时量到）：mac 的 Vision 没这个毛病。所以至少两个、而且占得上字母的四分之一
+    /// 才算中文原文；混着英文单词的中文句子（「Kitty Tools 的剪贴板」）照样算。
+    /// </summary>
+    public static bool IsCjkSource(string source)
+    {
+        var cjk = source.Count(ch => ch is >= (char)0x3400 and <= (char)0x9FFF or >= (char)0x3040 and <= (char)0x30FF or >= (char)0xAC00 and <= (char)0xD7AF);
+        var latin = source.Count(ch => ch is >= 'A' and <= 'Z' or >= 'a' and <= 'z');
+        return cjk >= 2 && cjk * 4 >= latin || cjk > 0 && latin == 0;
     }
 
     private static OverlayRect Inflate(OverlayRect rect, double by) => OverlayRect.FromEdges(rect.MinX - by, rect.MinY - by, rect.MaxX + by, rect.MaxY + by);

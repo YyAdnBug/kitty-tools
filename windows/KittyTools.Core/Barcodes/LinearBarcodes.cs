@@ -5,6 +5,9 @@
 // 零点几个像素：2.1 像素一个模块、边缘抗锯齿的截图也量得准。正反两个方向各解一遍（码倒过来）。
 // 防误认：码前后要有至少 5 个模块的空白（或空白一直到线头）；同一个结果至少两条线都读出来才算（Code 39、ITF 没有校验位，三条）；
 // Code 39、ITF 要求只有两种宽度（ITF 卡得更严）；一条斜线从条的一头出去时能读出个短的假码，所以落在同一块地方的两个结果只留长的那个。
+// 斜线只扫可能有码的地方（PLAN-v26 O2：4K 整屏没码时斜线占了八成时间）：横线、竖线扫的时候顺便数每个 64 像素格子里两个方向各有多少边，
+// 一维码的条是一个方向上很密、垂直方向上稀（文字两个方向都密）；近横的斜线只扫「横着密、竖着稀得多」的格子（和它周围一格），近竖的反过来。
+// ponytail: 一维码紧贴着密排的文字、整格两个方向都密时，转了角度的码只靠横竖线读；要认再把格子缩到 32 像素（多约一成时间）。
 namespace KittyTools.Core.Barcodes;
 
 internal static class LinearBarcodes
@@ -105,6 +108,31 @@ internal static class LinearBarcodes
         var ys = new double[longest];
         var chunkLow = new double[longest / 8 + 2];
         var chunkHigh = new double[longest / 8 + 2];
+
+        // 每个格子里横线、竖线各看到多少边、看了多少个点（O2）
+        var cellsX = image.Width / Cell + 1;
+        var cellsY = image.Height / Cell + 1;
+        var horizontalEdges = new int[cellsX * cellsY];
+        var horizontalSamples = new int[cellsX * cellsY];
+        var verticalEdges = new int[cellsX * cellsY];
+        var verticalSamples = new int[cellsX * cellsY];
+
+        void Count(int[] edges, int[] samples, int length)
+        {
+            var wasDark = false;
+            for (var i = 0; i < length; i++)
+            {
+                var cell = (int)ys[i] / Cell * cellsX + (int)xs[i] / Cell;
+                samples[cell]++;
+                var isDark = levels[i] < thresholds[i];
+                if (i > 0 && isDark != wasDark)
+                {
+                    edges[cell]++;
+                }
+
+                wasDark = isDark;
+            }
+        }
 
         // 线上的位置（第 i 个点占 [i, i + 1)）→ 图上的点
         (double X, double Y) Point(double position, int length)
@@ -257,6 +285,7 @@ internal static class LinearBarcodes
             }
 
             Scan(image.Width);
+            Count(horizontalEdges, horizontalSamples, image.Width);
         }
 
         var columnStep = Math.Min(16, Math.Max(2, image.Width / 120));
@@ -271,7 +300,11 @@ internal static class LinearBarcodes
             }
 
             Scan(image.Height);
+            Count(verticalEdges, verticalSamples, image.Height);
         }
+
+        var nearHorizontal = Candidates(horizontalEdges, horizontalSamples, verticalEdges, verticalSamples, cellsX, cellsY);
+        var nearVertical = Candidates(verticalEdges, verticalSamples, horizontalEdges, horizontalSamples, cellsX, cellsY);
 
         // 再加稍微斜一点的线：码转过 10° 左右、条又不高时，横线穿不过整个码
         // ponytail: 只到两条轴两边各 12°；转了 30°–60° 的一维码读不出，要读再加角度（每多一个方向约多 1/8 的时间）
@@ -288,6 +321,11 @@ internal static class LinearBarcodes
             var angle = degrees * Math.PI / 180;
             var dx = Math.Cos(angle);
             var dy = Math.Sin(angle);
+            var candidates = Math.Abs(dx) > Math.Abs(dy) ? nearHorizontal : nearVertical;
+            if (!candidates.Any(cell => cell))
+            {
+                continue;
+            }
             var across = Math.Abs(dx) > Math.Abs(dy) ? image.Height : image.Width;
             // ponytail: 斜线 4–32 像素一条；条的高度比这还短的码可能从两条线之间漏过去
             double spacing = Math.Min(32, Math.Max(4, across / 60));
@@ -314,6 +352,7 @@ internal static class LinearBarcodes
                     high = Math.Min(high, Math.Max(t0, t1));
                 }
 
+                // 只取落在候选格子里的那几截：一截完了（出了候选区）就扫它，接着找下一截（截断处当线头，空白一直到线头算数）
                 var length = 0;
                 for (var t = Math.Ceiling(low); t <= high && length < levels.Length; t++)
                 {
@@ -321,6 +360,17 @@ internal static class LinearBarcodes
                     var y = py + dy * t;
                     if (x < 0 || y < 0 || x >= width || y >= height)
                     {
+                        continue;
+                    }
+
+                    if (!candidates[(int)y / Cell * cellsX + (int)x / Cell])
+                    {
+                        if (length > 20)
+                        {
+                            Scan(length);
+                        }
+
+                        length = 0;
                         continue;
                     }
 
@@ -356,6 +406,51 @@ internal static class LinearBarcodes
 
         // 按第一次读到的先后排
         return reads.Where(kept.Contains).Select(read => read.Text).ToList();
+    }
+
+    /// <summary>格子边长（像素）：横线、竖线 16 像素一条，一格里各有约四条。</summary>
+    private const int Cell = 64;
+
+    /// <summary>
+    /// 斜线要扫的格子（O2）：沿这个方向每 64 像素至少 8 条边（条码上 2–4 像素一个模块是 16–30 条），而且是垂直方向的 2.5 倍以上
+    /// （条转了 12° 时垂直方向一格也只穿过几条；文字两个方向差不多）；再往外扩一格（码的边、斜线从格子边上进出）。
+    /// </summary>
+    private static bool[] Candidates(int[] alongEdges, int[] alongSamples, int[] acrossEdges, int[] acrossSamples, int cellsX, int cellsY)
+    {
+        var dense = new bool[cellsX * cellsY];
+        for (var cell = 0; cell < dense.Length; cell++)
+        {
+            if (alongSamples[cell] == 0)
+            {
+                continue;
+            }
+
+            var along = alongEdges[cell] * (double)Cell / alongSamples[cell];
+            var across = acrossSamples[cell] == 0 ? 0 : acrossEdges[cell] * (double)Cell / acrossSamples[cell];
+            dense[cell] = along >= 8 && along >= across * 2.5;
+        }
+
+        var result = new bool[dense.Length];
+        for (var cy = 0; cy < cellsY; cy++)
+        {
+            for (var cx = 0; cx < cellsX; cx++)
+            {
+                if (!dense[cy * cellsX + cx])
+                {
+                    continue;
+                }
+
+                for (var ny = Math.Max(0, cy - 1); ny <= Math.Min(cellsY - 1, cy + 1); ny++)
+                {
+                    for (var nx = Math.Max(0, cx - 1); nx <= Math.Min(cellsX - 1, cx + 1); nx++)
+                    {
+                        result[ny * cellsX + nx] = true;
+                    }
+                }
+            }
+        }
+
+        return result;
     }
 
     private static bool Overlaps(Read a, Read b)

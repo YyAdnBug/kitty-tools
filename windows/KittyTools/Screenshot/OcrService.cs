@@ -81,7 +81,11 @@ internal static class OcrService
         var lines = new List<CoreOcrLine>();
         foreach (var line in result.Lines)
         {
-            var text = OcrText.RemoveCjkSpaces(line.Text.Trim());
+            // 词拼回一行：被拆开的短词合回去（PLAN-v26 O1）
+            var lineText = line.Words.Count > 0
+                ? OcrText.JoinWords(line.Words.Select(word => (word.Text, word.BoundingRect.X, word.BoundingRect.X + word.BoundingRect.Width, word.BoundingRect.Height)).ToList())
+                : line.Text;
+            var text = OcrText.RemoveCjkSpaces(lineText.Trim());
             if (text.Length == 0)
             {
                 continue;

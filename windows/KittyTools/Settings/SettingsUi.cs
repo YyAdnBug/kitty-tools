@@ -253,6 +253,22 @@ internal static class SettingsUi
         return true;
     }
 
+    /// <summary>一张 <see cref="Card"/> 的标题和说明（设置搜索落到哪一行用，PLAN-v26 G1）；不是卡片是 null。</summary>
+    public static (string Title, string Detail)? TextOf(Border card)
+    {
+        if (card.Child is not Grid row ||
+            row.Children.OfType<StackPanel>().FirstOrDefault(panel => panel.Name == CardTextName) is not { } text)
+        {
+            return null;
+        }
+
+        var parts = text.Children.Count > 0 && text.Children[0] is StackPanel titleRow
+            ? titleRow.Children.OfType<TextBlock>().Select(block => block.Text)
+            : text.Children.OfType<TextBlock>().Take(1).Select(block => block.Text);
+        var detail = text.Children.OfType<TextBlock>().Skip(text.Children[0] is TextBlock ? 1 : 0).FirstOrDefault()?.Text ?? string.Empty;
+        return (string.Join(" ", parts), detail);
+    }
+
     /// <summary>
     /// 原地改一张 <see cref="Card"/> 的说明（空 = 收起那一行）。开关旁边的说明、下面那一行要跟着变时用它，
     /// 别整页重建：重建时整页的开关都换成新建的，看着每个都闪一下（2026-10-29 用户反馈）。

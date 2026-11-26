@@ -373,9 +373,23 @@ internal sealed partial class SettingsWindow : Window
         // R34：设置窗反复开关每次 +5 MB。改成「关 = 隐藏」，全进程只建一次窗口，不再重复分配 XAML 树。
         AppWindow.Closing += (_, args) =>
         {
+            if (_releasing)
+            {
+                return;
+            }
+
             args.Cancel = true;
             HideInsteadOfClosing();
         };
+    }
+
+    /// <summary>空闲回收时真的关掉（PLAN-v26 G2，同 mac 0.10.3 5bccbef1）：Closing 不再拦，Closed 里放掉整棵页面，ShellRuntime 丢掉引用。</summary>
+    private bool _releasing;
+
+    public void Release()
+    {
+        _releasing = true;
+        Close();
     }
 
     private void HideInsteadOfClosing()
@@ -389,6 +403,8 @@ internal sealed partial class SettingsWindow : Window
 
         AppWindow.Hide();
         Log.Info("settings.hidden");
+        // 藏起来之后两分钟没再用别的面板：空闲回收把它真的关掉（G2）
+        IdleReclaimer.Schedule();
     }
 
     public bool IsClosed { get; private set; }
@@ -618,6 +634,7 @@ internal sealed partial class SettingsWindow : Window
                 break;
         }
 
+        AddResetCard(_currentPage);
         ApplyGate();
         SettingsUi.GroupCards(_content, _content.Spacing);
         RememberPage();
@@ -860,6 +877,8 @@ internal sealed partial class SettingsWindow : Window
             _featuresPage = false;
             BuildPage(target);
         }
+
+        ScheduleLanding();
     }
 
     /// <summary>功能页第一行「启用 X」（mac FeatureToggle inPage）：和 通用 › 功能 那一排绑同一个开关；拨了整页重画成变灰 / 不变灰。</summary>
