@@ -8819,13 +8819,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Services,API Key,Zhipu,OpenAI,Anthropic,DeepL,Google,Baidu,Youdao,Microsoft,AI,Model"
+            "value" : "Services,API Key,Zhipu,OpenAI,Anthropic,DeepL,Google,Baidu,Youdao,Microsoft,Bilibili,Index,AI,Model"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "服务,密钥,智谱,OpenAI,Anthropic,DeepL,Google,百度,有道,微软,AI,模型"
+            "value" : "服务,密钥,智谱,OpenAI,Anthropic,DeepL,Google,百度,有道,微软,哔哩哔哩,Index,AI,模型"
           }
         }
       }
@@ -19066,6 +19066,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bilibili"
+          }
+        }
+      }
+    },
+    "哔哩哔哩 Index" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bilibili Index"
           }
         }
       }

@@ -641,7 +641,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         .translate, "翻译服务",
         LocalizedStringResource(
           "search.translate.services",
-          defaultValue: "服务,密钥,智谱,OpenAI,Anthropic,DeepL,Google,百度,有道,微软,AI,模型"))
+          defaultValue: "服务,密钥,智谱,OpenAI,Anthropic,DeepL,Google,百度,有道,微软,哔哩哔哩,Index,AI,模型"))
     case .screenshotSaveFolder:
       Self.row(
         .screenshot, "快速保存到",

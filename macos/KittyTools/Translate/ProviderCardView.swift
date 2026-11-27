@@ -177,9 +177,8 @@ struct ProviderCardView: View {
           .font(.system(size: 12, weight: .semibold))
           .opacity(0.85)
           .lineLimit(1)
-        // 智谱存的旧值（glm-4.6v-flash 等）实际按回落后的模型请求，这里写同一个（体检 A17）
-        if let model = card.service.kind == .zhipu
-          ? TranslateService.zhipuModel(card.service.model) : card.service.model,
+        // 内置大模型存的旧值（智谱的 glm-4.6v-flash 等）实际按回落后的模型请求，这里写同一个（体检 A17）
+        if let model = card.service.builtinModel ?? card.service.model,
           !model.isEmpty, card.service.isStreaming
         {
           Text(model).font(.system(size: 11)).foregroundStyle(.tertiary).lineLimit(1)
@@ -648,9 +647,10 @@ struct ServiceTile: View {
       switch service.kind {
       case .zhipu, .baidu, .youdao, .google, .deepl, .microsoft, .volcengine, .tencent:
         service.kind.rawValue
-      // 有道词典和有道翻译是同一个牌子；系统翻译没有 logo，用色块
+      // 有道词典和有道翻译是同一个牌子；系统翻译没有 logo，用色块。
+      // ponytail: 哔哩哔哩 Index 先用色块（B 站蓝底白字「哔」），要图标就从官网取一张 ≥ 128 px 的放进 ServiceLogo
       case .youdaoDict: "youdao"
-      case .apple: nil
+      case .apple, .bilibili: nil
       case .ai: service.aiProtocol == .azure ? "microsoft" : AIVendor(service: service)?.rawValue
       }
     return name.map { ("ServiceLogo/" + $0, !fullBleed.contains($0)) }
@@ -675,6 +675,7 @@ struct ServiceTile: View {
       case .tencent: 0x0052D9
       case .apple: 0x5E5CE6
       case .youdaoDict: 0xE1251B
+      case .bilibili: 0x00A1D6
       case .ai:
         switch service.aiProtocol {
         case .anthropic: 0xD97757
