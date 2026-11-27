@@ -87,6 +87,9 @@ public sealed class UpdateManifestTests
         Assert.IsFalse(
             UpdateManifest.VerifySignature(sample, TestSignature, Convert.ToBase64String(other.ExportSubjectPublicKeyInfo())),
             "别的钥匙");
+        // 公钥末尾改一个字符：点不在曲线上，Windows 的 CNG 报 PlatformNotSupportedException（不是 CryptographicException）
+        var broken = TestKey[..^4] + (TestKey[^4] == 'A' ? 'B' : 'A') + TestKey[^3..];
+        Assert.IsFalse(UpdateManifest.VerifySignature(sample, TestSignature, broken), "公钥坏了");
     }
 
     [TestMethod]

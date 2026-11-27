@@ -78,7 +78,8 @@ public static partial class UpdateManifest
                 manifest, Convert.FromBase64String(signature.Trim()), HashAlgorithmName.SHA256,
                 DSASignatureFormat.Rfc3279DerSequence);
         }
-        catch (Exception ex) when (ex is FormatException or CryptographicException)
+        // 公钥的点不在曲线上时 Windows 的 CNG 报 PlatformNotSupportedException（「曲线不支持」），同样算对不上
+        catch (Exception ex) when (ex is FormatException or CryptographicException or PlatformNotSupportedException)
         {
             return false;
         }
