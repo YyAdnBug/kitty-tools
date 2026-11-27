@@ -550,6 +550,37 @@ WebDAV 一次 401 之后自动的轮不再发请求。**要用户看**：D1 照�
   - `SigningKey` 照指令留空。
 - **两条都并进来以后的内存**（x64 Release 探针档，`KITTY_MEMORY_PROBE_SETTINGS=1`，和上面 0.4.0 新包同一台、同一种量法）：托盘 50.0 MB（0.4.0 是 50.6）、设置窗各页 97.8（99.8）、关掉两分钟后 96.0（98.4）。不涨。
 
+### GitCode 收尾：填公钥、真地址核验（PLAN-gitcode 第 5、6 条；Claude 在 Windows 上，2026-11-27）→ 过了，进 0.5.0
+
+- **`2ecee067`** `feat(win): 填上 GitCode 清单的验签公钥`：`UpdateManifest.SigningKey` = 用户在 Mac 上 `sign-manifest.swift` 生成的 P-256 公钥。Update 单测 38 过，x64 / ARM64 AOT 0 警告。
+- **`deff3f5c`** `fix(win): 公钥坏了验签也只算对不上`：第 4 条查出来的，见下。全量单测 1224 过，x64 / ARM64 AOT 0 警告（最后一遍用的就是这两个提交的代码）。
+- **怎么挡的 GitHub**：这台的会话没有管理员权限，改不了 `hosts`，**hosts 一个字没动**。改成只给探针进程设 `HTTPS_PROXY` / `HTTP_PROXY`，指向一个本地小代理：
+  `github.com`、`api.github.com` 的 CONNECT 直接回 403，别的照转（.NET 的 `HttpClient` 在 Windows 上先认这两个环境变量）。效果和 hosts 指到 127.0.0.1 一样：连 GitHub 当场失败；
+  代理顺手记下每个连接，下面每一条都对得上「GitHub 被挡、只连了 gitcode.com / file-cdn.gitcode.com」。探针都是 Release x64 + `KITTY_PROBE_PROFILE`，只结束自己起的 PID，探针档和发布目录测完删了。
+- **触发检查**：`--update-check` 在 `ShellRuntime` 的 `#if DEBUG` 里，Release 不认；用的是启动 12 秒后的自动检查（同一个 `CheckAsync` → `FirstManifestAsync`，只是 `userInitiated: false`，
+  所以「已是最新」的轻提示没弹，日志一样）。托盘「检查更新」本身没点（不发合成按键）。
+1. **验签那条路（第 2 条）过**：0.4.0 + 公钥的包，`update.manifest-missing HttpRequestException`（GitHub 那份）→ 0.4 秒后 `update.check newer=False version=0.4.0 source=manifest gitcode=True`。
+   修了第 4 条之后又跑一遍，一样。
+2. **从 GitCode 下载并装上（第 3 条）过**：本地临时改 `Directory.Build.props` 为 0.3.9 打 x64（发布完马上改回，没提交），解出来的目录当安装目录。
+   - `update.check newer=True version=0.4.0 source=manifest gitcode=True` → `update.prepare` → 1–2 秒后 `update.ready`（后台从 `file-cdn.gitcode.com` 下完、核过清单里的 sha256、解压好）。
+   - 点「更新」：用 `--launcher-script=…;type:Updates;…;enter`（探针档才认，改搜索框、调回车的处理函数，不合成按键；先空跑一遍截图确认只有「更新到 / 检查更新」一行）
+     → `update.installed files=159 version=0.4.0` → 带 `--updated` 重开 → `update.relaunched version=0.4.0`，exe 变成 `0.4.0+0649f54b`（GitCode 上 0.4.0 的包）。
+     重开的进程只读 GitHub（0.4.0 里没有公钥，被挡 → 检查失败），这是对的。
+   - 关于页没截：版本以 exe 的版本号和 `update.relaunched` 为准。23 个 `*.old` 留在目录里（旧进程还在退），和 0.1.2 / 0.1.9 那几轮记的一样，原来就有。
+   - 顺带走了一遍「退出时装上」：第一次的 0.3.9 探针被人从它的托盘图标点开主界面、设置、再退出了（日志 `home.show tray=True` → `app.exit`，不是我做的，大概是你），
+     `update.installed-on-quit files=159 version=0.4.0`，再起来 `update.relaunched version=0.4.0 removed-old=159`。也是从 GitCode 下的那份。
+3. **签名对不上就不认（第 4 条）过，修了一处**：本地临时把 `SigningKey` 倒数第三个字符 `9` 改成 `8`（没提交）。
+   - 第一次：GitCode 那份照样不认、退回 GitHub、`update.check-failed`，但日志是 `update.manifest-missing PlatformNotSupportedException`，**不是** `update.manifest-bad-signature`。
+     改坏的公钥点不在 P-256 曲线上，Windows 的 CNG 导入时报 `PlatformNotSupportedException`（「曲线 nistP256 不支持」），`VerifySignature` 只接 `FormatException` / `CryptographicException`，
+     漏到 `ReadManifestAsync` 的兜底。安全上没问题，但函数约定是「坏了一律 false」。
+   - 修（`deff3f5c`）：catch 加上 `PlatformNotSupportedException`；`VerifySignature_OnlyTheSignedBytes` 加一句「公钥坏了」（改之前单测里同样抛这个异常）。
+   - 修完重跑：`update.manifest-missing HttpRequestException`（GitHub）→ `update.manifest-bad-signature` → `update.check-failed HttpRequestException`。
+   - 改坏 GitCode 上的 `.sig` 没做（那是线上文件）；单测里「改一个字节」「别的钥匙」「sig 不是 base64」都覆盖了签名对不上那一面。
+4. **收尾**：版本号、`SigningKey` 都是改完马上 `git checkout` / 改回，提交里只有上面两个；代理已停，探针进程、探针档、临时发布目录都删了。
+- **没做 / 没测**：ARM64 只编译没跑；托盘「检查更新」和通知上的「更新」按钮没真点（用启动器那一项替的，调的是同一个 `AutoUpdater.StartAsync`）；hosts 那种挡法本身没试（效果同上）。
+- **0.5.0 更新日志**可以写一条 feat：「国内打不开 GitHub 时，从 GitCode 检查和下载更新（清单带签名校验）」/ "Updates can now be checked and downloaded from GitCode when GitHub is unreachable (signed manifest)"。
+  已经装着的 0.4.0 及以前没有公钥，照旧只读 GitHub；装上 0.5.0 之后才走得到 GitCode。
+
 ## 多屏截图：只能在光标那块屏上框选、扩展屏过不去（审查方在 Mac 上写、没编译，2026-11-22）
 
 用户反馈：Windows 版截图只能在光标所在的那块屏上框选，框不到扩展屏上，也不能一个选区跨两块屏。
