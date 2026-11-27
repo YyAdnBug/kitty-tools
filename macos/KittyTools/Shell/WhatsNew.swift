@@ -132,6 +132,9 @@ enum WhatsNew {
       id: "plugin-key-remapping", version: "0.10.3", feature: nil, page: .plugins,
       plugin: .keyRemapping),
     Entry(id: "record-pause", version: "0.10.3", feature: .record, actions: [.recordPause]),
+    // 0.10.4 不标：钉图捏合缩放、⌘ 滚动调透明度（手势）、访达右键的新格式和选项（在访达的右键菜单里）、哔哩哔哩 Index
+    // （设置 › 翻译「+」菜单里的一项，列表上没有一处能挂）、App 内更新接国内镜像、识字要等时的说明都没有能挂「新」的入口，
+    // 交给更新日志
   ]
 
   /// 一版最多标几个（拍板 B1：标多了到处都是「新」，等于没标）。同一版的几个新插件算一个：都只标在「全部插件」一处
