@@ -234,7 +234,7 @@ final class ScrollCapture {
         postedAtCapture = shot.posted
         let frame = await ScrollStitcher.frame(shot.image, layout: stitcher.layout)
         guard continuation != nil else { return }
-        var outcome = stitcher.add(frame)
+        var outcome = stitcher.add(frame, heading: isAutoScrolling ? Int(direction) : 0)
         if Self.restarts(outcome, hasScrolled: hasScrolled, stitched: counts.moved > 0) {
           stitcher.restart(from: frame)
           outcome = .unchanged

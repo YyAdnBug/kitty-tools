@@ -116,7 +116,15 @@ struct ScrollStitcher {
     let votes: Int
     let second: Int
     let voters: Int
-    var description: String { "\(step) dy=\(dy) \(votes)/\(second)/\(voters)" }
+    /// 逐段复核比过的几个位移和每行差多少（见 verify），和认下的那个
+    var checks: [(dy: Int, score: Int)] = []
+    var checked: Int?
+    var description: String {
+      "\(step) dy=\(dy) \(votes)/\(second)/\(voters)"
+        + (checks.isEmpty
+          ? "" : " check " + checks.map { "\($0.dy):\($0.score)" }.joined(separator: ","))
+        + (checked.map { " checked=\($0)" } ?? "")
+    }
   }
   private(set) var attempts: [Attempt] = []
 
@@ -177,8 +185,8 @@ struct ScrollStitcher {
   }
 
   /// 接一帧（尺寸必须和第一帧相同）：当场算帧再接（单测、截图自检用；长截图会话在主线程外算帧，见 frame(_:layout:)）
-  mutating func add(_ image: CGImage) -> Outcome {
-    add(Frame(image, layout: layout))
+  mutating func add(_ image: CGImage, heading: Int = 0) -> Outcome {
+    add(Frame(image, layout: layout), heading: heading)
   }
 
   /// 算一帧要的东西（拷像素、逐行哈希、分段亮度和）只看这几样，带到主线程外去算
@@ -197,17 +205,26 @@ struct ScrollStitcher {
     Frame(image, layout: layout)
   }
 
-  /// 接一帧算好的（nil：尺寸不对、画不进位图）
-  mutating func add(_ frame: Frame?) -> Outcome {
+  /// 接一帧算好的（nil：尺寸不对、画不进位图）。heading：自动滚动时往哪边滚（见 Hint）
+  mutating func add(_ frame: Frame?, heading: Int = 0) -> Outcome {
     attempts = []
     guard let frame else { return .lost }
     let a = reference.hashes
     let b = frame.hashes
     let changed = (0..<height).count { a[$0] != b[$0] }
     guard changed > 0 else { return .unchanged }
+    // 复核只比画面里在动的那一块：这两帧之间至少两段（bin）变了的第一行到最后一行。输入框里闪的光标只变一段，不算；
+    // 会话里累计的 movingRows 不能用——滚动时光标闪过一下就把输入框连进去了（微信实测 160..<978 → 160..<1053）
+    let bins = frame.bins
+    let shifted = (0..<height).filter { y in
+      (0..<bins).count { reference.profile[y * bins + $0] != frame.profile[y * bins + $0] } >= 2
+    }
+    let hint = Hint(band: (shifted.first ?? 0)..<((shifted.last ?? -1) + 1), heading: heading)
     var found =
-      Self.match(from: reference, to: frame, attempts: &attempts)
-      ?? Self.stripeMatch(from: reference, to: frame, attempts: &attempts)
+      Self.match(
+        from: reference, to: frame, hint: hint, attempts: &attempts)
+      ?? Self.stripeMatch(
+        from: reference, to: frame, hint: hint, attempts: &attempts)
     if found == nil {
       let ink = (0..<height).count { reference.ink[$0] }
       let still = (0..<height).count { reference.ink[$0] && a[$0] == b[$0] }
@@ -218,7 +235,9 @@ struct ScrollStitcher {
       }
       found =
         relocate(frame, attempts: &attempts)
-        ?? Self.fuzzyMatch(from: reference, to: frame, attempts: &attempts)
+        ?? Self.fuzzyMatch(
+          from: reference, to: frame, hint: hint, attempts: &attempts
+        )
       // 位置没变：原地变回了画布上更早的样子（.moved 的位移不会是 0，自动滚动拿它当除数）
       if found?.dy == 0 { return .unchanged }
     }
@@ -384,6 +403,76 @@ struct ScrollStitcher {
     return (peak, tally[peak], second)
   }
 
+  /// 复核要的两样：只比哪些行（画面里在动的那一块）；自动滚动时往哪边滚（和对上的位移同号，1 / -1；手动滚是 0）
+  struct Hint {
+    let band: Range<Int>
+    let heading: Int
+  }
+
+  /// 票数接近时的复核（2026-11-26 issue #57 第三轮，微信真帧）：聊天记录里一条条消息长得差不多（头像、气泡一样，
+  /// 一条 112 像素），错开整数条的几个位移票数差不多，能分出来的只有每条里的字，投票常常投给错开一条的那个。
+  /// 投票只挑候选：票数到最高票一半以上、互相隔开 3 行以上的位移（最多 6 个），再在重叠部分里逐段比实际差多少
+  /// （分段亮度和，只看两帧之间在动的段，隔一行取一行；只比从在动那一块（band）里来、落在它里面的——落到输入框、
+  /// 吸顶栏上的本来就对不上，位移越大压上去的越多，对的反而吃亏）：差得最少的那个是第二少的 3/4 以下、每段平均至少少 16
+  /// 就认它，比的行太少（不到 20）不认。几个候选一模一样时（一屏全是同一个字的消息、空表格的格子）分不出滚了几条：取其中票数
+  /// 最多的（重叠最多、一般是滚得少的那个）。一模一样才取，所以重叠的那一截逐段对得上，长图看着是接上的，只是那一段可能多几条、
+  /// 少几条一样的；自动滚动时只在它滚的方向里取——它按对上的位移校准滚轮方向，猜反了就把滚轮翻过来，空表格里会来回滚。
+  /// 按滚动条位置量的真值，录的 364 帧：对 280、错 26（一屏同一个字或快甩没重叠）、该对上没对上 2；原来对不上 222 帧，
+  /// 一模一样时不接的话还有 180 帧（这段录像大半是一屏同一个字）。
+  /// 一模一样时挑和上一帧方向一致 / 位移最接近的试过：用户在一屏同样的消息里换方向、一甩速度突变时挑错，后面一串跟着错
+  private static func verify(
+    _ a: Frame, _ b: Frame, tally: [Int], hint: Hint, attempt: inout Attempt
+  ) -> Int? {
+    let height = a.hashes.count
+    let bins = a.bins
+    let offset = tally.count / 2
+    let top = tally.max() ?? 0
+    var picks: [Int] = []
+    for index in tally.indices.sorted(by: { tally[$0] > tally[$1] }) {
+      guard picks.count < 6, top > 0, tally[index] * 2 >= top else { break }
+      if index != offset, picks.allSatisfy({ abs($0 - index) > 3 }) { picks.append(index) }
+    }
+    guard picks.count > 1 else { return nil }
+    let moving = (0..<bins).filter { k in
+      (0..<height).count { a.profile[$0 * bins + k] != b.profile[$0 * bins + k] } > height / 20
+    }
+    guard !moving.isEmpty else { return nil }
+    func score(_ dy: Int) -> (dy: Int, score: Double, rows: Int) {
+      var total = 0
+      var rows = 0
+      for i in stride(from: hint.band.lowerBound, to: hint.band.upperBound, by: 2)
+      where hint.band.contains(i + dy) && b.hashes[i] != a.hashes[i] {
+        for k in moving {
+          total += Int(abs(b.profile[i * bins + k] - a.profile[(i + dy) * bins + k]))
+        }
+        rows += 1
+      }
+      return (dy, rows > 0 ? Double(total) / Double(rows) : .infinity, rows)
+    }
+    // 容差投票里对的位移和旁边一行的票差不多（落在两行之间），挑出来的可能差一行：连上下各一行一起比，取差得最少的
+    let refined = picks.map { index in
+      [-1, 0, 1].map { index - offset + $0 }.filter { $0 != 0 }.map(score)
+        .min { $0.score < $1.score }!
+    }
+    let scores = refined.sorted { $0.score < $1.score }
+    attempt.checks = scores.map { ($0.dy, $0.score.isFinite ? Int($0.score) : -1) }
+    guard scores[0].rows >= 20 else { return nil }
+    // 差得最少的要明显少：是第二少的 3/4 以下，而且每段平均至少少 16（一屏同样的消息时几个候选只差几十，那是噪声）
+    let noise = Double(moving.count * 16)
+    if scores[0].score < 0.75 * scores[1].score, scores[1].score - scores[0].score >= noise {
+      attempt.checked = scores[0].dy
+      return scores[0].dy
+    }
+    // 几个一模一样（每段平均差不到 16）：分不出滚了几条，取其中票数最多的（重叠最多的）；自动滚动时只在它滚的方向里取
+    guard scores[0].score < noise else { return nil }
+    let tied = Set(scores.filter { $0.score - scores[0].score < noise }.map(\.dy))
+    let leader = refined.map(\.dy).first {
+      tied.contains($0) && (hint.heading == 0 || $0.signum() == hint.heading)
+    }
+    attempt.checked = leader
+    return leader
+  }
+
   /// 分段投票时算比例的那些段（行号 × stripes + 段号）：去掉在这个位移下整条几乎一票都没有的段——它不跟着滚
   /// （混着一截不动的桌面、会话列表的那一段），本来就对不上，算进分母会把对的位移拉到比例以下。
   /// 调用方另要求留下的不是空的：每条段都几乎没票（碰巧几段一样）时全被去掉，比例就失去意义了。不按投票的个数要求
@@ -399,7 +488,9 @@ struct ScrollStitcher {
   }
 
   /// b 相对 a 对上了没有（整行比）
-  private static func match(from a: Frame, to b: Frame, attempts: inout [Attempt]) -> Match? {
+  private static func match(
+    from a: Frame, to b: Frame, hint: Hint, attempts: inout [Attempt]
+  ) -> Match? {
     let height = a.hashes.count
     // 能投票的行：非纯色、原地变了、在两帧里都不算常见
     let voters = (0..<height).filter { i in
@@ -414,25 +505,34 @@ struct ScrollStitcher {
     guard let top = best(tally, exclude: 2) else { return nil }
     let (peak, votes, second) = top
     let dy = peak - height
-    attempts.append(
-      Attempt(step: "rows", dy: dy, votes: votes, second: second, voters: voters.count))
+    var attempt = Attempt(step: "rows", dy: dy, votes: votes, second: second, voters: voters.count)
+    defer { attempts.append(attempt) }
+    guard votes >= minVotes else { return nil }
+    var shift = dy
+    if let checked = verify(a, b, tally: tally, hint: hint, attempt: &attempt) {
+      shift = checked
+    } else if votes < minLead * second {
+      return nil
+    }
     // 重叠部分里能对上的：落到上一帧原地没动的行上的（吸顶栏、页脚）本来就对不上，不算进比例（一下滚过大半屏时
     // 重叠部分有一大截压在页脚上，算进去的话对的位移也凑不够比例）
     let overlap = voters.filter {
-      (0..<height).contains($0 + dy) && a.hashes[$0 + dy] != b.hashes[$0 + dy]
+      (0..<height).contains($0 + shift) && a.hashes[$0 + shift] != b.hashes[$0 + shift]
     }
-    guard dy != 0, votes >= minVotes, votes >= minLead * second,
-      Double(votes) >= minShare * Double(overlap.count)
+    let support = tally[shift + height]
+    guard shift != 0, support >= minVotes, Double(support) >= minShare * Double(overlap.count)
     else { return nil }
-    let matched = overlap.filter { b.hashes[$0] == a.hashes[$0 + dy] }
+    let matched = overlap.filter { b.hashes[$0] == a.hashes[$0 + shift] }
     return Match(
-      dy: dy, overlap: max(0, -dy)..<min(height, height - dy), first: matched.first ?? 0,
-      last: matched.last ?? height - 1)
+      dy: shift, overlap: max(0, -shift)..<min(height, height - shift),
+      first: matched.first ?? 0, last: matched.last ?? height - 1)
   }
 
   /// 整行对不上时按段比（规矩同 match，一行里的每一段各算一个投票的）：不动的竖条（会话列表、导航窗格、冻结的列、
   /// 选区边上框进去的一点桌面）原地没变不投票，选区中间的浮动滚动条只少它那一段的票
-  private static func stripeMatch(from a: Frame, to b: Frame, attempts: inout [Attempt]) -> Match? {
+  private static func stripeMatch(
+    from a: Frame, to b: Frame, hint: Hint, attempts: inout [Attempt]
+  ) -> Match? {
     let height = a.hashes.count
     let stripes = a.stripes
     guard stripes > 1 else { return nil }  // 只有一段就是整行，match 已经比过了
@@ -452,20 +552,33 @@ struct ScrollStitcher {
     guard let top = best(tally, exclude: 2) else { return nil }
     let (peak, votes, second) = top
     let dy = peak - height
-    attempts.append(
-      Attempt(step: "stripes", dy: dy, votes: votes, second: second, voters: voters.count))
-    let overlap = voters.filter {
-      (0..<height).contains($0 / stripes + dy)
-        && a.stripeHashes[$0 + dy * stripes] != b.stripeHashes[$0 + dy * stripes]
+    var attempt = Attempt(
+      step: "stripes", dy: dy, votes: votes, second: second, voters: voters.count)
+    defer { attempts.append(attempt) }
+    func hit(_ key: Int, _ shift: Int) -> Bool {
+      (0..<height).contains(key / stripes + shift)
+        && b.stripeHashes[key] == a.stripeHashes[key + shift * stripes]
     }
-    func hit(_ key: Int) -> Bool { b.stripeHashes[key] == a.stripeHashes[key + dy * stripes] }
+    guard votes >= minVotes else { return nil }
+    var shift = dy
+    if let checked = verify(a, b, tally: tally, hint: hint, attempt: &attempt) {
+      shift = checked
+    } else if votes < minLead * second {
+      return nil
+    }
+    let overlap = voters.filter {
+      (0..<height).contains($0 / stripes + shift)
+        && a.stripeHashes[$0 + shift * stripes] != b.stripeHashes[$0 + shift * stripes]
+    }
+    func hit(_ key: Int) -> Bool { hit(key, shift) }
     let counted = living(overlap, stripes: stripes, matched: hit)
-    guard dy != 0, votes >= minVotes, votes >= minLead * second, !counted.isEmpty,
-      Double(votes) >= minShare * Double(counted.count)
+    let support = tally[shift + height]
+    guard shift != 0, support >= minVotes, !counted.isEmpty,
+      Double(support) >= minShare * Double(counted.count)
     else { return nil }
     let matched = overlap.filter(hit)
     return Match(
-      dy: dy, overlap: max(0, -dy)..<min(height, height - dy),
+      dy: shift, overlap: max(0, -shift)..<min(height, height - shift),
       first: matched.first.map { $0 / stripes } ?? 0,
       last: matched.last.map { $0 / stripes } ?? height - 1)
   }
@@ -529,7 +642,9 @@ struct ScrollStitcher {
   /// ponytail: 两个方向都比，一帧彻底对不上时要多花一倍（Release 整屏 3420 × 1982 的合成长文从约 190 ms 到约 360 ms，
   /// 先比总和筛掉一部分；1035 × 1079 的选区约 30 ms，接上的帧不受影响，1–2 ms）。整屏选区连着对不上时界面会顿；
   /// 真碰到再先用每行总和的互相关挑出几个候选位移、只对它们逐段比
-  private static func fuzzyMatch(from a: Frame, to b: Frame, attempts: inout [Attempt]) -> Match? {
+  private static func fuzzyMatch(
+    from a: Frame, to b: Frame, hint: Hint, attempts: inout [Attempt]
+  ) -> Match? {
     let height = a.ink.count
     let bins = a.bins
     // 在动的段：两帧同一位置上变了的行超过二十分之一。原地没变的（留白、固定侧栏、开发者工具；只有光标在闪的也算）不比
@@ -602,16 +717,24 @@ struct ScrollStitcher {
       votes = tally[peak]
     }
     let dy = peak - height
-    attempts.append(
-      Attempt(step: "fuzzy", dy: dy, votes: votes, second: second, voters: voters.count))
-    let overlap = voters.filter { (0..<height).contains($0 + dy) }
-    guard dy != 0, votes >= minVotes, votes >= minLead * second,
-      Double(votes) >= fuzzyShare * Double(overlap.count)
+    var attempt = Attempt(
+      step: "fuzzy", dy: dy, votes: votes, second: second, voters: voters.count)
+    defer { attempts.append(attempt) }
+    guard votes >= minVotes else { return nil }
+    var shift = dy
+    if let checked = verify(a, b, tally: tally, hint: hint, attempt: &attempt) {
+      shift = checked
+    } else if votes < minLead * second {
+      return nil
+    }
+    let overlap = voters.filter { (0..<height).contains($0 + shift) }
+    let support = tally[shift + height]
+    guard shift != 0, support >= minVotes, Double(support) >= fuzzyShare * Double(overlap.count)
     else { return nil }
-    let matched = overlap.filter { close($0, $0 + dy) }
+    let matched = overlap.filter { close($0, $0 + shift) }
     return Match(
-      dy: dy, overlap: max(0, -dy)..<min(height, height - dy), first: matched.first ?? 0,
-      last: matched.last ?? height - 1)
+      dy: shift, overlap: max(0, -shift)..<min(height, height - shift),
+      first: matched.first ?? 0, last: matched.last ?? height - 1)
   }
 
   /// 画布第 row 行第 stripe 段的哈希

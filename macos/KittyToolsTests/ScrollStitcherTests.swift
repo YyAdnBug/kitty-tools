@@ -588,18 +588,22 @@ struct ScrollStitcherTests {
       ScrollStitcher.previewRange(rows: 0..<0, visible: 80, from: 5, growingUp: false).isEmpty)
   }
 
-  @Test func refusesAmbiguousRepeatingContent() throws {
-    // 整页都是同一小段（周期 20 行）重复：往哪个整周期位移都对得上，分不出来就不接
+  @Test func repeatingContentTakesTheLargestOverlap() throws {
+    // 整页都是同一小段（周期 20 行）重复：往哪个整周期位移都一模一样，分不出滚了几个周期。原来不接（一直对不上），
+    // 2026-11-27 issue #57 第三轮起取重叠最多的那个（长图看着是接上的，只是少了几段一样的）；自动滚动时只在它滚的方向里取
+    // （猜反了它会把滚轮翻过来）
     let rowBytes = Self.width * 4
     let tile = Array(Self.page[0..<20 * rowBytes])
     let repeated = Array((0..<(Self.height / 20 + 10)).map { _ in tile }.joined())
     func frame(_ offset: Int) -> CGImage {
       Self.image(Array(repeated[offset * rowBytes..<(offset + Self.height) * rowBytes]))
     }
-    var stitcher = try #require(
-      ScrollStitcher(first: frame(0), scrollbarWidth: Self.scrollbar, maxHeight: 100_000))
-    let outcome = stitcher.add(frame(47))
-    #expect(outcome == .lost || outcome == .moved(grown: 47))
+    for (heading, grown) in [(0, 7), (1, 7), (-1, 13)] {
+      var stitcher = try #require(
+        ScrollStitcher(first: frame(0), scrollbarWidth: Self.scrollbar, maxHeight: 100_000))
+      let outcome = stitcher.add(frame(47), heading: heading)
+      #expect(outcome == .moved(grown: grown), "heading \(heading)：\(stitcher.attempts)")
+    }
   }
 }
 
