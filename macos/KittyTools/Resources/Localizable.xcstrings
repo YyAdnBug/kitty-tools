@@ -8819,13 +8819,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Services,API Key,Zhipu,OpenAI,Anthropic,DeepL,Google,Baidu,Youdao,Microsoft,AI,Model"
+            "value" : "Services,API Key,Zhipu,OpenAI,Anthropic,DeepL,Google,Baidu,Youdao,Microsoft,Bilibili,Index,AI,Model"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "服务,密钥,智谱,OpenAI,Anthropic,DeepL,Google,百度,有道,微软,AI,模型"
+            "value" : "服务,密钥,智谱,OpenAI,Anthropic,DeepL,Google,百度,有道,微软,哔哩哔哩,Index,AI,模型"
           }
         }
       }
@@ -19066,6 +19066,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bilibili"
+          }
+        }
+      }
+    },
+    "哔哩哔哩 Index" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bilibili Index"
           }
         }
       }
@@ -44560,6 +44570,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "It needs a whole script with #! on the first line. Copy the script the AI gave you first"
+          }
+        }
+      }
+    },
+    "要翻译的文字会发到哔哩哔哩的服务器。官方没有公布这个接口的使用条款和隐私说明；默认的 35B-A3B 是官方标明的预览版，效果和能不能用都可能变化。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Text you translate is sent to Bilibili’s servers. Bilibili hasn’t published terms of use or a privacy policy for this service. The default 35B-A3B model is marked as a preview, so its quality and availability may change."
           }
         }
       }

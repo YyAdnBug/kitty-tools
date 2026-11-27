@@ -955,6 +955,12 @@ struct SnapshotProbeTests {
         TranslateServiceDetail(store: explainStore, id: explaining.id),
         size: NSSize(width: 590, height: 720), dark: dark,
         to: "\(out)/settings-translate-detail-explain\(suffix).png")
+      // 哔哩哔哩 Index（2026-11-27）：三段模型、没有密钥那一节
+      let index = TranslateService.builtin(.bilibili)
+      try snapshot(
+        TranslateServiceDetail(store: TranslateServiceStore(services: [index]), id: index.id),
+        size: NSSize(width: 590, height: 620), dark: dark,
+        to: "\(out)/settings-translate-detail-index\(suffix).png")
       try snapshot(
         LauncherTab().defaultAppStorage(engines).environment(navigation),
         size: NSSize(width: 590, height: 1500),

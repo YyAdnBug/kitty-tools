@@ -588,9 +588,9 @@ struct HistoryListTests {
 
 struct ServiceLogoTests {
   @Test func logosExistInAssetCatalog() throws {
-    // 系统翻译没有官方 logo，用色块（2026-11-05）
-    var services = TranslateService.Kind.allCases.filter { $0 != .ai && $0 != .apple }.map(
-      TranslateService.builtin)
+    // 系统翻译没有官方 logo，用色块（2026-11-05）；哔哩哔哩 Index 用官网图标（2026-11-27，ServiceIcons）
+    var services = TranslateService.Kind.allCases.filter { ![.ai, .apple, .bilibili].contains($0) }
+      .map(TranslateService.builtin)
     for proto in [TranslateService.AIProtocol.anthropic, .azure] {
       var ai = TranslateService.newAI()
       ai.aiProtocol = proto
@@ -700,6 +700,11 @@ struct ServiceLogoTests {
       #expect(ServiceIcons.site(for: service(baseURL)) == nil, "\(baseURL)")
     }
     #expect(ServiceIcons.site(for: .zhipu) == nil)
+    // 哔哩哔哩 Index 没有内置 logo，取官网 bilibili.com 的图标：和手动加的同地址 AI 服务是同一份缓存（2026-11-27）
+    #expect(ServiceIcons.site(for: .builtin(.bilibili)) == URL(string: "https://bilibili.com/"))
+    #expect(
+      ServiceIcons.site(for: service("https://index-translate.bilibili.com/v1"))
+        == URL(string: "https://bilibili.com/"))
   }
 
   /// 磁盘缓存：<目录>/<官网主机>.png；四角透明（只有图形）垫白底，四角都实（满版）裁圆角

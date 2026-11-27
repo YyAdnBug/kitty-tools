@@ -77,9 +77,9 @@ struct ProviderSigningTests {
     let ai = TranslateService.newAI()
     let store = TranslateServiceStore(services: [.builtin(.baidu), ai])
     #expect(store.services.map(\.id) == ["baidu", ai.id])  // 不再自动补齐 8 个内置
-    // 9 个没加的内置（系统翻译只在 macOS 26 起列出来，2026-11-05）
+    // 10 个没加的内置（系统翻译只在 macOS 26 起列出来，2026-11-05；2026-11-27 加了哔哩哔哩 Index）
     #expect(
-      store.missingBuiltins.count == (AppleTranslation.isAvailable ? 9 : 8)
+      store.missingBuiltins.count == (AppleTranslation.isAvailable ? 10 : 9)
         && !store.missingBuiltins.contains(.baidu))
     #expect(!store.missingBuiltins.contains(.ai))
     // 传进来的列表怎么改都不写用户的偏好（详情页的输入框会把绑定写一遍，曾经这样盖掉过 Dev 版的真实列表）

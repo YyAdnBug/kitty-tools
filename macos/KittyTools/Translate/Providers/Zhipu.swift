@@ -41,6 +41,7 @@ nonisolated enum Zhipu {
   /// 原文的标签：user 消息里原文包在它里面，模型偶尔照抄出来时 StreamingText 去掉首尾的这两个
   static let sourceTags = ("<原文>", "</原文>")
 
+  /// 哔哩哔哩 Index（BiliIndex）也用这一份。
   /// 翻译：规则在 system 里，user 只有包在标签里的原文（第四轮体检 E7：原文是问句、指令时免费模型会去回答它）；
   /// 单词模式的词典提示照旧整段放在 user 里。explain：讲解这一句（issue #35）——示例写成前面的一问一答（user 一句、
   /// assistant 一条讲解），不写成「示例原文：」「示例输出：」：联网实测 glm-4-flash 会学着在开头写「原文：」、或者先说一句

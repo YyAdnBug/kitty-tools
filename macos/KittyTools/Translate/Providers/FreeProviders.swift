@@ -1,4 +1,4 @@
-// 不用填 key 的两个服务（2026-11-05 拍板 S1 S2）：
+// 不用自己填 key 的服务（2026-11-05 拍板 S1 S2 的两个，2026-11-27 加了哔哩哔哩 Index）：
 // - 系统翻译（AppleTranslation）：Translation 框架，离线、文字不出这台电脑。只有 macOS 26 起才能在视图外面建会话
 //   （init(installedSource:target:)，只用已经下载的语言），15 上设置「+」里没有它、列表里有（从别的 Mac 同步过来）时
 //   卡片说要 26。源语言「自动」时用检测出来的语言；语言没下载 → 配置类错误，告诉用户去系统设置下载。
@@ -6,6 +6,10 @@
 //   英文词出美 / 英音标、各词性的释义、变形、一个双语例句，中文词出拼音和英文释义，写成和大模型单词卡同一个样子
 //   （第一行读音，卡片上就有读音的小喇叭）。非官方接口：哪天改了格式就是「有道词典里没有这个词」，再来修。
 //   不是单词的原文不开它的卡片（TranslateCoordinator.start），也不当主结果、不进静默替换（Kind.isDictionary）。
+// - 哔哩哔哩 Index（BiliIndex，2026-11-27 用户要的）：B 站 Index 团队公开的免费大模型翻译接口（OpenAI 兼容、SSE 流式，
+//   官方 README「免费公网 API」一节和官网 2026-10-04 的公告；key 是公开的固定值，不是密钥）。照智谱的写法：中文提示词、
+//   原文包在 <原文> 标签里（Zhipu.messages——实测官方 README 那种「请将以下文本翻译为…」一句话的写法，原文是问句、指令时
+//   它会去回答），单词模式、讲解、附加要求也走同一份；关思考按官方脚本传 chat_template_kwargs.enable_thinking = false。
 
 import Foundation
 import Translation
@@ -136,5 +140,36 @@ nonisolated enum YoudaoDict {
   /// trs 里一条的 tr[0].l
   private static func firstLine(_ tr: [String: Any]) -> [String: Any]? {
     ((tr["tr"] as? [[String: Any]])?.first)?["l"] as? [String: Any]
+  }
+}
+
+nonisolated enum BiliIndex {
+  static let endpoint = URL(string: "https://index-translate.bilibili.com/v1/chat/completions")!
+  /// 公开的固定 key（官方说明是公开免费的接口，用户 2026-11-27 给的；实测服务端不校验它）：照常写在请求头里，
+  /// 不进钥匙串、不算密钥（设置里没有密钥那一节，导出也不带它）
+  static let publicKey = "bili"
+  /// /v1/models 写这三种规模最多输出 4096 个 token（传多了 400「请求参数或格式有误」，实测）；长文照 LongText 切段
+  static let maxTokens = 4096
+
+  static func stream(_ request: TranslateRequest, service: TranslateService)
+    -> AsyncThrowingStream<String, Error>
+  {
+    let body = body(request, service: service)
+    // 只有一档：开着思考时正文前面会多出一段只有闭标签的 </think>（实测），StreamingText 去不掉；
+    // 哪天不认这个参数报 400 就照常报错，不退到不关思考那一档出脏字
+    return AIService.chatStream(
+      url: endpoint, headers: ["Authorization": "Bearer \(publicKey)"], body: body,
+      tiers: [["chat_template_kwargs": ["enable_thinking": false]]],
+      model: body["model"] as? String ?? "", delta: AIService.openAIDelta)
+  }
+
+  /// 请求体（不含关思考那一档，纯函数配单测）。temperature 0：官方脚本和它给浏览器插件的本地代理都是这么请求的（贪心解码）
+  static func body(_ request: TranslateRequest, service: TranslateService) -> [String: Any] {
+    [
+      "model": service.builtinModel ?? TranslateService.indexModels[0], "max_tokens": maxTokens,
+      "stream": true, "temperature": 0,
+      "messages": Zhipu.messages(
+        request, explain: service.explains(request), extra: service.extraPrompt(for: request)),
+    ]
   }
 }

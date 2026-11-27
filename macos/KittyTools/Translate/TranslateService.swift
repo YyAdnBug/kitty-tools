@@ -1,5 +1,5 @@
 // 翻译服务配置：列表里只有加进来的服务（体检 B21）——10 个内置服务（智谱、百度、有道、Google、DeepL、微软、火山、腾讯，
-// 2026-11-05 加了不用 key 的系统翻译（macOS 26 起）和有道词典（只查单词））
+// 2026-11-05 加了不用 key 的系统翻译（macOS 26 起）和有道词典（只查单词），2026-11-27 加了公开免费的哔哩哔哩 Index）
 // 可删、在设置「+」里加回来，外加用户自建的 AI 实例（OpenAI 兼容 / Azure / Anthropic，「+」里有厂商预设，D15）。
 // 从没存过列表时默认只有智谱（启用）。列表顺序即结果卡片顺序。
 // 非密钥配置以 JSON 存 UserDefaults，密钥存钥匙串（账户名 "<服务 id>.<字段>"，字段名已定，改名会读不到已存的密钥）。
@@ -11,14 +11,16 @@ import Observation
 nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
   enum Kind: String, Codable, CaseIterable, Sendable {
     // 新的种类只能加在 ai 前面的末尾：原值就是存下来的 id，顺序是设置「+」菜单的顺序
-    case zhipu, baidu, youdao, google, deepl, microsoft, volcengine, tencent, apple, youdaoDict, ai
+    case zhipu, baidu, youdao, google, deepl, microsoft, volcengine, tencent, apple, youdaoDict,
+      bilibili
+    case ai
 
     /// 只查单词和短语的词典类服务：不是单词时不开卡片，不当主结果、不进静默替换（S2）
     var isDictionary: Bool { self == .youdaoDict }
 
     /// 不花钱、不用自己申请 key 就能用的（2026-11-15）：智谱内置的免费模型、微软的 Edge 接口（没填 Key 时）、系统翻译、
-    /// 有道词典。设置「+」菜单里排最前、服务行标「免费」
-    var isFree: Bool { [.zhipu, .microsoft, .apple, .youdaoDict].contains(self) }
+    /// 有道词典、哔哩哔哩 Index（公开的免费接口）。设置「+」菜单里排最前、服务行标「免费」
+    var isFree: Bool { [.zhipu, .microsoft, .apple, .youdaoDict, .bilibili].contains(self) }
 
     /// 默认名（显示用，跟界面语言）。存进 name 的是 defaultName（中文原文）
     var nameResource: LocalizedStringResource {
@@ -33,6 +35,7 @@ nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
       case .tencent: "腾讯翻译"
       case .apple: "系统翻译"
       case .youdaoDict: "有道词典"
+      case .bilibili: "哔哩哔哩 Index"
       case .ai: "AI 服务"
       }
     }
@@ -95,6 +98,26 @@ nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
     stored.flatMap { zhipuModels.contains($0) ? $0 : nil } ?? zhipuModels[0]
   }
 
+  /// 哔哩哔哩 Index 的三种规模（/v1/models 里的通用翻译模型，2026-11-27 实测）：35B-A3B 是默认（官方免费接口主推、最准，
+  /// 官方说明写着还是在训练中的预览版），9B、2B 更快。没放 Nailong（只做中英互译的长文）、Homura（配音控长度）、Echo（语音）
+  static let indexModels = ["Index-Translate-35B-A3B", "Index-Translate-9B", "Index-Translate-2B"]
+
+  /// 内置大模型服务能选的几档（第一档是默认）；别的服务没有
+  var builtinModels: [String] {
+    switch kind {
+    case .zhipu: Self.zhipuModels
+    case .bilibili: Self.indexModels
+    default: []
+    }
+  }
+
+  /// 内置大模型这次用哪档：存的不在里面（旧的识图模型、下架了的）回落第一档；别的服务 nil
+  var builtinModel: String? {
+    builtinModels.first.map { first in
+      model.flatMap { builtinModels.contains($0) ? $0 : nil } ?? first
+    }
+  }
+
   /// 没改过名（存的还是中文默认名）时不是用户写的字：显示跟界面语言（存的不动）。AI 服务没改名的「AI 服务」也算
   private var isDefaultName: Bool { name == kind.defaultName }
 
@@ -116,9 +139,10 @@ nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
   static var zhipu: TranslateService { builtin(.zhipu) }
 
   static func builtin(_ kind: Kind) -> TranslateService {
-    TranslateService(
-      id: kind.rawValue, kind: kind, name: kind.defaultName, isEnabled: kind == .zhipu,
-      model: kind == .zhipu ? zhipuModels[0] : nil)
+    var service = TranslateService(
+      id: kind.rawValue, kind: kind, name: kind.defaultName, isEnabled: kind == .zhipu)
+    service.model = service.builtinModels.first
+    return service
   }
 
   static func newAI() -> TranslateService {
@@ -165,7 +189,7 @@ nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
   ]
 
   /// 流式输出（逐字显示、按行内 Markdown 渲染）的服务：大模型类
-  var isStreaming: Bool { kind == .zhipu || kind == .ai }
+  var isStreaming: Bool { [.zhipu, .bilibili, .ai].contains(kind) }
 
   /// 附加要求最多多少个字（设置页、导入的文件都截到它）
   static let maxExtraPrompt = 1000
@@ -230,7 +254,8 @@ nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
         SecretField(name: "secretId", label: "SecretId"),
         SecretField(name: "secretKey", label: "SecretKey"),
       ]
-    case .apple, .youdaoDict: []
+    // 哔哩哔哩 Index 用的是公开的固定 key（BiliIndex.publicKey），不是密钥
+    case .apple, .youdaoDict, .bilibili: []
     }
   }
 
@@ -251,6 +276,7 @@ nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
   var outputTokens: Int? {
     switch kind {
     case .zhipu: return Zhipu.maxTokens
+    case .bilibili: return BiliIndex.maxTokens
     case .ai:
       let aiProtocol = aiProtocol ?? .openai
       if aiProtocol == .anthropic { return 4096 }
@@ -275,6 +301,7 @@ nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
     case .tencent: Tencent.stream(request, service: self)
     case .apple: AppleTranslation.stream(request, service: self)
     case .youdaoDict: YoudaoDict.stream(request, service: self)
+    case .bilibili: BiliIndex.stream(request, service: self)
     }
   }
 

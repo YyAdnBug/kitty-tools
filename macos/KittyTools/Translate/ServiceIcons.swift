@@ -1,4 +1,5 @@
-// 翻译服务的官网图标（第 13 批，mac-whisker §6 翻译「服务身份」）：内置 logo 表（AIVendor）认不出的自建 AI 服务，
+// 翻译服务的官网图标（第 13 批，mac-whisker §6 翻译「服务身份」）：内置 logo 表（AIVendor）认不出的自建 AI 服务
+// 和没有内置 logo 的哔哩哔哩 Index（2026-11-27，官网 bilibili.com；用户手动加过同一个地址的 AI 服务的话，两条共用一份缓存），
 // 按服务地址推出官网（opencode.ai/zen/go → https://opencode.ai/，api.foo.com → https://foo.com/），用剪贴板链接预览
 // 那套下载器取网站图标（LinkPreview.siteIcon：apple-touch-icon 优先、限大小、超时、公网检查、临时会话），缩到长边 128
 // 存进 Application Support 下的 ServiceIcons/<官网主机>.png。懒取：设置页或翻译卡片要显示这个服务时才取，取的时候是字母色块、
@@ -104,13 +105,19 @@ import UniformTypeIdentifiers
 // MARK: 纯函数（配单测）
 
 extension ServiceIcons {
-  /// 服务的官网：只给内置 logo 表认不出的自建 AI 服务（Azure 除外），地址的主机取可注册域名 → https://它/；
+  /// 服务的官网：只给内置 logo 表认不出的自建 AI 服务（Azure 除外）和哔哩哔哩 Index，地址的主机取可注册域名 → https://它/；
   /// 本机 / 内网 / IP 地址没有（nil，用色块）
   nonisolated static func site(for service: TranslateService) -> URL? {
-    guard service.kind == .ai, service.aiProtocol != .azure, AIVendor(service: service) == nil,
-      let url = AIService.endpoint(service.baseURL ?? "", service.aiProtocol ?? .openai),
-      let host = url.host(percentEncoded: false), let domain = registrableDomain(host)
-    else { return nil }
+    let url: URL? =
+      switch service.kind {
+      case .bilibili: BiliIndex.endpoint
+      case .ai where service.aiProtocol != .azure && AIVendor(service: service) == nil:
+        AIService.endpoint(service.baseURL ?? "", service.aiProtocol ?? .openai)
+      default: nil
+      }
+    guard let host = url?.host(percentEncoded: false), let domain = registrableDomain(host) else {
+      return nil
+    }
     return URL(string: "https://\(domain)/")
   }
 

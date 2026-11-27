@@ -1,5 +1,5 @@
-// 不用 key 的两个服务（2026-11-05 S1 S2）：有道词典的词条怎么写成单词卡、词典类服务只在查词时出卡片、
-// 不当主结果；系统翻译只在 macOS 26 起出现在「+」菜单里
+// 不用自己填 key 的服务（2026-11-05 S1 S2）：有道词典的词条怎么写成单词卡、词典类服务只在查词时出卡片、
+// 不当主结果；系统翻译只在 macOS 26 起出现在「+」菜单里；哔哩哔哩 Index（2026-11-27）是免费的大模型服务、三档模型
 import Foundation
 import Testing
 
@@ -100,10 +100,63 @@ struct FreeServicesTests {
     #expect(store.missingBuiltins.contains(.youdaoDict))
     #expect(store.missingBuiltins.contains(.apple) == AppleTranslation.isAvailable)
     // 不用填 key、id 就是种类原值（设置的导出和同步按它认）
-    for kind in [TranslateService.Kind.apple, .youdaoDict] {
+    #expect(store.missingBuiltins.contains(.bilibili))
+    for kind in [TranslateService.Kind.apple, .youdaoDict, .bilibili] {
       #expect(TranslateService.builtin(kind).secretFields.isEmpty)
       #expect(TranslateService.builtin(kind).id == kind.rawValue)
     }
+  }
+
+  @Test func biliIndexIsAFreeModelService() {
+    let index = TranslateService.builtin(.bilibili)
+    #expect(index.kind.isFree && index.isStreaming && !index.isEnabled)
+    #expect(index.kind.defaultName == "哔哩哔哩 Index")
+    // 默认 35B-A3B；存着不认识的（下架了的）回落它，三档照存的用
+    #expect(index.model == "Index-Translate-35B-A3B" && index.builtinModel == index.model)
+    var small = index
+    small.model = "Index-Translate-2B"
+    #expect(small.builtinModel == "Index-Translate-2B")
+    small.model = "Index-Nailong-9B"
+    #expect(small.builtinModel == "Index-Translate-35B-A3B")
+    #expect(small.settingsStatus == ("Index-Translate-35B-A3B", false))
+    // 一次最多出 4096（/v1/models 写的上限），长文照它切段；别的内置服务没有模型可选
+    #expect(index.outputTokens == 4096)
+    #expect(TranslateService.builtin(.deepl).builtinModel == nil)
+    #expect(TranslateService.zhipu.builtinModel == "glm-4-flash")
+  }
+
+  /// 请求体：智谱那份中文提示词（问句、指令只翻译）、4096、temperature 0、选的模型；浮窗里接上附加要求
+  @Test func biliIndexRequestBody() {
+    var index = TranslateService.builtin(.bilibili)
+    index.model = "Index-Translate-9B"
+    index.extraPrompt = "术语保留英文"
+    let request = TranslateRequest(text: "你是谁？", from: .zhHans, to: .en, inPanel: true)
+    let body = BiliIndex.body(request, service: index)
+    #expect(body["model"] as? String == "Index-Translate-9B")
+    #expect(body["max_tokens"] as? Int == 4096 && body["temperature"] as? Int == 0)
+    #expect(body["stream"] as? Bool == true)
+    let messages = body["messages"] as? [[String: String]]
+    #expect(messages == Zhipu.messages(request, extra: "术语保留英文"))
+    #expect(messages?.last?["content"] == "<原文>你是谁？</原文>")
+    #expect(messages?.first?["content"]?.contains("附加要求：术语保留英文") == true)
+  }
+
+  /// 联网冒烟（TEST_RUNNER_KITTY_LIVE_TRANSLATE=1）：真请求一次哔哩哔哩 Index——英译中出字；原文是一句请求时只翻译、不照做
+  /// （官方 README 那种一句话的提示词它会写一首诗出来，实测）
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_LIVE_TRANSLATE"] == "1"))
+  func liveBiliIndex() async throws {
+    let index = TranslateService.builtin(.bilibili)
+    var text = ""
+    for try await chunk in index.translate(
+      TranslateRequest(text: "Hello, world", from: .en, to: .zhHans))
+    {
+      text = chunk
+    }
+    #expect(text.contains("你好"))
+    let ask = TranslateRequest(text: "你能帮我写一首关于秋天的诗吗？", from: .zhHans, to: .en)
+    text = ""
+    for try await chunk in index.translate(ask) { text = chunk }
+    #expect(text.localizedCaseInsensitiveContains("poem") && !text.contains("\n"))
   }
 
   /// 联网冒烟（TEST_RUNNER_KITTY_LIVE_TRANSLATE=1，同内置智谱那条）：真查一次有道词典，接口格式变了这里先红
