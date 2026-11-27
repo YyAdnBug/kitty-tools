@@ -103,7 +103,7 @@ internal static partial class NoteDeckUi
         Add(menu.Items, NotesWindowRules.NewTitle, Glyphs.Add, bay.Create);
         Add(menu.Items, "全部便签", "\uE8A5", NotesWindow.ShowWindow);
         menu.Items.Add(new MenuFlyoutSeparator());
-        Add(menu.Items, "设置…", Glyphs.Settings, () => ShellRuntime.Instance?.ShowSettings(false, "notes"));
+        Add(menu.Items, "设置…", Glyphs.Settings, () => ShellRuntime.Instance?.ShowSettingsSubpage("notes", "deck"));
         Show(bay, menu, anchor, at);
     }
 

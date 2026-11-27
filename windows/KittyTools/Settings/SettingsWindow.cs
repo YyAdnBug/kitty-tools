@@ -2619,92 +2619,50 @@ internal sealed partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// 设置 › 启动器（PLAN-v9-launcher §5，照 mac LauncherTab）：功能开关 ｜ 呼出时切到英文输入法、启动器里的按键 ｜ 文件搜索 ｜
-    /// 浏览器书签与历史（只列装了的，每家书签 / 也搜浏览历史两个开关，下面写读到了几条）｜ 网页搜索与快捷链接（每条一个兜底开关、
-    /// 能新建和编辑、↑↓ 排序，有问题的橙字写出来）+ 有本地结果时也显示兜底搜索 ｜ 使用记录（清空…，先确认）。
+    /// 设置 › 启动器（PLAN-v28 §1.6，照 mac LauncherTab）：启用 ｜ 空搜索框里列出常用 ｜ 浏览器书签与历史 ｜ 文件搜索 ｜
+    /// 应用 ›、网页搜索与快捷链接 ›、脚本命令 ›、命令和别名 › ｜ 按键 ｜ 高级 ›（英文输入法、面板位置和大小、清空使用记录）。
     /// </summary>
     private void BuildLauncher()
     {
-        // 点进去的子页（PLAN-v18 L2 L4）：命令和别名、网页搜索与快捷链接
-        if (_launcherSubpage == "commands")
+        // 点进去的子页（PLAN-v18 L2 L4、PLAN-v28）
+        switch (_subpage)
         {
-            BuildLauncherCommands();
-            return;
-        }
-
-        if (_launcherSubpage == "web")
-        {
-            BuildWebSearchPage();
-            return;
-        }
-
-        if (_launcherSubpage == "apps")
-        {
-            BuildLauncherApps();
-            return;
-        }
-
-        if (_launcherSubpage == "scripts")
-        {
-            BuildLauncherScripts();
-            return;
-        }
-
-        if (_launcherSubpage == "script-guide")
-        {
-            BuildScriptGuide();
-            return;
+            case "commands":
+                BuildLauncherCommands();
+                return;
+            case "web":
+                BuildWebSearchPage();
+                return;
+            case "apps":
+                BuildLauncherApps();
+                return;
+            case "scripts":
+                BuildLauncherScripts();
+                return;
+            case "script-guide":
+                BuildScriptGuide();
+                return;
+            case SettingsIndex.Advanced:
+                BuildLauncherAdvanced();
+                return;
         }
 
         _content.Children.Add(Header("启动器", "一个搜索框打开应用、文件、网页和命令"));
         AddFeatureToggle(Feature.Launcher);
         var settings = SettingsService.Current;
 
+        // 空搜索框里列出常用（PLAN-v16 L1，mac adc47977）：挪到启用下面
         _content.Children.Add(new Border { Height = 8 });
-        Anchor("launcher.romanInput", AddToggle("呼出时切到英文输入法", "只在搜索框里生效，离开后恢复；要搜中文时先关掉",
-            settings.LauncherRomanInput,
-            isOn =>
+        Anchor("launcher.frequent", AddToggle("空搜索框里列出常用", "关掉后只有搜索框和收藏",
+            settings.LauncherShowsFrequent, isOn =>
             {
-                settings.LauncherRomanInput = isOn;
+                settings.LauncherShowsFrequent = isOn;
                 SettingsService.Save();
-            }));
-        Anchor("launcher.panelPosition", AddPanelPositionCombo(settings.LauncherPanelPosition, value => settings.LauncherPanelPosition = value));
-        Anchor("launcher.panelSize", AddPanelSizeCard(
-            () => settings.LauncherPanelWidth is not null || settings.LauncherPanelRows is not null,
-            () =>
-            {
-                settings.LauncherPanelWidth = null;
-                settings.LauncherPanelRows = null;
-            }));
-        Anchor("launcher.keys", AddShortcutsRow("launcher", "启动器里的按键",
-            "搜应用、系统设置、文件、书签、网址、路径、算式（也能换算单位和进制）和系统命令（lock、quit、kill 这些），" +
-            "Enter 打开，Ctrl+K 看这一项的全部操作"));
-
-        // 应用（PLAN-v18 L5 + §6：别名、应用文件夹、隐藏的应用，点进去编辑）
-        _content.Children.Add(SettingsUi.Section("应用"));
-        Anchor("launcher.apps", AddSubpageRow("应用", AppsSummary(settings), () => OpenLauncherSubpage("apps")));
-
-        // 文件搜索（PLAN-v25：索引的状态写在第一行的说明里；装了 Everything 并且它在运行时用它）
-        _content.Children.Add(SettingsUi.Section("文件搜索"));
-        var indexCard = SettingsUi.Card(
-            "建了索引的位置", "正在读取 Windows 搜索的状态…", null,
-            () => LauncherOpeners.Start("ms-settings:cortana-windowssearch"));
-        _content.Children.Add(Anchor("launcher.fileSearch", indexCard));
-        var everythingCard = Anchor("launcher.everything", AddToggle("装了 Everything 并且它在运行时用它搜", "正在查找 Everything…",
-            settings.LauncherUseEverything,
-            isOn =>
-            {
-                settings.LauncherUseEverything = isOn;
-                SettingsService.Save();
-            }));
-        _content.Children.Add(SettingsUi.Footnote(
-            "「open 文件名」搜文件并打开，「find 文件名」在资源管理器中显示，空格开头同 open；没有匹配的应用时，最后也有一行「在文件里找」。" +
-            "搜的是 Windows 搜索建了索引的所有位置（不含系统文件夹和 node_modules 这类），点上面那一行可以选「增强」或加位置；" +
-            "搜索服务没开时只找桌面、文档这几个文件夹。装了 Everything 并且它在运行时改用它搜：所有本地硬盘、更快。文件名要用汉字搜，拼音搜不到。"));
-        _ = FillFileSearchStatusAsync(indexCard, everythingCard);
+            }, "启动器按用过的次数和时间排序，空搜索框里先列收藏（Ctrl+D 加入），再列「常用」。在「常用」里选中一项按 Ctrl+Delete 可以单独移除，" +
+               "Ctrl+Z 撤销。关掉后排序照样按用过的学。"));
 
         // 浏览器书签与历史
-        _content.Children.Add(Anchor("launcher.browsers", (FrameworkElement)SettingsUi.Section("浏览器书签与历史")));
+        _content.Children.Add(Anchor("launcher.browsers", (FrameworkElement)SettingsUi.Section("浏览器书签与历史", null, "只列这台电脑上装了的浏览器。")));
         var installed = Browsers.Installed();
         if (installed.Count == 0)
         {
@@ -2716,31 +2674,60 @@ internal sealed partial class SettingsWindow : Window
             AddBrowserRows(settings, browser);
         }
 
-        _content.Children.Add(SettingsUi.Footnote("只列本机装了的浏览器。"));
-
         // 后台读浏览器数据，读完原地改各行的条数（不重建整页：以前读完整页重画，开关全闪一下、滚动跳回顶部）。
         _ = RefreshBrowsersAsync(settings);
 
-        // 先后同 mac LauncherTab（REVIEW R93）：网页搜索 → 脚本命令 → 命令 → 使用记录；网页搜索、命令各一节、带脚注
-        _content.Children.Add(SettingsUi.Section("网页搜索"));
+        // 文件搜索（PLAN-v25：索引的状态写在第一行的说明里；装了 Everything 并且它在运行时用它）
+        _content.Children.Add(SettingsUi.Section("文件搜索", null,
+            "「open 文件名」搜文件并打开，「find 文件名」在资源管理器中显示，空格开头同 open；没有匹配的应用时，最后也有一行「在文件里找」。" +
+            "搜的是 Windows 搜索建了索引的所有位置（不含系统文件夹和 node_modules 这类），点「建了索引的位置」可以选「增强」或加位置；" +
+            "搜索服务没开时只找桌面、文档这几个文件夹。装了 Everything 并且它在运行时改用它搜：所有本地硬盘、更快。文件名要用汉字搜，拼音搜不到。"));
+        var indexCard = SettingsUi.Card(
+            "建了索引的位置", "正在读取 Windows 搜索的状态…", null,
+            () => LauncherOpeners.Start("ms-settings:cortana-windowssearch"));
+        _content.Children.Add(Anchor("launcher.fileSearch", indexCard));
+        var everythingCard = Anchor("launcher.everything", AddToggle("装了 Everything 并且它在运行时用它搜", "正在查找 Everything…",
+            settings.LauncherUseEverything,
+            isOn =>
+            {
+                settings.LauncherUseEverything = isOn;
+                SettingsService.Save();
+            }));
+        _ = FillFileSearchStatusAsync(indexCard, everythingCard);
+
+        // 应用、网页搜索与快捷链接、脚本命令、命令和别名：四行推进连在一组（PLAN-v28 §1.6）
+        _content.Children.Add(new Border { Height = 8 });
+        Anchor("launcher.apps", AddSubpageRow("应用", AppsSummary(settings), () => OpenLauncherSubpage("apps"),
+            SettingsSummary.Apps(settings.LauncherAppAliases?.Count ?? 0)));
         Anchor("launcher.webSearch", AddSubpageRow("网页搜索与快捷链接", WebSearch.Summary(settings.LauncherSearchEngines ?? WebSearch.Defaults()),
             () => OpenLauncherSubpage("web")));
-        _content.Children.Add(SettingsUi.Footnote("「关键词 空格 内容」直接用那个网站搜；没有本地结果时用开了兜底的几个搜。"));
-
-        // 脚本命令（PLAN-v18 L1 第 8 批：一行，点进去；mac 铺在这一页上，MAC-DIFF）
         AddScriptsRow();
-
-        _content.Children.Add(SettingsUi.Section("命令"));
         AddCommandsRow();
-        _content.Children.Add(SettingsUi.Footnote("给内置命令和脚本改在启动器里要打的词，关掉用不上的。"));
 
-        // 使用记录：「空搜索框里列出常用」跟着功能开关变灰（PLAN-v16 L1，mac adc47977）；清空是管数据的，功能关着也能清（同 mac）
-        _content.Children.Add(Ungated(SettingsUi.Section("使用记录")));
-        Anchor("launcher.frequent", AddToggle("空搜索框里列出常用", "关掉后打开启动器只有搜索框，有收藏时只列收藏；排序照样按用过的学",
-            settings.LauncherShowsFrequent, isOn =>
+        _content.Children.Add(new Border { Height = 8 });
+        Anchor("launcher.keys", AddShortcutsRow("launcher", "启动器里的按键", "Enter 打开，Ctrl+K 看全部操作"));
+        AddAdvancedRow("launcher");
+    }
+
+    /// <summary>设置 › 启动器 › 高级：呼出时切到英文输入法、面板位置、面板大小、清空使用记录（管数据，功能关着也能清）。</summary>
+    private void BuildLauncherAdvanced()
+    {
+        AddAdvancedHeader("launcher");
+        var settings = SettingsService.Current;
+        Anchor("launcher.romanInput", AddToggle("呼出时切到英文输入法", "只在搜索框里，离开后恢复",
+            settings.LauncherRomanInput,
+            isOn =>
             {
-                settings.LauncherShowsFrequent = isOn;
+                settings.LauncherRomanInput = isOn;
                 SettingsService.Save();
+            }, "要搜中文时先关掉。"));
+        Anchor("launcher.panelPosition", AddPanelPositionCombo(settings.LauncherPanelPosition, value => settings.LauncherPanelPosition = value));
+        Anchor("launcher.panelSize", AddPanelSizeCard(
+            () => settings.LauncherPanelWidth is not null || settings.LauncherPanelRows is not null,
+            () =>
+            {
+                settings.LauncherPanelWidth = null;
+                settings.LauncherPanelRows = null;
             }));
         var clear = new Button { Content = "清空使用记录…", Foreground = Theme.Critical() };
         clear.Click += async (_, _) =>
@@ -2763,9 +2750,7 @@ internal sealed partial class SettingsWindow : Window
             LauncherUsageStore.Instance?.Clear();
             NoticeHost.Show("已清空", "「常用」从头开始学", NoticeTone.Normal);
         };
-        _content.Children.Add(Ungated(Anchor("launcher.clearUsage", clear)));
-        _content.Children.Add(Ungated(SettingsUi.Footnote(
-            "启动器按用过的次数和时间排序，空搜索框里先列收藏（Ctrl+D 加入），再列「常用」。在「常用」里选中一项按 Ctrl+Delete 可以单独移除，Ctrl+Z 撤销。")));
+        _content.Children.Add(Ungated(Anchor("launcher.clearUsage", SettingsUi.Card("使用记录", "「常用」和排序从头开始学", clear))));
     }
 
     /// <summary>

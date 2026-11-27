@@ -1,7 +1,8 @@
-// 设置 › 便签（PLAN-v13 第 5 批，照 mac Settings/NotesTab.swift）：启用便签 ｜ 便签（正文字号、行距、Markdown 样式）｜ 屏幕边缘（显示开关、位置、
-// 显示器、样式、大小、感应范围、一直展开、不显示药丸、悬停预览、悬停即打开、盖在全屏程序上、便签大小）｜ 数据（打开全部便签、便签的按键、
-// 导出为 Markdown、从 Markdown 导入；页脚说怎么存的）。选项控件一律下拉框（MAC-DIFF「设置窗」长期例外）。
+// 设置 › 便签（PLAN-v13 第 5 批 → PLAN-v28 §1.7，照 mac Settings/NotesTab.swift）：启用便签 ｜ 便签（正文字号、行距、Markdown 样式）｜
+// 打开全部便签…、屏幕边缘 ›（推进去的子页：显示开关、位置、显示器、样式、大小、感应范围、一直展开、不显示药丸、悬停预览、悬停即打开、
+// 盖在全屏程序上、便签大小）｜ 数据（导出为 Markdown、从 Markdown 导入；怎么存的在组标题的 ⓘ 里）｜ 便签的按键。没有「高级」（同 mac）。
 // 便签关着时这一页变灰，导出 / 导入照常能用（管数据的不套开关，同 mac）。
+using KittyTools.Core;
 using KittyTools.Core.Notes;
 using KittyTools.Infrastructure;
 using Microsoft.UI.Xaml;
@@ -15,6 +16,12 @@ internal sealed partial class SettingsWindow
 
     private void BuildNotes()
     {
+        if (_subpage == "deck")
+        {
+            BuildNotesDeck();
+            return;
+        }
+
         _content.Children.Add(Header("便签", "便签长什么样、放在屏幕哪里"));
         AddFeatureToggle(Feature.Notes);
         var settings = SettingsService.Current;
@@ -32,25 +39,66 @@ internal sealed partial class SettingsWindow
 
         // 便签
         _content.Children.Add(SettingsUi.Section("便签"));
-        Anchor("notes.fontSize", AddRadios("正文字号", "全部便签窗口、屏幕边缘和浮在屏幕上的便签里正文的大小",
+        Anchor("notes.fontSize", AddRadios("正文字号", "所有便签里正文的大小",
             new[] { "小", "标准", "大", "特大" }, Math.Max(Array.IndexOf(NoteFontSizes, settings.NotesFontSize), 1),
             index => Save(() => settings.NotesFontSize = NoteFontSizes[index])));
         var spacing = NoteStyles.SpacingFromName(settings.NotesLineSpacing) ?? NoteSpacing.Standard;
-        Anchor("notes.lineSpacing", AddRadios("行距", "全部便签窗口、屏幕边缘和浮在屏幕上的便签里正文一行一行之间隔多远",
+        Anchor("notes.lineSpacing", AddRadios("行距", "所有便签里正文的行距",
             NoteStyles.AllSpacings.Select(NoteStyles.SpacingTitle).ToArray(), Array.IndexOf(NoteStyles.AllSpacings, spacing),
             index => Save(() => settings.NotesLineSpacing = NoteStyles.SpacingName(NoteStyles.AllSpacings[index]))));
-        Anchor("notes.markdown", AddToggle("Markdown 样式",
-            "# 标题、**粗体**、*斜体*、`代码`、[链接](地址)、三个反引号围起来的代码块，这些写法直接显示成样式，标记只在光标所在的那一行露出来",
-            settings.NotesMarkdown, isOn => Save(() => settings.NotesMarkdown = isOn)));
+        Anchor("notes.markdown", AddToggle("Markdown 样式", "写法显示成样式，光标那行露出标记",
+            settings.NotesMarkdown, isOn => Save(() => settings.NotesMarkdown = isOn),
+            "# 标题、**粗体**、*斜体*、`代码`、[链接](地址)、三个反引号围起来的代码块，这些写法直接显示成样式，标记只在光标所在的那一行露出来。"));
 
-        // 屏幕边缘
-        _content.Children.Add(SettingsUi.Section("屏幕边缘"));
-        Anchor("notes.deckEnabled", AddToggle("在屏幕边缘显示便签", "有了第一条便签才出现；关掉后便签照样能从快捷键、启动器和全部便签窗口打开",
+        // 打开全部便签…、屏幕边缘 ›（同 mac：全部便签在屏幕边缘上面）
+        _content.Children.Add(new Border { Height = 8 });
+        _content.Children.Add(Anchor("notes.openAll", SettingsUi.Card("打开全部便签…", "看、改、搜索、归档，找回删掉的", null, NotesWindow.ShowWindow)));
+        AddSubpageRow("屏幕边缘", string.Empty, () => OpenSubpage("notes", "deck"), SettingsSummary.Deck(settings.NotesDeckEnabled, settings.NotesDeckEdge));
+
+        // 数据（导出 / 导入不套开关）
+        _content.Children.Add(Ungated(SettingsUi.Section("数据", null,
+            "便签存在这台电脑上，和剪贴板历史分开：清空历史、保留天数都碰不到它。每天自动备份一份，留最近 7 份（正文里的图片跟着一起备）。" +
+            $"删掉的便签在「最近删除」里留 {NoteBook.TrashDays} 天。设置 › 通用 › 备份与导出导入 带便签的文字、不带图片；要连图片一起带走、或者拿别的工具看，" +
+            "用这里的 Markdown 导出。在几台电脑之间同步到 设置 › 通用 › 同步 里选文件夹。")));
+        var export = new Button { Content = "导出…", IsEnabled = NoteStore.Instance is not null };
+        export.Click += (_, _) => _ = NotesTransfer.ExportAllAsync(this);
+        _content.Children.Add(Ungated(Anchor("notes.export", SettingsUi.Card("导出为 Markdown", "每条一个 .md 文件，图片放在旁边", export))));
+        // Windows 的选择框不能同时选文件和文件夹：「导入…」弹两项（选择文件… / 选择文件夹…）
+        var import = new DropDownButton { Content = "导入…", IsEnabled = NoteStore.Instance is not null, Flyout = NotesTransfer.ImportMenu(this) };
+        _content.Children.Add(Ungated(Anchor("notes.import", SettingsUi.Card("从 Markdown 导入", "导回导出过的不会重复", import,
+            info: "别处的 .md 文件每个变成一条新便签。"))));
+
+        _content.Children.Add(new Border { Height = 8 });
+        Anchor("notes.keys", AddShortcutsRow("notes", "便签的按键", "快速记一条和便签窗口里的按键"));
+    }
+
+    /// <summary>
+    /// 设置 › 便签 › 屏幕边缘（PLAN-v28 X2，mac sub:notes.deck）：总开关是第一行，依赖照旧（总开关关着下面停用、一直展开时「不显示药丸」停用、
+    /// 悬停即打开时「悬停预览」停用）；最后一行恢复默认（「指定的那块显示器」是这台电脑的，不动）。
+    /// </summary>
+    private void BuildNotesDeck()
+    {
+        var settings = SettingsService.Current;
+        var value = SettingsSummary.Deck(settings.NotesDeckEnabled, settings.NotesDeckEdge);
+        AddSubpageHeader("notes", "deck", value.Text == "关" ? "关着：屏幕边上不显示便签" : value.Text.Replace("开着 · ", "开着，在屏幕") );
+
+        void Save(Action change)
+        {
+            change();
+            SettingsService.Save();
+            NoteDeck.Refresh();
+        }
+
+        _content.Children.Add(SettingsUi.Section("屏幕边缘", null,
+            "鼠标靠到屏幕边上的药丸就展开一列标签，点一张，便签在边上打开。按住 Alt 拖药丸可以换边、换高度。右键一张标签可以直接固定、换颜色、" +
+            "浮到屏幕上、归档、删除；右键「+」或标签之间的空处有新建便签、全部便签和设置。不挡任务栏。打开的便签点别处就收起，" +
+            "固定（Ctrl+P）之后不收。按住打开的便签顶上的空白处往外拖，它就浮在屏幕上、可以拉大小。浮着的便签一直在别的窗口上面；固定之后，重启还回到原处。"));
+        Anchor("notes.deckEnabled", AddToggle("在屏幕边缘显示便签", "有了第一条便签才出现",
             settings.NotesDeckEnabled, isOn =>
             {
                 Save(() => settings.NotesDeckEnabled = isOn);
                 BuildPage("notes");
-            }));
+            }, "关掉后便签照样能从快捷键、启动器和全部便签窗口打开。"));
         var deckCards = new List<UIElement>();
         void Deck(Action add)
         {
@@ -113,9 +161,9 @@ internal sealed partial class SettingsWindow
             })));
         Deck(() => hidesPill = Anchor("notes.deckHidesPill", AddToggle("不显示药丸", "边上什么都不画，鼠标靠过去照样展开", settings.NotesDeckHidesPill,
             isOn => Save(() => settings.NotesDeckHidesPill = isOn))));
-        Deck(() => preview = Anchor("notes.deckPreview", AddToggle("悬停预览", "鼠标停在标签上时，旁边显示这条便签的开头几行", settings.NotesDeckPreview,
+        Deck(() => preview = Anchor("notes.deckPreview", AddToggle("悬停预览", "停在标签上时显示开头几行", settings.NotesDeckPreview,
             isOn => Save(() => settings.NotesDeckPreview = isOn))));
-        Deck(() => Anchor("notes.deckOpensOnHover", AddToggle("悬停即打开", "鼠标在标签上停一下就打开，不用点", settings.NotesDeckOpensOnHover,
+        Deck(() => Anchor("notes.deckOpensOnHover", AddToggle("悬停即打开", "在标签上停一下就打开，不用点", settings.NotesDeckOpensOnHover,
             isOn =>
             {
                 Save(() => settings.NotesDeckOpensOnHover = isOn);
@@ -153,28 +201,6 @@ internal sealed partial class SettingsWindow
                 }
             }
         }
-
-        _content.Children.Add(SettingsUi.Footnote(
-            "鼠标靠到屏幕边上的药丸就展开一列标签，点一张，便签在边上打开。按住 Alt 拖药丸可以换边、换高度。右键一张标签可以直接固定、换颜色、" +
-            "浮到屏幕上、归档、删除；右键「+」或标签之间的空处有新建便签、全部便签和设置。不挡任务栏。打开的便签点别处就收起，" +
-            "固定（Ctrl+P）之后不收。按住打开的便签顶上的空白处往外拖，它就浮在屏幕上、可以拉大小。浮着的便签一直在别的窗口上面；固定之后，重启还回到原处。"));
-
-        // 数据（导出 / 导入不套开关）
-        _content.Children.Add(Ungated(SettingsUi.Section("数据")));
-        var open = new Button { Content = "打开全部便签…" };
-        open.Click += (_, _) => NotesWindow.ShowWindow();
-        _content.Children.Add(Anchor("notes.openAll", SettingsUi.Card("全部便签", "看、改、搜索、归档便签，找回删掉的", open)));
-        Anchor("notes.keys", AddShortcutsRow("notes", "便签的按键", "快速记一条、屏幕边缘的便签和全部便签窗口里按什么键"));
-        var export = new Button { Content = "导出…", IsEnabled = NoteStore.Instance is not null };
-        export.Click += (_, _) => _ = NotesTransfer.ExportAllAsync(this);
-        _content.Children.Add(Ungated(Anchor("notes.export", SettingsUi.Card("导出为 Markdown", "每条便签一个 .md 文件，正文里的图片放在旁边的 attachments 文件夹", export))));
-        // Windows 的选择框不能同时选文件和文件夹：「导入…」弹两项（选择文件… / 选择文件夹…）
-        var import = new DropDownButton { Content = "导入…", IsEnabled = NoteStore.Instance is not null, Flyout = NotesTransfer.ImportMenu(this) };
-        _content.Children.Add(Ungated(Anchor("notes.import", SettingsUi.Card("从 Markdown 导入", "导回导出过的文件夹不会重复；别处的 .md 文件每个变成一条新便签", import))));
-        _content.Children.Add(Ungated(SettingsUi.Footnote(
-            "便签存在这台电脑上，和剪贴板历史分开：清空历史、保留天数都碰不到它。每天自动备份一份，留最近 7 份（正文里的图片跟着一起备）。" +
-            $"删掉的便签在「最近删除」里留 {NoteBook.TrashDays} 天。设置 › 通用 里的导出与导入带便签的文字、不带图片；要连图片一起带走、或者拿别的工具看，" +
-            "用上面的 Markdown 导出。在几台电脑之间同步到 设置 › 通用「同步」里选文件夹。")));
     }
 
     /// <summary>UI 截图自检（mac 9acd4306）：滚到「屏幕边缘」、展开「位置」下拉框看选项的先后；CloseDeckEdgeForProbe 收起。</summary>

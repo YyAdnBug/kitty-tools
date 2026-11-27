@@ -154,7 +154,15 @@ internal static class TranslateHost
     public static void OpenSettings(string? serviceId = null)
     {
         _window?.Hide(restoreForeground: false);
-        ShellRuntime.Instance?.ShowSettings(welcome: false, page: "translate", service: serviceId);
+        if (serviceId is null)
+        {
+            // PLAN-v28 X9：落到「翻译服务」那一组
+            ShellRuntime.Instance?.ShowSettingsItem("translate.services");
+        }
+        else
+        {
+            ShellRuntime.Instance?.ShowSettings(welcome: false, page: "translate", service: serviceId);
+        }
     }
 
     /// <summary>便签正文里选的字（翻译用：图片令牌去掉，任务方框、标记照原样——同 mac 读的是存的形式）。</summary>

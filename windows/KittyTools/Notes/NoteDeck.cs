@@ -193,8 +193,8 @@ internal static partial class NoteDeck
     {
         if (!SettingsService.Current.NotesDeckEnabled)
         {
-            NoticeHost.Show("屏幕边缘的便签关着", "在 设置 › 便签 里打开「屏幕边缘」", NoticeTone.Normal,
-                new NoticeAction("打开设置", () => ShellRuntime.Instance?.ShowSettings(false, "notes")));
+            NoticeHost.Show("屏幕边缘的便签关着", "在 设置 › 便签 › 屏幕边缘 里打开", NoticeTone.Normal,
+                new NoticeAction("打开设置", () => ShellRuntime.Instance?.ShowSettingsItem("notes.deckEnabled")));
             return;
         }
 

@@ -47,24 +47,13 @@ internal sealed partial class SettingsWindow
         ("@kitty.filter", "只跑一次", "列表脚本才写：打完「关键词 空格」时跑一次，之后打的字由启动器按标题、说明过滤（认拼音、首字母），脚本收不到参数"),
     };
 
-    /// <summary>启动器页上那一行：「脚本命令 ›」，小字写有几个、读不成几个。</summary>
+    /// <summary>启动器页上那一行：「脚本命令 ›」，行尾写有几个、读不成的橙字（PLAN-v28 X1，mac SettingsPushRow value）。</summary>
     private void AddScriptsRow()
     {
-        _content.Children.Add(SettingsUi.Section("脚本命令"));
-        string detail;
-        if (!SettingsService.Current.LauncherScripts)
-        {
-            detail = "关着";
-        }
-        else
-        {
-            var own = ScriptLibrary.Scripts.Count(script => !script.IsBundled);
-            var problems = ScriptLibrary.Problems.Count;
-            detail = (own > 0 ? $"{own} 个自己的脚本" : "把脚本放进文件夹，就是启动器里的一条命令") +
-                     $"，{BuiltinTools.Commands.Count} 个自带的" + (problems > 0 ? $"，{problems} 个读不成" : string.Empty);
-        }
-
-        Anchor("launcher.scripts", AddSubpageRow("脚本命令", detail, () => OpenLauncherSubpage("scripts")));
+        var on = SettingsService.Current.LauncherScripts;
+        var own = ScriptLibrary.Scripts.Count(script => !script.IsBundled);
+        Anchor("launcher.scripts", AddSubpageRow("脚本命令", string.Empty, () => OpenLauncherSubpage("scripts"),
+            SettingsSummary.Scripts(on, own, on ? ScriptLibrary.Problems.Count : 0)));
     }
 
     /// <summary>读完换上时（后台读的）：开着这一页就重画（文件夹里新放的、读不成的跟着变）。</summary>

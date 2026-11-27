@@ -450,7 +450,7 @@ internal sealed class NoteSheetView
             (VirtualKey.A, true) => Run(ToggleArchive),
             (VirtualKey.Delete, true) => Run(Delete),
             ((VirtualKey)190, false) => Run(() => NoteStore.Instance?.SetColor(id, Core.Notes.Note.NextPreset(Note?.Color ?? 0))),
-            ((VirtualKey)188, false) => Run(() => ShellRuntime.Instance?.ShowSettings(false, "notes")),
+            ((VirtualKey)188, false) => Run(() => ShellRuntime.Instance?.ShowSettingsItem("notes.fontSize")),
             (VirtualKey.W, false) => Run(() => _host.Close(true)),
             _ => false,
         };
@@ -529,7 +529,7 @@ internal sealed class NoteSheetView
         Item(menu.Items, NotesWindowRules.SingleExportTitle, Glyphs.Save, null, () => _ = NotesTransfer.ExportOneAsync(note.Id, _more.XamlRoot));
         menu.Items.Add(new MenuFlyoutSeparator());
         Item(menu.Items, NotesWindowRules.SettingsTitle + "…", Glyphs.Settings, "Ctrl+,",
-            () => ShellRuntime.Instance?.ShowSettings(false, "notes"));
+            () => ShellRuntime.Instance?.ShowSettingsItem("notes.fontSize"));
         menu.Closed += (_, _) => Editor.Focus();
         menu.ShowAt(_more);
     }

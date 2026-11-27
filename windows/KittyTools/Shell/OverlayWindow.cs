@@ -301,7 +301,8 @@ internal sealed unsafe class OverlayWindow : Window
         panel.SettingsRequested += () =>
         {
             HideOverlay(restoreForeground: false);
-            ShellRuntime.Instance?.ShowSettings(welcome: false, page: "clipboard");
+            // PLAN-v28 X9：落到「单击条目直接粘贴」（面板怎么用那一组的头一行）
+            ShellRuntime.Instance?.ShowSettingsItem("clipboard.pasteOnClick");
         };
         panel.HeightRequested += RequestHeight;
         // 底栏图钉 / Ctrl+P（以前这条事件没人接，点了没反应）。
@@ -316,7 +317,8 @@ internal sealed unsafe class OverlayWindow : Window
         panel.SettingsRequested += () =>
         {
             HideOverlay(restoreForeground: false);
-            ShellRuntime.Instance?.ShowSettings(welcome: false, page: "launcher");
+            // PLAN-v28 X9：落到「空搜索框里列出常用」
+            ShellRuntime.Instance?.ShowSettingsItem("launcher.frequent");
         };
         panel.HeightRequested += RequestHeight;
         return panel;

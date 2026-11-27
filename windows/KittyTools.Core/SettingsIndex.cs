@@ -277,7 +277,7 @@ public static class SettingsIndex
         Row("launcher.romanInput", A, "呼出时切到英文输入法", "英文,输入法", "LauncherRomanInput");
         Row("launcher.panelPosition", A, "面板位置", "位置,跟随鼠标,上次位置,屏幕上方", "LauncherPanelPosition");
         Row("launcher.panelSize", A, "面板大小", "宽度,行数,恢复默认大小");
-        Row("launcher.clearUsage", A, "清空使用记录…", "使用记录,清空,常用");
+        Row("launcher.clearUsage", A, "使用记录", "清空使用记录,清空,常用");
 
         // 翻译
         Row("translate.first", null, "第一语言", "语言", "TranslateFirstLanguage");

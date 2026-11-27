@@ -73,6 +73,9 @@ internal sealed partial class SettingsWindow
     /// <summary>截图自检：打开启动器 / 通用的子页（sub：commands、web、features；null = 页本身）。</summary>
     internal void OpenSubpageForProbe(string page, string? sub)
     {
+        _serviceDetail = null;
+        FlushDetail();
+        _detail = null;
         SetSubpage(page, sub);
         ShowPage(welcome: false, page);
         BuildPage(page);

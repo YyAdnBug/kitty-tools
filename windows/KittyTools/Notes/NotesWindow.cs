@@ -439,7 +439,7 @@ internal sealed class NotesWindow : Window
         }
 
         AddAction(_wallMode ? "\uE8FD" : "\uF0E2", _wallMode ? "换成列表" : "换成便签墙", ToggleLayout, true);
-        AddAction(Glyphs.Settings, NotesWindowRules.SettingsTitle, () => ShellRuntime.Instance?.ShowSettings(false, "notes"), true);
+        AddAction(Glyphs.Settings, NotesWindowRules.SettingsTitle, () => ShellRuntime.Instance?.ShowSettingsItem("notes.fontSize"), true);
     }
 
     /// <summary>

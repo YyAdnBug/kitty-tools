@@ -1101,6 +1101,7 @@ internal static class UiSnapshotProbe
                 settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 760));
                 settings.ShowPage(welcome: false, "notes");
                 await Task.Delay(600);
+                settings.OpenSubpageForProbe("notes", "deck");
                 settings.OpenDeckEdgeForProbe();
                 await Task.Delay(1200);
                 await WindowShot.SaveAsync(
