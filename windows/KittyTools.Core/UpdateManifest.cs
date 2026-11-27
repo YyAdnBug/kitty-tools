@@ -42,7 +42,7 @@ public static partial class UpdateManifest
     /// 验 GitCode 那份清单的公钥（SubjectPublicKeyInfo DER 的 base64，P-256）：用户在 Mac 上跑
     /// <c>swift macos/sign-manifest.swift new-key</c> 生成、私钥只在他的钥匙串里，公钥打印出来填在这里。空 = 不认 GitCode 的清单。
     /// </summary>
-    public const string SigningKey = "";
+    public const string SigningKey = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEyJ4bUUE+3eJy2d5pKZ82I+SvBS+JQdA0Z959dN4kvwl699MSSmGhWwbM7e3EGTVjybVBB8gbPUTVLTtsLjfc9g==";
 
     /// <summary>GitCode 的发布页（上一次清单从 GitCode 来时「打开发布页」去这里）。</summary>
     public const string GitCodeReleasesPage = "https://gitcode.com/yyandbug/kitty-tools/releases";
