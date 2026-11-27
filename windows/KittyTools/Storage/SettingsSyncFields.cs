@@ -46,6 +46,21 @@ internal static class SettingsSyncFields
         }
     }
 
+    /// <summary>按 App 的设置名读一项（设置页「恢复默认」用，PLAN-v28 X5；没接上的是 null）。</summary>
+    public static SettingValue? ReadField(Settings settings, string field)
+        => Fields.TryGetValue(field, out var found) ? found.Get(settings) : null;
+
+    public static SettingValue? DefaultField(string field) => ReadField(Defaults, field);
+
+    /// <summary>按设置名写一项；null = 回到本机默认。</summary>
+    public static void WriteField(Settings settings, string field, SettingValue? value)
+    {
+        if (Fields.TryGetValue(field, out var found))
+        {
+            found.Set(settings, value);
+        }
+    }
+
     private static Settings CreateDefaults()
     {
         var settings = new Settings();
@@ -196,6 +211,14 @@ internal static class SettingsSyncFields
         Flag("NotesDeckOpensOnHover", s => s.NotesDeckOpensOnHover, (s, v) => s.NotesDeckOpensOnHover = v);
         Flag("NotesDeckOverFullScreen", s => s.NotesDeckOverFullScreen, (s, v) => s.NotesDeckOverFullScreen = v);
         Text("NotesDeckNoteSize", s => s.NotesDeckNoteSize, (s, v) => s.NotesDeckNoteSize = v ?? "medium");
+
+        // 不同步、只给设置页「恢复默认」用的（PLAN-v28 X5：跟着这台电脑的授权、设备走，同 mac localKeys；不在对照表里，同步碰不到它们）
+        Flag("RecordKeys", s => s.RecordKeys, (s, v) => s.RecordKeys = v);
+        Flag("RecordMicrophone", s => s.RecordMicrophone, (s, v) => s.RecordMicrophone = v);
+        Text("AudioSource", s => s.AudioSource, (s, v) => s.AudioSource = v ?? "microphone");
+        Flag("LauncherUseEverything", s => s.LauncherUseEverything, (s, v) => s.LauncherUseEverything = v);
+        fields["ScreenshotCornerRadius"] = new(s => SettingValue.Of(s.ScreenshotCornerRadius),
+            (s, v) => s.ScreenshotCornerRadius = v?.Real ?? Defaults.ScreenshotCornerRadius);
 
         // 功能开关：没存过 = 本机默认（Features.IsOn 的那条：插件没添加、功能开着）；写 null = 删掉这一项
         foreach (var feature in Enum.GetValues<Feature>())

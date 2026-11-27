@@ -19,7 +19,7 @@ internal sealed partial class SettingsWindow
 {
     private void BuildReminders()
     {
-        _content.Children.Add(Header("提醒", "到点提醒你：什么时候响、用什么方式、点了「稍后」推多久"));
+        _content.Children.Add(Header("提醒", "到点提醒你，时间和方式你来定"));
         AddFeatureToggle(Feature.Reminders);
         var settings = SettingsService.Current;
         var reminders = Reminders.Load(settings.Reminders);
@@ -52,7 +52,7 @@ internal sealed partial class SettingsWindow
             BuildPage("reminders");
         }
 
-        _content.Children.Add(SettingsUi.Section("提醒"));
+        _content.Children.Add(Anchor("reminders.list", (FrameworkElement)SettingsUi.Section("提醒")));
         if (reminders.Count == 0)
         {
             _content.Children.Add(SettingsUi.Footnote("还没有提醒，点下面的「＋」加一条"));
@@ -98,14 +98,14 @@ internal sealed partial class SettingsWindow
 
         // 到点之后（mac RemindersTab「到点之后」，REVIEW R102）
         _content.Children.Add(SettingsUi.Section("到点之后"));
-        AddCombo("「稍后」推多久", "提醒到点后点「稍后」，过这么久再提醒一次（全屏上另有 15 分钟、1 小时）",
+        Anchor("reminders.snooze", AddCombo("「稍后」推多久", "提醒到点后点「稍后」，过这么久再提醒一次（全屏上另有 15 分钟、1 小时）",
             Reminders.SnoozeChoices.Select(minutes => $"{minutes} 分钟").ToArray(),
             Math.Max(0, Array.IndexOf(Reminders.SnoozeChoices, settings.RemindersSnoozeMinutes)),
             index =>
             {
                 settings.RemindersSnoozeMinutes = Reminders.SnoozeChoices[index];
                 SettingsService.Save();
-            });
+            }));
         _content.Children.Add(SettingsUi.Footnote(
             "电脑睡着、锁着屏、在状态屏里，或者没打开 Kitty 时到点的提醒，晚 5 分钟以内的照常提醒，更晚的回来后合成一条告诉你。" +
             "每隔一阵的提醒碰上锁屏、睡眠，或者 5 分钟没碰键盘鼠标，算休息过了，回来重新数。正在录屏录音时边框和全屏都降成提示、也不出声。"));

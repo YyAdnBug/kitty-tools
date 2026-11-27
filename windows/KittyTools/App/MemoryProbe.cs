@@ -53,6 +53,17 @@ internal static class MemoryProbe
                 }
 
                 Report("settings-all-pages");
+                // PLAN-v28：各子页、各「高级」看两遍（推进行、ⓘ、恢复默认这些都建过一回、拆过一回）
+                for (var round = 0; round < 2; round++)
+                {
+                    foreach (var (page, sub) in SettingsWindow.PlacesForProbe().Where(place => place.Sub is not null))
+                    {
+                        ShellRuntime.Instance?.SettingsWindowForProbe?.OpenSubpageForProbe(page, sub);
+                        await Task.Delay(600);
+                    }
+                }
+
+                Report("settings-subpages-twice");
                 ShellRuntime.Instance?.CloseSettings();
                 await Task.Delay(IdleSeconds * 1000);
                 Report("settings-closed");

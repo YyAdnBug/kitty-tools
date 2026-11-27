@@ -32,7 +32,7 @@ internal sealed partial class SettingsWindow
         var store = TranslateServiceStore.Instance;
         if (store is null)
         {
-            _content.Children.Add(Header("翻译", "语言、翻译服务与密钥、历史"));
+            _content.Children.Add(Header("翻译", "翻成什么语言、用哪些服务、怎么弹出来"));
             _content.Children.Add(new TextBlock { Text = "翻译服务还没准备好。", Foreground = Theme.SecondaryText() });
             return;
         }
@@ -48,7 +48,7 @@ internal sealed partial class SettingsWindow
         _serviceDetail = null;
         Log.Info("settings.translate.build-start");
         var settings = SettingsService.Current;
-        _content.Children.Add(Header("翻译", "语言、翻译服务与密钥、历史"));
+        _content.Children.Add(Header("翻译", "翻成什么语言、用哪些服务、怎么弹出来"));
         // 2026-10-29 布局对齐 mac：第一行「启用翻译」，组的说明写在组下面；历史的保留、导出清空和按键那几行功能关着也能用。
         AddFeatureToggle(Feature.Translate);
 
@@ -57,8 +57,8 @@ internal sealed partial class SettingsWindow
         var langs = Enum.GetValues<Lang>();
         var titles = langs.Select(lang => lang.Title()).ToArray();
         var (first, second) = store.Languages;
-        AddCombo("第一语言", string.Empty, titles, Array.IndexOf(langs, first), index => SetLanguage(isFirst: true, langs[index]));
-        AddCombo("第二语言", string.Empty, titles, Array.IndexOf(langs, second), index => SetLanguage(isFirst: false, langs[index]));
+        Anchor("translate.first", AddCombo("第一语言", string.Empty, titles, Array.IndexOf(langs, first), index => SetLanguage(isFirst: true, langs[index])));
+        Anchor("translate.second", AddCombo("第二语言", string.Empty, titles, Array.IndexOf(langs, second), index => SetLanguage(isFirst: false, langs[index])));
         _content.Children.Add(SettingsUi.Footnote(
             "目标语言选「自动」时：原文是第一语言就译成第二语言，否则译成第一语言（简繁中文算同一种）。源语言和目标语言在翻译浮窗顶部切换，会一直记住。"));
 
@@ -102,17 +102,17 @@ internal sealed partial class SettingsWindow
         var sizeControls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
         sizeControls.Children.Add(slider);
         sizeControls.Children.Add(percent);
-        _content.Children.Add(SettingsUi.Card("大小", string.Empty, sizeControls));
+        _content.Children.Add(Anchor("translate.fontScale", SettingsUi.Card("大小", string.Empty, sizeControls)));
         Preview(settings.TranslateFontScale);
         _content.Children.Add(preview.Root);
 
         // ---- 查词（系统词典那一项 Windows 不做：没有系统词典接口，PLAN-v3 §3.4）
         _content.Children.Add(SettingsUi.Section("查词"));
-        AddToggle("查单个词时大模型按词典回答（读音、词性、例句）", string.Empty, settings.TranslateWordLookup, isOn =>
+        Anchor("translate.wordMode", AddToggle("查单个词时大模型按词典回答（读音、词性、例句）", string.Empty, settings.TranslateWordLookup, isOn =>
         {
             settings.TranslateWordLookup = isOn;
             SettingsService.Save();
-        });
+        }));
         _content.Children.Add(SettingsUi.Footnote("查单个词时不自动复制、不给「替换原文」。"));
 
         // ---- 朗读（PLAN-v14 V8，mac R3 R4）
@@ -123,55 +123,55 @@ internal sealed partial class SettingsWindow
             SettingsService.Save();
         });
         var accents = new[] { "us", "uk" };
-        AddCombo("英文单词发音", string.Empty, new[] { "美音", "英音" },
+        Anchor("translate.pronunciation", AddCombo("英文单词发音", string.Empty, new[] { "美音", "英音" },
             settings.TranslateWordAccent == "uk" ? 1 : 0, index =>
             {
                 settings.TranslateWordAccent = accents[index];
                 SettingsService.Save();
-            });
-        _content.Children.Add(SettingsUi.Card("朗读速度", "所有喇叭都按它读；英文单词的真人录音照原速", SettingsUi.Segmented(
+            }));
+        _content.Children.Add(Anchor("translate.speechSpeed", SettingsUi.Card("朗读速度", "所有喇叭都按它读；英文单词的真人录音照原速", SettingsUi.Segmented(
             SpeechSpeed.Titles, SpeechSpeed.IndexOf(settings.TranslateSpeechSpeed), index =>
             {
                 settings.TranslateSpeechSpeed = SpeechSpeed.Choices[index];
                 SettingsService.Save();
-            }, "朗读速度")));
+            }, "朗读速度"))));
         _content.Children.Add(SettingsUi.Footnote("句子用系统声音：在 Windows 设置 › 时间和语言 › 语音 里添加语音，可以换更自然的声音。"));
 
         // ---- 行为
         _content.Children.Add(SettingsUi.Section("行为"));
         var positions = new[] { PanelPositions.Top, PanelPositions.Mouse, PanelPositions.Last };
-        AddSegmented("浮窗位置",
+        Anchor("translate.panelPosition", AddSegmented("浮窗位置",
             "划词、截图翻译、复制即译时出现的位置：屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边；输入翻译总在上次拖到的位置",
             new[] { "屏幕上方", "跟随鼠标", "上次位置" }, Math.Max(0, Array.IndexOf(positions, settings.TranslateWindowPosition)), index =>
             {
                 settings.TranslateWindowPosition = positions[index];
                 SettingsService.Save();
-            });
-        AddPanelSizeCard(
+            }));
+        Anchor("translate.panelSize", AddPanelSizeCard(
             () => Math.Abs(settings.TranslateWindowWidth - TranslateSession.DefaultWidth) > 0.5 || settings.TranslateWindowMaxHeight is not null,
             () =>
             {
                 settings.TranslateWindowWidth = TranslateSession.DefaultWidth;
                 settings.TranslateWindowMaxHeight = null;
-            });
-        AddToggle("翻译前把同一段里的换行接起来（适合 PDF 复制的文字）", string.Empty, settings.TranslateJoinLines, isOn =>
+            }));
+        Anchor("translate.removeNewlines", AddToggle("翻译前把同一段里的换行接起来（适合 PDF 复制的文字）", string.Empty, settings.TranslateJoinLines, isOn =>
         {
             settings.TranslateJoinLines = isOn;
             SettingsService.Save();
-        });
-        AddToggle("复制即译", "在别的程序里复制文字，浮窗自动弹出翻译（网址、路径和数字不翻）",
+        }));
+        Anchor("translate.copyToTranslate", AddToggle("复制即译", "在别的程序里复制文字，浮窗自动弹出翻译（网址、路径和数字不翻）",
             settings.CopyTranslate, isOn =>
             {
                 settings.CopyTranslate = isOn;
                 SettingsService.Save();
                 TranslateHost.ApplyCopyTranslate();
-            });
+            }));
         // 这几个开关只原地改受影响的那一行（说明 / 能不能点），不重建整页：重建时整页的开关都闪一下（2026-10-29 用户反馈）。
         static string CopyRecognizedNote(bool autoCopy) => autoCopy
             ? "识别出来就放进剪贴板；译文出来后，剪贴板换成译文（上面开着自动复制）"
             : "识别出来就放进剪贴板，Ctrl+V 能直接粘贴；关着时只记进剪贴板历史";
         Border? copyRecognizedCard = null;
-        AddToggle("自动复制译文", "复制即译弹出的翻译不会自动复制，免得覆盖你刚复制的原文", settings.TranslateAutoCopy, isOn =>
+        Anchor("translate.autoCopy", AddToggle("自动复制译文", "复制即译弹出的翻译不会自动复制，免得覆盖你刚复制的原文", settings.TranslateAutoCopy, isOn =>
         {
             settings.TranslateAutoCopy = isOn;
             SettingsService.Save();
@@ -179,24 +179,24 @@ internal sealed partial class SettingsWindow
             {
                 SettingsUi.SetDescription(copyRecognizedCard, CopyRecognizedNote(isOn));
             }
-        });
+        }));
         // PLAN-v16 S1（mac d4901574）：默认关
-        AddToggle("截图翻译时把译文直接盖回截图上",
+        Anchor("translate.overlay", AddToggle("截图翻译时把译文直接盖回截图上",
             "截图翻译和截图工具栏里的「翻译」都留在截图页里，译文按原来的位置盖回图上，可以接着标注、复制、保存；关着时在翻译浮窗里看，能对比几个服务、复制译文",
             settings.TranslateScreenshotOverlay, isOn =>
             {
                 settings.TranslateScreenshotOverlay = isOn;
                 SettingsService.Save();
-            });
-        copyRecognizedCard = AddToggle("截图翻译时复制识别出的原文",
+            }));
+        copyRecognizedCard = Anchor("translate.copyRecognized", AddToggle("截图翻译时复制识别出的原文",
             CopyRecognizedNote(settings.TranslateAutoCopy),
             settings.TranslateCopyRecognized, isOn =>
             {
                 settings.TranslateCopyRecognized = isOn;
                 SettingsService.Save();
-            });
+            }));
         Border? limitCard = null;
-        AddToggle("记录翻译历史", string.Empty, settings.TranslateHistoryEnabled, isOn =>
+        Anchor("translate.history", AddToggle("记录翻译历史", string.Empty, settings.TranslateHistoryEnabled, isOn =>
         {
             settings.TranslateHistoryEnabled = isOn;
             SettingsService.Save();
@@ -204,7 +204,7 @@ internal sealed partial class SettingsWindow
             {
                 SettingsUi.SetEnabled(limitCard, isOn);
             }
-        });
+        }));
         var limits = new[] { 1000, 5000, 0 };
         limitCard = SettingsUi.Card("历史最多保留", string.Empty,
             SettingsUi.Segmented(new[] { "1000 条", "5000 条", "不限" },
@@ -214,7 +214,7 @@ internal sealed partial class SettingsWindow
                     SettingsService.Save();
                 }, "历史最多保留"),
             enabled: settings.TranslateHistoryEnabled);
-        _content.Children.Add(Ungated(limitCard));
+        _content.Children.Add(Ungated(Anchor("translate.historyLimit", limitCard)));
 
         var exportMenu = new MenuFlyout();
         foreach (var (favoritesOnly, anki, title) in HistoryMenu.Exports)
@@ -231,14 +231,14 @@ internal sealed partial class SettingsWindow
         var historyButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         historyButtons.Children.Add(export);
         historyButtons.Children.Add(clear);
-        _content.Children.Add(Ungated(SettingsUi.Card("导出和清空", string.Empty, historyButtons)));
+        _content.Children.Add(Ungated(Anchor("translate.historyExport", SettingsUi.Card("导出和清空", string.Empty, historyButtons))));
 
-        Ungated(AddShortcutsRow("translate", "翻译浮窗里的按键",
-            "Enter 翻译，Ctrl+R 重新翻译，Ctrl+1–9 复制第 1–9 个结果，Ctrl+H 翻译历史；划词来的翻译可以「替换原文」"));
+        Ungated(Anchor("translate.keys", AddShortcutsRow("translate", "翻译浮窗里的按键",
+            "Enter 翻译，Ctrl+R 重新翻译，Ctrl+1–9 复制第 1–9 个结果，Ctrl+H 翻译历史；划词来的翻译可以「替换原文」")));
         _content.Children.Add(Ungated(SettingsUi.Footnote("收藏的记录不算在保留条数里、永不清理。")));
 
         // ---- 翻译服务
-        _content.Children.Add(SettingsUi.Section("翻译服务"));
+        _content.Children.Add(Anchor("translate.services", (FrameworkElement)SettingsUi.Section("翻译服务")));
         if (TranslateServiceStore.BuiltinZhipuKey is null)
         {
             _content.Children.Add(new TextBlock

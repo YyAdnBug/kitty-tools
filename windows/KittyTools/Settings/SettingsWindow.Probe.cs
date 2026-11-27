@@ -12,6 +12,7 @@ internal sealed partial class SettingsWindow
     internal string? SubpageForProbe => _featuresPage ? "features"
         : _serviceDetail is { } service ? "service:" + service
         : _launcherSubpage is { } sub ? "launcher:" + sub
+        : _subpage is { } other ? _currentPage + ":" + other
         : null;
 
     internal string SearchTextForProbe => _search.Text;
@@ -24,6 +25,60 @@ internal sealed partial class SettingsWindow
     }
 
     internal bool GoBackForProbe() => GoBack();
+
+    // ---- PLAN-v28：子页、「高级」、搜索落到行、ⓘ
+
+    /// <summary>截图自检挨个拍的地方：每一页本身、登记表里出现过的子页和「高级」（按侧栏的先后）。</summary>
+    internal static IEnumerable<(string Page, string? Sub)> PlacesForProbe()
+    {
+        foreach (var (tag, _, _) in Pages)
+        {
+            yield return (tag, null);
+            foreach (var sub in Core.SettingsIndex.Items.Where(item => item.Page == tag && item.Sub is not null).Select(item => item.Sub).Distinct())
+            {
+                yield return (tag, sub);
+            }
+        }
+    }
+
+    internal void OpenItemForProbe(string id) => OpenItem(id);
+
+    /// <summary>点开那一行的 ⓘ（浮层关在窗口里画，WGC 只拍得到窗口自己）；CloseInfoForProbe 收起。</summary>
+    internal void OpenInfoForProbe(string id)
+    {
+        _scroll.UpdateLayout();
+        if (!_anchors.TryGetValue(id, out var row) || FindInfo(row) is not { Flyout: Flyout flyout } button)
+        {
+            return;
+        }
+
+        flyout.ShouldConstrainToRootBounds = true;
+        _probeFlyout = flyout;
+        flyout.ShowAt(button);
+
+        static Button? FindInfo(Microsoft.UI.Xaml.DependencyObject node)
+        {
+            if (node is Button { Flyout: Flyout } candidate &&
+                Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(candidate).EndsWith("的说明", StringComparison.Ordinal))
+            {
+                return candidate;
+            }
+
+            for (var index = 0; index < Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(node); index++)
+            {
+                if (FindInfo(Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(node, index)) is { } found)
+                {
+                    return found;
+                }
+            }
+
+            return null;
+        }
+    }
+
+    private Flyout? _probeFlyout;
+
+    internal void CloseInfoForProbe() => _probeFlyout?.Hide();
 
     /// <summary>启动器 › 应用：在「按应用名或别名找」里打了这些字（截图只留那几行，不拍这台电脑上装的别的应用）。</summary>
     internal void FilterAppsForProbe(string text)

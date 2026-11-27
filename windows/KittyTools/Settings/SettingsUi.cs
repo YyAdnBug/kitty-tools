@@ -20,6 +20,7 @@ internal static class SettingsUi
     /// 设置卡：（身份图标）+ 标题 + 说明 + 右边控件（control 为 null 时整张卡可点，右侧显示箭头）。
     /// problem：说明写的是配置问题（没找到书签文件、未填密钥），用橙字（配置问题的语义色）。
     /// tag：标题后面的一枚小标签（翻译服务行的「免费」，PLAN-v22 F3），读屏跟着标题读。
+    /// info：行尾 ⓘ 里的说明（PLAN-v28 X6，原理、隐私、规则、举例）：在控件左边，点开一个能选字的小浮层。
     /// </summary>
     public static Border Card(
         string title,
@@ -29,7 +30,8 @@ internal static class SettingsUi
         bool enabled = true,
         FrameworkElement? leading = null,
         bool problem = false,
-        string? tag = null)
+        string? tag = null,
+        string? info = null)
     {
         var text = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center, Name = CardTextName };
         var heading = new TextBlock
@@ -76,6 +78,19 @@ internal static class SettingsUi
         Grid.SetColumn(text, column++);
         row.Children.Add(text);
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        if (info is not null)
+        {
+            // ⓘ 在控件左边、间距 8（同 mac SettingRow：行尾、控件左边）
+            var trailing = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+            trailing.Children.Add(InfoButton(title, info));
+            if (control is not null)
+            {
+                trailing.Children.Add(control);
+            }
+
+            control = trailing;
+        }
 
         if (control is not null)
         {
@@ -521,11 +536,22 @@ internal static class SettingsUi
         return choice;
     }
 
-    /// <summary>分组标题（一大组设置卡上面那行）。</summary>
-    public static UIElement Section(string title, string? subtitle = null)
+    /// <summary>分组标题（一大组设置卡上面那行）；info：解释一整组的话放在标题右边的 ⓘ 里（PLAN-v28 X6，原来的页脚）。</summary>
+    public static UIElement Section(string title, string? subtitle = null, string? info = null)
     {
         var panel = new StackPanel { Spacing = 2, Margin = new Thickness(2, 10, 2, 2) };
-        panel.Children.Add(new TextBlock { Text = title, FontWeight = FontWeights.SemiBold, FontSize = 14 });
+        var heading = new TextBlock { Text = title, FontWeight = FontWeights.SemiBold, FontSize = 14, VerticalAlignment = VerticalAlignment.Center };
+        if (info is null)
+        {
+            panel.Children.Add(heading);
+        }
+        else
+        {
+            var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+            line.Children.Add(heading);
+            line.Children.Add(InfoButton(title, info));
+            panel.Children.Add(line);
+        }
         if (!string.IsNullOrEmpty(subtitle))
         {
             panel.Children.Add(new TextBlock
@@ -538,6 +564,79 @@ internal static class SettingsUi
         }
 
         return panel;
+    }
+
+    /// <summary>
+    /// 行尾、组标题旁边的 ⓘ（PLAN-v28 X6，mac InfoButton）：Segoe 的信息符号、次要字色、没有底；点开一个浮层，里面的字能选（宽 280、内边距 12）。
+    /// 读屏名「「行名」的说明」，HelpText 是全文：不点开也听得到。
+    /// </summary>
+    public static Button InfoButton(string rowTitle, string text)
+    {
+        var body = new TextBlock
+        {
+            Text = text,
+            TextWrapping = TextWrapping.Wrap,
+            IsTextSelectionEnabled = true,
+            MaxWidth = 280,
+            FontSize = 13,
+        };
+        var flyout = new Flyout { Content = body, Placement = FlyoutPlacementMode.Bottom };
+        var button = new Button
+        {
+            Content = new FontIcon { Glyph = Glyphs.Info, FontSize = 13 },
+            Padding = new Thickness(5),
+            MinWidth = 0,
+            MinHeight = 0,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            Foreground = Theme.SecondaryText(),
+            VerticalAlignment = VerticalAlignment.Center,
+            Flyout = flyout,
+        };
+        AutomationProperties.SetName(button, $"「{rowTitle}」的说明");
+        AutomationProperties.SetHelpText(button, text);
+        return button;
+    }
+
+    /// <summary>
+    /// 推进行（PLAN-v28 X1，mac SettingsPushRow）：标题（+ 一句副标题）、行尾的状态（次要字色、在 › 左边；problem 时橙字）、›。
+    /// 整行是一个按钮：读屏名 = 标题，值 = 状态。
+    /// </summary>
+    public static Button PushRow(string title, string detail, string? value, bool problem, Action open, string? tag = null)
+    {
+        var trailing = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+        if (!string.IsNullOrEmpty(value))
+        {
+            trailing.Children.Add(new TextBlock
+            {
+                Text = value,
+                Foreground = problem ? Theme.Caution() : Theme.SecondaryText(),
+                VerticalAlignment = VerticalAlignment.Center,
+                MaxLines = 1,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            });
+        }
+
+        trailing.Children.Add(new FontIcon { Glyph = Glyphs.ChevronRight, FontSize = 12, Foreground = Theme.SecondaryText(), VerticalAlignment = VerticalAlignment.Center });
+        var card = Card(title, detail, trailing, tag: tag);
+        var button = new Button
+        {
+            Content = card,
+            Padding = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderThickness = new Thickness(0),
+        };
+        AutomationProperties.SetName(button, tag is null ? title : $"{title}（{tag}）");
+        if (!string.IsNullOrEmpty(value))
+        {
+            AutomationProperties.SetItemStatus(button, value);
+        }
+
+        AutomationProperties.SetHelpText(button, $"打开「{title}」");
+        button.Click += (_, _) => open();
+        return button;
     }
 
     /// <summary>
@@ -577,7 +676,8 @@ internal static class SettingsUi
     }
 
     /// <summary>页头：一个家族色块 + 大标题 + 一句说明（PLAN-v7 §3.7）。glyph 是这一页自己的符号（和左栏同一个，同 mac PageHeader 的 page.symbol）。</summary>
-    public static UIElement Header(string title, string subtitle, string? glyph = null)
+    /// <remarks>family：色块的家族色（子页用它那一页的，不按标题认）；problem：那句说明是问题（子页页头的状态，橙字）。</remarks>
+    public static UIElement Header(string title, string subtitle, string? glyph = null, string? family = null, bool problem = false)
     {
         var texts = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
         texts.Children.Add(new TextBlock
@@ -592,7 +692,7 @@ internal static class SettingsUi
             {
                 Text = subtitle,
                 FontSize = Theme.FontSize("Kitty.FontSize.Body"),
-                Foreground = Theme.SecondaryText(),
+                Foreground = problem ? Theme.Caution() : Theme.SecondaryText(),
                 TextWrapping = TextWrapping.Wrap,
             });
         }
@@ -603,7 +703,7 @@ internal static class SettingsUi
             Spacing = 12,
             Margin = new Thickness(2, 0, 2, 8),
         };
-        row.Children.Add(KindTile.Create(FamilyOfPage(title), glyph ?? FeatureIcons.General, 32));
+        row.Children.Add(KindTile.Create(family ?? FamilyOfPage(title), glyph ?? FeatureIcons.General, 32));
         row.Children.Add(texts);
         return row;
     }

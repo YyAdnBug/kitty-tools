@@ -24,14 +24,14 @@ internal sealed partial class SettingsWindow
             return;
         }
 
-        _content.Children.Add(SettingsUi.Section("截图时：标注工具"));
+        _content.Children.Add(Anchor("hotkeys.shotTools", (FrameworkElement)SettingsUi.Section("截图时：标注工具")));
         _content.Children.Add(SettingsUi.Footnote("只在截图框选和标注里有效，单个键也行"));
         foreach (var entry in ShotKeys.Tools)
         {
             _content.Children.Add(ShotKeyRow(entry));
         }
 
-        _content.Children.Add(SettingsUi.Section("截图时：出图和操作"));
+        _content.Children.Add(Anchor("hotkeys.shotOutput", (FrameworkElement)SettingsUi.Section("截图时：出图和操作")));
         foreach (var entry in ShotKeys.Others.Where(entry => entry.Id switch
                  {
                      "record" => Features.IsOn(Feature.Recording),

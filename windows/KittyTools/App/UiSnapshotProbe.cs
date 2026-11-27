@@ -803,7 +803,7 @@ internal static class UiSnapshotProbe
 
     private static async Task SafeRenderSettingsAsync(bool dark, string directory)
     {
-        if (!Wanted("settings") && !Wanted("settings-sync") && !Wanted("settings-sync-settings") && !Wanted("settings-hotkeys-block") && !Wanted("settings-hotkeys-shot") && !Wanted("settings-sub") && !Wanted("settings-translate-add") && !Wanted("settings-shortcuts-sheet") && !Wanted("settings-launcher-files") && !Wanted("settings-about-full"))
+        if (!Wanted("settings") && !Wanted("settings-v28") && !Wanted("settings-sync") && !Wanted("settings-sync-settings") && !Wanted("settings-hotkeys-block") && !Wanted("settings-hotkeys-shot") && !Wanted("settings-sub") && !Wanted("settings-translate-add") && !Wanted("settings-shortcuts-sheet") && !Wanted("settings-launcher-files") && !Wanted("settings-about-full"))
         {
             return;
         }
@@ -1044,6 +1044,46 @@ internal static class UiSnapshotProbe
                 settings.ScrollToSectionForProbe("文件搜索");
                 await Task.Delay(1500);
                 await ShootSettingsWindowAsync(settings, "settings-launcher-files", dark, directory);
+            }
+
+            // PLAN-v28：每一页、每个子页、每个「高级」整页各一张（屏外画，拉长到放得下）；侧栏「设置项」的搜索结果、
+            // 选了一项落到那一行描着边的那一刻、点开一个 ⓘ 的样子拍真窗口（浮层是弹出层，关在窗口里画）。
+            if (Wanted("settings-v28"))
+            {
+                foreach (var (page, sub) in SettingsWindow.PlacesForProbe())
+                {
+                    var name = "settings-v28-" + page + (sub is null ? string.Empty : "-" + sub);
+                    if (!Wanted(name))
+                    {
+                        continue;
+                    }
+
+                    settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 2200));
+                    settings.OpenSubpageForProbe(page, sub);
+                    await Task.Delay(sub is "scripts" or "apps" ? 1200 : 400);
+                    await RenderWindowAsync(settings, name, dark, directory);
+                }
+
+                settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 760));
+                settings.OpenSubpageForProbe("general", null);
+                foreach (var (name, query) in new[] { ("settings-v28-search-lens", "透镜"), ("settings-v28-search-position", "面板位置"), ("settings-v28-search-history", "历史") })
+                {
+                    settings.SearchForProbe(query);
+                    await Task.Delay(500);
+                    await ShootSettingsWindowAsync(settings, name, dark, directory);
+                }
+
+                settings.SearchForProbe(string.Empty);
+                settings.OpenItemForProbe("clipboard.linkPreview");
+                await Task.Delay(500);
+                await ShootSettingsWindowAsync(settings, "settings-v28-highlight", dark, directory);
+                settings.OpenSubpageForProbe("clipboard", null);
+                await Task.Delay(400);
+                settings.OpenInfoForProbe("clipboard.pasteOnClick");
+                await Task.Delay(600);
+                await ShootSettingsWindowAsync(settings, "settings-v28-info", dark, directory);
+                settings.CloseInfoForProbe();
+                settings.OpenSubpageForProbe("general", null);
             }
 
             // PLAN-v12 第 3、5 批 / PLAN-v13 第 5 批：设置 › 状态屏、提醒、便签整页（真窗口的样子各拍一张上面一屏）。

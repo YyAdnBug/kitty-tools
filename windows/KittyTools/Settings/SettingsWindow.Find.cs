@@ -1,9 +1,12 @@
-// 设置搜索落到那一行（PLAN-v26 G1，D4 = A，同 mac 0.10.1 f0668a2a）：侧栏搜索停手 0.4 秒后，在跳到的那一页上找标题（没有就说明）
-// 里有这个字的第一张卡，滚到视野里、描两秒强调色（同「添加插件」那张卡的描法）；只是页的关键词对上的停在页顶。
+// 设置搜索落到那一行（PLAN-v28 X3，D3 = A，照 mac SettingsIndex / SettingsNavigation.open）：侧栏搜索框有字时最上面多一组「设置项（N）」，
+// 列登记表（Core SettingsIndex）里对上的行（最多 12 条，第二行灰字写位置「截图 › 截图历史」「剪贴板 · 高级」）；选了才打开那一页 / 子页 / 高级、
+// 滚到那一行、描两秒强调色。打字时只筛页、不自动落行（PLAN-v26 G1 停手 0.4 秒自动落到当前页第一张卡的那套换掉了：行挪进子页和高级以后搜不到）。
+// 剪贴板面板、翻译浮窗这些地方的「设置…」也经 ShowItem 直达那一行（X9）。
 using KittyTools.Core;
-using KittyTools.Core.Sync;
 using KittyTools.Infrastructure;
+using KittyTools.Ui;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 
@@ -11,66 +14,145 @@ namespace KittyTools;
 
 internal sealed partial class SettingsWindow
 {
-    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _landTimer;
+    private const string ItemPrefix = "item:";
 
     /// <summary>描边两秒后撤掉的计时（拿着它：局部的计时器还没到点就可能被回收）。</summary>
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _ringTimer;
 
-    /// <summary>侧栏搜索打了字：停手 0.4 秒再落到那一行（每个字都滚一下太晃）。</summary>
-    private void ScheduleLanding()
+    /// <summary>侧栏「设置项」那一组此刻列的（搜索词对上的行）。</summary>
+    private List<SettingsItem> SearchResults(string query)
     {
-        if (_landTimer is null)
-        {
-            _landTimer = DispatcherQueue.CreateTimer();
-            _landTimer.Interval = TimeSpan.FromMilliseconds(400);
-            _landTimer.IsRepeating = false;
-            _landTimer.Tick += (_, _) => LandOn(_sidebarQuery);
-        }
-
-        _landTimer.Stop();
-        _landTimer.Start();
+        var hidden = AbsentPlugins();
+        var pages = Pages.Select(page => page.Tag).Where(tag => !hidden.Contains(tag)).ToList();
+        return SettingsIndex.Matching(query, pages, Shown);
     }
 
-    private void LandOn(string query)
+    /// <summary>这台电脑上、这会儿页面上有没有这一行（只在多块屏时才有的那种）：没有的不列进结果，点了只会换到一页、找不到那一行。</summary>
+    private static bool Shown(SettingsItem item) => item.Id switch
     {
-        var cards = Cards(_content).ToList();
-        var rows = cards.Select(card => SettingsUi.TextOf(card) ?? (string.Empty, string.Empty)).ToList();
-        if (SettingsSearch.RowFor(rows, query) is not { } index)
+        "notes.deckDisplay" => Displays.All().Count > 1,
+        "hotkeys.shotTools" or "hotkeys.shotOutput" => Features.IsOn(Feature.Screenshot),
+        _ => true,
+    };
+
+    /// <summary>选了这一项落到哪一行：跟着一个开关才露出来、这会儿藏着的，落到那个开关上（开了它才看得到）。</summary>
+    private static string Landing(string id)
+    {
+        var settings = SettingsService.Current;
+        return id switch
+        {
+            "general.mirror" when !settings.DailyBackup => "general.backup",
+            "general.syncPeers" or "general.syncSettings" when !settings.SyncEnabled || string.IsNullOrEmpty(settings.SyncFolder) => "general.sync",
+            "screenshot.historyDays" or "screenshot.historySize" when !settings.ShotHistory => "screenshot.history",
+            _ => id,
+        };
+    }
+
+    /// <summary>侧栏最上面「设置项（N）」的组标题和每一行（20 的页色块 + 标题，下面一行灰字写位置）。</summary>
+    private IEnumerable<object> ResultItems(IReadOnlyList<SettingsItem> results)
+    {
+        if (results.Count == 0)
+        {
+            yield break;
+        }
+
+        yield return new NavigationViewItemHeader { Content = $"设置项（{results.Count}）" };
+        foreach (var item in results)
+        {
+            var location = SettingsIndex.Location(item);
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, VerticalAlignment = VerticalAlignment.Center };
+            var glyph = Pages.FirstOrDefault(page => page.Tag == item.Page).Glyph ?? FeatureIcons.General;
+            var tile = KindTile.Create(FamilyForPage(item.Page), glyph, 20);
+            tile.VerticalAlignment = VerticalAlignment.Center;
+            row.Children.Add(tile);
+            var texts = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            texts.Children.Add(new TextBlock { Text = item.Title, TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 1 });
+            texts.Children.Add(new TextBlock
+            {
+                Text = location,
+                FontSize = 12,
+                Foreground = Theme.SecondaryText(),
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                MaxLines = 1,
+            });
+            row.Children.Add(texts);
+            var entry = new NavigationViewItem { Content = row, Tag = ItemPrefix + item.Id };
+            AutomationProperties.SetName(entry, $"{item.Title}，{location}");
+            ToolTipService.SetToolTip(entry, $"{item.Title}（{location}）");
+            yield return entry;
+        }
+    }
+
+    /// <summary>别处打开设置直达一行（X9：剪贴板面板齿轮、翻译浮窗「设置…」这些）：先把窗口显示出来，再落到那一行。</summary>
+    public void ShowItem(string id)
+    {
+        ShowPage(welcome: false, SettingsIndex.Find(Landing(id))?.Page);
+        OpenItem(id);
+    }
+
+    /// <summary>别处打开设置直达一个子页（不描边）：便签那叠右键「设置」→ 便签 › 屏幕边缘这种。</summary>
+    public void ShowSubpage(string page, string sub)
+    {
+        ShowPage(welcome: false, page);
+        if (!HasOpenPopups())
+        {
+            OpenSubpage(page, sub);
+        }
+    }
+
+    private bool HasOpenPopups() => _content.XamlRoot is { } root && VisualTreeHelper.GetOpenPopupsForXamlRoot(root).Count > 0;
+
+    /// <summary>
+    /// 打开一项所在的页 / 子页 / 高级、滚到那一行、描两秒（mac navigation.open）。开着对话框、正在录快捷键时不动（同 ShowPage）。
+    /// 那一行还没挪到登记的地方（或者跟着开关藏着）：退回页本身再找一遍。
+    /// </summary>
+    private void OpenItem(string id)
+    {
+        if (SettingsIndex.Find(Landing(id)) is not { } item || _recordingAction is not null || HasOpenPopups())
         {
             return;
         }
 
-        Ring(cards[index]);
-    }
-
-    /// <summary>这一页上的卡片（按出现的先后；组里套着的也算）。</summary>
-    private static IEnumerable<Border> Cards(DependencyObject root)
-    {
-        var count = VisualTreeHelper.GetChildrenCount(root);
-        for (var index = 0; index < count; index++)
+        _serviceDetail = null;
+        FlushDetail();
+        _detail = null;
+        SetSubpage(item.Page, item.Sub);
+        _commandFilter = string.Empty;
+        BuildPage(item.Page);
+        if (!_anchors.ContainsKey(item.Id) && item.Sub is not null && _currentPage == item.Page)
         {
-            var child = VisualTreeHelper.GetChild(root, index);
-            if (child is Border border && SettingsUi.TextOf(border) is not null)
-            {
-                yield return border;
-                continue;
-            }
+            SetSubpage(item.Page, null);
+            BuildPage(item.Page);
+        }
 
-            foreach (var inner in Cards(child))
+        _scroll.ChangeView(null, 0, null, disableAnimation: true);
+        Log.Info($"settings.open-item {item.Id} found={_anchors.ContainsKey(item.Id)}");
+        if (_anchors.TryGetValue(item.Id, out var target))
+        {
+            // 晚一拍再滚（同 mac 晚 150 ms）：页面刚建好时还没排好，当场滚不准
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
             {
-                yield return inner;
-            }
+                if (target.XamlRoot is not null)
+                {
+                    Ring(target);
+                }
+            });
         }
     }
 
-    /// <summary>滚到视野里、描两秒强调色。</summary>
-    private void Ring(Border target)
+    /// <summary>滚到视野里、描两秒强调色。推进行是外面包着一张卡的按钮：描里面那张卡。</summary>
+    private void Ring(FrameworkElement element)
     {
+        element.StartBringIntoView(new BringIntoViewOptions { VerticalAlignmentRatio = 0.3, AnimationDesired = !Motion.Reduced });
+        if ((element as Border ?? (element as ContentControl)?.Content as Border) is not { } target)
+        {
+            return;
+        }
+
         var brush = target.BorderBrush;
         var thickness = target.BorderThickness;
         target.BorderBrush = new SolidColorBrush(Theme.AccentColor);
         target.BorderThickness = new Thickness(2);
-        target.StartBringIntoView(new BringIntoViewOptions { VerticalAlignmentRatio = 0.3, AnimationDesired = true });
         _ringTimer?.Stop();
         var timer = _ringTimer = DispatcherQueue.CreateTimer();
         timer.Interval = TimeSpan.FromSeconds(2);
@@ -81,63 +163,5 @@ internal sealed partial class SettingsWindow
             target.BorderThickness = thickness;
         };
         timer.Start();
-    }
-
-    // ---- 恢复默认（G1）----
-
-    /// <summary>
-    /// 页尾「恢复这一页的默认设置…」（同 mac 子页和「高级…」里的恢复默认）：先确认，再把这一页的设置写回新装时的样子；
-    /// 保留期、占用上限、历史开关、自己攒的列表不动（Core SettingsReset）。打开着一个子页（某个翻译服务、启动器的子页）时不出。
-    /// </summary>
-    private void AddResetCard(string page)
-    {
-        if (_serviceDetail is not null || _launcherSubpage is not null)
-        {
-            return;
-        }
-
-        var keys = SettingsReset.KeysFor(page, SettingsSyncFields.WindowsKeys.Select(key => key.Id))
-            .Select(SettingsSyncFields.FindWindows)
-            .OfType<KittyTools.Core.Sync.SettingKey>()
-            .ToList();
-        if (keys.Count == 0)
-        {
-            return;
-        }
-
-        var button = new Button { Content = "恢复默认…" };
-        button.Click += async (_, _) =>
-        {
-            var dialog = new ContentDialog
-            {
-                RequestedTheme = _shell.ActualTheme,
-                Title = "把这一页恢复成默认设置？",
-                Content = new TextBlock
-                {
-                    Text = "这一页的开关和选项回到刚装好时的样子；保留几天、最多占多少、开不开历史这些不动，记下的东西都不会删。",
-                    TextWrapping = TextWrapping.Wrap,
-                    MaxWidth = 420,
-                },
-                PrimaryButtonText = "恢复默认",
-                CloseButtonText = "取消",
-                DefaultButton = ContentDialogButton.Close,
-                XamlRoot = _shell.XamlRoot,
-            };
-            if (await dialog.ShowAsync() != ContentDialogResult.Primary)
-            {
-                return;
-            }
-
-            foreach (var key in keys)
-            {
-                SettingsSyncFields.Write(SettingsService.Current, key, null);
-            }
-
-            SettingsService.Save();
-            Log.Info($"settings.reset page={page} keys={keys.Count}");
-            BuildPage(_currentPage);
-            NoticeHost.Show("这一页恢复了默认设置", "保留期、占用上限没动", NoticeTone.Normal);
-        };
-        _content.Children.Add(SettingsUi.Card("恢复这一页的默认设置", "保留几天、最多占多少这些不跟着恢复", button));
     }
 }

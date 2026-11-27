@@ -64,7 +64,7 @@ internal sealed partial class SettingsWindow
                      $"，{BuiltinTools.Commands.Count} 个自带的" + (problems > 0 ? $"，{problems} 个读不成" : string.Empty);
         }
 
-        AddSubpageRow("脚本命令", detail, () => OpenLauncherSubpage("scripts"));
+        Anchor("launcher.scripts", AddSubpageRow("脚本命令", detail, () => OpenLauncherSubpage("scripts")));
     }
 
     /// <summary>读完换上时（后台读的）：开着这一页就重画（文件夹里新放的、读不成的跟着变）。</summary>
@@ -98,7 +98,7 @@ internal sealed partial class SettingsWindow
         var on = settings.LauncherScripts;
         _content.Children.Add(SettingsUi.BackButton("启动器", "返回启动器设置", () => OpenLauncherSubpage(null)));
         _content.Children.Add(Header("脚本命令", "脚本文件夹里的每个脚本就是启动器里的一条命令"));
-        AddToggle("启用脚本命令", "PowerShell（.ps1）、批处理（.cmd）、装了 Python 时的 .py；关掉后启动器里不出、自带的几条也不出",
+        Anchor("launcher.scriptsEnabled", AddToggle("启用脚本命令", "PowerShell（.ps1）、批处理（.cmd）、装了 Python 时的 .py；关掉后启动器里不出、自带的几条也不出",
             on, isOn =>
             {
                 settings.LauncherScripts = isOn;
@@ -106,7 +106,7 @@ internal sealed partial class SettingsWindow
                 TouchScriptsNew();
                 ScriptLibrary.Refresh();
                 BuildPage("launcher");
-            });
+            }));
 
         Button Action(string text, Action run)
         {

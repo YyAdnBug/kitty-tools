@@ -19,8 +19,12 @@ internal sealed partial class SettingsWindow
     private const string CommandPrefix = "cmd:";
 
     /// <summary>启动器页里点进去的子页：null = 启动器页本身，"commands" = 命令和别名，"web" = 网页搜索，"apps" = 应用，
-    /// "scripts" = 脚本命令，"script-guide" = 怎么写脚本。</summary>
-    private string? _launcherSubpage;
+    /// "scripts" = 脚本命令，"script-guide" = 怎么写脚本（PLAN-v28：和别的页的子页、「高级」同一个 _subpage）。</summary>
+    private string? _launcherSubpage
+    {
+        get => _subpage is "commands" or "web" or "apps" or "scripts" or "script-guide" ? _subpage : null;
+        set => SetSubpage("launcher", value);
+    }
     private string _commandFilter = string.Empty;
     private bool _commandOnlyOn;
     private readonly Dictionary<string, TextBox> _aliasBoxes = new();
@@ -51,37 +55,25 @@ internal sealed partial class SettingsWindow
         parts.Add($"{keyword.Count} 个关键词命令");
         parts.Add($"{system.Count} 个系统命令");
         var closed = mine.Concat(bundled).Concat(keyword).Concat(system).Count(row => !settings.IsOn(row.Id));
-        AddSubpageRow("命令和别名", string.Join("、", parts) + (closed > 0 ? $"，关了 {closed} 个" : string.Empty),
-            () => OpenLauncherSubpage("commands"));
+        Anchor("launcher.commands", AddSubpageRow("命令和别名", string.Join("、", parts) + (closed > 0 ? $"，关了 {closed} 个" : string.Empty),
+            () => OpenLauncherSubpage("commands")));
     }
 
     /// <summary>「命令和别名」表上面那排筛选（mac LauncherCommandsSection.Filter）：0 全部、1 我的脚本、2 自带的命令、3 内置。</summary>
     private int _commandGroup;
 
-    /// <summary>一行「标题 ›」：点了推进子页（L4：网页搜索、功能开关、命令和别名都这样收成一行）。</summary>
-    private void AddSubpageRow(string title, string detail, Action open)
+    /// <summary>一行「标题 ›」：点了推进子页（L4：网页搜索、功能开关、命令和别名都这样收成一行；PLAN-v28 X1 行尾能写状态）。</summary>
+    private Button AddSubpageRow(string title, string detail, Action open, SettingsSummary.RowValue? value = null)
     {
-        var chevron = new FontIcon { Glyph = Glyphs.ChevronRight, FontSize = 12, Foreground = Theme.SecondaryText() };
-        var card = SettingsUi.Card(title, detail, chevron);
-        var button = new Button
-        {
-            Content = card,
-            Padding = new Thickness(0),
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            HorizontalContentAlignment = HorizontalAlignment.Stretch,
-            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
-            BorderThickness = new Thickness(0),
-        };
-        AutomationProperties.SetName(button, title);
-        button.Click += (_, _) => open();
+        var button = SettingsUi.PushRow(title, detail, value?.Text, value?.Problem == true, open);
         _content.Children.Add(button);
+        return button;
     }
 
     /// <summary>截图自检：打开启动器 / 通用的子页（sub：commands、web、features；null = 页本身）。</summary>
     internal void OpenSubpageForProbe(string page, string? sub)
     {
-        _launcherSubpage = page == "launcher" ? sub : null;
-        _featuresPage = page == "general" && sub == "features";
+        SetSubpage(page, sub);
         ShowPage(welcome: false, page);
         BuildPage(page);
         _scroll.UpdateLayout();

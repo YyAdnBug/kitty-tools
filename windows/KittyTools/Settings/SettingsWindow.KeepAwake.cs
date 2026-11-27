@@ -25,13 +25,13 @@ internal sealed partial class SettingsWindow
 
     private void BuildKeepAwake()
     {
-        _content.Children.Add(Header("保持唤醒", "不让电脑睡、不让屏幕熄：手动开一段，或按时段自动开"));
+        _content.Children.Add(Header("保持唤醒", "不让电脑睡、不让屏幕熄"));
         var settings = SettingsService.Current;
 
         _content.Children.Add(SettingsUi.Section("现在"));
         _awakeAction = new ContentControl();
         _awakeStatus = SettingsUi.Card("保持唤醒", "没开", _awakeAction);
-        _content.Children.Add(_awakeStatus);
+        _content.Children.Add(Anchor("keepAwake.now", _awakeStatus));
         RefreshKeepAwake();
         if (!_awakeHooked)
         {
@@ -45,11 +45,11 @@ internal sealed partial class SettingsWindow
             });
         }
 
-        AddToggle("屏幕也不熄", "关掉后只不让系统睡，屏幕照常按电源设置熄灭", settings.KeepAwakeDisplay, isOn =>
+        Anchor("keepAwake.display", AddToggle("屏幕也不熄", "关掉后只不让系统睡，屏幕照常按电源设置熄灭", settings.KeepAwakeDisplay, isOn =>
         {
             settings.KeepAwakeDisplay = isOn;
             SettingsService.Save();
-        });
+        }));
 
         // 定时（跟着这台电脑，不同步）
         _content.Children.Add(SettingsUi.Section("定时", "在这些时候自动保持唤醒；手动开的一段优先。跟着设置导出，不同步"));
@@ -62,12 +62,12 @@ internal sealed partial class SettingsWindow
 
         var summary = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.7, Margin = new Thickness(0, 4, 0, 0) };
         void Show(KeepAwakeSchedule current) => summary.Text = current.IsOn ? "现在的定时：" + current.Summary : "定时关着";
-        AddToggle("按时段自动保持唤醒", "到了时段就开、出了时段就停", schedule.IsOn, isOn =>
+        Anchor("keepAwake.schedule", AddToggle("按时段自动保持唤醒", "到了时段就开、出了时段就停", schedule.IsOn, isOn =>
         {
             schedule = schedule with { IsOn = isOn };
             Store(schedule);
             Show(schedule);
-        });
+        }));
 
         var days = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
         foreach (var day in KeepAwakeSchedule.Order)

@@ -692,6 +692,14 @@ internal sealed class ShellRuntime
                     _settingsWindow?.AuditAccessibility(page);
                 }
 
+                // PLAN-v28：子页、「高级」也走一遍（推进行、ⓘ、恢复默认）
+                foreach (var (page, sub) in SettingsWindow.PlacesForProbe().Where(place => place.Sub is not null))
+                {
+                    _settingsWindow?.OpenSubpageForProbe(page, sub);
+                    await Task.Delay(400);
+                    _settingsWindow?.AuditAccessibility(page + "-" + sub);
+                }
+
                 OverlayHost.Show(OverlayKind.Clipboard);
                 await Task.Delay(600);
                 OverlayHost.AuditAccessibility();

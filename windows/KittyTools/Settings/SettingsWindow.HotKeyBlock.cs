@@ -14,7 +14,7 @@ internal sealed partial class SettingsWindow
 {
     private void BuildHotKeyBlocks()
     {
-        _content.Children.Add(SettingsUi.Section("在这些应用里停用"));
+        _content.Children.Add(Anchor("hotkeys.blocked", (FrameworkElement)SettingsUi.Section("在这些应用里停用")));
         var settings = SettingsService.Current;
         var known = SettingsDefaults.DefaultHotKeys.Select(definition => definition.Action).ToList();
         var sections = VisibleHotKeySections().ToList();
