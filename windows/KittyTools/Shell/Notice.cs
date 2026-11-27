@@ -58,6 +58,10 @@ internal static class NoticeActions
     public static NoticeAction AppSettings(string page, string title = "打开设置")
         => new(title, () => ShellRuntime.Instance?.ShowSettings(welcome: false, page), Opens: true);
 
+    /// <summary>打开设置里推进去的一个子页（PLAN-v28 X9：「打开同步设置」→ 通用 › 同步）。</summary>
+    public static NoticeAction AppSettingsSubpage(string page, string sub, string title = "打开设置")
+        => new(title, () => ShellRuntime.Instance?.ShowSettingsSubpage(page, sub), Opens: true);
+
     public static void RevealInExplorer(string path)
     {
         try

@@ -46,10 +46,27 @@ internal static class MemoryProbe
                 ShellRuntime.Instance?.ShowSettings(welcome: false);
                 await Task.Delay(1500);
                 Report("settings-open");
-                foreach (var page in new[] { "general", "hotkeys", "clipboard", "translate", "launcher", "screenshot", "record", "notes", "reminders", "statusScreen", "about" })
+                // 诊断：KITTY_MEMORY_PROBE_REPEAT=N 把各页看 N 遍，每遍后强制回收再量（分清一页反复重建是不是越占越多）
+                var repeat = int.TryParse(Environment.GetEnvironmentVariable("KITTY_MEMORY_PROBE_REPEAT"), out var times) ? Math.Clamp(times, 1, 20) : 1;
+                for (var round = 0; round < repeat; round++)
                 {
-                    ShellRuntime.Instance?.ShowSettings(welcome: false, page);
-                    await Task.Delay(800);
+                    foreach (var page in new[] { "general", "hotkeys", "clipboard", "translate", "launcher", "screenshot", "record", "notes", "reminders", "statusScreen", "about" })
+                    {
+                        ShellRuntime.Instance?.ShowSettings(welcome: false, page);
+                        await Task.Delay(800);
+                    }
+
+                    if (repeat > 1)
+                    {
+                        for (var pass = 0; pass < 3; pass++)
+                        {
+                            GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+                            GC.WaitForPendingFinalizers();
+                            await Task.Delay(500);
+                        }
+
+                        Report($"settings-pages-round-{round + 1}");
+                    }
                 }
 
                 Report("settings-all-pages");
@@ -64,6 +81,19 @@ internal static class MemoryProbe
                 }
 
                 Report("settings-subpages-twice");
+                // 诊断：KITTY_MEMORY_PROBE_GC=1 时再量一次强制回收之后的（分清是还没回收的垃圾，还是一直拿着）
+                if (Environment.GetEnvironmentVariable("KITTY_MEMORY_PROBE_GC") == "1")
+                {
+                    for (var pass = 0; pass < 3; pass++)
+                    {
+                        GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+                        GC.WaitForPendingFinalizers();
+                        await Task.Delay(1000);
+                    }
+
+                    Report("settings-subpages-twice-gc");
+                }
+
                 ShellRuntime.Instance?.CloseSettings();
                 await Task.Delay(IdleSeconds * 1000);
                 Report("settings-closed");

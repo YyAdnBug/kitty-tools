@@ -1120,6 +1120,20 @@ internal sealed class ShellRuntime
         _settingsWindow.ShowPage(welcome, page, service);
     }
 
+    /// <summary>打开设置、直达一行（PLAN-v28 X9：剪贴板面板的齿轮、翻译浮窗「设置…」这些），落到那一行描两秒。</summary>
+    public void ShowSettingsItem(string id)
+    {
+        ShowSettings(welcome: false, SettingsIndex.Find(id)?.Page);
+        _settingsWindow?.ShowItem(id);
+    }
+
+    /// <summary>打开设置、推进一个子页（不描边）：同步停了、「管理…」功能、便签那叠右键「设置」这些。</summary>
+    public void ShowSettingsSubpage(string page, string sub)
+    {
+        ShowSettings(welcome: false, page);
+        _settingsWindow?.ShowSubpage(page, sub);
+    }
+
     /// <summary>空闲回收（G2）：设置窗藏着就真的关掉、丢掉引用；再开时重建。</summary>
     private void ReleaseSettingsIfHidden()
     {

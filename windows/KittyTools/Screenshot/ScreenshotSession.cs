@@ -375,7 +375,7 @@ internal sealed class ScreenshotSession
 
         if (!force && !Features.IsOn(Feature.Recording))
         {
-            return "录屏在设置 › 通用里关着";
+            return "录屏在 设置 › 通用 › 功能 里关着";
         }
 
         if (_editingId is not null)

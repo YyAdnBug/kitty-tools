@@ -1034,15 +1034,25 @@ internal sealed partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// 设置 › 通用（照 mac GeneralTab 的分组和顺序）：功能 ｜ 外观、强调色 ｜ 动效 ｜ 启动 ｜ 权限 ｜ 同步 ｜ 导出与导入 ｜ 数据。
+    /// 设置 › 通用（PLAN-v28 §1.1，照 mac GeneralTab）：功能 › ｜ 外观、强调色、登录时打开 ｜ 同步 ›、备份与导出导入 ›、麦克风 ｜ 移除 ｜ 高级 ›。
     /// mac 的「菜单栏」一组 Windows 没有，「自动检查更新」在关于页（同 mac），见 MAC-DIFF.md。
     /// </summary>
     private void BuildGeneral()
     {
-        if (_featuresPage)
+        switch (_subpage)
         {
-            BuildFeaturesPage();
-            return;
+            case "features":
+                BuildFeaturesPage();
+                return;
+            case "sync":
+                BuildGeneralSync();
+                return;
+            case "backup":
+                BuildGeneralBackup();
+                return;
+            case SettingsIndex.Advanced:
+                BuildGeneralAdvanced();
+                return;
         }
 
         _content.Children.Add(Header("通用", "这台电脑上 Kitty Tools 的样子、提示和启动"));
@@ -1104,44 +1114,18 @@ internal sealed partial class SettingsWindow : Window
         AddPluginCards();
     }
 
-    /// <summary>通用页「功能」那一行下面的部分。</summary>
+    /// <summary>通用页「功能」那一行下面的部分（PLAN-v28 §1.1）：外观、强调色、登录时打开 ｜ 同步 ›、备份与导出导入 ›、麦克风 ｜ 移除 ｜ 高级 ›。</summary>
     private void BuildGeneralRest()
     {
-        // 外观、强调色（mac 这一组没有组标题，空一截隔开）
+        // 外观、强调色、登录时自动打开（mac 这一组没有组标题，空一截隔开）
         _content.Children.Add(new Border { Height = 8 });
         _content.Children.Add(Anchor("general.appearance", SettingsUi.Card("外观", string.Empty, ThemePicker())));
+        var followsSystem = SettingsService.Current.Accent == "system";
         _content.Children.Add(Anchor("general.accent", SettingsUi.Card(
             "强调色",
-            SettingsService.Current.Accent == "system"
-                ? "跟随 设置 › 个性化 › 颜色 里的强调色"
-                : "右键菜单、焦点框这些由系统绘制，仍使用系统强调色",
-            AccentPicker())));
-
-        // 动效（mac 外观下面单独一组）
-        _content.Children.Add(SettingsUi.Section("动效"));
-        Anchor("general.squeeze", AddToggle("呼出面板时挤压弹开", "剪贴板、启动器和翻译浮窗从窄一点、矮一点弹开到原尺寸；系统关了动画效果时不弹",
-            SettingsService.Current.PanelSqueezeEntrance,
-            isOn =>
-            {
-                SettingsService.Current.PanelSqueezeEntrance = isOn;
-                SettingsService.Save();
-            }));
-
-        // 提示出在哪（PLAN-v27 I1：灵动岛样式，默认还是底部）。换了马上出一条示例，在新位置上
-        _content.Children.Add(SettingsUi.Section("提示"));
-        Anchor("general.notice", AddSegmented("提示显示在", "顶部是黑色胶囊，鼠标停上去往下展开；只换本应用自己的提示，不改系统通知",
-            new[] { "屏幕底部", "屏幕顶部" },
-            SettingsService.Current.NoticePosition == "top" ? 1 : 0,
-            index =>
-            {
-                SettingsService.Current.NoticePosition = index == 1 ? "top" : "bottom";
-                SettingsService.Save();
-                // Show 先看位置变没变（ApplyPosition），换了就按新样子建
-                NoticeHost.Show(index == 1 ? "提示会出现在屏幕顶部" : "提示会出现在屏幕底部", string.Empty, NoticeTone.Normal);
-            }));
-
-        // 启动
-        _content.Children.Add(SettingsUi.Section("启动"));
+            followsSystem ? "跟随 设置 › 个性化 › 颜色 里的强调色" : "右键菜单和焦点框仍跟系统",
+            AccentPicker(),
+            info: followsSystem ? null : "右键菜单、焦点框这些由系统绘制，仍使用系统强调色。")));
         Anchor("general.login", AddToggle("登录时自动打开", string.Empty,
             SettingsService.Current.StartWithWindows,
             isOn =>
@@ -1156,8 +1140,12 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Save();
             }));
 
-        // 权限：Windows 上截图、粘贴回原程序都不用授权，只有麦克风（mac 还有辅助功能、屏幕录制、剪贴板访问）。
-        _content.Children.Add(SettingsUi.Section("权限"));
+        // 同步、备份与导出导入（推进去的子页，行尾写现在的状态）、麦克风
+        _content.Children.Add(new Border { Height = 8 });
+        AddSubpageRow("同步", string.Empty, () => OpenSubpage("general", "sync"), SyncValue());
+        AddSubpageRow("备份与导出导入", string.Empty, () => OpenSubpage("general", "backup"), BackupValue());
+
+        // 权限：Windows 上截图、粘贴回原程序都不用授权，只有麦克风（mac 还有辅助功能、屏幕录制、剪贴板访问，PLAN-v28 §5：不单独成子页）。
         _microphoneAllowed = MicrophoneAllowed();
         FrameworkElement microphoneControl;
         if (_microphoneAllowed == true)
@@ -1177,16 +1165,55 @@ internal sealed partial class SettingsWindow : Window
 
         _content.Children.Add(Anchor("general.microphone", SettingsUi.Card(
             "麦克风",
-            _microphoneAllowed == true
-                ? "录屏、录音时录下你的声音"
-                : "录屏、录音时录下你的声音；设置 › 隐私和安全性 › 麦克风 里现在不让桌面应用用",
+            _microphoneAllowed == true ? "录屏、录音时录下你的声音" : "现在不让桌面应用用麦克风",
             microphoneControl,
             leading: KindTile.Create("capture", FeatureIcons.RecordAudio, 24),
-            problem: _microphoneAllowed != true)));
+            problem: _microphoneAllowed != true,
+            info: _microphoneAllowed == true ? null : "到 设置 › 隐私和安全性 › 麦克风 里打开「允许桌面应用访问你的麦克风」。")));
 
+        // Windows 才有：没装进开始菜单的便携版也要能干净地拿掉（MAC-DIFF.md）。危险操作不进「高级」。
+        _content.Children.Add(new Border { Height = 8 });
+        _content.Children.Add(Anchor("general.uninstall", SettingsUi.Card(
+            "从这台电脑移除 Kitty Tools…",
+            "删掉快捷方式、开机启动和保存的密钥",
+            null,
+            () => _ = UninstallAsync(),
+            info: "开始菜单快捷方式、开机启动和凭据管理器里保存的密钥会删掉；数据可以留着。")));
+        AddAdvancedRow("general");
+    }
+
+    /// <summary>通用 › 同步 那一行的行尾（mac SyncSection 的口径）。</summary>
+    private static SettingsSummary.RowValue SyncValue()
+    {
+        var settings = SettingsService.Current;
+        var status = Syncer.Instance?.Status;
+        return SettingsSummary.Sync(settings.SyncEnabled && !string.IsNullOrEmpty(settings.SyncFolder), status?.State, status?.LastSync ?? 0, DateTimeOffset.Now);
+    }
+
+    /// <summary>通用 › 备份与导出导入 那一行的行尾：最近一份每日备份的时刻。</summary>
+    private static SettingsSummary.RowValue BackupValue()
+    {
+        var latest = ArchiveService.BackupFiles("Kitty Tools 自动备份 *.json")
+            .Select(path => (DateTime?)File.GetLastWriteTime(path))
+            .Max();
+        return SettingsSummary.Backup(SettingsService.Current.DailyBackup, latest, ArchiveService.CopyProblem is not null, DateTime.Now);
+    }
+
+    /// <summary>设置 › 通用 › 同步（PLAN-v28 X2）：页头一句现在的状态，下面是原来那一节（对话框、按钮都照旧）。</summary>
+    private void BuildGeneralSync()
+    {
+        var value = SyncValue();
+        var status = Syncer.Instance?.Status;
+        var enabled = SettingsService.Current.SyncEnabled && !string.IsNullOrEmpty(SettingsService.Current.SyncFolder);
+        AddSubpageHeader("general", "sync", enabled ? SyncStatusLine(status) : "没开：选一个文件夹或连一个服务器", value.Problem);
         BuildSyncSection();
+    }
 
-        // 导出与导入：一行两个按钮（mac TransferSection），下面每天自动备份的三行（PLAN-v9 G2）。
+    /// <summary>设置 › 通用 › 备份与导出导入（PLAN-v28 X2）：导出 / 导入那一行、每天自动备份、已有的备份、另存一份到。</summary>
+    private void BuildGeneralBackup()
+    {
+        var value = BackupValue();
+        AddSubpageHeader("general", "backup", value.Text == "自动备份关着" ? "每天自动备份关着" : "最近一份每日备份：" + value.Text, value.Problem);
         _content.Children.Add(SettingsUi.Section("导出与导入"));
         var transfer = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
         var export = new Button { Content = "导出…" };
@@ -1197,25 +1224,41 @@ internal sealed partial class SettingsWindow : Window
         transfer.Children.Add(import);
         _content.Children.Add(Anchor("general.transfer", SettingsUi.Card(
             "设置与数据",
-            "设置、快捷键、翻译服务、网页搜索、片段和文字收藏、生词本、便签存成一个文件，换电脑或重装后导回来",
-            transfer)));
+            "存成一个文件，换电脑、重装后导回来",
+            transfer,
+            info: "设置、快捷键、翻译服务、网页搜索、片段和文字收藏、生词本、便签存成一个文件。普通历史、图片和文件类的收藏不在文件里；" +
+                  "截图的存储文件夹、登录时打开和系统权限要在新电脑上重新设。")));
+        _content.Children.Add(SettingsUi.Section("每天自动备份"));
         BuildBackupRows();
-        _content.Children.Add(SettingsUi.Footnote(
-            "普通历史、图片和文件类的收藏不在文件里；截图的存储文件夹、登录时打开和系统权限要在新电脑上重新设。"));
+    }
 
-        // 数据
-        _content.Children.Add(SettingsUi.Section("数据"));
+    /// <summary>设置 › 通用 › 高级：挤压弹开、提示显示在、数据目录。</summary>
+    private void BuildGeneralAdvanced()
+    {
+        AddAdvancedHeader("general");
+        Anchor("general.squeeze", AddToggle("呼出面板时挤压弹开", "面板从小一点弹到原尺寸",
+            SettingsService.Current.PanelSqueezeEntrance,
+            isOn =>
+            {
+                SettingsService.Current.PanelSqueezeEntrance = isOn;
+                SettingsService.Save();
+            }, "剪贴板、启动器和翻译浮窗都这样；系统关了动画效果时不弹。"));
+        // 提示出在哪（PLAN-v27 I1：灵动岛样式，默认还是底部）。换了马上出一条示例，在新位置上
+        Anchor("general.notice", AddSegmented("提示显示在", "顶部是黑色胶囊，停上去展开",
+            new[] { "屏幕底部", "屏幕顶部" },
+            SettingsService.Current.NoticePosition == "top" ? 1 : 0,
+            index =>
+            {
+                SettingsService.Current.NoticePosition = index == 1 ? "top" : "bottom";
+                SettingsService.Save();
+                // Show 先看位置变没变（ApplyPosition），换了就按新样子建
+                NoticeHost.Show(index == 1 ? "提示会出现在屏幕顶部" : "提示会出现在屏幕底部", string.Empty, NoticeTone.Normal);
+            }, "只换 Kitty Tools 自己的提示，不改系统通知。"));
         var reveal = new Button { Content = "在资源管理器中显示" };
         AutomationProperties.SetName(reveal, "在资源管理器中显示数据目录");
         reveal.Click += (_, _) => OpenDataDirectory();
         _content.Children.Add(Anchor("general.dataFolder", SettingsUi.Card(
-            "数据目录", "剪贴板、便签和翻译历史的数据库、图片、设置、日志和每日备份都在这里", reveal)));
-        // Windows 才有：没装进开始菜单的便携版也要能干净地拿掉（MAC-DIFF.md）。
-        _content.Children.Add(Anchor("general.uninstall", SettingsUi.Card(
-            "从这台电脑移除 Kitty Tools…",
-            "删掉开始菜单快捷方式、开机启动和保存的密钥；数据可以留着",
-            null,
-            () => _ = UninstallAsync())));
+            "数据目录", "数据库、图片、日志和每日备份都在这里", reveal)));
     }
 
     /// <summary>导出：按类别勾选，可选密码（第三版 §2.2）。</summary>
@@ -1540,7 +1583,7 @@ internal sealed partial class SettingsWindow : Window
     {
         var settings = SettingsService.Current;
         Anchor("general.backup", AddToggle("每天自动备份",
-            $"上面这些每天自动存一份在这台电脑上，留最近 {ArchiveService.DailyKeep} 份；导入前也会先存一份，设置和快捷键导错了能换回去。不含密钥。",
+            $"每天在这台电脑上存一份，留 {ArchiveService.DailyKeep} 份",
             settings.DailyBackup,
             isOn =>
             {
@@ -1552,7 +1595,7 @@ internal sealed partial class SettingsWindow : Window
                 }
 
                 BuildPage("general");
-            }));
+            }, "存的就是导出的那个文件。导入前也会先存一份，设置和快捷键导错了能换回去。不含密钥。"));
 
         var copies = ArchiveService.BackupFiles("Kitty Tools 自动备份 *.json")
             .Concat(ArchiveService.BackupFiles("Kitty Tools 导入前 *.json"))
@@ -1651,14 +1694,18 @@ internal sealed partial class SettingsWindow : Window
         };
         controls.Children.Add(choose);
         var problem = ArchiveService.CopyProblem;
+        // 「不加密」留在副标题里：这是那句必须先知道的（mac 规格 §5.1）
         var description = string.IsNullOrEmpty(folder)
-            ? "每天那份再存一份到别的文件夹（比如 OneDrive 里），硬盘坏了、换电脑时还在。文件不加密，片段、收藏和生词原样写在里面"
-            : $"每天那份也存到这里。文件名末尾的 {ArchiveService.DeviceTag} 是这台电脑的编号，几台电脑可以共用一个文件夹。文件不加密，片段、收藏和生词原样写在里面";
+            ? "再存一份到别处，文件不加密"
+            : "每天那份也存到这里，文件不加密";
         _content.Children.Add(Anchor("general.mirror", SettingsUi.Card(
             "另存一份到",
             problem ?? description,
             controls,
-            problem: problem is not null)));
+            problem: problem is not null,
+            info: string.IsNullOrEmpty(folder)
+                ? "比如 OneDrive 里的一个文件夹，硬盘坏了、换电脑时还在。片段、收藏和生词原样写在里面。"
+                : $"文件名末尾的 {ArchiveService.DeviceTag} 是这台电脑的编号，几台电脑可以共用一个文件夹。片段、收藏和生词原样写在里面。")));
     }
 
     /// <summary>
@@ -1672,7 +1719,10 @@ internal sealed partial class SettingsWindow : Window
         // 没开时是「在几台电脑之间同步」那一行，开着时是文件夹 / 服务器那一行：同一个登记项
         const string SyncRow = "general.sync";
         var settings = SettingsService.Current;
-        _content.Children.Add(SettingsUi.Section("同步"));
+        _content.Children.Add(SettingsUi.Section("同步", null,
+            "勾上的几类在几台电脑之间保持一样，取消一类只是不再同步它。每台电脑只往自己的那份里写、读所有电脑的，改动一般几十秒到几分钟传过去" +
+            "（看同步盘多快；连服务器时大约一分钟一轮）。两台都改了同一条时，后改的留下（便签的另一版放进「最近删除」）；一轮要删的太多会先停下来问。" +
+            "密钥不同步。停止同步后，文件夹里的东西留着，这台电脑上的也不动。"));
         var status = Syncer.Instance?.Status;
         if (!settings.SyncEnabled || string.IsNullOrEmpty(settings.SyncFolder))
         {
@@ -1799,17 +1849,14 @@ internal sealed partial class SettingsWindow : Window
                 ? string.Join("、", status.Devices)
                 : status is { LastSync: > 0 }
                     ? server is null
-                        ? "还没有——在另一台电脑的 设置 › 通用 里选同一个文件夹"
-                        : "还没有——在另一台电脑的 设置 › 通用 里连同一个服务器上的同一个文件夹"
+                        ? "还没有——在另一台电脑的 设置 › 通用 › 同步 里选同一个文件夹"
+                        : "还没有——在另一台电脑的 设置 › 通用 › 同步 里连同一个服务器上的同一个文件夹"
                     : "同步一轮之后列在这里";
             _content.Children.Add(Anchor("general.syncPeers", SettingsUi.Card("其他电脑", peers)));
         }
 
-        _content.Children.Add(SettingsUi.Footnote(
-            "勾上的几类在几台电脑之间保持一样，取消一类只是不再同步它。同步文件夹（连服务器时是服务器上那个文件夹）里放的是不加密的文本文件和图片，" +
-            "能打开这个文件夹的人都看得到。每台电脑只往自己的那份里写、读所有电脑的，改动一般几十秒到几分钟传过去（看同步盘多快；连服务器时大约一分钟一轮）。" +
-            "两台都改了同一条时，后改的留下（便签的另一版放进「最近删除」）；" +
-            "一轮要删的太多会先停下来问。密钥不同步。停止同步后，文件夹里的东西留着，这台电脑上的也不动。"));
+        // 页脚只留「文件不加密」这一句（PLAN-v28 X6：页脚只留三种）
+        _content.Children.Add(SettingsUi.Footnote("同步文件夹（连服务器时是服务器上那个文件夹）里是不加密的文本文件和图片，能打开它的人都看得到。"));
     }
 
     /// <summary>同步的一类：勾上才同步；它跟着的功能关着时说一声（勾着也先不同步，Syncer 里同样这么判断）。</summary>
@@ -3116,7 +3163,8 @@ internal sealed partial class SettingsWindow : Window
             SettingsService.Current.RecordMicrophoneDevice = ids[combo.SelectedIndex];
             SettingsService.Save();
         };
-        _content.Children.Add(Anchor("record.microphoneDevice", SettingsUi.Card("录哪个麦克风", "选的设备录的时候没连着，就用系统默认的，录制条上会提示", combo)));
+        _content.Children.Add(Anchor("record.microphoneDevice", SettingsUi.Card("录哪个麦克风", "录屏开着麦克风时用哪个", combo,
+            info: "选的那个录的时候没连着，这次用系统默认的，录制条上会提示；录音照旧用系统默认的输入。")));
         _ = FillAsync();
 
         // 插拔麦克风时列表马上跟上（PLAN-v26 V3，同 mac 0.10.3）：这一行在的时候看着录音设备，离开这一页（行被卸下）就退订。
@@ -3169,51 +3217,85 @@ internal sealed partial class SettingsWindow : Window
 
     /// <summary>截图、录屏时隐藏桌面图标（PLAN-v11 F6）：截图页和录制页各一行，改的是同一个设置。</summary>
     private Border AddHideDesktopIconsToggle(string id)
-        => Anchor(id, AddToggle("截图、录屏时隐藏桌面图标", "截的那一下、录的整段藏起桌面上的图标，完了自己显示回来",
+        => Anchor(id, AddToggle("截图、录屏时隐藏桌面图标", string.Empty,
             SettingsService.Current.CaptureHideDesktopIcons,
             value =>
             {
                 SettingsService.Current.CaptureHideDesktopIcons = value;
                 SettingsService.Save();
-            }));
+            }, "截的那一下、录的整段藏起桌面上的图标，完了自己显示回来；桌面本身照常。截图页和录制页的「高级」里是同一个开关。"));
 
     /// <summary>
-    /// 设置 › 截图（照 mac ScreenshotTab）：启用截图 ｜ 快速保存到 ｜ 截图拷贝为 ｜ 快门声 ｜ 截图历史 ｜ 截完图放哪 ｜ 识字 ｜
-    /// 框选、标注、长截图和录屏的按键。截图历史的保留天数和占用是 S8（MAC-DIFF.md）。
+    /// 设置 › 截图（PLAN-v28 §1.3，照 mac ScreenshotTab）：启用 ｜ 快速保存到 ｜ 截图拷贝为 ｜ 截图圆角 ｜ 截完图放哪 ｜ 快门声 ｜ 截图历史 › ｜
+    /// 按键两行 ｜ 高级 ›。框选和识别的细节在「高级」里。
     /// </summary>
     private void BuildScreenshot()
     {
+        switch (_subpage)
+        {
+            case "history":
+                BuildScreenshotHistory();
+                return;
+            case SettingsIndex.Advanced:
+                BuildScreenshotAdvanced();
+                return;
+        }
+
         _content.Children.Add(Header("截图", "截完的图放哪、怎么拷、留不留历史"));
         AddFeatureToggle(Feature.Screenshot);
 
         // 快速保存到：功能关着也能改（mac 这一行在变灰的那块外面）
         _content.Children.Add(Ungated(new Border { Height = 8 }));
-        _content.Children.Add(Ungated(Anchor("screenshot.saveFolder", SaveFolderRow(
+        var saveFolder = Ungated(Anchor("screenshot.saveFolder", SaveFolderRow(
             "快速保存到",
             string.IsNullOrWhiteSpace(SettingsService.Current.ScreenshotSaveFolder)
                 ? ScreenshotOutput.DefaultFolder()
                 : SettingsService.Current.ScreenshotSaveFolder!,
             !string.IsNullOrWhiteSpace(SettingsService.Current.ScreenshotSaveFolder),
-            folder => SettingsService.Current.ScreenshotSaveFolder = folder))));
-        _content.Children.Add(Ungated(SettingsUi.Footnote(
+            folder => SettingsService.Current.ScreenshotSaveFolder = folder,
+            "Ctrl+S 存到这里",
             "按 Ctrl+S 或工具栏的「存储」存到这里，文件名是「截图 日期 时间.png」，重名自动加序号；Ctrl+Shift+S 每次另存为。" +
             "没选过时存到系统的「屏幕截图」文件夹。截图不会上传到任何服务。")));
+        _content.Children.Add(saveFolder);
 
         // 截图拷贝为（PLAN-v15，同 mac 2026-11-06）：图像（默认）/ PNG 文件。截图里的每一种「拷贝」都看它。
-        _content.Children.Add(new Border { Height = 8 });
         var copyKinds = new[] { "image", "file" };
         Anchor("screenshot.copyAs", AddSegmented("截图拷贝为",
-            "选 PNG 文件时，剪贴板里是一个图片文件，和复制一个文件一样：能粘进聊天窗口和文件夹，只认文件的跨电脑剪贴板工具也传得过去；只收图像的程序粘不进去",
+            "选 PNG 文件能粘进聊天和文件夹",
             new[] { "图像", "PNG 文件" },
             SettingsService.Current.ScreenshotCopyAs == "file" ? 1 : 0,
             index =>
             {
                 SettingsService.Current.ScreenshotCopyAs = copyKinds[index];
                 SettingsService.Save();
-            }));
+            }, "选 PNG 文件时，剪贴板里是一个图片文件，和复制一个文件一样：只认文件的跨电脑剪贴板工具也传得过去；只收图像的程序粘不进去。"));
+        // 截图圆角（PLAN-v26 S4，D5 = A：框选默认直角，单击整扇窗口跟窗口自己的圆角）
+        var radii = new[] { 0, 4, 8, 12, 16, 20, 24 };
+        Anchor("screenshot.corners", AddCombo("截图圆角", "框选的框和截出来的图同一个圆角", radii.Select(radius => radius == 0 ? "直角" : $"{radius}").ToArray(),
+            Math.Max(0, Array.IndexOf(radii, (int)Math.Round(SettingsService.Current.ScreenshotCornerRadius))),
+            index =>
+            {
+                SettingsService.Current.ScreenshotCornerRadius = radii[index];
+                SettingsService.Save();
+            }, "四角透明；单击截整扇窗口时跟着窗口自己的圆角。"));
+        // 截完图放哪（PLAN-v9 S7）：角落缩略图 / 都不要（mac 还有晾衣绳，Windows 不做）。
+        var placements = new[] { "card", "none" };
+        Border? placementCard = null;
+        placementCard = Anchor("screenshot.placement", AddCombo("截完图放哪", PlacementNote(SettingsService.Current.ShotPlacement), new[] { "角落的缩略图", "都不要" },
+            Math.Max(0, Array.IndexOf(placements, SettingsService.Current.ShotPlacement)),
+            index =>
+            {
+                SettingsService.Current.ShotPlacement = placements[index];
+                SettingsService.Save();
+                if (placementCard is not null)
+                {
+                    SettingsUi.SetDescription(placementCard, PlacementNote(placements[index]));
+                }
+            }, "角落的缩略图可以拖出、钉图、存储；选「都不要」后截完不出缩略图，仍然进截图历史。"));
+
+        static string PlacementNote(string placement) => placement == "none" ? "截完不出缩略图，照样进历史" : "角落留一张缩略图";
 
         // 快门声（PLAN-v9 S6）：右边先是「试听」，再是开关。
-        _content.Children.Add(new Border { Height = 8 });
         var shutter = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, VerticalAlignment = VerticalAlignment.Center };
         var listen = new Button { Content = new FontIcon { Glyph = "\uE767", FontSize = 14 }, Padding = new Thickness(8, 4, 8, 4) };
         AutomationProperties.SetName(listen, "试听快门声");
@@ -3228,66 +3310,80 @@ internal sealed partial class SettingsWindow : Window
             SettingsService.Save();
             listen.IsEnabled = value;
         }, "截图时播放快门声"));
-        _content.Children.Add(Anchor("screenshot.shutter", SettingsUi.Card("截图时播放快门声", string.Empty, shutter)));
-        _content.Children.Add(SettingsUi.Footnote("拷贝、存储、钉图时响；系统静音、全屏游戏和演示时不响。截图翻译、识字不出声。"));
+        _content.Children.Add(Anchor("screenshot.shutter", SettingsUi.Card("截图时播放快门声", string.Empty, shutter,
+            info: "拷贝、存储、钉图时响；系统静音、全屏游戏和演示时不响。截图翻译、识字不出声。")));
 
-        // 带上鼠标指针、隐藏桌面图标（PLAN-v11 F5、F6，mac X8、X9；默认关）。隐藏桌面图标和 录制 页是同一个设置。
-        Anchor("screenshot.cursor", AddToggle("截图带上鼠标指针", "按快捷键那一刻的指针画进截图",
-            SettingsService.Current.ScreenshotCursor,
-            value =>
-            {
-                SettingsService.Current.ScreenshotCursor = value;
-                SettingsService.Save();
-            }));
-        AddHideDesktopIconsToggle("screenshot.hideDesktop");
+        // 截图历史（PLAN-v28 X2：推进去的子页，行尾写保留多久、最多占多少）；管数据的，功能关着也点得进去
+        var settings = SettingsService.Current;
+        _content.Children.Add(new Border { Height = 8 });
+        Ungated(AddSubpageRow("截图历史", string.Empty, () => OpenSubpage("screenshot", "history"),
+            SettingsSummary.ShotHistory(settings.ShotHistory, settings.ShotHistoryDays, settings.ShotHistoryMegabytes)));
 
-        // 截图历史（PLAN-v8 H3；保留期、占用、清空是 PLAN-v9 S8；照 mac：关掉「保留」时下面两行不显示，PLAN-v23 L4）
-        _content.Children.Add(SettingsUi.Section("截图历史"));
+        _content.Children.Add(new Border { Height = 8 });
+        Anchor("screenshot.keys", AddShortcutsRow("screenshot", "框选、标注、长截图和录屏的按键",
+            "拖动框选，数字键换工具，Enter 拷贝"));
+        // 截图时的快捷键在快捷键页改（同 mac ScreenshotTab 那一行，REVIEW R97）
+        var shotKeys = new HyperlinkButton { Content = "截图里的快捷键…" };
+        shotKeys.Click += (_, _) => BuildPage("hotkeys");
+        _content.Children.Add(Anchor("screenshot.editKeys", SettingsUi.Card("改按键", "截图时的按键能自己改", shotKeys)));
+        AddAdvancedRow("screenshot");
+    }
+
+    /// <summary>设置 › 截图 › 截图历史（PLAN-v28 X2）：保留截图历史、保留多久、最多占用、打开 / 清空。两个上限改小先问照旧。</summary>
+    private void BuildScreenshotHistory()
+    {
+        var settings = SettingsService.Current;
+        var value = SettingsSummary.ShotHistory(settings.ShotHistory, settings.ShotHistoryDays, settings.ShotHistoryMegabytes);
+        AddSubpageHeader("screenshot", "history", value.Text == "关" ? "关着：新截的不进历史，已有的留着" : "保留 " + value.Text);
+
+        // 照 mac：关掉「保留」时下面两行不显示（PLAN-v23 L4）
         Border? daysCard = null;
         Border? sizeCard = null;
-        Anchor("screenshot.history", AddToggle("保留截图历史", string.Empty,
-            SettingsService.Current.ShotHistory,
+        Anchor("screenshot.history", AddToggle("保留截图历史", "能回头改标注、再钉一次",
+            settings.ShotHistory,
             value =>
             {
-                SettingsService.Current.ShotHistory = value;
+                settings.ShotHistory = value;
                 SettingsService.Save();
                 if (daysCard is not null && sizeCard is not null)
                 {
                     daysCard.Visibility = sizeCard.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
                 }
-            }));
-        // 两个上限：换到会删掉历史的那一档先问，取消回原值（第四轮体检 E24，同剪贴板 E4）。
+            }, "截图、长截图、钉过的图和录屏录音都留在这里；打码会直接打进存下的图。历史只在这台电脑上，不跟着同步。"));
+        // 两个上限：换到会删掉历史的那一档先问，取消回原值（第四轮体检 E24，同剪贴板 E4）。管数据的：功能关着也能改（PLAN-v28：不进恢复默认）
         var days = new[] { 7, 30, 90, 0 };
         var dayTitles = new[] { "7 天", "30 天", "90 天", "一直留着" };
         daysCard = SettingsUi.Card("保留", string.Empty, LimitCombo(
             dayTitles,
-            Math.Max(0, Array.IndexOf(days, SettingsService.Current.ShotHistoryDays)),
+            Math.Max(0, Array.IndexOf(days, settings.ShotHistoryDays)),
             "截图历史保留多久",
-            index => ShotHistoryPrune(days[index], SettingsService.Current.ShotHistoryMegabytes,
+            index => ShotHistoryPrune(days[index], settings.ShotHistoryMegabytes,
                 $"截图历史改成保留「{dayTitles[index]}」？"),
             index =>
             {
-                SettingsService.Current.ShotHistoryDays = days[index];
+                settings.ShotHistoryDays = days[index];
                 SettingsService.Save();
                 ShotHistory.Instance?.Prune();
             }));
-        _content.Children.Add(Anchor("screenshot.historyDays", daysCard));
+        SettingsUi.MarkChild(daysCard);
+        _content.Children.Add(Ungated(Anchor("screenshot.historyDays", daysCard)));
         var sizes = new[] { 1024, 2048, 5120, 0 };
         var sizeTitles = new[] { "1 GB", "2 GB", "5 GB", "不限" };
         sizeCard = SettingsUi.Card("最多占用", string.Empty, LimitCombo(
             sizeTitles,
-            Math.Max(0, Array.IndexOf(sizes, SettingsService.Current.ShotHistoryMegabytes)),
+            Math.Max(0, Array.IndexOf(sizes, settings.ShotHistoryMegabytes)),
             "截图历史最多占用",
-            index => ShotHistoryPrune(SettingsService.Current.ShotHistoryDays, sizes[index],
+            index => ShotHistoryPrune(settings.ShotHistoryDays, sizes[index],
                 $"截图历史最多占用改成「{sizeTitles[index]}」？"),
             index =>
             {
-                SettingsService.Current.ShotHistoryMegabytes = sizes[index];
+                settings.ShotHistoryMegabytes = sizes[index];
                 SettingsService.Save();
                 ShotHistory.Instance?.Prune();
             }));
-        daysCard.Visibility = sizeCard.Visibility = SettingsService.Current.ShotHistory ? Visibility.Visible : Visibility.Collapsed;
-        _content.Children.Add(Anchor("screenshot.historySize", sizeCard));
+        SettingsUi.MarkChild(sizeCard);
+        daysCard.Visibility = sizeCard.Visibility = settings.ShotHistory ? Visibility.Visible : Visibility.Collapsed;
+        _content.Children.Add(Ungated(Anchor("screenshot.historySize", sizeCard)));
         var historyButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
         var openHistory = new Button { Content = "打开截图历史…" };
         openHistory.Click += (_, _) => ShotHistoryWindow.ShowWindow();
@@ -3327,133 +3423,121 @@ internal sealed partial class SettingsWindow : Window
         };
         historyButtons.Children.Add(clearHistory);
         _content.Children.Add(Ungated(Anchor("screenshot.historyOpen", SettingsUi.Card("截图历史", "看、拷贝、再钉出来，或者删掉", historyButtons))));
-        _content.Children.Add(SettingsUi.Footnote(
-            "截图、长截图、钉过的图和录屏录音都留在这里，能回头接着改标注（打码会直接打进存下的图）、再钉一次。超过保留期或占用的先删最旧的（已经存到文件夹里的文件不动）。" +
-            "历史只在这台电脑上，不跟着同步。"));
+        // 会删数据：页脚留一句（PLAN-v28 X6）
+        _content.Children.Add(Ungated(SettingsUi.Footnote("超过保留期或占用时先删最旧的；存到文件夹里的不动。")));
+    }
 
-        // 工具栏位置（PLAN-v12 N4，mac 0f83c117）：靠右（默认）/ 居中，录屏的录制条同一个设置。
-        _content.Children.Add(new Border { Height = 8 });
-        var aligns = new[] { "right", "center" };
-        Anchor("screenshot.toolbar", AddSegmented("工具栏位置",
-            "框选完工具栏贴在选区下方，放不下时在上方。靠右时从左上往右下拖完，✓ 就在鼠标旁边；录屏的录制条也这样摆",
-            new[] { "靠右", "居中" },
-            SettingsService.Current.ScreenshotToolbarAlign == "center" ? 1 : 0,
-            index =>
-            {
-                SettingsService.Current.ScreenshotToolbarAlign = aligns[index];
-                SettingsService.Save();
-            }));
-
-        // 框选时保持屏幕原色（PLAN-v16 S2，mac 77733a0c：在「工具栏位置」下面）
-        _content.Children.Add(new Border { Height = 8 });
-        Anchor("screenshot.keepsColors", AddToggle("框选时保持屏幕原色", "不压暗屏幕：框选时、选区外和悬停的窗口都是原来的颜色。取色、对比颜色时打开",
-            SettingsService.Current.ScreenshotKeepsColors, value =>
-            {
-                SettingsService.Current.ScreenshotKeepsColors = value;
-                SettingsService.Save();
-            }));
-
-        // 框选时的提示和放大镜（PLAN-v26 S1，mac 0.10.0 f638e46f）
-        _content.Children.Add(new Border { Height = 8 });
-        Anchor("screenshot.hint", AddToggle("框选时显示操作提示", "屏幕上方那一条（拖动框选 · 单击窗口截整窗 · …）；关掉后操作被挡下时的那句照样出",
-            SettingsService.Current.ScreenshotShowsHint, value =>
-            {
-                SettingsService.Current.ScreenshotShowsHint = value;
-                SettingsService.Save();
-            }));
-        var loupes = new[] { "full", "loupe", "off" };
-        Anchor("screenshot.loupe", AddCombo("框选时的放大镜", "不显示色值时 C 不取色、不结束截图；标注里的吸管照常", new[] { "放大镜和色值", "只显示放大镜", "不显示" },
-            Math.Max(0, Array.IndexOf(loupes, SettingsService.Current.ScreenshotLoupe)),
-            index =>
-            {
-                SettingsService.Current.ScreenshotLoupe = loupes[index];
-                SettingsService.Save();
-            }));
-        // 截图圆角（PLAN-v26 S4，D5 = A：框选默认直角，单击整扇窗口跟窗口自己的圆角）
-        var radii = new[] { 0, 4, 8, 12, 16, 20, 24 };
-        Anchor("screenshot.corners", AddCombo("截图圆角", "框选的框和截出来的图同一个圆角、四角透明；单击截整扇窗口时跟着窗口自己的圆角", radii.Select(radius => radius == 0 ? "直角" : $"{radius}").ToArray(),
-            Math.Max(0, Array.IndexOf(radii, (int)Math.Round(SettingsService.Current.ScreenshotCornerRadius))),
-            index =>
-            {
-                SettingsService.Current.ScreenshotCornerRadius = radii[index];
-                SettingsService.Save();
-            }));
-        Anchor("screenshot.windowShadow", AddToggle("窗口截图带阴影", "单击窗口截下时单独抓那一扇窗口（被挡住的部分也截得到），四角透明、四周画上阴影；关掉照旧按矩形裁",
-            SettingsService.Current.ScreenshotWindowShadow, value =>
-            {
-                SettingsService.Current.ScreenshotWindowShadow = value;
-                SettingsService.Save();
-            }));
-        var delays = new[] { 5, 10 };
-        Anchor("screenshot.delay", AddSegmented("延时截图等几秒", "按「延时截图」后倒数这么久再进框选，用来截悬停才出来的提示、展开的菜单", new[] { "5 秒", "10 秒" },
-            SettingsService.Current.ScreenshotDelay == 10 ? 1 : 0,
-            index =>
-            {
-                SettingsService.Current.ScreenshotDelay = delays[index];
-                SettingsService.Save();
-            }));
-
-        // 框选时悬停识别窗口里的元素（PLAN-v20 E1，mac 6500d9cb；Windows 不用授权）
-        _content.Children.Add(new Border { Height = 8 });
-        Anchor("screenshot.elements", AddToggle("悬停时识别窗口里的元素", "框选时指针停在按钮、侧栏、列表上就框出那一块，单击截下；滚轮换一层大小，Tab 只认窗口。截图翻译、识字不认",
-            SettingsService.Current.ScreenshotFindsElements, value =>
-            {
-                SettingsService.Current.ScreenshotFindsElements = value;
-                SettingsService.Save();
-            }));
-        AddToggle("也认网页里的元素", "浏览器、用网页做界面的程序要被问一次才交出网页里的元素；打开后第一次停到这种窗口上时多问一两次，那个程序会一直开着辅助功能的那一档到它退出",
-            SettingsService.Current.ScreenshotFindsWebElements, value =>
-            {
-                SettingsService.Current.ScreenshotFindsWebElements = value;
-                SettingsService.Save();
-            });
-
-        // 截完图放哪（PLAN-v9 S7）：角落缩略图 / 都不要（mac 还有晾衣绳，Windows 不做）。
-        _content.Children.Add(new Border { Height = 8 });
-        var placements = new[] { "card", "none" };
-        Anchor("screenshot.placement", AddCombo("截完图放哪", string.Empty, new[] { "角落的缩略图", "都不要" },
-            Math.Max(0, Array.IndexOf(placements, SettingsService.Current.ShotPlacement)),
-            index =>
-            {
-                SettingsService.Current.ShotPlacement = placements[index];
-                SettingsService.Save();
-            }));
-        _content.Children.Add(SettingsUi.Footnote("角落的缩略图可以拖出、钉图、存储；选「都不要」后截完不出缩略图，仍然进截图历史。"));
-        Anchor("screenshot.pinText", AddToggle("钉图上的字可以直接选", "在字上拖选、Ctrl+C 拷贝、Ctrl+A 全选，右键翻译、搜索、查词；空白处照旧拖着挪，按住 Alt 在哪都能挪",
-            SettingsService.Current.PinSelectsText, value =>
-            {
-                SettingsService.Current.PinSelectsText = value;
-                SettingsService.Save();
-            }));
-
-        // 识字
-        _content.Children.Add(new Border { Height = 8 });
-        Anchor("screenshot.joinLines", AddToggle("识字后把同一段里的换行接起来", string.Empty,
-            SettingsService.Current.OcrJoinLines,
+    /// <summary>设置 › 截图 › 高级：指针、桌面图标、窗口阴影、延时、提示、放大镜、工具栏、原色、悬停时识别、钉图选字、识字接行。</summary>
+    private void BuildScreenshotAdvanced()
+    {
+        AddAdvancedHeader("screenshot");
+        var settings = SettingsService.Current;
+        Anchor("screenshot.cursor", AddToggle("截图带上鼠标指针", string.Empty,
+            settings.ScreenshotCursor,
             value =>
             {
-                SettingsService.Current.OcrJoinLines = value;
+                settings.ScreenshotCursor = value;
                 SettingsService.Save();
-            }));
-        _content.Children.Add(SettingsUi.Footnote(
-            "同一段里的行接起来，段和段之间保留换行：中文、日文的行直接接上，其它文字之间加空格。识字和截图翻译都看这个；只在本机用 Windows 的识字组件。框选里有二维码或条码时复制它的内容。"));
+            }, "带上的是按快捷键那一刻的指针；识字、截图翻译不带。"));
+        AddHideDesktopIconsToggle("screenshot.hideDesktop");
+        Anchor("screenshot.windowShadow", AddToggle("窗口截图带阴影", "单击窗口截下时四角透明、带阴影",
+            settings.ScreenshotWindowShadow, value =>
+            {
+                settings.ScreenshotWindowShadow = value;
+                SettingsService.Save();
+            }, "单独抓那一扇窗口（被挡住的部分也截得到）；关掉照旧按矩形裁。"));
+        var delays = new[] { 5, 10 };
+        Anchor("screenshot.delay", AddSegmented("延时截图等几秒", "倒数完再进框选", new[] { "5 秒", "10 秒" },
+            settings.ScreenshotDelay == 10 ? 1 : 0,
+            index =>
+            {
+                settings.ScreenshotDelay = delays[index];
+                SettingsService.Save();
+            }, "用来截悬停才出来的提示、展开的菜单。"));
 
-        _content.Children.Add(new Border { Height = 8 });
-        Anchor("screenshot.keys", AddShortcutsRow("screenshot", "框选、标注、长截图和录屏的按键",
-            "拖动框选，数字键 1–0 换标注工具，Enter 拷贝，S 长截图，R 录屏"));
-        // 截图时的快捷键在快捷键页改（同 mac ScreenshotTab 那一行，REVIEW R97）
-        var shotKeys = new HyperlinkButton { Content = "截图里的快捷键…" };
-        shotKeys.Click += (_, _) => BuildPage("hotkeys");
-        _content.Children.Add(Anchor("screenshot.editKeys", SettingsUi.Card("改按键", "标注工具、钉图、长截图、识字、出图这些键能自己改", shotKeys)));
+        // 框选（PLAN-v26 S1，mac 0.10.0 f638e46f；工具栏位置 PLAN-v12 N4；保持原色 PLAN-v16 S2）
+        _content.Children.Add(SettingsUi.Section("框选"));
+        Anchor("screenshot.hint", AddToggle("框选时显示操作提示", "开始框选时屏幕上方的一行提示",
+            settings.ScreenshotShowsHint, value =>
+            {
+                settings.ScreenshotShowsHint = value;
+                SettingsService.Save();
+            }, "拖动框选、单击窗口截整窗这些；关掉后操作被挡下时的那句照样出。"));
+        var loupes = new[] { "full", "loupe", "off" };
+        Anchor("screenshot.loupe", AddCombo("框选时的放大镜", "按 C 拷贝放大镜下的色值", new[] { "放大镜和色值", "只显示放大镜", "不显示" },
+            Math.Max(0, Array.IndexOf(loupes, settings.ScreenshotLoupe)),
+            index =>
+            {
+                settings.ScreenshotLoupe = loupes[index];
+                SettingsService.Save();
+            }, "不显示色值时 C 不取色、不结束截图；标注里的吸管照常能取。"));
+        var aligns = new[] { "right", "center" };
+        Anchor("screenshot.toolbar", AddSegmented("工具栏位置",
+            "框选完工具栏贴在选区下方",
+            new[] { "靠右", "居中" },
+            settings.ScreenshotToolbarAlign == "center" ? 1 : 0,
+            index =>
+            {
+                settings.ScreenshotToolbarAlign = aligns[index];
+                SettingsService.Save();
+            }, "放不下时在上方。靠右时从左上往右下拖完，✓ 就在鼠标旁边；录屏的录制条也这样摆。"));
+        Anchor("screenshot.keepsColors", AddToggle("框选时保持屏幕原色", "不压暗、不染色，取色时打开",
+            settings.ScreenshotKeepsColors, value =>
+            {
+                settings.ScreenshotKeepsColors = value;
+                SettingsService.Save();
+            }, "框选时、选区外和悬停的窗口都是原来的颜色。"));
+        // 悬停时识别（PLAN-v28 X7：窗口里的元素、也认网页里的元素两个开关合成一个下拉，键不变、只写变了的那个）
+        Anchor("screenshot.elements", AddCombo("悬停时识别", "停在侧栏、按钮上就框出那一块", ElementChoice.Titles,
+            ElementChoice.Index(settings.ScreenshotFindsElements, settings.ScreenshotFindsWebElements),
+            index =>
+            {
+                var (finds, web) = ElementChoice.Writes(settings.ScreenshotFindsElements, settings.ScreenshotFindsWebElements, index);
+                if (finds is { } on)
+                {
+                    settings.ScreenshotFindsElements = on;
+                }
+
+                if (web is { } webOn)
+                {
+                    settings.ScreenshotFindsWebElements = webOn;
+                }
+
+                SettingsService.Save();
+            }, "单击截下；滚轮换一层大小，Tab 只认整扇窗口。截图翻译、识字不认。选「连网页里的也认」时，浏览器、用网页做界面的程序要被问一次才交出网页里的元素，" +
+               "第一次停到这种窗口上时多问一两次，那个程序会一直开着辅助功能的那一档到它退出。"));
+
+        // 钉图和识字
+        _content.Children.Add(SettingsUi.Section("钉图和识字"));
+        Anchor("screenshot.pinText", AddToggle("钉图上的字可以直接选", "在钉图的字上拖动就是选字",
+            settings.PinSelectsText, value =>
+            {
+                settings.PinSelectsText = value;
+                SettingsService.Save();
+            }, "Ctrl+C 拷贝、Ctrl+A 全选，右键翻译、搜索、查词；空白处照旧拖着挪，按住 Alt 在哪都能挪。"));
+        Anchor("screenshot.joinLines", AddToggle("识字后把同一段里的换行接起来", string.Empty,
+            settings.OcrJoinLines,
+            value =>
+            {
+                settings.OcrJoinLines = value;
+                SettingsService.Save();
+            }, "段和段之间保留换行：中文、日文的行直接接上，其它文字之间加空格。识字和截图翻译都看这个；只在本机用 Windows 的识字组件。" +
+               "框选里有二维码或条码时复制它的内容。"));
     }
 
     /// <summary>
-    /// 设置 › 录制（照 mac RecordTab）：启用录屏 ｜ 保存到 ｜ 录屏 ｜ 录音 ｜ 录屏和录音的按键。
-    /// 保存位置和截图分开（录屏默认在「视频」里，同系统的截图工具，MAC-DIFF.md）；帧率 30 / 60、录音的来源（PLAN-v9 V3、V5）；
-    /// 清晰度、倒数、显示光标这些是 R1–R7。
+    /// 设置 › 录制（PLAN-v28 §1.4，照 mac RecordTab）：启用 ｜ 保存到 ｜ 录屏（清晰度、倒数、光标、系统声音、麦克风、录哪个麦克风）｜
+    /// 录音（来源）｜ 按键 ｜ 高级 ›（帧率、显示点按和按键、隐藏桌面图标、立即开始录音）。
+    /// 保存位置和截图分开（录屏默认在「视频」里，同系统的截图工具，MAC-DIFF.md）。
     /// </summary>
     private void BuildRecord()
     {
+        if (_subpage == SettingsIndex.Advanced)
+        {
+            BuildRecordAdvanced();
+            return;
+        }
+
         _content.Children.Add(Header("录制", "录屏的画质和声音，录音录什么"));
         AddFeatureToggle(Feature.Recording);
 
@@ -3462,26 +3546,22 @@ internal sealed partial class SettingsWindow : Window
             "保存到",
             RecordingHost.Folder,
             !string.IsNullOrWhiteSpace(SettingsService.Current.RecordDirectory),
-            folder => SettingsService.Current.RecordDirectory = folder))));
-        _content.Children.Add(Ungated(SettingsUi.Footnote(
-            "文件名是「录屏 日期 时间.mp4」「录音 日期 时间.m4a」。没选过时存到「视频」里的「Screen Recordings」，和截图的「快速保存到」分开。")));
+            folder => SettingsService.Current.RecordDirectory = folder,
+            "和截图的「快速保存到」分开",
+            "文件名是「录屏 日期 时间.mp4」「录音 日期 时间.m4a」。没选过时存到「视频」里的「Screen Recordings」。"))));
 
-        _content.Children.Add(SettingsUi.Section("录屏"));
-        Anchor("record.frameRate", AddSegmented("帧率", string.Empty,
-            new[] { "30 fps", "60 fps" },
-            SettingsService.Current.RecordFps >= 60 ? 1 : 0,
-            index =>
-            {
-                SettingsService.Current.RecordFps = index == 1 ? 60 : 30;
-                SettingsService.Save();
-            }));
-        Anchor("record.sharpness", AddSegmented("清晰度", string.Empty, new[] { "原始", "标准" },
+        // 录屏（Win10 关不掉系统画的黄框，PLAN-v27 W3：说一句在组标题的 ⓘ 里，免得以为被监控）
+        var win10 = WindowsVersions.ShowsCaptureBorder(Environment.OSVersion.Version);
+        _content.Children.Add(SettingsUi.Section("录屏", null, win10
+            ? "Windows 10 上录屏时，录的那块屏幕外面会有一圈黄框，是系统画的，录出来的视频里没有。"
+            : null));
+        Anchor("record.sharpness", AddSegmented("清晰度", "标准：文件小一半，小字糊一些", new[] { "原始", "标准" },
             SettingsService.Current.RecordSharpness == "standard" ? 1 : 0,
             index =>
             {
                 SettingsService.Current.RecordSharpness = index == 1 ? "standard" : "original";
                 SettingsService.Save();
-            }));
+            }, "标准清晰度把画面长边缩到 1920，大屏、高分屏上文件小一半多。录好的也可以在角落的卡上点「压缩」另存一份小的。"));
         var countdowns = new[] { 0, 3, 5 };
         Anchor("record.countdown", AddCombo("开始前倒数", string.Empty, new[] { "不倒数", "3 秒", "5 秒" },
             Math.Max(0, Array.IndexOf(countdowns, SettingsService.Current.RecordCountdown)),
@@ -3497,21 +3577,58 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Current.RecordCursor = value;
                 SettingsService.Save();
             }));
-        AddHideDesktopIconsToggle("record.hideDesktop");
-        // PLAN-v27 W3：Win10 关不掉系统画的黄框（20348 才给开关），先说清楚，免得以为被监控
-        if (WindowsVersions.ShowsCaptureBorder(Environment.OSVersion.Version))
-        {
-            _content.Children.Add(SettingsUi.Footnote("Windows 10 上录屏时，录的那块屏幕外面会有一圈黄框，是系统画的，录出来的视频里没有。"));
-        }
+        Anchor("record.systemSound", AddToggle("系统声音", "录默认输出设备的声音",
+            SettingsService.Current.RecordSystemSound,
+            value =>
+            {
+                SettingsService.Current.RecordSystemSound = value;
+                SettingsService.Save();
+            }, "关掉只录麦克风，或者只有画面。"));
+        Anchor("record.microphone", AddToggle("麦克风", "和系统声音混成一条音轨",
+            SettingsService.Current.RecordMicrophone,
+            value =>
+            {
+                SettingsService.Current.RecordMicrophone = value;
+                SettingsService.Save();
+            }, "第一次录麦克风时，要在 设置 › 隐私和安全性 › 麦克风 里允许桌面应用。"));
+        AddMicrophoneDeviceRow();
 
-        Anchor("record.clicks", AddToggle("显示点按", "录制画面里画一个圈（左键粉色、右键蓝色）",
+        _content.Children.Add(SettingsUi.Section("录音"));
+        var sources = new[] { "microphone", "system", "both" };
+        Anchor("record.audioSource", AddSegmented("来源", "和录屏的声音分开设", new[] { "麦克风", "系统声音", "两者" },
+            Math.Max(0, Array.IndexOf(sources, SettingsService.Current.AudioSource)),
+            index =>
+            {
+                SettingsService.Current.AudioSource = sources[index];
+                SettingsService.Save();
+            }, "麦克风用不了（设置 › 隐私和安全性 › 麦克风 里关着）时改成录系统声音。只录麦克风时锁屏照录，录了系统声音的锁屏会停。"));
+
+        _content.Children.Add(new Border { Height = 8 });
+        Anchor("record.keys", AddShortcutsRow("record", "录屏和录音的按键",
+            "Enter 开始，再按一次快捷键停止"));
+        AddAdvancedRow("record");
+    }
+
+    /// <summary>设置 › 录制 › 高级：帧率、显示点按、显示按键（和只显示快捷键）、隐藏桌面图标、按快捷键后立即开始录音。</summary>
+    private void BuildRecordAdvanced()
+    {
+        AddAdvancedHeader("record");
+        Anchor("record.frameRate", AddSegmented("帧率", string.Empty,
+            new[] { "30 fps", "60 fps" },
+            SettingsService.Current.RecordFps >= 60 ? 1 : 0,
+            index =>
+            {
+                SettingsService.Current.RecordFps = index == 1 ? 60 : 30;
+                SettingsService.Save();
+            }, "60 fps 更顺，文件大约大一半；大屏上可能录不满 60。"));
+        Anchor("record.clicks", AddToggle("显示点按", "画面里画一个圈",
             SettingsService.Current.RecordClicks,
             value =>
             {
                 SettingsService.Current.RecordClicks = value;
                 SettingsService.Save();
-            }));
-        Anchor("record.keysShown", AddToggle("显示按键", "按下的键在画面底部显示成一颗胶囊",
+            }, "左键粉色、右键蓝色。"));
+        Anchor("record.keysShown", AddToggle("显示按键", "按下的键在画面底部显示成胶囊",
             SettingsService.Current.RecordKeys,
             value =>
             {
@@ -3524,58 +3641,22 @@ internal sealed partial class SettingsWindow : Window
             {
                 SettingsService.Current.RecordKeysShortcutsOnly = index == 1;
                 SettingsService.Save();
-            }));
-        Anchor("record.systemSound", AddToggle("系统声音", "录默认输出设备的声音；关掉只录麦克风或只有画面",
-            SettingsService.Current.RecordSystemSound,
-            value =>
-            {
-                SettingsService.Current.RecordSystemSound = value;
-                SettingsService.Save();
-            }));
-        Anchor("record.microphone", AddToggle("麦克风", "和系统声音混成一条音轨",
-            SettingsService.Current.RecordMicrophone,
-            value =>
-            {
-                SettingsService.Current.RecordMicrophone = value;
-                SettingsService.Save();
-            }));
-        AddMicrophoneDeviceRow();
-        _content.Children.Add(SettingsUi.Footnote(
-            "60 fps 更顺，文件大约大一半；大屏上可能录不满 60。标准清晰度把画面长边缩到 1920，大屏、高分屏上文件小一半多，小字会糊一些；" +
-            "录好的也可以在角落的卡上点「压缩」另存一份小的。框一块区域、或在遮罩里单击一扇窗口录它，倒数完开始；录的时候选区外一圈粉线，线不进画面。" +
-            "全部按键会把打的字也录进去；只显示快捷键：带 Ctrl、Alt、Win 的组合键、Esc 和 F 键才进画面，打字不显示。" +
-            "第一次录麦克风时，要在 设置 › 隐私和安全性 › 麦克风 里允许桌面应用。"));
-
-        _content.Children.Add(SettingsUi.Section("录音"));
-        var sources = new[] { "microphone", "system", "both" };
-        Anchor("record.audioSource", AddSegmented("来源", string.Empty, new[] { "麦克风", "系统声音", "两者" },
-            Math.Max(0, Array.IndexOf(sources, SettingsService.Current.AudioSource)),
-            index =>
-            {
-                SettingsService.Current.AudioSource = sources[index];
-                SettingsService.Save();
-            }));
-        Anchor("record.startsImmediately", AddToggle("按快捷键后立即开始录音", string.Empty,
+            }, "全部按键会把打的字也录进去；只显示快捷键：带 Ctrl、Alt、Win 的组合键、Esc 和 F 键才进画面，打字不显示。"));
+        AddHideDesktopIconsToggle("record.hideDesktop");
+        Anchor("record.startsImmediately", AddToggle("按快捷键后立即开始录音", "关着时先出录音控制条",
             SettingsService.Current.RecordInstantStart,
             value =>
             {
                 SettingsService.Current.RecordInstantStart = value;
                 SettingsService.Save();
-            }));
-        _content.Children.Add(SettingsUi.Footnote(
-            "和录屏的「系统声音」「麦克风」分开；麦克风用不了（设置 › 隐私和安全性 › 麦克风 里关着）时改成录系统声音。只录麦克风时锁屏照录，录了系统声音的锁屏会停。" +
-            "立即开始关着时，按快捷键（或点托盘、启动器里的「录音」）先在屏幕底部打开录音控制条，点「开始」或再按一次才开始录。"));
-
-        _content.Children.Add(new Border { Height = 8 });
-        Anchor("record.keys", AddShortcutsRow("record", "录屏和录音的按键",
-            "框选和截图一样，Enter 或双击选区开始，Esc 取消；录着时再按一次快捷键停止并保存"));
+            }, "按快捷键（或点托盘、启动器里的「录音」）先在屏幕底部打开录音控制条，点「开始」或再按一次才开始录。"));
     }
 
     /// <summary>
     /// 「快速保存到」「保存到」那一行（mac SaveDirectoryRow）：文件夹图标 + 资源管理器里的名字（悬停看完整路径）+
     /// 选过时「恢复默认」+「更改…」。set(null) = 恢复默认。
     /// </summary>
-    private Border SaveFolderRow(string title, string folder, bool customized, Action<string?> set)
+    private Border SaveFolderRow(string title, string folder, bool customized, Action<string?> set, string detail = "", string? info = null)
     {
         var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
         var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
@@ -3624,7 +3705,7 @@ internal sealed partial class SettingsWindow : Window
             }
         };
         controls.Children.Add(change);
-        return SettingsUi.Card(title, string.Empty, controls);
+        return SettingsUi.Card(title, detail, controls, info: info);
     }
 
     /// <summary>

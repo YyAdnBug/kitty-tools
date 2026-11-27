@@ -356,7 +356,7 @@ internal sealed partial class Syncer
             if (_attention.Stopped(problem, Uptime()))
             {
                 NoticeHost.Show("同步停了", SyncAttention.Notice(problem, Status.Message), NoticeTone.Warning,
-                    NoticeActions.AppSettings("general", "打开同步设置"));
+                    NoticeActions.AppSettingsSubpage("general", "sync", "打开同步设置"));
             }
         }
         else

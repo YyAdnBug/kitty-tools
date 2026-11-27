@@ -608,11 +608,11 @@ internal sealed class HomePanel : Window
             IsTabStop = false,
         };
         AutomationProperties.SetName(manage, "管理功能");
-        AutomationProperties.SetHelpText(manage, "打开 设置 › 通用，打开或关掉功能");
+        AutomationProperties.SetHelpText(manage, "打开 设置 › 通用 › 功能，打开或关掉功能");
         manage.Click += (_, _) =>
         {
             HideSelf(restoreForeground: false);
-            ShellRuntime.Instance?.ShowSettings(welcome: false, "general");
+            ShellRuntime.Instance?.ShowSettingsSubpage("general", "features");
         };
         row.Children.Add(manage);
         return row;
@@ -652,7 +652,18 @@ internal sealed class HomePanel : Window
         // 同步停了、该让人知道了（PLAN-v26 I4，同 mac 0.10.1 U1）：「设置」挂一个小橙点，好了自己收
         var attention = Syncer.Instance?.Status.NeedsAttention == true;
         actions.Children.Add(BarButton("设置", "Ctrl+,", attention ? "设置（同步停了）" : "设置",
-            () => ShellRuntime.Instance?.ShowSettings(welcome: false, attention ? "general" : null), attention));
+            () =>
+            {
+                // 同步停了：直接推进 通用 › 同步（PLAN-v28 X9）
+                if (attention)
+                {
+                    ShellRuntime.Instance?.ShowSettingsSubpage("general", "sync");
+                }
+                else
+                {
+                    ShellRuntime.Instance?.ShowSettings(welcome: false);
+                }
+            }, attention));
         actions.Children.Add(BarButton("退出", null, "退出 Kitty Tools", () => ShellRuntime.Instance?.Exit(installUpdate: true)));
         Grid.SetColumn(actions, 1);
         bar.Children.Add(actions);
