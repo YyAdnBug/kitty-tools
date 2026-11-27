@@ -741,6 +741,20 @@ R114 编号跳过了 R113（`claude/win-multiscreen-shot` 分支上已经用了�
     `DWMWA_NCRENDERING_POLICY`（2）= `DWMNCRP_DISABLED`（1），整扇窗不要 DWM 的非客户区渲染。
   - 更新日志（下一版）：fix「双屏时状态屏和截图遮罩的边上会露出一道白边」/ "Fixed a white strip along the edge between two monitors in the status screen and the screenshot overlay"。
 
+## 0.4.0 发布（2026-11-27，Claude 在 Windows 上；用户「发布0.4.0吧」）
+
+- **tag** `windows-v0.4.0` → `0649f54b`（附注 tag，只推了这一个）。包就是这个提交打的（exe `0.4.0+0649f54b`）；`windows` 上之后并进来的 PLAN-v27、GitCode 两条分支不在里面，进 0.5.0。
+- **release**：https://github.com/YyAdnBug/kitty-tools/releases/tag/windows-v0.4.0 ，「Kitty Tools for Windows 0.4.0」。REST API 先建草稿、传 8 个文件（四个包 + 四个 `.sha256`，大小逐个对上）、再发布；
+  不是预发布、没标 latest（发布后 `releases/latest` 仍是 `macos-v0.10.3`）。说明是 `build-release.ps1` 生成的 `release-notes.md`（去掉 BOM），32 项。
+- **文件**：就是「0.4.0 发版前复查 › 重打结果」那张表的四个（x64 zip `f85e135e…`、x64 安装包 `0b9415aa…`、arm64 zip `f5f186c8…`、arm64 安装包 `53f47ccb…`）。
+  发布后从 GitHub 下回来四个的 sha256 都对得上。
+- **更新清单**：预发布 `windows-update` 上的 `windows-update.json` 换成 0.4.0 的（旧的 0.3.0 那份先下回来备份，再删、再传）。公开地址刚换完时还回了旧的一次，再取就是新的；
+  和本地逐字节一样，API 取附件也一样。
+- **线上真检查**：GitHub 上 windows-v0.3.0 的 x64 zip 解出来、Release 探针档起一次：`update.check newer=True version=0.4.0 source=manifest` → `update.prepare` → `update.ready`（后台从 GitHub 下完、校验过）。
+  没点安装（替换和重启那半在发版前复查第 7 步用本地包走过）。只结束了自己起的 PID；探针档删了。
+- **知情照发的**（发版前复查和清单里写的）：真机手测清单 30 条没走；1820（Everything 以管理员运行）没测；更新日志「设置窗关掉两分钟后整个放掉」那条内存回落其实只有 1.5–2 MB；
+  灵动岛样式、R115（cmd、应用别名）留给 0.5.0。
+
 ## 0.3.0 发布（2026-11-17，Claude 在 Windows 上；用户批准发布、打 tag、建 release）
 
 - **提交**：`aa686373`（版本号 0.3.0 + `changelog.json` 0.3.0 一条，24 项）、`13891c07`（其中一条措辞：「关掉半透明的窗口后偶尔闪退」→「…的问题修好了」）。
