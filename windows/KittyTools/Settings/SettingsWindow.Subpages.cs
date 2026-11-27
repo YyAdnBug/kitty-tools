@@ -83,7 +83,13 @@ internal sealed partial class SettingsWindow
 
     /// <summary>页面最后（按键行之后）一行「高级」：推进这一页的「高级」。功能关着也点得进去（里面变灰，管数据的照常）。</summary>
     private void AddAdvancedRow(string page)
-        => _content.Children.Add(Ungated(SettingsUi.PushRow("高级", string.Empty, null, false, () => OpenSubpage(page, SettingsIndex.Advanced))));
+        => _content.Children.Add(Ungated(SettingsUi.PushRow("高级", string.Empty, null, false, () => OpenSubpage(page, SettingsIndex.Advanced),
+            PlaceIsNew(page, SettingsIndex.Advanced) ? WhatsNew.Label : null)));
+
+    /// <summary>这个子页 / 「高级」里有没有此刻标「新」的行（WhatsNew 按行的标题认，X10）。</summary>
+    private bool PlaceIsNew(string page, string sub)
+        => SettingsIndex.In(page, sub).Any(item => WhatsNew.Marks(item.Title, page, _whatsNewShown)) ||
+           (SettingsIndex.Subpage(page, sub) is { } subpage && WhatsNew.Marks(subpage.Title, page, _whatsNewShown));
 
     /// <summary>这一处的「恢复默认」管的、能写回默认值的设置（没接上读写的不算）。</summary>
     private static List<string> ResettableKeys(string page, string? sub)

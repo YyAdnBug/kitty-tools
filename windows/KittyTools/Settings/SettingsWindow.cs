@@ -85,7 +85,8 @@ internal sealed partial class SettingsWindow : Window
         ("notes", "便签", FeatureIcons.Notes),
         ("reminders", "提醒", FeatureIcons.Reminders),
         ("statusScreen", "状态屏", FeatureIcons.StatusScreen),
-        // 插件（PLAN-v20 K2）：添加了才进侧栏「插件」一组
+        // 插件（PLAN-v28 D2，同 mac 0.10.3）：侧栏只留一行「插件」，点进去是全部插件；保持唤醒这些插件的页从那里推进去
+        ("plugins", "插件", "\uEA86"),
         ("keepAwake", "保持唤醒", FeatureIcons.KeepAwake),
         ("hotkeys", "快捷键", FeatureIcons.Hotkeys),
         ("about", "关于", FeatureIcons.About),
@@ -113,6 +114,7 @@ internal sealed partial class SettingsWindow : Window
             "提示", "轻提示", "通知", "灵动岛", "刘海", "顶部", "底部",
             // 没添加的插件的词不写在这里：Core SettingsSearch.Matching 把它们算成通用页对上（PLAN-v23 W5，同 mac SettingsPage.matching）
         },
+        ["plugins"] = new[] { "插件", "扩展", "添加", "移除", "全部插件" },
         ["keepAwake"] = new[]
         {
             "awake", "防息屏", "防止睡眠", "不睡眠", "唤醒", "咖啡因", "屏幕", "熄屏", "睡眠", "定时", "时段", "工作日", "全天", "插件", "移除",
@@ -633,14 +635,16 @@ internal sealed partial class SettingsWindow : Window
             case "keepAwake":
                 if (!Features.IsOn(Feature.KeepAwake))
                 {
-                    // 插件没添加（移除了、或者从搜索里点过来）：回到 通用 › 功能
-                    _featuresPage = true;
-                    BuildGeneral();
-                    _currentPage = "general";
+                    // 插件没添加（移除了、或者从搜索里点过来）：回到全部插件
+                    _currentPage = "plugins";
+                    BuildPluginsPage();
                     break;
                 }
 
                 BuildKeepAwake();
+                break;
+            case "plugins":
+                BuildPluginsPage();
                 break;
             case "about":
                 BuildAbout();
@@ -750,6 +754,11 @@ internal sealed partial class SettingsWindow : Window
             // 怎么写脚本 → 脚本命令；别的子页、「高级」回到页本身（PLAN-v28 X2）
             OpenSubpage(_currentPage, SettingsIndex.Parent(_currentPage, sub));
         }
+        else if (_currentPage != "plugins" && SettingsSidebar.PluginPages.Contains(_currentPage))
+        {
+            // 插件的页 → 全部插件（PLAN-v28 D2）
+            BuildPage("plugins");
+        }
         else
         {
             return false;
@@ -788,8 +797,14 @@ internal sealed partial class SettingsWindow : Window
         var matches = SettingsSearch.Matching(SearchPages(), query, AbsentPlugins());
         var off = Pages.Select(page => page.Tag).Where(tag => Features.ForPage(tag) is { } feature && !Features.IsOn(feature)).ToHashSet();
         var collapsed = (settings.SettingsCollapsedGroups ?? new List<string>()).ToHashSet();
-        var added = Features.Plugins.Where(Features.IsOn).Select(Features.Key).ToList();
-        var groups = SettingsSidebar.Build(matches, off, added);
+        // PLAN-v28 D2：插件在侧栏只有「插件」一行；搜到哪个插件（添加没添加都算）也让这一行出来
+        if (query.Length > 0 && !matches.Contains("plugins") &&
+            SearchPages().Any(page => SettingsSidebar.PluginPages.Contains(page.Tag) && SettingsSearch.Matches(page, query)))
+        {
+            matches.Add("plugins");
+        }
+
+        var groups = SettingsSidebar.Build(matches, off, Features.Plugins.Any() ? new[] { "plugins" } : Array.Empty<string>());
         var layout = groups.Select(group =>
         {
             var expanded = SettingsSidebar.IsExpanded(group, query.Length > 0, collapsed, settings.SettingsShowsOffFeatures, _currentPage);
@@ -1023,8 +1038,10 @@ internal sealed partial class SettingsWindow : Window
 
     private void UpdateNavSelection()
     {
+        // 插件的页从「插件」那一行推进去：侧栏选中停在「插件」上
+        var selected = SettingsSidebar.PluginPages.Contains(_currentPage) ? "plugins" : _currentPage;
         var item = _nav.MenuItems.OfType<NavigationViewItem>()
-            .FirstOrDefault(candidate => string.Equals(candidate.Tag as string, _currentPage, StringComparison.Ordinal));
+            .FirstOrDefault(candidate => string.Equals(candidate.Tag as string, selected, StringComparison.Ordinal));
         if (item is not null && !ReferenceEquals(_nav.SelectedItem, item))
         {
             _suppressNav = true;
@@ -1066,6 +1083,10 @@ internal sealed partial class SettingsWindow : Window
         // 功能（PLAN-v18 L4：收成一行「功能 ›」，写开着几个、关着哪几个，开关在子页里）
         Anchor("general.features", AddSubpageRow("功能", SettingsSummary.Features(Features.Listed.Select(feature => (Features.Title(feature), Features.IsOn(feature))).ToList()),
             () => OpenFeaturesPage(true)));
+        // 插件 ›（PLAN-v28 D2）：推进全部插件那一页
+        var addedPlugins = Features.Plugins.Where(Features.IsOn).Select(Features.Title).ToList();
+        Anchor("general.plugins", AddSubpageRow("插件", string.Empty, () => BuildPage("plugins"),
+            new SettingsSummary.RowValue(addedPlugins.Count == 0 ? "没添加" : string.Join("、", addedPlugins))));
         BuildGeneralRest();
     }
 
@@ -1111,7 +1132,6 @@ internal sealed partial class SettingsWindow : Window
 
         _content.Children.Add(SettingsUi.Footnote(
             "关掉的功能不出现在快捷键、托盘菜单和启动器里，也不在后台运行；它的数据和设置都留着，打开就回来。"));
-        AddPluginCards();
     }
 
     /// <summary>通用页「功能」那一行下面的部分（PLAN-v28 §1.1）：外观、强调色、登录时打开 ｜ 同步 ›、备份与导出导入 ›、麦克风 ｜ 移除 ｜ 高级 ›。</summary>

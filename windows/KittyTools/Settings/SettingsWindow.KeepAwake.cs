@@ -1,4 +1,4 @@
-// 设置 › 保持唤醒（PLAN-v20 K1，照 mac Settings/KeepAwakeTab.swift）和 通用 › 功能 下面的「插件」卡片（K2，mac FeaturesPage.PluginCard）。
+// 设置 › 保持唤醒（PLAN-v20 K1，照 mac Settings/KeepAwakeTab.swift）和 设置 › 插件（全部插件，PLAN-v28 D2；卡片同 K2 mac PluginCard）。
 // 保持唤醒页：现在（状态、开始 / 停止、屏幕也不熄）｜ 定时（开关、星期、全天、开始 / 结束、一句话说法）｜ 移除插件。插件页顶上没有「启用」：
 // 添加了才看得到这一页，页底统一一行「移除插件」（mac PluginRemoveSection）。
 // 插件卡片：色块、名字、一句话、要的授权、后台做什么、添加 / 移除；从启动器「添加…插件」那一行来的，滚到那张卡、描两秒强调色（FocusPlugin）。
@@ -25,6 +25,7 @@ internal sealed partial class SettingsWindow
 
     private void BuildKeepAwake()
     {
+        _content.Children.Add(SettingsUi.BackButton("插件", "返回全部插件", () => BuildPage("plugins")));
         _content.Children.Add(Header("保持唤醒", "不让电脑睡、不让屏幕熄"));
         var settings = SettingsService.Current;
 
@@ -198,17 +199,21 @@ internal sealed partial class SettingsWindow
         remove.Click += (_, _) =>
         {
             Features.Set(plugin, false);
-            OpenFeaturesPage(true);
+            BuildPage("plugins");
         };
         _content.Children.Add(SettingsUi.Card(
             "移除「" + Features.Title(plugin) + "」插件", "不再出现在托盘、主界面、快捷键和启动器里，也不在后台运行；设置留着，再添加就回来", remove));
     }
 
-    /// <summary>通用 › 功能 下面一组「插件」（mac FeaturesPage 的插件卡片）。</summary>
-    private void AddPluginCards()
+    /// <summary>
+    /// 设置 › 插件（全部插件，PLAN-v28 D2，同 mac 0.10.3）：添加了的在上、没添加的在下，一行一张卡；添加了的点卡推进它那一页。
+    /// </summary>
+    private void BuildPluginsPage()
     {
-        _content.Children.Add(SettingsUi.Section("插件"));
-        foreach (var plugin in Features.Plugins)
+        _content.Children.Add(Header("插件", "用得上的再添加；移除了，设置和数据也留着"));
+        _content.Children.Add(SettingsUi.Section("全部插件", null,
+            "新装时插件都没添加；从旧版升级上来的，原来开着的照旧添加着。添加了才出现在托盘、主界面、快捷键和启动器里；移除就是关掉，设置和数据留着，再添加就回来。"));
+        foreach (var plugin in Features.Plugins.OrderBy(plugin => Features.IsOn(plugin) ? 0 : 1))
         {
             var (permission, background) = Features.PluginFacts(plugin);
             var added = Features.IsOn(plugin);
@@ -218,29 +223,27 @@ internal sealed partial class SettingsWindow
             {
                 Features.Set(plugin, !added);
                 RebuildSidebar();
-                BuildPage("general");
+                BuildPage("plugins");
             };
-            // 同 mac PluginCard：名字后「已添加」、授权和后台各占一行（REVIEW R96）
+            // 同 mac PluginCard：名字后「已添加」、授权和后台各占一行（REVIEW R96）；添加了的点卡进它那一页
+            var page = Features.Key(plugin);
             var card = SettingsUi.Card(
                 Features.Title(plugin),
                 Features.Blurb(plugin) + "\n授权　" + permission + "\n后台　" + background,
                 button,
-                leading: KindTile.Create(FamilyForPage(Features.Key(plugin)), FeatureIcons.KeepAwake, 20),
+                added ? () => BuildPage(page) : (Action?)null,
+                leading: KindTile.Create(FamilyForPage(page), FeatureIcons.KeepAwake, 20),
                 tag: added ? "已添加" : null);
-            card.Tag = "plugin:" + Features.Key(plugin);
+            card.Tag = "plugin:" + page;
             _content.Children.Add(card);
         }
-
-        _content.Children.Add(SettingsUi.Footnote(
-            "新装时插件都没添加；从旧版升级上来的，原来开着的照旧添加着。添加了才出现在侧栏、托盘、主界面、快捷键和启动器里；移除就是关掉，设置和数据留着，再添加就回来。"));
     }
 
-    /// <summary>从启动器「添加…插件」来（mac SettingsNavigation.focusedPlugin）：打开 通用 › 功能，滚到那张卡，描两秒强调色。</summary>
+    /// <summary>从启动器「添加…插件」来（mac SettingsNavigation.focusedPlugin）：打开全部插件，滚到那张卡，描两秒强调色。</summary>
     public void FocusPlugin(string key)
     {
         _focusPlugin = key;
-        _featuresPage = true;
-        BuildPage("general");
+        BuildPage("plugins");
         if (_content.Children.OfType<Border>().FirstOrDefault(card => card.Tag as string == "plugin:" + key) is not { } target)
         {
             return;

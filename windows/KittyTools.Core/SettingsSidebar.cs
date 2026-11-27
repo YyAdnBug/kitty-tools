@@ -22,8 +22,11 @@ public static class SettingsSidebar
 
     public static IEnumerable<string> AllPages => Groups.SelectMany(group => group);
 
-    /// <summary>插件的页（侧栏「插件」一组的顺序）。</summary>
-    public static readonly IReadOnlyList<string> PluginPages = new[] { "keepAwake" };
+    /// <summary>
+    /// 插件的页（侧栏「插件」一组的顺序）。PLAN-v28 D2 起 App 只把「plugins」（全部插件）这一行放进侧栏，保持唤醒从那里推进去；
+    /// 传进来哪几个就画哪几个，这张表只管认得的页和先后。
+    /// </summary>
+    public static readonly IReadOnlyList<string> PluginPages = new[] { "plugins", "keepAwake" };
 
     /// <summary>组标题；通用、快捷键与关于不写。</summary>
     public static string? GroupTitle(string page) => page switch
@@ -50,7 +53,8 @@ public static class SettingsSidebar
             var tail = shown.Count > 0 && shown[^1].Pages.Contains("about") || shown.Count > 0 && shown[^1].Pages.Contains("hotkeys")
                 ? shown.Count - 1
                 : shown.Count;
-            shown.Insert(tail, new SidebarGroup("插件", plugins));
+            // 只有「全部插件」那一行（PLAN-v28 D2）时不画组标题：一行「插件」就够了
+            shown.Insert(tail, new SidebarGroup(plugins.SequenceEqual(new[] { "plugins" }) ? null : "插件", plugins));
         }
 
         var closed = AllPages.Where(page => pages.Contains(page) && off.Contains(page)).ToList();

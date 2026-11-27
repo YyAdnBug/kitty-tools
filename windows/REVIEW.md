@@ -17,7 +17,7 @@
 
 这一版**你们自己写、自己编译、自己验**，照 `AGENTS.md`「每一批的流程」一批接一批做到第 5 批，中间不等审查。
 
-1. **开工**：`git fetch origin && git rebase origin/windows`，读 `PLAN-v28.md` 全文、`AGENTS.md` 第 28 条、本节。PLAN-v27 还没收尾的（Win10 虚拟机冒烟，用户 11-27 说先不开）照旧搁着，不挡这一版。
+1. **开工**：`git fetch origin && git rebase origin/windows`，读 `PLAN-v28.md` 全文、`AGENTS.md` 第 28 条、本节。PLAN-v27 还没收尾的 Win10 虚拟机冒烟：**用户 11-27 后来改了**——Win10 和 PLAN-v28 一起进 0.5.0、不出 0.4.1，第 5 批打完包、交给用户之前先在虚拟机里冒烟（见第 5 批）。
 2. **先读 mac 的规格和代码**：`reference/mac-settings/SPEC-settings-redesign-2026-11-18.md` 的 §1（通用件）、§2（逐页）、§3（合并的选单）、§5（说明文字逐行改成什么）；
    再对着 `git show origin/macos:macos/KittyTools/Settings/<文件>` 看最后做成的样子：`SettingsIndex.swift`（每一行在哪）、`SettingsSubpage.swift`、`AdvancedSheet.swift`、`SettingsReset.swift`、
    `GeneralTab.swift`、`ClipboardTab.swift`、`ScreenshotTab.swift`、`RecordTab.swift`、`TranslateTab.swift`、`LauncherTab.swift`、`NotesTab.swift`（行尾 ⓘ 的中文原文都在这几个文件里）。
@@ -58,10 +58,28 @@ dotnet test 1237 全过；Debug / AOT x64 / ARM64 零警告；空闲 46.9 ms / 6
 单测一条没改、1237 全过；AOT x64 / ARM64 零警告；a11y 新的地方 0 / 0；空闲 31.3 ms / 60 s；各页 93.5 MB、子页再两遍 119.9 MB。
 替用户定的：启动器内置命令「设置」照旧开设置窗本身。高对比度截图、手测 2130–2149 没做。
 
-### 第 4 批 → 已做（见本批提交正文）
+### 第 4 批 → 已做（7e6159ba，见提交正文）
 
 说明文字：提醒、状态屏、保持唤醒、脚本命令和几处漏的收成一句副标题 + ⓘ，页脚只留授权、会删数据、不加密和状态句；列表编辑页的操作说明没收（替用户定的）。
 1237 全过；AOT 零警告；空闲 0 ms / 60 s；各页 95.4 MB、子页再两遍 121.8 MB。高对比度、手测 2150–2159、讲述人没做。
+
+### 第 5 批 → 已做（见本批提交正文）；Win10 冒烟 → 等虚拟机
+
+插件在侧栏只留一行「插件」→ 全部插件（D2），通用第一组「插件 ›」；新功能标记跟着挪进子页 / 高级（X10）；MAC-DIFF「设置窗」重写；0.5.0 版本号和更新日志（九项）。
+1238 全过；AOT 零警告；`--update-live=0.4.0` 过；空闲 0 ms / 60 s；设置窗各页 94.1 MB（0.4.0 是 96–102），闲两分钟照样放掉。
+
+**0.5.0 的包**（`windows/build/release/0.5.0`，`701bf1ac` 打的，**没发布、没打 tag**）：
+
+| 文件 | 大小 | sha256 |
+|---|---|---|
+| KittyTools-0.5.0-windows-x64-setup.exe | 38.2 MB | `7c1fea03c20bc76bd47838305386aa9b2e9bc1aaff8d8e8dc6e7e6805fbffde6` |
+| KittyTools-0.5.0-windows-x64.zip | 48.2 MB | `11097bca5c9b8be28eb7576d81b3785465f85e8565ddb34b4fb8addd1946a698` |
+| KittyTools-0.5.0-windows-arm64-setup.exe | 37.9 MB | `c562a2f335ce15c458c8c4f50048ae03f0f52538c54e800df88a669236d3aeee` |
+| KittyTools-0.5.0-windows-arm64.zip | 47.1 MB | `cb70ec9ba0e168ead55e4f05d571a50440bbcdae6fda84803cb4cf677a61df7d` |
+
+**Win10 冒烟（W1–W10、2050–2068）：还没走。** 另一个会话（「PLAN-v28 Windows 10 冒烟测试」）在准备虚拟机：Hyper-V 装好了、要用户**重启电脑**，
+Win10 22H2 中文镜像要用户**自己从微软官网下**（下载页有人机验证）；它拿的就是上面这个 x64 安装包（拷在 `D:\VM\KittyWin10\packages .5.0-701bf1ac\`）。
+结果回来写在这里；坏了的修、重打包、再走一遍。
 
 ## PLAN-v27：启动器搜不到 cmd、应用别名不列出装的应用；Windows 10；灵动岛样式的提示（用户转来的反馈，审查方在 Mac 上查的，2026-11-26）
 
@@ -130,7 +148,7 @@ Debug x64 0 警告、`dotnet test` 1220 全过、x64 / ARM64 AOT 0 警告（PRI 
 
 **I-2 顶部样式**：`island-top` / `island-top-expanded` / `island-top-progress` 三张对了（`WindowShot` 不带透明，两头的白角是存图铺的底）。手测 2080–2095 要鼠标悬停、按钮：**没走**。
 
-**W-1 / W-3 Windows 10**：**没做**。开 Hyper-V 要管理员和重启、还要下 Win10 镜像装虚拟机，这些改这台电脑的系统设置，等用户点头再做。**用户 2026-11-27：「先不开」**——Win10 那几步（2050–2068、Win10 冒烟 W1–W10）挂着，等用户另说。
+**W-1 / W-3 Windows 10**：**没做**。开 Hyper-V 要管理员和重启、还要下 Win10 镜像装虚拟机，这些改这台电脑的系统设置，等用户点头再做。**用户 2026-11-27：「先不开」**——Win10 那几步（2050–2068、Win10 冒烟 W1–W10）挂着，等用户另说。**同日后来改了，以这条为准**：0.5.0 要支持 Win10，打完包先在虚拟机里冒烟（另一个会话准备虚拟机，结果写在「PLAN-v28」第 5 批下面）。
 图标表 `glyphs-light / dark` Win11 这边出了（101 个码点都画出来），Win10 那张要等虚拟机。
 
 **没做的**：第 8 步收尾（0.5.0 版本号、更新日志、打包）先不做——0.4.0 还没发，`claude/gitcode-win` 也要进 0.5.0、Win10 也没测，等这些齐了一起收；README / 官网的系统要求（第 7 步）在 `main`，没动。

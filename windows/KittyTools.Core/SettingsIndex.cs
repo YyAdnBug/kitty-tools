@@ -229,6 +229,7 @@ public static class SettingsIndex
 
         // 通用
         Row("general.features", null, "功能", "模块,关闭,停用,启用,不用");
+        Row("general.plugins", null, "插件", "扩展,添加,全部插件");
         Row("general.appearance", null, "外观", "浅色,深色,暗黑,主题,跟随系统", "Theme");
         Row("general.accent", null, "强调色", "主题色,颜色", "Accent");
         Row("general.login", null, "登录时自动打开", "开机,登录,自启,启动");

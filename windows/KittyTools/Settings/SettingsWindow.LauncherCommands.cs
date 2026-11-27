@@ -65,7 +65,10 @@ internal sealed partial class SettingsWindow
     /// <summary>一行「标题 ›」：点了推进子页（L4：网页搜索、功能开关、命令和别名都这样收成一行；PLAN-v28 X1 行尾能写状态）。</summary>
     private Button AddSubpageRow(string title, string detail, Action open, SettingsSummary.RowValue? value = null)
     {
-        var button = SettingsUi.PushRow(title, detail, value?.Text, value?.Problem == true, open);
+        // 子页里有新功能时推进行挂「新」（PLAN-v28 X10：新功能标记跟着行挪进子页）
+        var sub = SettingsIndex.Subpages.FirstOrDefault(subpage => subpage.Page == _currentPage && subpage.Title == title);
+        var fresh = sub is not null && PlaceIsNew(_currentPage, sub.Name);
+        var button = SettingsUi.PushRow(title, detail, value?.Text, value?.Problem == true, open, fresh ? WhatsNew.Label : null);
         _content.Children.Add(button);
         return button;
     }

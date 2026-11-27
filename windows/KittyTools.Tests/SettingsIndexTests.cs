@@ -138,6 +138,18 @@ public sealed class SettingsIndexTests
         Assert.IsTrue(SettingsIndex.PageWords("clipboard").Contains("透镜"), "页的词带上它的行");
     }
 
+    /// <summary>X10：带一节的新功能条目都对得上登记表里同一页的一行（行挪进子页、高级以后标记跟着走、推进行 / 「高级」也挂）。</summary>
+    [TestMethod]
+    public void WhatsNewSectionsMatchRows()
+    {
+        foreach (var entry in WhatsNew.Entries.Where(entry => entry.Section is not null && entry.Page is not null))
+        {
+            Assert.IsTrue(SettingsIndex.Items.Any(item => item.Page == entry.Page && item.Title == entry.Section) ||
+                          SettingsIndex.Subpages.Any(subpage => subpage.Page == entry.Page && subpage.Title == entry.Section),
+                $"新功能 {entry.Id} 的「{entry.Section}」不在 {entry.Page} 的登记表里");
+        }
+    }
+
     [TestMethod]
     public void Locations()
     {

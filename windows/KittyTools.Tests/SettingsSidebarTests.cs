@@ -75,6 +75,10 @@ public sealed class SettingsSidebarTests
         var added = SettingsSidebar.Build(pages, None, new[] { "keepAwake" });
         CollectionAssert.AreEqual(new string?[] { null, "文字与搜索", "截图与录制", "便签与提醒", "插件", null }, added.Select(group => group.Title).ToArray());
         CollectionAssert.AreEqual(new[] { "keepAwake" }, added[4].Pages.ToArray());
+        // PLAN-v28 D2：只放「全部插件」那一行时没有组标题
+        var single = SettingsSidebar.Build(pages.Append("plugins").ToList(), None, new[] { "plugins" });
+        CollectionAssert.AreEqual(new string?[] { null, "文字与搜索", "截图与录制", "便签与提醒", null, null }, single.Select(group => group.Title).ToArray());
+        CollectionAssert.AreEqual(new[] { "plugins" }, single[4].Pages.ToArray());
         // 关着的功能照样进「已关闭」，插件不进
         var off = SettingsSidebar.Build(pages, new HashSet<string> { "record" }, new[] { "keepAwake" });
         Assert.AreEqual("插件", off[^3].Title);
