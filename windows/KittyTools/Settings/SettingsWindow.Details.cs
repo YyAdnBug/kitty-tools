@@ -182,13 +182,13 @@ internal sealed partial class SettingsWindow
         }
 
         var settings = SettingsService.Current;
-        AddToggle("自动下载动画表情", "关掉后还没下好的动画表情先显示系统表情、不动，已经下好的照样动",
+        AddToggle("自动下载动画表情", "关掉后没下好的先显示系统表情",
             settings.EmojiPackDownloads,
             isOn =>
             {
                 settings.EmojiPackDownloads = isOn;
                 SettingsService.Save();
-            });
+            }, "还没下好的动画表情先显示系统表情、不动；已经下好的照样动。");
     }
 
     /// <summary>详情页里的一节：组名 + 这几样（控件左对齐、不拉满）。</summary>

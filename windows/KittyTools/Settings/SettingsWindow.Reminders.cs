@@ -52,7 +52,8 @@ internal sealed partial class SettingsWindow
             BuildPage("reminders");
         }
 
-        _content.Children.Add(Anchor("reminders.list", (FrameworkElement)SettingsUi.Section("提醒")));
+        _content.Children.Add(Anchor("reminders.list", (FrameworkElement)SettingsUi.Section("提醒", null,
+            "点一行编辑，拖动调整顺序，右键能上移、下移和删除；一次性的提醒点了「知道了」就删掉。示例默认关着，打开才响。")));
         if (reminders.Count == 0)
         {
             _content.Children.Add(SettingsUi.Footnote("还没有提醒，点下面的「＋」加一条"));
@@ -84,31 +85,31 @@ internal sealed partial class SettingsWindow
         menu.Items.Add(restore);
         add.Flyout = menu;
         _content.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0), Children = { add } });
-        _content.Children.Add(SettingsUi.Footnote(
-            "点一行编辑，拖动调整顺序，右键能上移、下移和删除；一次性的提醒点了「知道了」就删掉。示例默认关着，打开才响。" +
-            (isFull ? $"最多 {Reminders.MaxCount} 条，已经满了，删掉一条才能再加。" : string.Empty)));
+        // 页脚只留状态那句（PLAN-v28 X6：满了）
+        if (isFull)
+        {
+            _content.Children.Add(SettingsUi.Footnote($"最多 {Reminders.MaxCount} 条，已经满了，删掉一条才能再加。"));
+        }
 
         // 图标（R107，mac RemindersTab「图标」）：自动下载动画表情，和状态屏页那一行是同一个设置；表情包没发时整节不出
         if (EmojiPack.IsPublished)
         {
-            _content.Children.Add(SettingsUi.Section("图标"));
+            _content.Children.Add(SettingsUi.Section("图标", null, EmojiPackFootnote.TrimStart()));
             AddEmojiPackToggle();
-            _content.Children.Add(SettingsUi.Footnote(EmojiPackFootnote.TrimStart()));
         }
 
         // 到点之后（mac RemindersTab「到点之后」，REVIEW R102）
-        _content.Children.Add(SettingsUi.Section("到点之后"));
-        Anchor("reminders.snooze", AddCombo("「稍后」推多久", "提醒到点后点「稍后」，过这么久再提醒一次（全屏上另有 15 分钟、1 小时）",
+        _content.Children.Add(SettingsUi.Section("到点之后", null,
+            "电脑睡着、锁着屏、在状态屏里，或者没打开 Kitty 时到点的提醒，晚 5 分钟以内的照常提醒，更晚的回来后合成一条告诉你。" +
+            "每隔一阵的提醒碰上锁屏、睡眠，或者 5 分钟没碰键盘鼠标，算休息过了，回来重新数。正在录屏录音时边框和全屏都降成提示、也不出声。"));
+        Anchor("reminders.snooze", AddCombo("「稍后」推多久", "过这么久再提醒一次",
             Reminders.SnoozeChoices.Select(minutes => $"{minutes} 分钟").ToArray(),
             Math.Max(0, Array.IndexOf(Reminders.SnoozeChoices, settings.RemindersSnoozeMinutes)),
             index =>
             {
                 settings.RemindersSnoozeMinutes = Reminders.SnoozeChoices[index];
                 SettingsService.Save();
-            }));
-        _content.Children.Add(SettingsUi.Footnote(
-            "电脑睡着、锁着屏、在状态屏里，或者没打开 Kitty 时到点的提醒，晚 5 分钟以内的照常提醒，更晚的回来后合成一条告诉你。" +
-            "每隔一阵的提醒碰上锁屏、睡眠，或者 5 分钟没碰键盘鼠标，算休息过了，回来重新数。正在录屏录音时边框和全屏都降成提示、也不出声。"));
+            }, "提醒到点后点「稍后」，过这么久再提醒一次；全屏提醒上另有 15 分钟、1 小时。"));
     }
 
     /// <summary>一行提醒：表情（没选的是家族色块）+ 标题 + 摘要 + 开关；点一下编辑，右键 编辑… / 上移 / 下移 / 删除。</summary>

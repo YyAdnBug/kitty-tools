@@ -86,8 +86,11 @@ internal sealed partial class SettingsWindow
         var settings = SettingsService.Current;
         var on = settings.LauncherScripts;
         _content.Children.Add(SettingsUi.BackButton("启动器", "返回启动器设置", () => OpenLauncherSubpage(null)));
-        _content.Children.Add(Header("脚本命令", "脚本文件夹里的每个脚本就是启动器里的一条命令"));
-        Anchor("launcher.scriptsEnabled", AddToggle("启用脚本命令", "PowerShell（.ps1）、批处理（.cmd）、装了 Python 时的 .py；关掉后启动器里不出、自带的几条也不出",
+        // 页头一句是现在的状态（PLAN-v28 X2，和推进行行尾同一个函数）
+        var status = SettingsSummary.Scripts(on, ScriptLibrary.Scripts.Count(script => !script.IsBundled), on ? ScriptLibrary.Problems.Count : 0);
+        _content.Children.Add(SettingsUi.Header("脚本命令", status.Text == "关" ? "关着：启动器里不出脚本" : status.Text,
+            Pages.FirstOrDefault(entry => entry.Tag == "launcher").Glyph, FamilyForPage("launcher"), status.Problem));
+        Anchor("launcher.scriptsEnabled", AddToggle("启用脚本命令", "每个脚本是启动器里的一条命令",
             on, isOn =>
             {
                 settings.LauncherScripts = isOn;
@@ -95,7 +98,7 @@ internal sealed partial class SettingsWindow
                 TouchScriptsNew();
                 ScriptLibrary.Refresh();
                 BuildPage("launcher");
-            }));
+            }, "PowerShell（.ps1）、批处理（.cmd）、装了 Python 时的 .py；关掉后启动器里不出、自带的几条也不出。"));
 
         Button Action(string text, Action run)
         {
@@ -117,14 +120,16 @@ internal sealed partial class SettingsWindow
         }
 
         AddSubpageRow("怎么写脚本", "三步上手、开头几行怎么写、结果给谁，带一个能直接用的例子", () => OpenLauncherSubpage("script-guide"));
-        _content.Children.Add(SettingsUi.Card("让 AI 来写", "把写法说明贴给你常用的 AI、在最后写上想做什么；它给的脚本复制下来，点「从剪贴板新建」",
-            Buttons(Action("复制写法说明", CopyScriptGuide), Action("从剪贴板新建", NewScriptFromClipboard))));
+        _content.Children.Add(SettingsUi.Card("让 AI 来写", "把写法说明给 AI，再从剪贴板新建",
+            Buttons(Action("复制写法说明", CopyScriptGuide), Action("从剪贴板新建", NewScriptFromClipboard)),
+            info: "把写法说明贴给你常用的 AI、在最后写上想做什么；它给的脚本复制下来，点「从剪贴板新建」。"));
         _content.Children.Add(SettingsUi.Card("脚本文件夹", ScriptLibrary.DefaultFolder,
             Buttons(Action("新建脚本", () => _ = NewScriptAsync()), Action("在资源管理器中打开", () => LauncherOpeners.Start(ScriptLibrary.EnsureDefaultFolder())))));
         if (on && ScriptLibrary.HasNoOwnScripts)
         {
-            _content.Children.Add(SettingsUi.Card("还没有自己的脚本", "用查天气的例子新建一个，在启动器里输「tq 空格 北京」就能跑；或者点上面的「新建脚本」选好语言和结果方式",
-                Action("用例子新建", NewScriptExample)));
+            _content.Children.Add(SettingsUi.Card("还没有自己的脚本", "用查天气的例子新建一个",
+                Action("用例子新建", NewScriptExample),
+                info: "在启动器里输「tq 空格 北京」就能跑；或者点上面的「新建脚本」选好语言和结果方式。"));
         }
 
         // 另加的文件夹（只读）
@@ -173,9 +178,14 @@ internal sealed partial class SettingsWindow
             }
         }
 
-        _content.Children.Add(SettingsUi.Footnote(
-            "脚本以你的身份运行，能用 Kitty Tools 已有的权限，只放你信得过的脚本；从网上下载的，第一次运行前会先给你看一眼全文。" +
-            "脚本文件不跟着同步，也不进设置的导出；别名和开关跟着导出导入走。"));
+        // 页脚只留后果那一句（PLAN-v28 X6），其余进它后面的 ⓘ
+        var safety = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(2, 0, 2, 4) };
+        var safetyText = (TextBlock)SettingsUi.Footnote("脚本以你的身份运行、能用 Kitty Tools 已有的权限，只放信得过的。");
+        safetyText.Margin = new Thickness(0);
+        safety.Children.Add(safetyText);
+        safety.Children.Add(SettingsUi.InfoButton("脚本的权限",
+            "从网上下载的，第一次运行前会先给你看一眼全文。脚本文件不跟着同步，也不进设置的导出；别名和开关跟着导出导入走。"));
+        _content.Children.Add(safety);
     }
 
     private void BuildScriptGuide()

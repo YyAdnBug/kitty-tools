@@ -45,11 +45,11 @@ internal sealed partial class SettingsWindow
             });
         }
 
-        Anchor("keepAwake.display", AddToggle("屏幕也不熄", "关掉后只不让系统睡，屏幕照常按电源设置熄灭", settings.KeepAwakeDisplay, isOn =>
+        Anchor("keepAwake.display", AddToggle("屏幕也不熄", string.Empty, settings.KeepAwakeDisplay, isOn =>
         {
             settings.KeepAwakeDisplay = isOn;
             SettingsService.Save();
-        }));
+        }, "关掉后只不让系统睡，屏幕照常按电源设置熄灭。"));
 
         // 定时（跟着这台电脑，不同步）
         _content.Children.Add(SettingsUi.Section("定时", "在这些时候自动保持唤醒；手动开的一段优先。跟着设置导出，不同步"));
@@ -114,7 +114,7 @@ internal sealed partial class SettingsWindow
         var times = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
         times.Children.Add(start);
         times.Children.Add(end);
-        var timesCard = SettingsUi.Card("时段", "结束早于开始时算到第二天（周五 22:00–2:00 管到周六凌晨）", times);
+        var timesCard = SettingsUi.Card("时段", "结束早于开始时算到第二天", times, info: "比如周五 22:00–2:00 管到周六凌晨。");
         void Times()
         {
             start.IsEnabled = !schedule.AllDay;
@@ -144,8 +144,14 @@ internal sealed partial class SettingsWindow
         _content.Children.Add(timesCard);
         Show(schedule);
         _content.Children.Add(summary);
-        _content.Children.Add(SettingsUi.Footnote(
+        // 两段页脚进 ⓘ（mac 规格 §5.9 保持唤醒）
+        var caveat = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(2, 0, 2, 4) };
+        var caveatText = (TextBlock)SettingsUi.Footnote("合上盖子、重启以后照样会停");
+        caveatText.Margin = new Thickness(0);
+        caveat.Children.Add(caveatText);
+        caveat.Children.Add(SettingsUi.InfoButton("合上盖子、重启以后照样会停",
             "合上笔记本的盖子照样会睡（看 设置 › 系统 › 电源 里「合上盖子时」）。手动开的那一段不跨重启：Kitty Tools 退出、电脑重启后就停了。"));
+        _content.Children.Add(caveat);
 
         AddPluginRemove(Feature.KeepAwake);
     }

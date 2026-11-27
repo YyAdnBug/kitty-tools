@@ -155,12 +155,12 @@ internal sealed partial class SettingsWindow
         _content.Children.Add(SettingsUi.Footnote(
             "名单里的应用在前台时，上面的快捷键不响应，按键交给那个应用。也可以在那个应用里打开托盘菜单，从菜单里停用。"));
 
-        AddToggle("全屏游戏时停用快捷键", "独占全屏的游戏和演示模式里不响应快捷键；全屏看视频、F11 的网页不算。无边框全屏的游戏认不出来，要的话加进上面的名单",
+        AddToggle("全屏游戏时停用快捷键", "独占全屏的游戏和演示模式里不响应",
             settings.HotKeyBlockFullscreen,
             isOn =>
             {
                 SettingsService.Current.HotKeyBlockFullscreen = isOn;
                 SettingsService.Save();
-            });
+            }, "全屏看视频、F11 的网页不算。无边框全屏的游戏认不出来，要的话加进上面的名单。");
     }
 }

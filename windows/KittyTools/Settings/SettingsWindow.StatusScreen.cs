@@ -53,7 +53,12 @@ internal sealed partial class SettingsWindow
         }
 
         // 状态
-        _content.Children.Add(Anchor("statusScreen.list", (FrameworkElement)SettingsUi.Section("状态")));
+        _content.Children.Add(Anchor("statusScreen.list", (FrameworkElement)SettingsUi.Section("状态", null,
+            "点一行编辑，拖动调整顺序，右键能上移、下移和删除。" +
+            (settings.StatusScreenHotKeyEntersFirst
+                ? "排在最前面的状态就是全局快捷键进入的那个。"
+                : "按全局快捷键选状态时，卡片也按这个顺序排。") +
+            "至少留一个；删掉的自带状态可以从「＋」里恢复。")));
         // 拖动排序、键盘 Enter / Delete / Alt + ↑↓（PLAN-v23 L1，mac StatusScreenTab 的 List .onMove / onDeleteCommand）
         var presetRows = presets.Select((_, index) => StatusPresetRow(presets, index, Persist)).ToList();
         _content.Children.Add(ReorderableList(presetRows, "状态（拖动排序）", order => Persist(order.Select(index => presets[index]).ToList())));
@@ -77,52 +82,56 @@ internal sealed partial class SettingsWindow
         addMenu.Items.Add(restore);
         add.Flyout = addMenu;
         _content.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0), Children = { add } });
-        _content.Children.Add(SettingsUi.Footnote(
-            "点一行编辑，拖动调整顺序，右键能上移、下移和删除。" +
-            (settings.StatusScreenHotKeyEntersFirst
-                ? "排在最前面的状态就是全局快捷键进入的那个。"
-                : "按全局快捷键选状态时，卡片也按这个顺序排。") +
-            "至少留一个；删掉的自带状态可以从「＋」里恢复。" +
-            (isFull ? $"最多 {StatusPresets.MaxCount} 个，已经满了，删掉一个才能再加。" : string.Empty)));
+        // 页脚只留状态那句（PLAN-v28 X6：满了）
+        if (isFull)
+        {
+            _content.Children.Add(SettingsUi.Footnote($"最多 {StatusPresets.MaxCount} 个，已经满了，删掉一个才能再加。"));
+        }
 
         // 进入
         _content.Children.Add(SettingsUi.Section("进入"));
-        Anchor("statusScreen.entersFirst", AddToggle("按快捷键直接进入排在最前面的状态", "关着时，按快捷键先出一排预览卡片，选一个再进",
+        Anchor("statusScreen.entersFirst", AddToggle("按快捷键直接进入排在最前面的状态", "关着时先出一排卡片，选一个再进",
             settings.StatusScreenHotKeyEntersFirst,
             isOn =>
             {
                 settings.StatusScreenHotKeyEntersFirst = isOn;
                 SettingsService.Save();
-            }));
-        _content.Children.Add(SettingsUi.Footnote("快捷键在 设置 › 快捷键 里设置，默认没有。在托盘、主界面、启动器里选一个状态，都是直接进入。"));
+            }, "快捷键在 设置 › 快捷键 里设置，默认没有。在托盘、主界面、启动器里选一个状态，都是直接进入。"));
 
         // 动画
-        _content.Children.Add(SettingsUi.Section("动画"));
-        Anchor("statusScreen.animations", AddToggle("告示上的动画", "关掉后表情不动、进入时不做出场、屏幕边上不冒眼睛；标题照样晃一下",
+        _content.Children.Add(SettingsUi.Section("动画", null,
+            "系统设置里关了「动画效果」时，这些动画都不做，标题也不晃。" + (EmojiPack.IsPublished ? EmojiPackFootnote : string.Empty)));
+        Anchor("statusScreen.animations", AddToggle("告示上的动画", "关掉后表情不动、不做出场",
             settings.StatusScreenAnimations,
             isOn =>
             {
                 settings.StatusScreenAnimations = isOn;
                 SettingsService.Save();
-            }));
+            }, "关掉后表情不动、进入时不做出场、屏幕边上不冒眼睛；标题照样晃一下。"));
         AddEmojiPackToggle();
-        _content.Children.Add(SettingsUi.Footnote("系统设置里关了「动画效果」时，这些动画都不做，标题也不晃。" + (EmojiPack.IsPublished ? EmojiPackFootnote : string.Empty)));
 
         // 退出
         _content.Children.Add(SettingsUi.Section("退出"));
         AddShortcutsRow("statusScreen", "怎么退出",
             "按住 Esc 两秒；或者动一下鼠标，再用鼠标按住屏幕底部出现的提示两秒。到了自动结束的时间、解锁电脑回来时，也会结束。");
-        Anchor("statusScreen.exitHint", AddToggle("有人碰键盘或鼠标时显示怎么退出", "关掉后屏幕上不再提示，只能按住 Esc 两秒退出；键盘上没有 Esc 键的别关",
+        Anchor("statusScreen.exitHint", AddToggle("有人碰键盘或鼠标时显示怎么退出", "关掉后只能按住 Esc 两秒退出",
             settings.StatusScreenExitHint,
             isOn =>
             {
                 settings.StatusScreenExitHint = isOn;
                 SettingsService.Save();
-            }));
+            }, "关掉后屏幕上不再提示；键盘上没有 Esc 键的别关。"));
         _content.Children.Add(PasscodeRow());
-        _content.Children.Add(SettingsUi.Footnote(
-            "状态屏是告示加防误触，不是安全措施：没设退出密码时照着提示谁都能退出，设了也拦不住 Ctrl+Alt+Del、电源键和合盖。" +
+        // 安全那段只留后果那句在页脚，其余进「退出」的 ⓘ 不合适（是一整组的说明）：挂在页脚这一句后面的 ⓘ 里
+        var safety = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        var safetyText = (TextBlock)SettingsUi.Footnote("状态屏是告示加防误触，不是安全措施。");
+        safetyText.Margin = new Thickness(0);
+        safety.Children.Add(safetyText);
+        safety.Children.Add(SettingsUi.InfoButton("状态屏不是安全措施",
+            "没设退出密码时照着提示谁都能退出，设了也拦不住 Ctrl+Alt+Del、电源键和合盖。" +
             "要防别人动电脑，进入之后再锁定屏幕（Win+L）：电脑照样不睡，回来解锁就结束——忘了退出密码也这样出来。"));
+        safety.Margin = new Thickness(2, 0, 2, 4);
+        _content.Children.Add(safety);
     }
 
     /// <summary>一行状态（mac StatusPresetRow）：表情的静止画面（没选的是家族色块）+ 标题 + 摘要；点一下编辑，右键 编辑… / 上移 / 下移 / 删除。</summary>

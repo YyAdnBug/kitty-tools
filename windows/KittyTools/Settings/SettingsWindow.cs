@@ -1739,9 +1739,10 @@ internal sealed partial class SettingsWindow : Window
             buttons.Children.Add(choose);
             _content.Children.Add(Anchor(SyncRow, SettingsUi.Card(
                 "在几台电脑之间同步",
-                "选一个几台电脑都看得到的空文件夹（比如在 OneDrive 里新建一个），或者连一个 WebDAV 服务器；每台选同一个" +
-                "（Mac 版 0.7.0 起也能选这个文件夹，0.9.0 起也能连服务器）",
-                buttons)));
+                "每台选同一个文件夹或服务器",
+                buttons,
+                info: "选一个几台电脑都看得到的空文件夹（比如在 OneDrive 里新建一个），或者连一个 WebDAV 服务器；每台选同一个" +
+                      "（Mac 版 0.7.0 起也能选这个文件夹，0.9.0 起也能连服务器）。")));
         }
         else
         {

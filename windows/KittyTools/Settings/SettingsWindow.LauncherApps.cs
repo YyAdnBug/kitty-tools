@@ -200,13 +200,13 @@ internal sealed partial class SettingsWindow
 
         // ---- 应用文件夹
         _content.Children.Add(SettingsUi.Section("应用文件夹"));
-        AddToggle("把运行过的程序也列出来", "在资源管理器里双击运行过的程序（便携软件）也能搜到；读的是 Windows 记的运行记录，只在这台电脑上",
+        AddToggle("把运行过的程序也列出来", "双击运行过的便携软件也能搜到",
             settings.LauncherRecentPrograms, isOn =>
             {
                 settings.LauncherRecentPrograms = isOn;
                 SettingsService.Save();
                 AppCatalog.Instance?.Rescan();
-            });
+            }, "在资源管理器里双击运行过的程序也列进来；读的是 Windows 记的运行记录，只在这台电脑上。");
         var folders = settings.LauncherAppFolders ?? new List<string>();
         var folderList = new StackPanel { Spacing = 2 };
         if (folders.Count == 0)
