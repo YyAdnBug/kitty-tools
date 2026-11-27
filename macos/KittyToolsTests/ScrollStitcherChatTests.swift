@@ -336,6 +336,69 @@ struct ScrollStitcherChatTests {
       #expect(abs(stitcher.outputHeight - (span + Self.height)) <= 5)
     }
   }
+
+  /// 一条条一模一样的消息（同一个头像、同样大的气泡，一条 112 行），每条只有一个不同的字，字每帧都画得有一两级不一样
+  /// （小数位置上的抗锯齿）：头像在错开整数条的位置上也逐字节对得上，字逐字节哪儿都对不上
+  nonisolated private static let pitch = 112
+  nonisolated private static let letterRows = 2000
+  /// 第几行第几列是不是字
+  nonisolated private static let letterInk: [Bool] = {
+    var ink = [Bool](repeating: false, count: chatWidth * letterRows)
+    var y = 16
+    var message: UInt64 = 0
+    while y + pitch < letterRows {
+      var rng = ChatGenerator(state: 900 + message)
+      for row in (y + 10)..<(y + 26) {
+        for x in 276..<292 where rng.next() % 3 == 0 { ink[row * chatWidth + x] = true }
+      }
+      y += pitch
+      message += 1
+    }
+    return ink
+  }()
+
+  private static func letterFrame(at offset: Int, seed: Int) -> CGImage {
+    var bytes = [UInt8](repeating: 255, count: chatWidth * 4 * height)
+    for y in 0..<height {
+      for x in 0..<chatWidth {
+        var value: UInt8 = y < title ? 50 : y >= height - input ? 40 : 30
+        if (title..<(height - input)).contains(y) {
+          let row = offset + y - title
+          let message = (row - 16) % pitch
+          if row >= 16, message < 36, (260..<308).contains(x) { value = 90 }
+          if row >= 16, message < 64, (300..<348).contains(x) {
+            value = UInt8(100 + (message * 17 + x * 5) % 80)
+          }
+          if letterInk[row * chatWidth + x] { value = UInt8(200 + (seed * 3 + x * 7 + y * 13) % 5) }
+        }
+        bytes[(y * chatWidth + x) * 4] = value
+        bytes[(y * chatWidth + x) * 4 + 1] = value
+        bytes[(y * chatWidth + x) * 4 + 2] = value
+      }
+    }
+    return image(bytes, width: chatWidth)
+  }
+
+  @Test func stitchesRepeatedMessages() throws {
+    // issue #57 第三轮（微信真帧）：投票分不出对的位移和错开一条消息的，原来一直报对不上（录的 364 帧里 222 帧）；
+    // 也会投给错开一条的那个，长图里多出、少掉几条。现在挑出候选逐段比字差多少
+    let down = [100, 130, 170, 200, 250, 290, 330, 400, 440, 500, 570, 600, 640]
+    for offsets in [down, down.reversed().map { $0 + 500 }] {
+      var stitcher = try #require(
+        ScrollStitcher(
+          first: Self.letterFrame(at: offsets[0], seed: 0), scrollbarWidth: Self.scrollbar,
+          maxHeight: 100_000))
+      for (index, offset) in offsets.enumerated().dropFirst() {
+        let outcome = stitcher.add(Self.letterFrame(at: offset, seed: index))
+        guard case .moved = outcome else {
+          Issue.record("滚到 \(offset) 没接上：\(outcome)，\(stitcher.attempts)")
+          break
+        }
+      }
+      let span = abs(offsets.last! - offsets[0])
+      #expect(stitcher.outputHeight == span + Self.height, "\(stitcher.attempts)")
+    }
+  }
 }
 
 /// 固定种子的 SplitMix64
