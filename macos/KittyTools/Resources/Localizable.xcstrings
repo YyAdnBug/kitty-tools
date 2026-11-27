@@ -44574,6 +44574,16 @@
         }
       }
     },
+    "要翻译的文字会发到哔哩哔哩的服务器。官方没有公布这个接口的使用条款和隐私说明；默认的 35B-A3B 是官方标明的预览版，效果和能不能用都可能变化。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Text you translate is sent to Bilibili’s servers. Bilibili hasn’t published terms of use or a privacy policy for this service. The default 35B-A3B model is marked as a preview, so its quality and availability may change."
+          }
+        }
+      }
+    },
     "要翻译的文字和密钥会发到这些地址（共 %lld 个）：" : {
       "localizations" : {
         "en" : {

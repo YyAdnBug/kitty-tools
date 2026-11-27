@@ -1,5 +1,5 @@
 // 设置 › 翻译 › 某个服务（N12 详情页，从服务列表推进来）：页头 40 pt 服务图标 + 名称 + 状态（在表单外面，和列表页的页头同一个位置），
-// 下面分组表单：启用、各服务自己的选项（智谱两档免费模型、哔哩哔哩 Index 三种规模；自建 AI 实例的名称 / 协议 / 地址 / 模型）、钥匙串里的密钥、
+// 下面分组表单：启用、各服务自己的选项（智谱两档免费模型、哔哩哔哩 Index 三种规模和隐私说明；自建 AI 实例的名称 / 协议 / 地址 / 模型）、钥匙串里的密钥、
 // 测试连接（成功时自动打开启用）；自建 AI 实例可以删除（连同密钥）。大模型服务另有「浮窗里的回答」一组：讲解外文句子、附加要求（issue #35）。改动即时生效（服务列表写 UserDefaults，密钥直接写钥匙串）。
 // AI 实例的模型（体检 B27）：地址（Anthropic 可空）和 Key 齐了（本机 / 局域网地址不要 Key）就在后台取一次服务端的
 // 模型列表，模型框打字时按已输入的字列出来（textInputSuggestions，macOS 15）；右边 ↻ 重新读取，取的时候转圈。
@@ -72,6 +72,13 @@ struct TranslateServiceDetail: View {
         Toggle("启用", isOn: service.isEnabled)
         options(service)
         if current.kind == .ai { modelRow(service) }
+      } footer: {
+        // 哔哩哔哩 Index 的隐私说明（2026-11-27 用户要的）：从「+」加的时候也会推进这一页
+        if current.kind == .bilibili {
+          SectionFootnote(
+            "要翻译的文字会发到哔哩哔哩的服务器。官方没有公布这个接口的使用条款和隐私说明；默认的 35B-A3B 是官方标明的预览版，效果和能不能用都可能变化。"
+          )
+        }
       }
       // 讲解和附加要求（issue #35）：只有大模型服务有；只在翻译浮窗里用
       if current.isStreaming { answerSection(service) }

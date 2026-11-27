@@ -647,8 +647,8 @@ struct ServiceTile: View {
       switch service.kind {
       case .zhipu, .baidu, .youdao, .google, .deepl, .microsoft, .volcengine, .tencent:
         service.kind.rawValue
-      // 有道词典和有道翻译是同一个牌子；系统翻译没有 logo，用色块。
-      // ponytail: 哔哩哔哩 Index 先用色块（B 站蓝底白字「哔」），要图标就从官网取一张 ≥ 128 px 的放进 ServiceLogo
+      // 有道词典和有道翻译是同一个牌子；系统翻译没有 logo，用色块；哔哩哔哩 Index 用官网图标（ServiceIcons，
+      // 取到之前是 B 站蓝底白字「哔」的色块）
       case .youdaoDict: "youdao"
       case .apple, .bilibili: nil
       case .ai: service.aiProtocol == .azure ? "microsoft" : AIVendor(service: service)?.rawValue
