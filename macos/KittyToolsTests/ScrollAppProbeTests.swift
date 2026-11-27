@@ -8,6 +8,11 @@
 //   （同一个目录）… '-only-testing:KittyToolsTests/ScrollAppProbeTests/replay()'
 // 另可加 TEST_RUNNER_KITTY_LIVE_SCROLL_APP_BUNDLE=<bundle id>（默认 WPS：com.kingsoft.wpsoffice.mac）、
 // TEST_RUNNER_KITTY_LIVE_SCROLL_APP_DOCS=doc,sheet,pdf（录哪几份，默认全部）。
+// watch() 只录不滚、用户自己在上面走一遍长截图（_WATCH=<最多几秒>；_WATCH_TITLE=<标题里的字> 只录那个 App 里标题含这些字的
+// 一扇窗口，比如微信双击开成独立窗口的测试会话——只在用户同意、只录那一扇；_WATCH_BODY=1 只录中间一块），存成 replay() 能回放的样子。
+// replay() 加 TEST_RUNNER_KITTY_LIVE_SCROLL_APP_VERBOSE=<到第几帧> 打印每帧每一步的票数和复核比过的几个位移（Attempt）。
+// 判断真帧接得对不对：拿那个 App 浮动滚动条的位置换算成真位移（滑块顶边挪的像素 × 可视高 / 滑块长），别拿逐像素差最小的位移——
+// 一屏同样的消息会骗它（2026-11-27 微信那组，中位误差 4 像素）。
 import AppKit
 import ScreenCaptureKit
 import Testing
@@ -126,44 +131,75 @@ struct ScrollAppProbeTests {
     context.closePDF()
   }
 
-  /// 只录不滚（TEST_RUNNER_KITTY_LIVE_SCROLL_APP_WATCH=<秒>）：用那个 App 打开生成的 PDF，录它最大那扇窗口，
+  /// 只录不滚（TEST_RUNNER_KITTY_LIVE_SCROLL_APP_WATCH=<最多几秒>，录到 20 帧以后画面停 8 秒就收）：用那个 App 打开生成的 PDF，录它最大那扇窗口，
   /// 画面变了才存一帧（带时刻），期间由用户自己在上面走一遍长截图——看框选遮罩盖上、拿掉的前后那个 App 画了什么
   /// （2026-11-26：WPS 的 PDF 长截图一开始第一帧就和之后的帧一张都对不上）
   @Test func watch() async throws {
     let seconds = try #require(
       ProcessInfo.processInfo.environment["KITTY_LIVE_SCROLL_APP_WATCH"].flatMap(Double.init))
     try #require(CGPreflightScreenCaptureAccess(), "要「屏幕录制」授权")
-    let app = try #require(
-      NSWorkspace.shared.urlForApplication(withBundleIdentifier: Self.bundle), "没装 \(Self.bundle)")
     try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
-    let pdf = try #require(Self.makeDocuments().first { $0.pathExtension == "pdf" })
-    let configuration = NSWorkspace.OpenConfiguration()
-    configuration.activates = true
-    let running = try await NSWorkspace.shared.open(
-      [pdf], withApplicationAt: app, configuration: configuration)
-    try await Task.sleep(for: .seconds(3))
-    let content = try await SCShareableContent.excludingDesktopWindows(
-      false, onScreenWindowsOnly: true)
-    let windows = content.windows.filter {
-      $0.owningApplication?.processID == running.processIdentifier && $0.windowLayer == 0
+    // TEST_RUNNER_KITTY_LIVE_SCROLL_APP_WATCH_TITLE=<标题里的字>：不开文档，等那个 App 里标题含这些字的窗口出现（最多等录制的时长），
+    // 只录那一扇（微信把一个会话双击开成的独立窗口：不录会话列表，2026-11-26 用户同意只录这一扇）
+    let title = ProcessInfo.processInfo.environment["KITTY_LIVE_SCROLL_APP_WATCH_TITLE"]
+    var window: SCWindow?
+    if let title {
+      let deadline = Date().addingTimeInterval(seconds)
+      while window == nil, Date() < deadline {
+        let content = try await SCShareableContent.excludingDesktopWindows(
+          false, onScreenWindowsOnly: true)
+        window = content.windows.first {
+          $0.owningApplication?.bundleIdentifier == Self.bundle && $0.windowLayer == 0
+            && ($0.title ?? "").contains(title)
+        }
+        if window == nil { try await Task.sleep(for: .seconds(1)) }
+      }
+    } else {
+      let app = try #require(
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: Self.bundle),
+        "没装 \(Self.bundle)")
+      let pdf = try #require(Self.makeDocuments().first { $0.pathExtension == "pdf" })
+      let configuration = NSWorkspace.OpenConfiguration()
+      configuration.activates = true
+      let running = try await NSWorkspace.shared.open(
+        [pdf], withApplicationAt: app, configuration: configuration)
+      try await Task.sleep(for: .seconds(3))
+      let content = try await SCShareableContent.excludingDesktopWindows(
+        false, onScreenWindowsOnly: true)
+      window = content.windows.filter {
+        $0.owningApplication?.processID == running.processIdentifier && $0.windowLayer == 0
+      }.max { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
     }
-    let window = try #require(
-      windows.max { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height })
+    let target = try #require(window, "没找到要录的窗口")
     let screen = try #require(NSScreen.screens.first)
     let scale = screen.backingScaleFactor
-    let filter = SCContentFilter(desktopIndependentWindow: window)
+    let filter = SCContentFilter(desktopIndependentWindow: target)
     let stream = SCStreamConfiguration()
-    stream.width = Int(window.frame.width * scale)
-    stream.height = Int(window.frame.height * scale)
+    // TEST_RUNNER_KITTY_LIVE_SCROLL_APP_WATCH_BODY=1：只录中间页面那一块（同 capture 的 body），存成 replay() 能直接回放的样子
+    let body = ProcessInfo.processInfo.environment["KITTY_LIVE_SCROLL_APP_WATCH_BODY"] == "1"
+    var area = CGRect(origin: .zero, size: target.frame.size)
+    if body {
+      area = CGRect(
+        x: area.width * 0.2, y: 160, width: area.width * 0.6, height: area.height - 220)
+      stream.sourceRect = area
+    }
+    stream.width = Int(area.width * scale)
+    stream.height = Int(area.height * scale)
     stream.showsCursor = false
-    let folder = Self.directory.appending(path: "watch")
+    let replayable = body || title != nil
+    let folder = Self.directory.appending(
+      path: title != nil ? "watch-window" : body ? "watch-body" : "watch")
     try? FileManager.default.removeItem(at: folder)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     print("scroll-watch 开始录 \(Int(seconds)) 秒：\(Date())")
     var times: [Double] = []
     var last = 0
     let start = Date()
-    while Date().timeIntervalSince(start) < seconds {
+    var lastChange = start
+    // 录到 20 帧以后画面停了 8 秒就收（用户滚完了），不用等满
+    while Date().timeIntervalSince(start) < seconds,
+      times.count < 20 || Date().timeIntervalSince(lastChange) < 8
+    {
       guard
         let image = try? await SCScreenshotManager.captureImage(
           contentFilter: filter, configuration: stream),
@@ -172,6 +208,7 @@ struct ScrollAppProbeTests {
       let hash = data.hashValue
       guard hash != last else { continue }
       last = hash
+      lastChange = Date()
       let rowBytes = image.width * 4
       var pixels = Data(count: rowBytes * image.height)
       pixels.withUnsafeMutableBytes { buffer in
@@ -186,7 +223,8 @@ struct ScrollAppProbeTests {
       times.append(Date().timeIntervalSince1970)
     }
     let meta: [String: Any] = ["width": stream.width, "height": stream.height, "epoch": times]
-    try JSONSerialization.data(withJSONObject: meta).write(to: folder.appending(path: "watch.json"))
+    try JSONSerialization.data(withJSONObject: meta).write(
+      to: folder.appending(path: replayable ? "meta.json" : "watch.json"))
     print("scroll-watch 存了 \(times.count) 帧")
   }
 
@@ -310,7 +348,7 @@ struct ScrollAppProbeTests {
           as? [String: Any])
       let width = try #require(meta["width"] as? Int)
       let height = try #require(meta["height"] as? Int)
-      let count = (meta["times"] as? [Double])?.count ?? 0
+      let count = ((meta["times"] ?? meta["epoch"]) as? [Double])?.count ?? 0  // watch 存的是 epoch
       func frame(_ index: Int) throws -> CGImage {
         let data = try Data(contentsOf: folder.appending(path: String(format: "%04d.raw", index)))
         return CGImage(
@@ -324,6 +362,7 @@ struct ScrollAppProbeTests {
       }
       guard count > 1 else { continue }
       var reference = try frame(0)
+      var first = reference
       var stitcher = try #require(
         ScrollStitcher(first: reference, scrollbarWidth: 32, maxHeight: 200_000))
       var tags: [String] = []
@@ -336,9 +375,22 @@ struct ScrollAppProbeTests {
         let start = clock.now
         let prepared = await ScrollStitcher.frame(image, layout: stitcher.layout)
         let middle = clock.now
-        let outcome = stitcher.add(prepared)
+        var outcome = stitcher.add(prepared)
+        // 同长截图会话：还没拼上过东西时对不上的那一帧重新当第一帧（录制开始时那个 App 可能还没拿到焦点）
+        if ScrollCapture.restarts(outcome, hasScrolled: false, stitched: reference !== first) {
+          stitcher.restart(from: prepared)
+          reference = image
+          first = image
+          outcome = .unchanged
+        }
         prepare += middle - start
         stitch += clock.now - middle
+        if let limit = ProcessInfo.processInfo.environment["KITTY_LIVE_SCROLL_APP_VERBOSE"]
+          .flatMap(Int.init), index <= limit
+        {
+          print(
+            "scroll-frame \(folder.lastPathComponent) #\(index) \(outcome): \(stitcher.attempts)")
+        }
         switch outcome {
         case .moved:
           tags.append("\(stitcher.lastShift)")

@@ -238,7 +238,9 @@ TEST_RUNNER_KITTY_TRANSLATE_PROBE=1 xcodebuild -project macos/KittyTools.xcodepr
 # 长截图对着真 App 录帧再离线回放（按需，issue #57；要「屏幕录制」授权）：record() 用那个 App（默认 WPS，另加
 # TEST_RUNNER_KITTY_LIVE_SCROLL_APP_BUNDLE=<bundle id>）打开自己生成的测试文档和表格，**会把光标挪到它的窗口中间、发合成滚轮约 2 分钟，
 # 跑之前先问用户、手离开键鼠**；用户的聊天、文档一律不拍。帧是裸 BGRA（几 GB），看完删目录。replay() 用当前的 ScrollStitcher
-# 把存下的帧拼一遍，报每帧接没接上、对不上时每一步的最高票、算帧 / 拼接耗时（量耗时加 SWIFT_OPTIMIZATION_LEVEL=-O 和单独的 -derivedDataPath）
+# 把存下的帧拼一遍，报每帧接没接上、对不上时每一步的最高票、算帧 / 拼接耗时（量耗时加 SWIFT_OPTIMIZATION_LEVEL=-O 和单独的 -derivedDataPath；
+# 加 _VERBOSE=<到第几帧> 打印每帧每一步的票和复核）。watch() 只录不滚、用户自己走一遍长截图（_WATCH=<最多几秒>，_WATCH_TITLE=<标题里的字>
+# 只录那一扇窗口：微信测试会话的独立窗口这类只在用户同意时录）；判断真帧接得对不对拿那个 App 的滚动条位置当真值（见文件头）
 TEST_RUNNER_KITTY_LIVE_SCROLL_APP=/tmp/kitty-scroll xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/ScrollAppProbeTests/record()'
 
