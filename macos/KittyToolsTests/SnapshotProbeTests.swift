@@ -5773,7 +5773,8 @@ struct SnapshotProbeTests {
     let prefs = try #require(UserDefaults(suiteName: name))
     defer { prefs.removePersistentDomain(forName: name) }
     prefs.set(true, forKey: Feature.trackpadGestures.prefsKey)
-    let conflicts = TrackpadGesturesTab.Fixed(conflicts: .init(lookUp: true, drag: true))
+    let conflicts = TrackpadGesturesTab.Fixed(
+      conflicts: .init(lookUp: true, drag: true, tapToClick: true))
     for dark in [false, true] {
       try snapshot(
         TrackpadGesturesTab(fixed: conflicts).defaultAppStorage(prefs),

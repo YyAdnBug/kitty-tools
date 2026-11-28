@@ -78,12 +78,17 @@ struct TrackpadGesturesTests {
     #expect(frame(Self.finger(0.085, 0.95), 30) == nil)
     #expect(frame(Self.finger(0.095, 0.95), 30.05) == nil)
     #expect(frame([], 30.1) == nil)
-    // 两根手指都在角上；一根抬起来又换了一根
+    // 两根手指都在角上不算
     #expect(frame(Self.finger(0.03, 0.03) + Self.finger(0.06, 0.05, id: 2), 31) == nil)
     #expect(frame([], 31.1) == nil)
+    // 快快点两下、中间没有一帧是空的（前一根还在「正在离开」，后一根已经碰上；2026-11-28 真机探针）：换了一根就是两下
     #expect(frame(Self.finger(0.03, 0.03), 32) == nil)
-    #expect(frame(Self.finger(0.03, 0.04, id: 2), 32.05) == nil)
-    #expect(frame([], 32.1) == nil)
+    #expect(frame(Self.finger(0.03, 0.04, id: 2), 32.12) == .corner(.bottomLeft))
+    #expect(frame([], 32.2) == .corner(.bottomLeft))
+    // 换上来的那一根挪出了角，第二下不算，第一下照样算
+    #expect(frame(Self.finger(0.03, 0.03), 33) == nil)
+    #expect(frame(Self.finger(0.3, 0.3, id: 2), 33.1) == .corner(.bottomLeft))
+    #expect(frame([], 33.2) == nil)
     // 太久；按着一秒也不算长按（拇指搭在角上）
     #expect(frame(Self.finger(0.03, 0.03), 33) == nil)
     #expect(frame(Self.finger(0.03, 0.03), 33.6) == nil)
@@ -349,6 +354,9 @@ struct TrackpadGesturesTests {
     #expect(TrackpadSystemConflicts.read([builtIn]) == TrackpadSystemConflicts())
     builtIn.set(true, forKey: TrackpadSystemConflicts.dragKey)
     #expect(TrackpadSystemConflicts.read([builtIn]) == .init(lookUp: false, drag: true))
+    magic.set(true, forKey: TrackpadSystemConflicts.tapToClickKey)
+    #expect(TrackpadSystemConflicts.read([magic]).tapToClick)
+    #expect(!TrackpadSystemConflicts.read([builtIn]).tapToClick)
   }
 
   /// G1：框架是在它自己的线程上交帧的。在后台线程上经插件真正用的收帧闭包喂一下四指轻点、一下没绑的三指轻点、左下角和

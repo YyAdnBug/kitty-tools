@@ -102,6 +102,13 @@ nonisolated struct FingerGesture {
       self = FingerGesture()
       return event
     }
+    // 单指的一下还没等到全抬起来的那一帧，下一下就落下了：快快点两下时前一根还在「正在离开」，后一根已经碰上，中间没有一帧是空的
+    // （2026-11-28 真机探针：角上双击被认成了一下 0.35 s 的按着）。换了一根手指 = 前一下已经抬起来了：按抬起算完它，再从这一帧起算新的
+    if peak == 1, origins.count == 1, touching.count == 1, origins[touching[0].id] == nil {
+      let lifted = update([], at: time)
+      let next = update(touches, at: time)
+      return lifted ?? next
+    }
     if origins.isEmpty {
       started = time
       corner = touching.count == 1 ? Corner(x: touching[0].x, y: touching[0].y) : nil

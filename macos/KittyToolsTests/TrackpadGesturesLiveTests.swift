@@ -19,8 +19,9 @@ import Testing
 @MainActor
 struct TrackpadGesturesLiveTests {
   static let steps = [
-    "三指、四指、五指各轻点一下", "三指、四指、五指各双击", "三指、四指、五指各按住一秒", "四指捏合一下、三指左右扫一下（都不该认成轻点）",
-    "单指在左下角轻点一下、再双击", "单指在左下角真按下去点一下、再点两下", "两手搭在触控板边上打几个字（不该认成长按）",
+    "三指、四指、五指各轻点一下、双击一下、按住一秒", "四指捏合一下、三指左右扫一下（都不该认成轻点）",
+    "四个角各用一根手指在最角上轻点一下、再双击", "左下角往里一指宽的地方轻点、双击（开着轻点来点按时系统会点一下，手势让开）",
+    "左下角、右下角各真按下去点一下、再连点两下（只点按，手势不算）", "两手搭在触控板边上打几个字（不该认成长按）",
   ]
 
   @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_LIVE_GESTURES"] != nil))
@@ -114,7 +115,10 @@ struct TrackpadGesturesLiveTests {
     ) -> Void
   {
     { device, event, time in
-      log.add(String(format: "%.3f gesture %@ device %lu", time, "\(event)", device))
+      log.add(
+        String(
+          format: "%.3f gesture %@ device %lu (uptime %.3f)", time, "\(event)", device,
+          ProcessInfo.processInfo.systemUptime))
     }
   }
 }

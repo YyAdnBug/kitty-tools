@@ -43,6 +43,8 @@ struct TrackpadGesturesTab: View {
 
   static let lookUpHint: LocalizedStringResource = "系统的三指轻点用来查询"
   static let dragHint: LocalizedStringResource = "系统的三指拖移开着"
+  /// 开着轻点来点按时角落那一组最上面一行（2026-11-28 真机探针：离边 1–2% 的轻点都被系统点了，手势让开）
+  static let tapToClickHint: LocalizedStringResource = "开着「轻点来点按」，点在最边上才认得出"
 
   var body: some View {
     let bindings = TrackpadGestureBindings(text: text)
@@ -115,6 +117,18 @@ struct TrackpadGesturesTab: View {
     _ commands: [LauncherCommandsSection.Row], @ViewBuilder header: () -> some View
   ) -> some View {
     Section {
+      if conflicts.tapToClick, sources.contains(where: \.isCorner) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text(plain: Self.tapToClickHint)
+            .foregroundStyle(Color(nsColor: .systemOrange))
+            .fixedSize(horizontal: false, vertical: true)
+          Button("打开触控板设置", action: openTrackpadSettings)
+            .buttonStyle(.plain)
+            .foregroundStyle(Style.brandInk)
+            .pointerStyle(.link)
+        }
+        .font(.subheadline)
+      }
       ForEach(
         sources.flatMap { source in source.kinds.map { TrackpadGesture(source, $0) } }, id: \.self
       ) {

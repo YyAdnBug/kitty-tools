@@ -37,6 +37,10 @@ struct TrackpadGesture: Hashable {
       }
     }
 
+    var isCorner: Bool {
+      if case .corner = self { true } else { false }
+    }
+
     /// 能做哪几种：角落不认长按
     var kinds: [Kind] {
       switch self {
@@ -198,15 +202,20 @@ struct TrackpadSystemConflicts: Equatable {
   var lookUp = false
   /// 三指拖移
   var drag = false
+  /// 轻点来点按：角上那一下常被系统当成点按（2026-11-28 真机探针：离边 1–2% 的轻点都被点了，压力和真按下去一样是 1.0），
+  /// 这时手势让开，只有点在最边上的认得出
+  var tapToClick = false
 
   static let lookUpKey = "TrackpadThreeFingerTapGesture"
   static let dragKey = "TrackpadThreeFingerDrag"
+  static let tapToClickKey = "Clicking"
 
   /// 注入的几个域给单测（不读这台的设置）
   static func read(_ domains: [UserDefaults]) -> Self {
     Self(
       lookUp: domains.contains { $0.integer(forKey: lookUpKey) == 2 },
-      drag: domains.contains { $0.bool(forKey: dragKey) })
+      drag: domains.contains { $0.bool(forKey: dragKey) },
+      tapToClick: domains.contains { $0.bool(forKey: tapToClickKey) })
   }
 
   static func current() -> Self {

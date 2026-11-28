@@ -8622,16 +8622,16 @@
     "search.trackpadGestures.corners" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "左上角,右上角,左下角,右下角,单指,轻点,双击,手势"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Top-left,Top-right,Bottom-left,Bottom-right,Corner,One finger,Tap,Double-tap,Gesture"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "左上角,右上角,左下角,右下角,单指,轻点,双击,手势"
           }
         }
       }
@@ -25966,6 +25966,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "On · Left"
+          }
+        }
+      }
+    },
+    "开着「轻点来点按」，点在最边上才认得出" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "With “Tap to click” on, only taps at the very edge count"
           }
         }
       }
