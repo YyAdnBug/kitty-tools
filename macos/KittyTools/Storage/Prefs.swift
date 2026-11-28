@@ -484,6 +484,9 @@ enum Prefs {
   /// 键位映射插件（PR #43）：每把键盘的规则（KeyRemapping.Profile 数组的 JSON，键盘按「厂商:产品:连接方式:序列号」认）。
   /// 跟着这台 Mac 接的键盘走，**不注册默认值**：不跟着导出 / 导入、同步走（别人给的设置文件不该能改你的键）；没存过 = 没有规则
   nonisolated static let keyRemappingRules = "keyRemappingRules"
+  /// 触控板手势插件（issue #59）：九种手势各绑了什么，一行一种「4.tap=action:clipboard」（TrackpadGestureBindings；默认四指轻点
+  /// 是剪贴板历史，拍板 B5）。跟着导出、同步（绑什么和这台有没有触控板无关；插件添加没添加只在这台，Feature.syncsAddition）
+  nonisolated static let trackpadGestureBindings = "trackpadGestureBindings"
   /// 片段展开（剪贴板的一项，2026-11-22；11-24 用户：不做成插件）：打关键词展开片段（默认开：没有片段设关键词时根本不听键盘），
   /// 在这些 App 里不展开（bundle id 的数组，默认同剪贴板「不记录」的那几个密码管理器和钥匙串访问、「密码」；密码框不用放进来，
   /// 系统本来就不让看按键）。都跟着导出、同步
@@ -703,6 +706,7 @@ enum Prefs {
       appShortcutsHold: true,
       appShortcutsDelay: 1000,
       appShortcutsHoldKey: ModifierTaps.Key.command.rawValue,
+      trackpadGestureBindings: TrackpadGestureBindings.defaultText,
       clipboardSnippetExpand: true,
       clipboardSnippetExcluded: ClipboardFilter.defaultExcluded,
       finderOpenWithApps: finderOpenWithDefault,

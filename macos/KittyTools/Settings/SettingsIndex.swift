@@ -196,6 +196,10 @@ enum SettingsItem: String, CaseIterable, Identifiable {
   case appShortcutsKey = "appShortcuts.key"
   case appShortcutsDelay = "appShortcuts.delay"
   case keyRemappingKeyboard = "keyRemapping.keyboard"
+  // 触控板手势（一组一项：每行是同一个偏好里的一种）
+  case trackpadThreeFingers = "trackpadGestures.three"
+  case trackpadFourFingers = "trackpadGestures.four"
+  case trackpadFiveFingers = "trackpadGestures.five"
   // 刘海岛
   case islandNowPlaying = "island.nowPlaying"
   case islandTrackPeek = "island.trackPeek"
@@ -1045,6 +1049,21 @@ enum SettingsItem: String, CaseIterable, Identifiable {
       Self.row(
         .keyRemapping, "键盘",
         LocalizedStringResource("search.keyRemapping.keyboard", defaultValue: "改键,映射,源键,目标键"))
+    case .trackpadThreeFingers:
+      Self.row(
+        .trackpadGestures, "三指",
+        LocalizedStringResource("search.trackpadGestures.fingers", defaultValue: "轻点,双击,长按,手势"),
+        keys: [Prefs.trackpadGestureBindings])
+    case .trackpadFourFingers:
+      Self.row(
+        .trackpadGestures, "四指",
+        LocalizedStringResource("search.trackpadGestures.fingers", defaultValue: "轻点,双击,长按,手势"),
+        keys: [Prefs.trackpadGestureBindings])
+    case .trackpadFiveFingers:
+      Self.row(
+        .trackpadGestures, "五指",
+        LocalizedStringResource("search.trackpadGestures.fingers", defaultValue: "轻点,双击,长按,手势"),
+        keys: [Prefs.trackpadGestureBindings])
     case .appShortcutsHold:
       Self.row(
         .appShortcuts, "按住一个键叫出来",

@@ -23,9 +23,10 @@ nonisolated enum Feature: String, CaseIterable {
   // 启动台、程序坞预览一组）。rawValue 是偏好键，不能改
   case clipboard, launcher, translate, screenshot, record, notes, reminders, statusScreen
   case launchpad, dockPreview, finderMenu
-  // 2026-11-13 起便签之后这几个都是插件（isPlugin），保持唤醒、睡眠关蓝牙、平滑滚动（2026-11-17）、刘海岛新加在最后（刘海岛那一节
-  // 一直排在菜单栏、快捷键页最后）
-  case keepAwake, bluetoothSnooze, smoothScroll, appShortcuts, keyRemapping, island
+  // 2026-11-13 起便签之后这几个都是插件（isPlugin），保持唤醒、睡眠关蓝牙、平滑滚动（2026-11-17）、触控板手势（2026-11-28）新加在
+  // 刘海岛前面（刘海岛那一节一直排在菜单栏、快捷键页最后）
+  case keepAwake, bluetoothSnooze, smoothScroll, appShortcuts, keyRemapping, trackpadGestures,
+    island
 
   /// 同名的设置页（名字、符号、家族色从它取）
   @MainActor var page: SettingsPage { SettingsPage(rawValue: rawValue) ?? .general }
@@ -55,6 +56,7 @@ nonisolated enum Feature: String, CaseIterable {
     case .smoothScroll: "鼠标滚轮像触控板那样滑着滚，鼠标单独反向，按 App 停用"
     case .appShortcuts: "单独按住 ⌘（能换成 ⌥ ⌃ ⇧）一会儿，列出当前 App 菜单里的全部快捷键"
     case .keyRemapping: "为指定键盘设置系统级键位映射，支持 🌐 Globe / Fn"
+    case .trackpadGestures: "三到五根手指轻点、双击、长按，打开 Kitty 的功能和启动器命令"
     case .island: "点刘海叫出快捷动作，录屏计时、提醒倒数、正在播放挂在刘海两边、点开是卡片"
     }
   }
@@ -62,7 +64,7 @@ nonisolated enum Feature: String, CaseIterable {
   /// 插件（2026-11-12 起新的大模块；2026-11-13 起除了核心五个都是）
   static let plugins: Set<Feature> = [
     .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .keepAwake,
-    .bluetoothSnooze, .smoothScroll, .appShortcuts, .keyRemapping, .island,
+    .bluetoothSnooze, .smoothScroll, .appShortcuts, .keyRemapping, .trackpadGestures, .island,
   ]
   var isPlugin: Bool { Self.plugins.contains(self) }
 
@@ -94,6 +96,11 @@ nonisolated enum Feature: String, CaseIterable {
         "keyboard shortcuts", "hold command",
       ]
     case .keyRemapping: ["键位映射", "改键", "key remapping", "remap", "globe", "fn", "F24"]
+    case .trackpadGestures:
+      [
+        "触控板手势", "手势", "多指", "轻点", "trackpad", "gesture", "gestures", "trackpad gestures",
+        "multi-finger",
+      ]
     case .island: ["刘海岛", "刘海", "灵动岛", "island", "notch", "dynamic island"]
     default: []
     }
@@ -109,7 +116,7 @@ nonisolated enum Feature: String, CaseIterable {
   var defaultOn: Bool {
     ![
       .dockPreview, .finderMenu, .keepAwake, .bluetoothSnooze, .smoothScroll, .appShortcuts,
-      .keyRemapping,
+      .keyRemapping, .trackpadGestures,
     ]
     .contains(self)
   }

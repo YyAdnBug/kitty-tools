@@ -31,8 +31,10 @@ struct FeatureTests {
     for feature in Feature.allCases {
       #expect(
         HotKeyAction.allCases.contains { $0.feature == feature }
-          == ![.dockPreview, .finderMenu, .bluetoothSnooze, .smoothScroll, .keyRemapping].contains(
-            feature))
+          == ![
+            .dockPreview, .finderMenu, .bluetoothSnooze, .smoothScroll, .keyRemapping,
+            .trackpadGestures,
+          ].contains(feature))
       #expect(feature.page.rawValue == feature.rawValue)
     }
     #expect(HotKeyAction.screenshotTranslate.feature == .translate)
@@ -215,7 +217,7 @@ struct FeatureTests {
     #expect(
       Feature.allCases.filter { !$0.defaultOn } == [
         .dockPreview, .finderMenu, .keepAwake, .bluetoothSnooze, .smoothScroll, .appShortcuts,
-        .keyRemapping,
+        .keyRemapping, .trackpadGestures,
       ])
     #expect(
       [Feature.notes, .reminders, .statusScreen, .launchpad, .island].allSatisfy {

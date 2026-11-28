@@ -219,6 +219,8 @@ extension AppDelegate {
     nextEvent.apply()
     mediaKeys.apply()
     smoothScroll.apply()
+    trackpadGestures.perform = { [unowned self] in performGesture($0) }
+    trackpadGestures.apply()
     finderKeys.apply()
     // 状态屏里键盘被拦着、录快捷键时按的是要录的组合：都不展开
     snippetExpander.isBusy = { [unowned self] in statusScreen.isActive || hotKeys.recording != nil }
@@ -273,6 +275,7 @@ extension AppDelegate {
         self.nextEvent.apply()
         self.mediaKeys.apply()
         self.smoothScroll.apply()
+        self.trackpadGestures.apply()
         if Feature.keyRemapping.isOn { self.keyRemapping.defaultsChanged() }
         self.finderKeys.apply()
         self.snippetExpander.apply()

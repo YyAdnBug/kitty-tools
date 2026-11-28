@@ -607,6 +607,8 @@ struct SnapshotProbeTests {
       case .appShortcuts: AnyView(AppShortcutsTab(trusted: false))
       // 没 start()：不列键盘、不碰系统的键位
       case .keyRemapping: AnyView(KeyRemappingTab(remapping: KeyRemapping(rulesKey: "unused")))
+      // 系统的三指手势、触控板在不在按固定的画（图不跟着机器变）
+      case .trackpadGestures: AnyView(TrackpadGesturesTab(fixed: .init()))
       case .translate:
         AnyView(TranslateTab(services: services, history: history, speaker: speaker))
       case .hotkeys: AnyView(HotkeysTab(center: hotKeys))
@@ -5757,6 +5759,35 @@ struct SnapshotProbeTests {
         ).defaultAppStorage(prefs),
         size: NSSize(width: 640, height: 1100), dark: dark,
         to: "\(out)/smooth-settings-any\(dark ? "-dark" : "").png")
+    }
+  }
+
+  /// 设置 › 触控板手势整页（插件，issue #59）：默认（四指轻点 = 剪贴板历史），系统的三指轻点查询、三指拖移都开着（橙字），浅 / 深；
+  /// 另绑了三指双击、一条已经没有了的脚本（菜单里写「现在用不了」），找不到触控板（最上面一行）。几秒，图以 trackpad-gestures- 开头：
+  /// -only-testing:'KittyToolsTests/SnapshotProbeTests/trackpadGestures()'。偏好读临时偏好域；系统设置、触控板在不在传固定的
+  @Test(.enabled(if: directory != nil)) func trackpadGestures() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    Prefs.registerDefaults()
+    let name = "kitty-snapshot-trackpad-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: name))
+    defer { prefs.removePersistentDomain(forName: name) }
+    prefs.set(true, forKey: Feature.trackpadGestures.prefsKey)
+    let conflicts = TrackpadGesturesTab.Fixed(conflicts: .init(lookUp: true, drag: true))
+    for dark in [false, true] {
+      try snapshot(
+        TrackpadGesturesTab(fixed: conflicts).defaultAppStorage(prefs),
+        size: NSSize(width: 640, height: 1000), dark: dark,
+        to: "\(out)/trackpad-gestures\(dark ? "-dark" : "").png")
+    }
+    prefs.set(
+      "3.doubleTap=action:screenshot\n4.tap=action:clipboard\n5.hold=command:script:~/脚本/备份.sh",
+      forKey: Prefs.trackpadGestureBindings)
+    for dark in [false, true] {
+      try snapshot(
+        TrackpadGesturesTab(fixed: .init(status: .noTrackpad)).defaultAppStorage(prefs),
+        size: NSSize(width: 640, height: 1000), dark: dark,
+        to: "\(out)/trackpad-gestures-any\(dark ? "-dark" : "").png")
     }
   }
 

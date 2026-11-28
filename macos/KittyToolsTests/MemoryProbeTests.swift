@@ -851,6 +851,7 @@ private final class Probe {
       case .smoothScroll: AnyView(SmoothScrollTab(smoothScroll: SmoothScroll(observes: false)))
       case .appShortcuts: AnyView(AppShortcutsTab(trusted: false))
       case .keyRemapping: AnyView(EmptyView())
+      case .trackpadGestures: AnyView(TrackpadGesturesTab(fixed: .init()))
       case .translate:
         AnyView(TranslateTab(services: services, history: history, speaker: speaker))
       case .hotkeys: AnyView(HotkeysTab(center: hotKeys))

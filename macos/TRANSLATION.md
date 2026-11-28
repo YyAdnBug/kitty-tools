@@ -139,6 +139,7 @@ LaunchServices 按调用方 App 自己的语言给，界面定成中文时英文
 | App 快捷键 / 显示 App 快捷键 | App Shortcuts / Show App Shortcuts | 插件（2026-11-17）；句子里说「当前 App 的快捷键」时照常写 the app’s shortcuts |
 | 打关键词展开片段 / （片段的）关键词 | Expand snippets by keyword / Keyword | 剪贴板的一项（2026-11-22；11-24 起不是插件）；「展开」动词写 expand |
 | 键盘与鼠标（全部插件的分组） | Keyboard and Mouse | 同「记录与提醒」Notes and Reminders |
+| 触控板手势 / 轻点 / 双击 / 长按 / 三指 · 四指 · 五指 | Trackpad Gestures / Tap / Double-Tap / Hold / Three · Four · Five Fingers | 插件（2026-11-28，issue #59）；插件名、「双击」用显式 key（启动台那一行「触控板手势」是 Trackpad gesture、鼠标的「双击」是 Double-click） |
 | 刘海岛 / 打开刘海岛 | Notch / Open Notch | 不用 Dynamic Island |
 | 提示 / 活动（刘海岛上） | Notices / Activities | |
 | 主界面 | Home | |

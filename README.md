@@ -232,6 +232,7 @@ windows/                 # Windows 原生版（C# + WinUI 3，开发中）
 ## 致谢
 
 - 便签的交互和数值参考了 [Noty](https://github.com/aimen08/noty)（MIT），代码全部自己重写
+- 触控板手势的识别改写自 [Trackpad Edges](https://github.com/Jiao77/trackpad-edges)（MIT），按本仓库的写法重写
 - 状态屏的动画表情来自 [Microsoft Fluent Emoji Animated](https://github.com/microsoft/fluentui-emoji-animated)（MIT）
 
 ## 友情链接

@@ -213,6 +213,23 @@ extension AppDelegate {
     }
   }
 
+  /// 触控板手势做的那一下（插件，issue #59，拍板 B7）：同快捷键——状态屏开着、正在录快捷键时不做；前台 App 在快捷键页
+  /// 「在这些 App 里停用」里停了它也不做（启动器命令只跟「全部」）。动作走 run（关着的功能、启动台、主界面它管），命令同命令的快捷键
+  func performGesture(_ target: TrackpadGestureTarget) {
+    guard !statusScreen.isActive, hotKeys.recording == nil else { return }
+    let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+    guard !target.isBlocked(by: HotKeyBlock.rule(for: front, in: HotKeyBlock.stored)) else {
+      return
+    }
+    switch target {
+    case .action(let action): run(action)
+    case .command(let id):
+      guard Feature.launcher.isOn else { return }
+      _ = launcherPanel  // 启动器的模型在建面板时接好（同命令的快捷键）
+      launcherModel.runHotKey(id)
+    }
+  }
+
   /// 「新建提醒」（提醒 D5）：打开启动器、填好「提醒 」（英文界面「remind 」），接着写时间和内容（解析和预览都在启动器里，不另做面板）；
   /// 启动器这个功能关着时打开 设置 › 提醒
   private func newReminder() {

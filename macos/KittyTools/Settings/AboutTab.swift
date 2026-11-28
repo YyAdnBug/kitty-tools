@@ -4,8 +4,8 @@
 // 滚动卡）；可以重看欢迎引导；「反馈问题」（第四轮体检 X14）打开 GitHub 上新建问题的页面，只预填版本号、芯片和系统版本，
 // 不带任何用户数据（feedbackURL，纯函数）。更新后第一次启动不再自动打开这一页，只由刘海岛说
 // 「已更新到 x」+ 本版摘要（AppDelegate 比较 lastSeenVersion，体检 A29），全文在这里。
-// 页面最底下两行小字是素材和参考产品的出处（状态屏的动画表情、便签参考的 Noty，都是 MIT，许可要求随包带着许可全文；
-// mac-whisker §11）。
+// 页面最底下三行小字是素材和参考产品的出处（状态屏的动画表情、便签参考的 Noty、触控板手势改写自的 Trackpad Edges，都是 MIT，
+// 许可要求随包带着许可全文；mac-whisker §11）。
 
 import SwiftUI
 
@@ -153,11 +153,12 @@ struct AboutTab: View {
     #endif
   }
 
-  /// 素材和参考产品的出处：更新日志下面两行小字，每行后面跟着打开随包那份许可全文的链接
+  /// 素材和参考产品的出处：更新日志下面几行小字，每行后面跟着打开随包那份许可全文的链接
   private var credits: some View {
     VStack(alignment: .leading, spacing: 4) {
       credit(Self.emojiCredit, license: "status-emoji-LICENSE")
       credit(Self.noteCredit, license: "notes-LICENSE")
+      credit(Self.trackpadCredit, license: "trackpad-gestures-LICENSE")
     }
     .font(.caption)
     .padding(.top, 4)
@@ -175,6 +176,7 @@ struct AboutTab: View {
 
   static let emojiCredit: LocalizedStringResource = "状态屏的动画表情来自 Microsoft Fluent Emoji（MIT 许可）"
   static let noteCredit: LocalizedStringResource = "便签的交互参考了 Noty（MIT 许可）"
+  static let trackpadCredit: LocalizedStringResource = "触控板手势的识别改写自 Trackpad Edges（MIT 许可）"
 
   /// 版本胶囊下面的更新状态。强调色只给「现在该操作的」：有新版本时的「更新并重新打开」；其余是文字链接
   private func updateRow(_ updater: Updater) -> some View {

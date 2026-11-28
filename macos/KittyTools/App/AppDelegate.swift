@@ -140,6 +140,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 平滑滚动（插件，SmoothScroll/）：起停跟着插件添没添加和辅助功能授权（apply），滚动那条线程由它管
   private(set) lazy var smoothScroll = SmoothScroll()
   lazy var keyRemapping = KeyRemapping(rulesKey: Prefs.keyRemappingRules)
+  /// 触控板手势（插件，TrackpadGestures/）：订不订触控板跟着插件添没添加、绑了什么（apply），做的那一下是 performGesture
+  private(set) lazy var trackpadGestures = TrackpadGestures()
   /// 片段展开（剪贴板的一项，2026-11-22）：起停在 apply（启动、偏好变了、剪贴板条目变了）
   private(set) lazy var snippetExpander = SnippetExpander(store: clipboardStore)
   /// 应用内更新（读本仓库的 GitHub release）
@@ -1026,6 +1028,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       case .smoothScroll: AnyView(SmoothScrollTab(smoothScroll: smoothScroll))
       case .appShortcuts: AnyView(AppShortcutsTab())
       case .keyRemapping: AnyView(KeyRemappingTab(remapping: keyRemapping))
+      case .trackpadGestures:
+        AnyView(
+          TrackpadGesturesTab(library: scriptLibrary) { [unowned self] in openTrackpadSettings() })
       case .translate:
         AnyView(
           TranslateTab(services: serviceStore, history: historyStore, speaker: speaker)

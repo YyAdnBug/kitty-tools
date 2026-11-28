@@ -71,9 +71,16 @@ extension LauncherModel {
   /// 这条命令此刻按快捷键能不能做事：开着；脚本在（这台 Mac 上有、脚本命令开着）；关键词命令的功能开着、还有别名（别名清空了
   /// 打不出它）；系统命令都在。热键中心只注册这些
   func canRunHotKey(_ id: String) -> Bool {
-    let settings = commandSettings()
+    Self.canRun(id, settings: commandSettings(), scripts: scripts(), features: features)
+  }
+
+  /// canRunHotKey 的本体（纯的：设置 › 触控板手势列能选的命令时不用建启动器面板）。scripts 是这台有的脚本（脚本命令关着时是空的）
+  static func canRun(
+    _ id: String, settings: LauncherCommands.Settings, scripts: [ScriptCommand],
+    features: Set<Feature>
+  ) -> Bool {
     guard settings.isOn(id) else { return false }
-    if activeScripts.contains(where: { LauncherCommands.scriptID($0) == id }) { return true }
+    if scripts.contains(where: { LauncherCommands.scriptID($0) == id }) { return true }
     if let builtIn = LauncherCommands.builtIns.first(where: { $0.id == id }) {
       let needs: Feature? =
         switch builtIn.keyword {

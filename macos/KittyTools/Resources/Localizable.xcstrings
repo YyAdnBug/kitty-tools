@@ -768,6 +768,16 @@
         }
       }
     },
+    "%@（现在用不了）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (Unavailable)"
+          }
+        }
+      }
+    },
     "%@（续）" : {
       "localizations" : {
         "en" : {
@@ -8609,6 +8619,23 @@
         }
       }
     },
+    "search.trackpadGestures.fingers" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap,Double-tap,Hold,Gesture"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "轻点,双击,长按,手势"
+          }
+        }
+      }
+    },
     "search.translate.copyRecognized" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -9433,6 +9460,42 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "完成"
+          }
+        }
+      }
+    },
+    "trackpadGestures.doubleTap" : {
+      "comment" : "触控板手势：手指连着轻点两下",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Double-Tap"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "双击"
+          }
+        }
+      }
+    },
+    "trackpadGestures.title" : {
+      "comment" : "插件名：三到五指轻点、双击、长按",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trackpad Gestures"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "触控板手势"
           }
         }
       }
@@ -10730,6 +10793,36 @@
         }
       }
     },
+    "三到五根手指轻点、双击、长按，打开 Kitty 的功能和启动器命令" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap, double-tap or hold with three to five fingers to open Kitty features and Launcher commands"
+          }
+        }
+      }
+    },
+    "三指" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Three Fingers"
+          }
+        }
+      }
+    },
+    "三指、四指、五指的轻点、双击、长按，一共九种" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap, double-tap and hold with three, four or five fingers: nine gestures in all"
+          }
+        }
+      }
+    },
     "三步上手" : {
       "localizations" : {
         "en" : {
@@ -11708,6 +11801,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The transaction was rolled back"
+          }
+        }
+      }
+    },
+    "五指" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Five Fingers"
           }
         }
       }
@@ -19130,6 +19233,16 @@
         }
       }
     },
+    "四指" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Four Fingers"
+          }
+        }
+      }
+    },
     "四指捏合" : {
       "localizations" : {
         "en" : {
@@ -19970,6 +20083,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Show notes on the screen edge"
+          }
+        }
+      }
+    },
+    "在快捷键页里停用了快捷键的 App 里同样不响应" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Also ignored in apps where you turned off shortcuts on the Shortcuts page"
           }
         }
       }
@@ -21022,6 +21145,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Probably left over from the lock screen or login: lock the screen and unlock it; if that doesn’t help, log out and back in"
+          }
+        }
+      }
+    },
+    "多指轻点、双击、长按各做什么" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What multi-finger taps, double-taps and holds do"
           }
         }
       }
@@ -36271,6 +36404,16 @@
         }
       }
     },
+    "每一种都能打开一个功能或运行一条启动器命令" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Each one can open a feature or run a Launcher command"
+          }
+        }
+      }
+    },
     "每个脚本是启动器里的一条命令" : {
       "localizations" : {
         "en" : {
@@ -36890,6 +37033,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nothing to blur found"
+          }
+        }
+      }
+    },
+    "没找到触控板，连上以后自动接上" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No trackpad found. It works as soon as you connect one"
           }
         }
       }
@@ -37732,6 +37885,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "没有设" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "None"
           }
         }
       }
@@ -38800,6 +38963,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Add Name"
+          }
+        }
+      }
+    },
+    "添加后四指轻点触控板打开剪贴板历史；别的在这个插件的设置里选" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Once added, a four-finger tap opens Clipboard History; choose the rest in this plugin’s settings"
           }
         }
       }
@@ -41560,6 +41733,16 @@
         }
       }
     },
+    "移除后手势不再响应；设好的留着，再添加就回来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Removing it stops the gestures. Your choices are kept and come back when you add it again"
+          }
+        }
+      }
+    },
     "移除后按住那个键不再弹出，快捷键页里也没有它；设置留着，再添加就回来" : {
       "localizations" : {
         "en" : {
@@ -42273,6 +42456,16 @@
         }
       }
     },
+    "系统也用三指的时候（触控板设置里「查询与数据检测器」选了三指轻点，或者在 辅助功能 › 指针控制 › 触控板选项 里打开了三指拖移），那几行下面会写出来；照样能设，只是系统也会响应。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When the system also uses three fingers (Look up & data detectors set to Tap with Three Fingers in Trackpad settings, or three finger drag turned on in Accessibility › Pointer Control › Trackpad Options), those rows say so. You can still set them, but the system responds too."
+          }
+        }
+      }
+    },
     "系统停止了录制（错误 %@）" : {
       "localizations" : {
         "en" : {
@@ -42395,6 +42588,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "System Notices"
+          }
+        }
+      }
+    },
+    "系统的三指拖移开着" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The system’s three finger drag is on"
+          }
+        }
+      }
+    },
+    "系统的三指轻点用来查询" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The system uses a three-finger tap for Look Up"
           }
         }
       }
@@ -44746,12 +44959,32 @@
         }
       }
     },
+    "触控板,手势,多指,三指,四指,五指,轻点,双击,长按,查询,三指拖移,妙控板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trackpad,Gesture,Multi-finger,Three fingers,Four fingers,Five fingers,Tap,Double-tap,Hold,Look up,Three finger drag,Magic Trackpad"
+          }
+        }
+      }
+    },
     "触控板手势" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Trackpad gesture"
+          }
+        }
+      }
+    },
+    "触控板手势的识别改写自 Trackpad Edges（MIT 许可）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trackpad gesture recognition is adapted from Trackpad Edges (MIT License)"
           }
         }
       }
@@ -44982,6 +45215,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Once set, exiting needs this passcode after holding for 2 seconds"
+          }
+        }
+      }
+    },
+    "设了手势才读触控板上的手指，只认没挪动的轻点和长按；一个都没设时什么都不读" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reads your fingers on the trackpad only while a gesture is set, and only acts on taps and holds that don’t move. Reads nothing when none is set"
           }
         }
       }
@@ -46160,6 +46403,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Notch"
+          }
+        }
+      }
+    },
+    "轻点" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap"
           }
         }
       }
@@ -47616,6 +47869,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Not available on this Mac (the system changed its trackpad interface). Use a shortcut or a hot corner instead."
+          }
+        }
+      }
+    },
+    "这台 Mac 上用不了：系统改了触控板的接口" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not available on this Mac: the system changed its trackpad interface"
           }
         }
       }
@@ -49491,6 +49754,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Scrolling capture (without annotations)"
+          }
+        }
+      }
+    },
+    "长按" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hold"
           }
         }
       }

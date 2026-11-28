@@ -316,6 +316,8 @@ struct SettingsArchive: Codable, Equatable {
     kinds[Prefs.launcherAppAliases] = .text
     kinds[Prefs.launcherCommandsOff] = .text
     kinds[Prefs.launcherCommandHotKeys] = .text
+    // 触控板手势绑的命令编号是脚本的路径，九行长一点就过了 string 的 4096 字
+    kinds[Prefs.trackpadGestureBindings] = .text
     // 启动台的布局是用户的数据，不按字符串的 4096 字上限走，也不「文件里没有就删本机的」：单独收（capture / sanitized /
     // apply 里那三处），和状态屏的状态列表一个待遇
     kinds[Prefs.launchpadLayout] = nil
