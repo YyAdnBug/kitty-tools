@@ -47878,7 +47878,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Not available on this Mac: the system changed its trackpad interface"
+            "value" : "Unavailable on this Mac: the trackpad interface changed"
           }
         }
       }

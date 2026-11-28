@@ -171,7 +171,10 @@ final class TrackpadGestures {
     case .hold(let fingers):
       fire(TrackpadGesture(fingers: fingers, kind: .hold))
     case .tap(let fingers):
-      switch dispatch.tap(device: device, fingers: fingers, at: time, bound: isBound) {
+      // 双击按主线程收到的时刻算（同他的 handleTap），不按框架给的帧时间：等第二下的 0.29 s 也是从主线程收到时起算，
+      // 主线程卡一下时两边才对得上（不然第一下先被当成轻点做掉、第二下又开一轮，评审）
+      let now = ProcessInfo.processInfo.systemUptime
+      switch dispatch.tap(device: device, fingers: fingers, at: now, bound: isBound) {
       case .fire(let gesture): fire(gesture)
       case .wait(let pending):
         let current = generation

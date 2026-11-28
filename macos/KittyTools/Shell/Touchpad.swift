@@ -286,12 +286,21 @@ final class Touchpad {
     deviceList = nil
   }
 
-  /// 重新枚举、注册，再叫每个订阅者收拾（它们可能在 onReset 里重订自己：只换快照）
-  private func restart() {
+  /// 重新枚举、注册，再叫每个订阅者收拾（它们可能在 onReset 里重订自己：只换快照）。
+  /// 起来的设备比之前少时 2 s 后再试一次（只一次）：醒来那一下内置触控板可能还没就绪（量出 0 × 0、或 start 不成），它不会再发
+  /// 插拔通知，不补一次的话要等下一次睡醒（评审，同 G24）。真拔掉了的多试这一次也没坏处
+  private func restart(retry: Bool = true) {
     guard !subscribers.isEmpty else { return }
+    let before = devices.count
     stopDevices()
     startDevices()
     for reset in subscribers.resets { reset() }
+    guard retry, devices.count < before else { return }
+    pendingRestart = Task { [weak self] in
+      try? await Task.sleep(for: .seconds(2))
+      guard !Task.isCancelled else { return }
+      self?.restart(retry: false)
+    }
   }
 
   /// 插拔时 first-match / terminated 常常连着来、醒来时设备一个个回来：最后一个之后 0.3 s 才重起一次

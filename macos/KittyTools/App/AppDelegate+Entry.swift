@@ -213,10 +213,13 @@ extension AppDelegate {
     }
   }
 
-  /// 触控板手势做的那一下（插件，issue #59，拍板 B7）：同快捷键——状态屏开着、正在录快捷键时不做；前台 App 在快捷键页
+  /// 触控板手势做的那一下（插件，issue #59，拍板 B7）：同快捷键——状态屏开着、正在录快捷键时不做；锁着屏、切到了别的用户时也不做
+  /// （全局快捷键这时收不到，触点却照样来：锁着的 Mac 上谁都能四指一点开剪贴板、跑脚本，评审）；前台 App 在快捷键页
   /// 「在这些 App 里停用」里停了它也不做（启动器命令只跟「全部」）。动作走 run（关着的功能、启动台、主界面它管），命令同命令的快捷键
   func performGesture(_ target: TrackpadGestureTarget) {
-    guard !statusScreen.isActive, hotKeys.recording == nil else { return }
+    guard !statusScreen.isActive, hotKeys.recording == nil, !InputBlock.isSessionAway else {
+      return
+    }
     let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
     guard !target.isBlocked(by: HotKeyBlock.rule(for: front, in: HotKeyBlock.stored)) else {
       return
