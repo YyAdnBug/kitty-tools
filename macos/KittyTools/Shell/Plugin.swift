@@ -145,7 +145,7 @@ extension Feature {
       Self.points("为每把键盘分别选择源键和目标键", "支持 F1–F24 和苹果的 🌐 Globe / Fn")
     case .trackpadGestures:
       Self.points(
-        "三指、四指、五指的轻点、双击、长按，一共九种", "每一种都能打开一个功能或运行一条启动器命令",
+        "三指、四指、五指的轻点、双击、长按，和单指在四个角的轻点、双击", "每一种都能打开一个功能或运行一条启动器命令",
         "在快捷键页里停用了快捷键的 App 里同样不响应")
     case .island:
       Self.points(
@@ -168,7 +168,7 @@ extension Feature {
     case .smoothScroll: "添加后拨鼠标滚轮就是；按住 ⌥ 滚动临时不平滑，按住 ⇧ 左右滚"
     case .appShortcuts: "单独按住 ⌘ 约 1 秒（按哪个键、多久都能改）；不想长按的话在快捷键页另设一个组合"
     case .keyRemapping: "选中键盘，再添加一条映射规则"
-    case .trackpadGestures: "添加后四指轻点触控板打开剪贴板历史；别的在这个插件的设置里选"
+    case .trackpadGestures: "添加后四指轻点触控板打开剪贴板历史；别的手势和四个角在这个插件的设置里选"
     case .island: "点刘海、指针停在刘海上，或用快捷键打开"
     default: nil
     }
@@ -188,7 +188,8 @@ extension Feature {
     case .smoothScroll: "接住鼠标滚轮，在单独一条线程上滑出去；不碰触控板，没在滚时什么都不做"
     case .appShortcuts: "看着设的那个键有没有单独按住；按够了、或者在启动器里打字时才读一次前台 App 的菜单，启动器收起半分钟后丢掉"
     case .keyRemapping: "映射交给系统做，不看你按了什么键；只在键盘连上、断开和电脑醒来时核对一遍"
-    case .trackpadGestures: "设了手势才读触控板上的手指，只认没挪动的轻点和长按；一个都没设时什么都不读"
+    case .trackpadGestures:
+      "设了手势才读触控板上的手指，只认没挪动的轻点和长按；设了角落时另看鼠标什么时候按下，碰上系统的点按就不做；一个都没设时什么都不读"
     case .island:
       "看着指针有没有停在刘海上；打开了系统提示才听电源、耳机、网络，打开了正在播放才起一个读播放信息的小进程，打开了下一个日程才读日历，打开了音量和亮度才接那五个键。不添加时提示照常弹"
     default: nil

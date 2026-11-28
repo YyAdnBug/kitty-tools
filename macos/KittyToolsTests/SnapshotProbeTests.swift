@@ -5763,7 +5763,7 @@ struct SnapshotProbeTests {
   }
 
   /// 设置 › 触控板手势整页（插件，issue #59）：默认（四指轻点 = 剪贴板历史），系统的三指轻点查询、三指拖移都开着（橙字），浅 / 深；
-  /// 另绑了三指双击、一条已经没有了的脚本（菜单里写「现在用不了」），找不到触控板（最上面一行）。几秒，图以 trackpad-gestures- 开头：
+  /// 另绑了三指双击、左下角双击、一条已经没有了的脚本（菜单里写「现在用不了」），找不到触控板（最上面一行）。几秒，图以 trackpad-gestures- 开头：
   /// -only-testing:'KittyToolsTests/SnapshotProbeTests/trackpadGestures()'。偏好读临时偏好域；系统设置、触控板在不在传固定的
   @Test(.enabled(if: directory != nil)) func trackpadGestures() throws {
     let out = try #require(Self.directory)
@@ -5777,16 +5777,17 @@ struct SnapshotProbeTests {
     for dark in [false, true] {
       try snapshot(
         TrackpadGesturesTab(fixed: conflicts).defaultAppStorage(prefs),
-        size: NSSize(width: 640, height: 1000), dark: dark,
+        size: NSSize(width: 640, height: 1480), dark: dark,
         to: "\(out)/trackpad-gestures\(dark ? "-dark" : "").png")
     }
     prefs.set(
-      "3.doubleTap=action:screenshot\n4.tap=action:clipboard\n5.hold=command:script:~/脚本/备份.sh",
+      "3.doubleTap=action:screenshot\n4.tap=action:clipboard\n5.hold=command:script:~/脚本/备份.sh\n"
+        + "bottomLeft.doubleTap=action:screenshot",
       forKey: Prefs.trackpadGestureBindings)
     for dark in [false, true] {
       try snapshot(
         TrackpadGesturesTab(fixed: .init(status: .noTrackpad)).defaultAppStorage(prefs),
-        size: NSSize(width: 640, height: 1000), dark: dark,
+        size: NSSize(width: 640, height: 1480), dark: dark,
         to: "\(out)/trackpad-gestures-any\(dark ? "-dark" : "").png")
     }
   }

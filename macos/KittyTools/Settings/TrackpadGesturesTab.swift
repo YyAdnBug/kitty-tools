@@ -1,5 +1,6 @@
 // 设置 › 触控板手势（插件，issue #59 第 2 批，PLAN §10「触控板手势」）。页头由 SettingsRoot 画（家族色同平滑滚动）。
-// 私有框架不在、找不到触控板时最上面一行说一声；下面三组 三指 / 四指 / 五指，各三行 轻点 / 双击 / 长按，每行一个弹出菜单：
+// 私有框架不在、找不到触控板时最上面一行说一声；下面三组 三指 / 四指 / 五指，各三行 轻点 / 双击 / 长按，再一组「角落」八行
+// （四个角 × 轻点 / 双击，2026-11-28），每行一个弹出菜单：
 // 「没有设」、快捷键页那几节动作（只列开着的功能）、启动器命令（启动器开着时，分组同「命令和别名」，只列此刻能做事的，拍板 B4）。
 // 绑着的东西现在用不了（功能关了、脚本没了）时菜单最上面多一项写明，绑着的照样留着。
 // 系统自己也用三指时（三指轻点查询、三指拖移，拍板 B6）那几行下面橙字，照样能选；三指轻点那一行另给「打开触控板设置」。
@@ -57,7 +58,7 @@ struct TrackpadGesturesTab: View {
           }
         }
       }
-      section(3, bindings, commands) {
+      section([.fingers(3)], bindings, commands) {
         InfoHeader(
           "三指",
           info:
@@ -65,8 +66,19 @@ struct TrackpadGesturesTab: View {
         )
         .settingsAnchor(.trackpadThreeFingers)
       }
-      section(4, bindings, commands) { Text("四指").settingsAnchor(.trackpadFourFingers) }
-      section(5, bindings, commands) { Text("五指").settingsAnchor(.trackpadFiveFingers) }
+      section([.fingers(4)], bindings, commands) {
+        Text("四指").settingsAnchor(.trackpadFourFingers)
+      }
+      section([.fingers(5)], bindings, commands) {
+        Text("五指").settingsAnchor(.trackpadFiveFingers)
+      }
+      section(FingerGesture.Corner.allCases.map { .corner($0) }, bindings, commands) {
+        InfoHeader(
+          "角落",
+          info: "用一根手指在触控板最角上轻点。系统当成点按的那一下（开着「轻点来点按」，或者按了下去）不算。"
+        )
+        .settingsAnchor(.trackpadCorners)
+      }
       PluginAboutSection(plugin: .trackpadGestures)
     }
     .formStyle(.grouped)
@@ -97,13 +109,16 @@ struct TrackpadGesturesTab: View {
     }
   }
 
+  /// 一组：这几个来源能做的每一种一行
   private func section(
-    _ fingers: Int, _ bindings: TrackpadGestureBindings, _ commands: [LauncherCommandsSection.Row],
-    @ViewBuilder header: () -> some View
+    _ sources: [TrackpadGesture.Source], _ bindings: TrackpadGestureBindings,
+    _ commands: [LauncherCommandsSection.Row], @ViewBuilder header: () -> some View
   ) -> some View {
     Section {
-      ForEach(TrackpadGesture.Kind.allCases, id: \.self) { kind in
-        row(TrackpadGesture(fingers: fingers, kind: kind), bindings, commands)
+      ForEach(
+        sources.flatMap { source in source.kinds.map { TrackpadGesture(source, $0) } }, id: \.self
+      ) {
+        row($0, bindings, commands)
       }
     } header: {
       header()
@@ -120,7 +135,7 @@ struct TrackpadGesturesTab: View {
     let drag = gesture.fingers == 3 && conflicts.drag
     return HStack(spacing: 10) {
       VStack(alignment: .leading, spacing: 2) {
-        Text(plain: gesture.kind.title)
+        Text(plain: gesture.title)
         Group {
           if lookUp { Text(plain: Self.lookUpHint) }
           if drag { Text(plain: Self.dragHint) }
@@ -140,7 +155,7 @@ struct TrackpadGesturesTab: View {
       Picker(selection: binding(gesture, bindings)) {
         options(bindings[gesture], commands)
       } label: {
-        Text(plain: gesture.kind.title)
+        Text(plain: gesture.title)
       }
       .labelsHidden()
       .fixedSize()

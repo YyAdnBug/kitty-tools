@@ -8619,6 +8619,23 @@
         }
       }
     },
+    "search.trackpadGestures.corners" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "左上角,右上角,左下角,右下角,单指,轻点,双击,手势"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Top-left,Top-right,Bottom-left,Bottom-right,Corner,One finger,Tap,Double-tap,Gesture"
+          }
+        }
+      }
+    },
     "search.trackpadGestures.fingers" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -10793,12 +10810,12 @@
         }
       }
     },
-    "三到五根手指轻点、双击、长按，打开 Kitty 的功能和启动器命令" : {
+    "三到五根手指轻点、双击、长按，单指点四个角，打开 Kitty 的功能和启动器命令" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tap, double-tap or hold with three to five fingers to open Kitty features and Launcher commands"
+            "value" : "Tap, double-tap or hold with three to five fingers, or tap a corner with one finger, to open Kitty features and Launcher commands"
           }
         }
       }
@@ -10813,12 +10830,12 @@
         }
       }
     },
-    "三指、四指、五指的轻点、双击、长按，一共九种" : {
+    "三指、四指、五指的轻点、双击、长按，和单指在四个角的轻点、双击" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tap, double-tap and hold with three, four or five fingers: nine gestures in all"
+            "value" : "Tap, double-tap and hold with three, four or five fingers, plus one-finger taps and double-taps in the four corners"
           }
         }
       }
@@ -18129,12 +18146,52 @@
         }
       }
     },
+    "右上角双击" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Top-Right Double-Tap"
+          }
+        }
+      }
+    },
+    "右上角轻点" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Top-Right Tap"
+          }
+        }
+      }
+    },
     "右下角" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bottom Right"
+          }
+        }
+      }
+    },
+    "右下角双击" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bottom-Right Double-Tap"
+          }
+        }
+      }
+    },
+    "右下角轻点" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bottom-Right Tap"
           }
         }
       }
@@ -21149,12 +21206,12 @@
         }
       }
     },
-    "多指轻点、双击、长按各做什么" : {
+    "多指和四个角的轻点、双击、长按各做什么" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "What multi-finger taps, double-taps and holds do"
+            "value" : "What multi-finger and corner taps, double-taps and holds do"
           }
         }
       }
@@ -22597,12 +22654,52 @@
         }
       }
     },
+    "左上角双击" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Top-Left Double-Tap"
+          }
+        }
+      }
+    },
+    "左上角轻点" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Top-Left Tap"
+          }
+        }
+      }
+    },
     "左下角" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bottom Left"
+          }
+        }
+      }
+    },
+    "左下角双击" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bottom-Left Double-Tap"
+          }
+        }
+      }
+    },
+    "左下角轻点" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bottom-Left Tap"
           }
         }
       }
@@ -38967,12 +39064,12 @@
         }
       }
     },
-    "添加后四指轻点触控板打开剪贴板历史；别的在这个插件的设置里选" : {
+    "添加后四指轻点触控板打开剪贴板历史；别的手势和四个角在这个插件的设置里选" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Once added, a four-finger tap opens Clipboard History; choose the rest in this plugin’s settings"
+            "value" : "Once added, a four-finger tap opens Clipboard History; choose other gestures and the corners in this plugin’s settings"
           }
         }
       }
@@ -40338,6 +40435,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Translates “Hello, world” from English to Chinese once."
+          }
+        }
+      }
+    },
+    "用一根手指在触控板最角上轻点。系统当成点按的那一下（开着「轻点来点按」，或者按了下去）不算。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap with one finger in the very corner of the trackpad. A tap the system treats as a click (with “Tap to click” on, or when you press down) doesn’t count."
           }
         }
       }
@@ -44849,6 +44956,16 @@
         }
       }
     },
+    "角落" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Corners"
+          }
+        }
+      }
+    },
     "角落留一张缩略图" : {
       "localizations" : {
         "en" : {
@@ -44959,12 +45076,12 @@
         }
       }
     },
-    "触控板,手势,多指,三指,四指,五指,轻点,双击,长按,查询,三指拖移,妙控板" : {
+    "触控板,手势,多指,三指,四指,五指,轻点,双击,长按,查询,三指拖移,妙控板,角落,左下角,右下角,左上角,右上角" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Trackpad,Gesture,Multi-finger,Three fingers,Four fingers,Five fingers,Tap,Double-tap,Hold,Look up,Three finger drag,Magic Trackpad"
+            "value" : "Trackpad,Gesture,Multi-finger,Three fingers,Four fingers,Five fingers,Tap,Double-tap,Hold,Look up,Three finger drag,Magic Trackpad,Corner,Bottom-left,Bottom-right,Top-left,Top-right"
           }
         }
       }
@@ -45219,12 +45336,12 @@
         }
       }
     },
-    "设了手势才读触控板上的手指，只认没挪动的轻点和长按；一个都没设时什么都不读" : {
+    "设了手势才读触控板上的手指，只认没挪动的轻点和长按；设了角落时另看鼠标什么时候按下，碰上系统的点按就不做；一个都没设时什么都不读" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reads your fingers on the trackpad only while a gesture is set, and only acts on taps and holds that don’t move. Reads nothing when none is set"
+            "value" : "Reads your fingers on the trackpad only while a gesture is set, and only acts on taps and holds that don’t move. With a corner set, it also watches when the mouse button goes down and skips taps the system turned into a click. Reads nothing when none is set"
           }
         }
       }

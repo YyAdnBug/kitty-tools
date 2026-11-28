@@ -4,7 +4,8 @@
 // 它自己转事件循环（不然一帧都收不到），这一分钟里测试宿主（= Dev 版）的启动活也跟着跑：每日备份、「新」标记的起始时刻
 // （Dev 版偏好里的 whatsNewStarted）会照常写，同打开一次 Dev 版（2026-11-28 实测）；全量单测不写。
 // 记三样，写进 <目录>/report.md：
-// - 插件的识别器认出的每一下（三到五指的轻点、长按；双击是主线程上两下轻点凑的，看时间就知道）；
+// - 插件的识别器认出的每一下（三到五指的轻点、长按，四个角的单指轻点 `corner(...)`；双击是主线程上两下轻点凑的，看时间就知道；
+//   角落的那一下让不让给点按是主线程上看鼠标按下定的，对着下面鼠标那几行看）；
 // - 单指在四个角（各 9%，同 Trackpad Edges）落下、抬起的时刻和挪了多远——拍板 B2「角落」要的数；
 // - 系统发给别的 App 的鼠标按下 / 抬起：时刻、压力、阶段、连点数——看「轻点来点按」造出来的那次点按和真按下去的能不能分开。
 // 跑的时候照报告开头那张单子做一遍（三到五指各轻点、双击、长按，四指捏合、三指横扫，左下角轻点、双击、按下去点一下）。
@@ -28,7 +29,8 @@ struct TrackpadGesturesLiveTests {
     let log = ProbeLog()
     let start = ProcessInfo.processInfo.systemUptime
     let tracker = GestureTracker(
-      taps: [3, 4, 5], holds: [3, 4, 5], onEvent: Self.events(into: log))
+      taps: [3, 4, 5], holds: [3, 4, 5], corners: Set(FingerGesture.Corner.allCases),
+      onEvent: Self.events(into: log))
     Touchpad.shared.subscribe(
       "probe.gestures", consumer: Self.consumer(tracker: tracker, log: log), onReset: {})
     defer { Touchpad.shared.unsubscribe("probe.gestures") }

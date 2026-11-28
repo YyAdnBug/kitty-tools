@@ -56,7 +56,7 @@ nonisolated enum Feature: String, CaseIterable {
     case .smoothScroll: "鼠标滚轮像触控板那样滑着滚，鼠标单独反向，按 App 停用"
     case .appShortcuts: "单独按住 ⌘（能换成 ⌥ ⌃ ⇧）一会儿，列出当前 App 菜单里的全部快捷键"
     case .keyRemapping: "为指定键盘设置系统级键位映射，支持 🌐 Globe / Fn"
-    case .trackpadGestures: "三到五根手指轻点、双击、长按，打开 Kitty 的功能和启动器命令"
+    case .trackpadGestures: "三到五根手指轻点、双击、长按，单指点四个角，打开 Kitty 的功能和启动器命令"
     case .island: "点刘海叫出快捷动作，录屏计时、提醒倒数、正在播放挂在刘海两边、点开是卡片"
     }
   }
@@ -98,8 +98,8 @@ nonisolated enum Feature: String, CaseIterable {
     case .keyRemapping: ["键位映射", "改键", "key remapping", "remap", "globe", "fn", "F24"]
     case .trackpadGestures:
       [
-        "触控板手势", "手势", "多指", "轻点", "trackpad", "gesture", "gestures", "trackpad gestures",
-        "multi-finger",
+        "触控板手势", "手势", "多指", "轻点", "角落", "trackpad", "gesture", "gestures",
+        "trackpad gestures", "multi-finger", "corner", "corners",
       ]
     case .island: ["刘海岛", "刘海", "灵动岛", "island", "notch", "dynamic island"]
     default: []

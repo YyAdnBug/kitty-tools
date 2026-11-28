@@ -217,7 +217,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .smoothScroll: "让鼠标滚轮滑着滚"
     case .appShortcuts: "按住一个键，看当前 App 的全部快捷键"
     case .keyRemapping: "在选定键盘上把一个键改成另一个键"
-    case .trackpadGestures: "多指轻点、双击、长按各做什么"
+    case .trackpadGestures: "多指和四个角的轻点、双击、长按各做什么"
     case .translate: "翻成什么语言、用哪些服务、怎么弹出来"
     case .hotkeys: "所有全局快捷键"
     case .about: "版本与更新内容"
@@ -267,7 +267,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .keyRemapping:
       "键位映射,改键,键盘,源键,目标键,Globe,Fn,F24"
     case .trackpadGestures:
-      "触控板,手势,多指,三指,四指,五指,轻点,双击,长按,查询,三指拖移,妙控板"
+      "触控板,手势,多指,三指,四指,五指,轻点,双击,长按,查询,三指拖移,妙控板,角落,左下角,右下角,左上角,右上角"
     case .translate:
       "语言,第一语言,第二语言,字号,换行,自动复制,复制即译,历史,导出,CSV,Anki,位置,浮窗位置,鼠标,清空,服务,密钥,查词,词典,单词,音标,例句,生词本,收藏,智谱,OpenAI,Anthropic,DeepL,Google,百度,有道,微软,火山,腾讯,AI,模型"
     case .hotkeys:

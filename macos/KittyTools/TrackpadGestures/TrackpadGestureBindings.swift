@@ -1,12 +1,13 @@
-// 触控板手势插件绑了什么（issue #59 第 2 批，PLAN §10「触控板手势」）：三指 / 四指 / 五指 × 轻点 / 双击 / 长按一共九种，
-// 每种绑一个全局动作（快捷键页那些 HotKeyAction）或一条启动器命令（「命令和别名」里的，编号同命令的快捷键）。
+// 触控板手势插件绑了什么（issue #59 第 2 批，PLAN §10「触控板手势」）：三指 / 四指 / 五指 × 轻点 / 双击 / 长按九种，加上四个角 ×
+// 轻点 / 双击八种（2026-11-28），每种绑一个全局动作（快捷键页那些 HotKeyAction）或一条启动器命令（「命令和别名」里的，编号同命令的快捷键）。
 // 存在一个偏好里（Prefs.trackpadGestureBindings，注册了默认值「四指轻点 → 剪贴板历史」，拍板 B5：跟着导出、同步走），一行一种：
-// 「4.tap=action:clipboard」「3.hold=command:<命令编号>」。认不出的行（更新版本加的手指数、手势、目标）原样留着、写回去时排在后面
-// （同 HotKeyBlock）；同一种写了两行只认第一行。另有系统自己的三指手势占没占着（只读系统的触控板设置，拍板 B6）。
+// 「4.tap=action:clipboard」「3.hold=command:<命令编号>」「bottomLeft.doubleTap=action:screenshot」。认不出的行（更新版本加的手指数、
+// 角落的长按、手势、目标）原样留着、写回去时排在后面（同 HotKeyBlock）；同一种写了两行只认第一行。另有系统自己的三指手势占没占着
+// （只读系统的触控板设置，拍板 B6）。
 
 import Foundation
 
-/// 几根手指 × 哪一种
+/// 几根手指（或哪个角）× 哪一种
 struct TrackpadGesture: Hashable {
   enum Kind: String, CaseIterable {
     case tap, doubleTap, hold
@@ -23,29 +24,75 @@ struct TrackpadGesture: Hashable {
     }
   }
 
-  let fingers: Int
-  let kind: Kind
+  /// 几根手指，或单指在哪个角。**nonisolated**：主线程上的 TapSequence（nonisolated）拿它当键
+  nonisolated enum Source: Hashable, Sendable {
+    case fingers(Int)
+    case corner(FingerGesture.Corner)
 
-  /// 九种，按设置页的先后（三指的轻点、双击、长按，四指的……）
-  static let all: [TrackpadGesture] = FingerGesture.fingerCounts.flatMap { fingers in
-    Kind.allCases.map { TrackpadGesture(fingers: fingers, kind: $0) }
+    /// 偏好里一行的开头：「4」「bottomLeft」
+    var key: String {
+      switch self {
+      case .fingers(let fingers): String(fingers)
+      case .corner(let corner): corner.rawValue
+      }
+    }
+
+    /// 能做哪几种：角落不认长按
+    var kinds: [Kind] {
+      switch self {
+      case .fingers: Kind.allCases
+      case .corner: [.tap, .doubleTap]
+      }
+    }
+
+    static let all: [Source] =
+      FingerGesture.fingerCounts.map { .fingers($0) }
+      + FingerGesture.Corner.allCases.map { .corner($0) }
   }
 
-  var key: String { "\(fingers).\(kind.rawValue)" }
+  let source: Source
+  let kind: Kind
 
-  init(fingers: Int, kind: Kind) {
-    self.fingers = fingers
+  /// 十七种，按设置页的先后（三指的轻点、双击、长按，四指的……，左上角的轻点、双击，右上角的……）
+  static let all: [TrackpadGesture] = Source.all.flatMap { source in
+    source.kinds.map { TrackpadGesture(source, $0) }
+  }
+
+  var key: String { "\(source.key).\(kind.rawValue)" }
+
+  var fingers: Int? {
+    guard case .fingers(let fingers) = source else { return nil }
+    return fingers
+  }
+
+  init(_ source: Source, _ kind: Kind) {
+    self.source = source
     self.kind = kind
   }
 
+  init(fingers: Int, kind: Kind) { self.init(.fingers(fingers), kind) }
+
+  init(corner: FingerGesture.Corner, kind: Kind) { self.init(.corner(corner), kind) }
+
   /// 偏好里一行等号前面那截；认不出的 nil
   init?(key: some StringProtocol) {
-    let parts = key.split(separator: ".", omittingEmptySubsequences: false)
-    guard parts.count == 2, let fingers = Int(parts[0]),
-      FingerGesture.fingerCounts.contains(fingers),
-      let kind = Kind(rawValue: String(parts[1]))
-    else { return nil }
-    self.init(fingers: fingers, kind: kind)
+    guard let gesture = Self.all.first(where: { $0.key == key }) else { return nil }
+    self = gesture
+  }
+
+  /// 设置页那一行的名字：手指的那几行在「三指」这些组里，只写哪一种；角落的写全
+  var title: LocalizedStringResource {
+    guard case .corner(let corner) = source else { return kind.title }
+    return switch (corner, kind == .doubleTap) {
+    case (.topLeft, false): "左上角轻点"
+    case (.topLeft, true): "左上角双击"
+    case (.topRight, false): "右上角轻点"
+    case (.topRight, true): "右上角双击"
+    case (.bottomLeft, false): "左下角轻点"
+    case (.bottomLeft, true): "左下角双击"
+    case (.bottomRight, false): "右下角轻点"
+    case (.bottomRight, true): "右下角双击"
+    }
   }
 }
 
@@ -119,7 +166,7 @@ struct TrackpadGestureBindings: Equatable {
     }
   }
 
-  /// 写回偏好的样子：认得的按九种的先后，认不出的照原来的先后排在后面
+  /// 写回偏好的样子：认得的按十七种的先后，认不出的照原来的先后排在后面
   var text: String {
     let known = TrackpadGesture.all.compactMap { gesture in
       targets[gesture].map { gesture.key + "=" + $0.stored }

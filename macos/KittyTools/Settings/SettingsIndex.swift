@@ -200,6 +200,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
   case trackpadThreeFingers = "trackpadGestures.three"
   case trackpadFourFingers = "trackpadGestures.four"
   case trackpadFiveFingers = "trackpadGestures.five"
+  case trackpadCorners = "trackpadGestures.corners"
   // 刘海岛
   case islandNowPlaying = "island.nowPlaying"
   case islandTrackPeek = "island.trackPeek"
@@ -1063,6 +1064,12 @@ enum SettingsItem: String, CaseIterable, Identifiable {
       Self.row(
         .trackpadGestures, "五指",
         LocalizedStringResource("search.trackpadGestures.fingers", defaultValue: "轻点,双击,长按,手势"),
+        keys: [Prefs.trackpadGestureBindings])
+    case .trackpadCorners:
+      Self.row(
+        .trackpadGestures, "角落",
+        LocalizedStringResource(
+          "search.trackpadGestures.corners", defaultValue: "左上角,右上角,左下角,右下角,单指,轻点,双击,手势"),
         keys: [Prefs.trackpadGestureBindings])
     case .appShortcutsHold:
       Self.row(
