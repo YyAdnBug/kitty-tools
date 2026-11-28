@@ -1,5 +1,5 @@
 // 触控板捏合的识别器（SPEC §5.6、R7；2026-10-19 起跟手，拍板页 build/research/launchpad/GESTURE.md A）：纯状态机，
-// 输入一帧帧触点（时间 + 各指在触控板上的归一化位置），输出「开始捏 / 开始张开」「松手（进度 + 速度）」「取消」，
+// 输入一帧帧触点（`TouchFrame`：时间 + 各指在触控板上的归一化位置），输出「开始捏 / 开始张开」「松手（进度 + 速度）」「取消」，
 // 跟着的那一下每帧的进度（0…1）放在 `progress` 里（桥每帧拷给主线程的屏幕刷新回调读）。不碰框架、不碰窗口，单测直接喂造好的帧序列。
 // 规则（数值写在这里、也写进 mac-launchpad §6）：
 // - 四指捏合认 4 指及以上（同系统的「应用程序」，四根五根都认）、五指捏合认 5 指及以上（设置 › 启动台「触控板手势」选哪种，`PinchFingers`）；
@@ -14,21 +14,6 @@
 
 import CoreGraphics
 import Foundation
-
-/// 一帧里的一个触点：id（同一根手指跨帧不变）、在触控板上的归一化位置（0…1，左下角原点，和框架给的口径一致）、
-/// 框架给的状态（0 = 没在跟踪、4 = 按着；别的值照「在面上」算）
-nonisolated struct TouchPoint: Equatable, Sendable {
-  var id: Int32
-  var x: Double
-  var y: Double
-  var state: Int32
-}
-
-/// 一帧触点（时间来自框架的 timestamp，秒）
-nonisolated struct TouchFrame: Equatable, Sendable {
-  var time: Double
-  var touches: [TouchPoint]
-}
 
 /// 用几根手指捏（设置 › 启动台「触控板手势」，`Prefs.launchpadPinchGesture` 存 rawValue；默认四指，同系统的拇指和三指）。
 /// 四指认 4 根及以上（同系统的「应用程序」手势：捏的时候常常多碰到一根，只认正好 4 根的话捏到一半就断了，2026-10-19 真机）；

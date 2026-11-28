@@ -1,5 +1,5 @@
 // 启动台捏合跟手（2026-10-19，GESTURE.md A）的单测：开 / 收进度的弹簧、LaunchpadZoom 跟手和落定（直接喂时间，不开屏幕刷新回调）、
-// 上面那层的缩放、桥把进度先写好再派事件。不注册触控板回调、不建真面板、不 makeKey。
+// 上面那层的缩放、捏合在框架线程上那一半把进度先写好再派事件。不注册触控板回调、不建真面板、不 makeKey。
 
 import AppKit
 import Synchronization
@@ -154,16 +154,16 @@ struct LaunchpadZoomTests {
     #expect(other.zoomForward)
   }
 
-  // MARK: 桥
+  // MARK: 框架线程上那一半
 
-  /// 框架线程上：进度每帧写进桥里、只在开始 / 松手时派事件；「开始」派出去之前进度已经是这一下的
+  /// 框架线程上：进度每帧写进 PinchTracker、只在开始 / 松手时派事件；「开始」派出去之前进度已经是这一下的
   @Test func bridgePublishesProgressBeforeEvents() async {
     let recorder = Recorder()
-    let bridge = TouchpadBridge(sensitivity: .standard) { event in
-      let current = recorder.bridge.withLock { $0 }?.progress.withLock { $0 } ?? -1
+    let tracker = PinchTracker(sensitivity: .standard) { event in
+      let current = recorder.tracker.withLock { $0 }?.progress.withLock { $0 } ?? -1
       recorder.events.withLock { $0.append((event, current)) }
     }
-    recorder.bridge.withLock { $0 = bridge }
+    recorder.tracker.withLock { $0 = tracker }
     let samples: [(time: Double, radius: Double)] = [
       (0.0, 0.2), (0.05, 0.17), (0.1, 0.16), (0.15, 0.15),
     ]
@@ -179,8 +179,8 @@ struct LaunchpadZoomTests {
     }
     await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
       DispatchQueue.global().async {
-        for frame in frames { bridge.feed(device: 1, frame: frame) }
-        bridge.feed(device: 1, frame: TouchFrame(time: 0.2, touches: []))
+        for frame in frames { tracker.feed(device: 1, frame: frame) }
+        tracker.feed(device: 1, frame: TouchFrame(time: 0.2, touches: []))
         continuation.resume()
       }
     }
@@ -193,12 +193,12 @@ struct LaunchpadZoomTests {
     } else {
       Issue.record("没认出松手")
     }
-    #expect(abs(bridge.progress.withLock { $0 } - 0.25 / 0.28) < 1e-9)
+    #expect(abs(tracker.progress.withLock { $0 } - 0.25 / 0.28) < 1e-9)
   }
 }
 
-/// 桥的回调在后台线程上记下事件和那一刻桥里的进度（Mutex 不能直接被逃逸闭包捕获，包一层）
+/// 捏合的回调在后台线程上记下事件和那一刻识别器里的进度（Mutex 不能直接被逃逸闭包捕获，包一层）
 private final class Recorder: Sendable {
   let events = Mutex<[(PinchRecognizer.Event, Double)]>([])
-  let bridge = Mutex<TouchpadBridge?>(nil)
+  let tracker = Mutex<PinchTracker?>(nil)
 }

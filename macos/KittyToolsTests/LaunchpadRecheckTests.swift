@@ -1,10 +1,9 @@
 // 复查后第二轮（FIXES-2，2026-10-18）的锁定测试：每条对应清单里的一项（测试名后的 G 编号）。
-// 屏外建 model / 面板 / 窗口，不 makeKey；G1 不注册真的触控板回调，只在后台线程上直接调那个 C 回调、装假的桥；
+// 屏外建 model / 面板 / 窗口，不 makeKey；G1（触控板回调的线程）挪到 TouchpadTests；
 // G29 的真拖动、2026-10-18 真机反馈后的「点到的范围」是进程内 `window.sendEvent`（不发系统事件、不动用户的鼠标）。
 
 import AppKit
 import SwiftUI
-import Synchronization
 import Testing
 
 @testable import KittyTools
@@ -55,29 +54,6 @@ struct LaunchpadRecheckTests {
     for _ in 0..<60 where model.drag?.combineTileID == nil {
       try? await Task.sleep(for: .milliseconds(20))
     }
-  }
-
-  // MARK: G1 触控板回调的线程
-
-  /// 框架是在它自己的线程上调回调的：在后台线程上直接调那个 C 回调，不能 trap（修之前整个测试进程会崩）
-  @Test func contactCallbackRunsOnABackgroundThread() async {
-    let bridge = TouchpadBridge(sensitivity: .standard) { _ in }
-    TouchpadWatcher.installBridgeForTesting(bridge)
-    defer { TouchpadWatcher.installBridgeForTesting(nil) }
-    let callback = TouchpadWatcher.contactCallbackForTesting
-    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-      DispatchQueue.global().async {
-        let buffer = UnsafeMutableRawPointer.allocate(byteCount: 4 * 96, alignment: 8)
-        buffer.initializeMemory(as: UInt8.self, repeating: 0, count: 4 * 96)
-        let device = UnsafeMutableRawPointer(bitPattern: 0x10)
-        _ = callback(device, buffer, 4, 1, 1)
-        // 全抬起来的空帧也要能进
-        _ = callback(device, nil, 0, 1.01, 2)
-        buffer.deallocate()
-        continuation.resume()
-      }
-    }
-    #expect(bridge.frames.withLock { $0 } == 2)
   }
 
   // MARK: G2 刚启动、目录还没扫出来
@@ -416,7 +392,7 @@ struct LaunchpadRecheckTests {
       buffer.storeBytes(of: Float(index) * 0.1, toByteOffset: base + 32, as: Float.self)
       buffer.storeBytes(of: Float(index) * 0.2, toByteOffset: base + 36, as: Float.self)
     }
-    let touches = TouchpadWatcher.touches(from: buffer, count: 4)
+    let touches = Touchpad.touches(from: buffer, count: 4)
     #expect(touches.map(\.id) == [10, 11, 12, 13])
     #expect(touches.allSatisfy { $0.state == 4 })
     #expect(abs(touches[3].x - 0.3) < 0.0001 && abs(touches[3].y - 0.6) < 0.0001)

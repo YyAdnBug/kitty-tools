@@ -121,14 +121,18 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
 ## 6. 触控板捏合（第 3 批）
 - 私有 `MultitouchSupport.framework` 只许**运行时 `dlopen` / `dlsym`**，不链接、不写进工程设置；找不到符号 / 设备就退回，
   设置里那一行写明「这台 Mac 上用不了，用快捷键或触发角」，别的入口照常。
-- 回调在框架自己的线程上：回调里只把这一帧拷成值类型交给 `Mutex` 里的 `PinchRecognizer`；跟着的那一下的进度每帧写进桥的
-  `progress`（`Mutex`），**只有开始 / 松手 / 取消三件事** `DispatchQueue.main.async`（每帧都派的话触控板约 8 ms 一帧、屏幕 60 / 120 Hz，
+- 框架、设备归 `Shell/Touchpad`（2026-11-28，issue #59：几个识别器共用一路，启动台的捏合是其中一个订阅者 `TouchpadWatcher`）：
+  第一个订阅者来了才枚举、注册，最后一个走了注销 + `MTDeviceStop`；按传感器尺寸只认触控板（Touch Bar、妙控鼠标不收；量不了尺寸就都收）；
+  `MTDeviceStart` 起不来的跳过，一个都没有 = 用不了，但照样听插拔。
+- 回调在框架自己的线程上：回调里只把这一帧拷成值类型，交给每个订阅者；捏合那一份（`PinchTracker`）交给 `Mutex` 里的 `PinchRecognizer`，
+  跟着的那一下的进度每帧写进它的 `progress`（`Mutex`），**只有开始 / 松手 / 取消三件事** `DispatchQueue.main.async`（每帧都派的话触控板约 8 ms 一帧、屏幕 60 / 120 Hz，
   节奏对不上会抖）。**不在回调里碰主线程状态**。
-- **默认 MainActor 隔离下，框架线程碰到的东西一律显式 `nonisolated`**（G1）：桥 `TouchpadBridge`、全局 `activeBridge` /
-  `contactCallback`、回调本体 `handleContactFrame`、派回主线程的 `forwarder`。C 函数指针的字面量里**不写任何闭包**，只调一个
+- **默认 MainActor 隔离下，框架线程碰到的东西一律显式 `nonisolated`**（G1）：快照 `TouchpadBridge`、全局 `delivery` /
+  `contactCallback`、回调本体 `handleContactFrame`、`PinchTracker`、收帧的 `consumer(feeding:)` 和派回主线程的 `forwarder`。C 函数指针的字面量里**不写任何闭包**，只调一个
   nonisolated 函数——不写的话它们会被推成 @MainActor，框架线程一调进来就被 Swift 6 的隔离检查 trap（一碰触控板就崩）。
-  单测在后台线程上直接调那个 C 回调（`contactCallbackForTesting`）锁住。
-- 已经开着、灵敏度没变时 `start` 什么都不做（G8）；唤醒后按「调用方要它开着」重新注册，失败了下次唤醒再试（G24）。
+  单测在后台线程上直接调那个 C 回调（`Touchpad.contactCallbackForTesting`）锁住。
+- 已经开着、灵敏度没变时 `start` 什么都不做（G8；同一个 key 重订只换快照、不重起设备）；醒来、`AppleMultitouchDevice` 插 / 拔时 Touchpad
+  在最后一个通知之后 0.3 s 重新枚举、注册，再叫各订阅者的 `onReset`——捏合换一个新识别器、报一次取消（G24：醒来那一下没起来的，设备回来时的通知再试）。
 - 手势选哪种（`Prefs.launchpadPinchGesture` = `PinchFingers` 的 off / four / five，默认 four，2026-10-19 照用户给的同类设置加的）：
   四指认 4 指及以上（同系统的「应用程序」；2026-10-19 前是正好 4 指，真机日志里捏的时候常常多碰到一根、捏到一半就断），五指认 5 指及以上（和四指的横扫 / 上推完全错开）；
   跟着的时候手指数在认的范围里跳（4 → 5 → 4）接着跟：按现在的进度换成这几根手指的起点，进度不跳，少到不认了才是松手；关闭 = 不注册回调。手指数和灵敏度一样进 `start` 的「没变就不动」判断（G8）。
@@ -144,7 +148,7 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
 - 跟手的画面（`Launchpad.pinch` / `finishPinch`）：关着时开始捏 → `open(interactive: true)` 建面板（透明、`ignoresMouseEvents`、**不 makeKey**），
   `LaunchpadZoom` 每帧取进度；松手走完才 `activate`（收鼠标、makeKey、焦点进搜索框），退回就按 `close` 收掉（倒着走打开那一段，`forward: false`）。
   开着时开始张开 → 同一个 `LaunchpadZoom` 跟 1 − 进度，松手走完 = `close`、退回 = 弹回 1。开着时捏合、关着时张开都不理。
-  监听停掉 / 重新注册时 `TouchpadWatcher` 两种各报一次取消（`abandonGesture`）；跟手期间每 0.5 s 看一眼桥的帧数（手指放着不动也一直有帧），
+  监听停掉 / 重新枚举时 `TouchpadWatcher` 两种各报一次取消（`abandonGesture`）；跟手期间每 0.5 s 看一眼 `Touchpad.framesSeen`（手指放着不动也一直有帧），
   没涨 = 设备断了，当取消（`watchPinch`）——别让捏到一半的面板一直半透明地挂着。捏合建的面板**松手走完之前不算打开**（`awaitingCommit`）：
   第一次自动导入、「排列读不出来」的提示都等松手定了再做，退回去的不导入。
 - **面板和模型的回调只认现在这块**（2026-10-19 评审）：收起要走约 0.35 s、这期间旧面板还是 key，新的那块可能已经被捏出来（还没当过 key）。

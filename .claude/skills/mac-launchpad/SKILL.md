@@ -12,6 +12,6 @@ description: 启动台（第八族）的行为红线速查：模型和不变式�
 - 面板是自建窗口的新例外（mac-overlay-panel §1）：无边框、不激活本 App、能当 key、层级 `.statusBar`、**每次打开新建、收起放掉**。
 - 键盘走 `CommandTextField` 的 `doCommandBy`，**不装全局按键监听**；两指滑从面板 `sendEvent` 进。
 - 截图 / 录屏 / 状态屏 / 正在录快捷键时不响应；打开别的功能时先收起。
-- 私有 MultitouchSupport 只运行时 `dlopen` / `dlsym`；回调只拷触点、派回主线程；单测不注册回调。
+- 私有 MultitouchSupport 只运行时 `dlopen` / `dlsym`，归 `Shell/Touchpad`（几个识别器共用一路，捏合是订阅者之一）；回调只拷触点、派回主线程；单测不注册回调。
 - 旧启动台库只读**拷贝**（`file:…?mode=ro`；**不能加 `immutable=1`**，会跳过 -wal），不碰原件；单测自己造小库。
 - 单测里不 `makeKey`、不启动 App；截图自检只跑 `SnapshotProbeTests.launchpad()`。

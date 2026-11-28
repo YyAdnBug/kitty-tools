@@ -474,11 +474,11 @@ final class Launchpad {
   private func watchPinch() {
     pinchWatchdog?.cancel()
     pinchWatchdog = Task { [weak self] in
-      var last = TouchpadWatcher.framesSeen
+      var last = Touchpad.framesSeen
       while !Task.isCancelled {
         try? await Task.sleep(for: .milliseconds(500))
         guard !Task.isCancelled, let self, let gesture = self.pinchTracking else { return }
-        let now = TouchpadWatcher.framesSeen
+        let now = Touchpad.framesSeen
         if now == last {
           self.pinchTracking = nil
           self.finishPinch(gesture, completes: false, velocity: 0)
@@ -719,7 +719,7 @@ final class Launchpad {
   // MARK: 捏合和触发角（R7 / R8）
 
   /// 私有框架在这台 Mac 上能不能用（设置页那一行据此显示 / 灰掉）
-  var pinchAvailable: Bool { TouchpadWatcher.libraryAvailable }
+  var pinchAvailable: Bool { Touchpad.libraryAvailable }
 
   /// 系统的捏合手势还开着没有（设置页每次出现读一次，不轮询）
   var systemPinchIsOn: Bool { TrackpadSystemGesture.systemPinchIsOn() }

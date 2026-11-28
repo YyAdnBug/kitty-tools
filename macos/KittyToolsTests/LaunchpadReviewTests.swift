@@ -231,7 +231,7 @@ struct LaunchpadReviewTests {
       finger.pointee.normalizedX = Float(index) * 0.1
       finger.pointee.normalizedY = Float(index) * 0.2
     }
-    let touches = TouchpadWatcher.touches(from: buffer, count: 4)
+    let touches = Touchpad.touches(from: buffer, count: 4)
     #expect(touches.map(\.id) == [0, 1, 2, 3])
     let xs = touches.map(\.x)
     #expect(abs(xs[1] - 0.1) < 0.0001 && abs(xs[2] - 0.2) < 0.0001 && abs(xs[3] - 0.3) < 0.0001)

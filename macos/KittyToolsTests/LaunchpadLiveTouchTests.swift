@@ -12,18 +12,18 @@ struct LaunchpadLiveTouchTests {
   // 命令行写 TEST_RUNNER_KITTY_LIVE_TOUCH=1；xcodebuild 去掉前缀，测试进程里读到的是 KITTY_LIVE_TOUCH（G16）
   @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_LIVE_TOUCH"] == "1"))
   func liveTouchFramesArrive() async throws {
-    let before = TouchpadWatcher.framesSeen
+    let before = Touchpad.framesSeen
     let watcher = TouchpadWatcher()
     watcher.start(sensitivity: .standard)
     defer { watcher.stop() }
     #expect(watcher.availability == .available)
     // 给用户 5 秒：在触控板上放四根手指、捏一下
     for _ in 0..<50 {
-      if TouchpadWatcher.framesSeen > before { break }
+      if Touchpad.framesSeen > before { break }
       try? await Task.sleep(for: .milliseconds(100))
     }
     #expect(
-      TouchpadWatcher.framesSeen > before,
+      Touchpad.framesSeen > before,
       "5 秒内没有收到触点：确认这块 Mac 有触控板，并在跑的时候放四根手指捏一下")
   }
 }
