@@ -9,6 +9,7 @@
 // 「在这些 App 里停用」、状态屏、正在录快捷键）由 AppDelegate 的 perform 管。Touchpad 重新枚举设备之后（醒来、插拔）换一个新的
 // 识别器、丢掉在等的那一下。
 
+import CoreGraphics
 import Foundation
 import Synchronization
 
@@ -166,9 +167,19 @@ final class TrackpadGestures {
     }
   }
 
+  /// 最近这么多秒里按过键就不认长按
+  static let typingQuiet = 1.0
+
+  /// 正在打字：两手掌搭在触控板边上打字时会被认成四指长按（2026-11-28 真机探针），手掌又不抬起来、不算轻点。
+  /// 只挡长按：复制完马上四指轻点开剪贴板是常见用法，轻点不挡
+  static func isTyping(secondsSinceKey: Double) -> Bool { secondsSinceKey < typingQuiet }
+
   private func received(_ event: FingerGesture.Event, device: UInt, at time: Double) {
     switch event {
     case .hold(let fingers):
+      let sinceKey = CGEventSource.secondsSinceLastEventType(
+        .combinedSessionState, eventType: .keyDown)
+      guard !Self.isTyping(secondsSinceKey: sinceKey) else { return }
       fire(TrackpadGesture(fingers: fingers, kind: .hold))
     case .tap(let fingers):
       // 双击按主线程收到的时刻算（同他的 handleTap），不按框架给的帧时间：等第二下的 0.29 s 也是从主线程收到时起算，

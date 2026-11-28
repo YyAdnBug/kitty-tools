@@ -1,6 +1,8 @@
 // 触控板手势的真机探针（issue #59 第 3 批，按需）：默认跳过，命令行 `TEST_RUNNER_KITTY_LIVE_GESTURES=<目录>` 才跑
 // （测试进程里读到的是 KITTY_LIVE_GESTURES，G16）。**会真的订 Touchpad、读这台 Mac 的触控板约 60 秒，跑之前先问用户、要他在场**；
 // 只听不拦：不建事件拦截、不发合成输入，鼠标按下 / 抬起只用全局监听看（看不到、也改不了别的 App 收到的事件）。
+// 它自己转事件循环（不然一帧都收不到），这一分钟里测试宿主（= Dev 版）的启动活也跟着跑：每日备份、「新」标记的起始时刻
+// （Dev 版偏好里的 whatsNewStarted）会照常写，同打开一次 Dev 版（2026-11-28 实测）；全量单测不写。
 // 记三样，写进 <目录>/report.md：
 // - 插件的识别器认出的每一下（三到五指的轻点、长按；双击是主线程上两下轻点凑的，看时间就知道）；
 // - 单指在四个角（各 9%，同 Trackpad Edges）落下、抬起的时刻和挪了多远——拍板 B2「角落」要的数；
@@ -44,7 +46,26 @@ struct TrackpadGesturesLiveTests {
     }
     defer { monitor.map(NSEvent.removeMonitor) }
     print("gesture-probe 开始，60 秒，照 report.md 开头的单子做；availability \(Touchpad.shared.availability)")
-    try? await Task.sleep(for: .seconds(60))
+    // 自己转事件循环，不用 Task.sleep：测试宿主里 await 时主线程不处理窗口服务器的事件，全局监听一条都收不到
+    // （2026-11-28 第一次实录 0 行）。开始、结束各响一声，跑的人知道哪一分钟在记；每 5 秒记一次收到的帧数
+    NSSound.beep()
+    let deadline = Date(timeIntervalSinceNow: 60)
+    var nextCount = Date(timeIntervalSinceNow: 5)
+    while Date() < deadline {
+      if let event = NSApp.nextEvent(
+        matching: .any, until: Date(timeIntervalSinceNow: 0.05), inMode: .default, dequeue: true)
+      {
+        NSApp.sendEvent(event)
+      }
+      if Date() >= nextCount {
+        log.add(
+          String(
+            format: "%.3f frames so far %d", ProcessInfo.processInfo.systemUptime,
+            Touchpad.framesSeen))
+        nextCount = Date(timeIntervalSinceNow: 5)
+      }
+    }
+    NSSound.beep()
     var lines = ["# 触控板手势探针 \(Date())", "", "要做的："] + Self.steps.map { "- \($0)" }
     lines += [
       "",

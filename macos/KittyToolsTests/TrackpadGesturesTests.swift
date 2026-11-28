@@ -183,6 +183,14 @@ struct TrackpadGesturesTests {
       ]) == TrackpadGestures.Listening(taps: [3, 4], holds: [5]))
   }
 
+  /// 打字时手掌搭着触控板会被认成四指长按（2026-11-28 真机探针）：最近 1 秒按过键就不认长按
+  @Test func holdsAreIgnoredWhileTyping() {
+    #expect(TrackpadGestures.isTyping(secondsSinceKey: 0.2))
+    #expect(TrackpadGestures.isTyping(secondsSinceKey: 0.99))
+    #expect(!TrackpadGestures.isTyping(secondsSinceKey: 1.5))
+    #expect(!TrackpadGestures.isTyping(secondsSinceKey: .infinity))
+  }
+
   /// 按 App 停用跟着快捷键页（拍板 B7）：动作看那一条停没停它，启动器命令只跟「全部」
   @Test func blockedTargetsFollowTheShortcutsPage() {
     let clipboard = TrackpadGestureTarget.action(.clipboard)
