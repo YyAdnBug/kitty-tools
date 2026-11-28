@@ -257,6 +257,12 @@ TEST_RUNNER_KITTY_TRANSLATE_PROBE=1 xcodebuild -project macos/KittyTools.xcodepr
 TEST_RUNNER_KITTY_LIVE_SCROLL_APP=/tmp/kitty-scroll xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/ScrollAppProbeTests/record()'
 
+# 触控板手势的真机探针（按需，约 60 秒，issue #59；**跑之前先问用户、要他在场**）：真的订触控板、只听不拦（不建事件拦截、不发合成输入，
+# 鼠标按下 / 抬起只用全局监听看），记插件认出的每一下、单指在四个角的落下 / 抬起、系统发给别的 App 的点按（压力、连点数），
+# 写进 <目录>/report.md；开头是要照着做的单子（多指轻点 / 双击 / 长按、捏合、横扫、角落轻点和按下去）
+TEST_RUNNER_KITTY_LIVE_GESTURES=/tmp/kitty-gestures xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:'KittyToolsTests/TrackpadGesturesLiveTests/recordGestures()'
+
 # 启动台的性能 / 内存探针（按需，屏外，几秒；grep「launchpad-probe」：扫目录、第一帧、翻页布局、footprint）
 TEST_RUNNER_KITTY_LAUNCHPAD_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/LaunchpadProbeTests/measure()'
